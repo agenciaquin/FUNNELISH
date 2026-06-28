@@ -1,149 +1,348 @@
 /* ================================================================
    ConfirmaYa — KLIXMANT
-   app.js — Lógica completa de la aplicación
-
-   Sin frameworks, sin dependencias externas, sin build.
-   Toda la lógica corre en el navegador con JS puro.
+   app.js — Lógica: Excel → Tabla → WhatsApp
    ================================================================ */
 
-/* ----------------------------------------------------------------
-   Constante configurable: género por defecto para tallas sin género.
-   Cambiar solo esta línea si el negocio decide usar otro valor.
-   ---------------------------------------------------------------- */
-const GENERO_POR_DEFECTO = "Hombre";
+/* ── CONSTANTES ─────────────────────────────────────────────── */
+const CORREO_POR_DEFECTO  = "Gerenciaquin7@gmail.com";
+const VALOR_POR_DEFECTO   = "$130.000";
+const GENERO_POR_DEFECTO  = "Hombre";
+const INDICADORES_GENERO  = ["dama", "mujer", "femenino", "hombre", "caballero"];
+const LS_KEY              = "confirmaYa_estados";
 
-/* ----------------------------------------------------------------
-   Indicadores de género reconocidos para la regla de talla.
-   Se comparan en minúsculas (case-insensitive).
-   ---------------------------------------------------------------- */
-const INDICADORES_GENERO = ["dama", "mujer", "femenino", "hombre", "caballero"];
+/* Mapeo flexible de nombres de columna del Excel de Funnelish */
+const COL_MAP = {
+  nombre:      ["nombre", "name", "nombre completo", "cliente", "full name"],
+  telefono:    ["telefono", "teléfono", "phone", "celular", "móvil", "movil", "tel"],
+  direccion:   ["dirección", "direccion", "address", "dirección de envío", "dir"],
+  ciudad:      ["ciudad", "city", "municipio"],
+  departamento:["departamento", "department", "estado", "depto"],
+  correo:      ["correo", "email", "e-mail", "correo electrónico"],
+  talla:       ["talla", "size", "talla/size"],
+  producto:    ["producto", "product", "nombre del producto", "referencia", "artículo", "articulo", "modelo"],
+  valor:       ["valor", "valor a pagar", "total", "precio", "price", "monto"],
+};
 
-/* ----------------------------------------------------------------
-   Valor por defecto cuando el correo no se ingresa
-   ---------------------------------------------------------------- */
-const CORREO_POR_DEFECTO = "Gerenciaquin7@gmail.com";
+/* ── ESTADO GLOBAL ───────────────────────────────────────────── */
+let pedidos = [];
+let estados = {};
 
-/* ----------------------------------------------------------------
-   Valor por defecto cuando el valor a pagar no se ingresa
-   ---------------------------------------------------------------- */
-const VALOR_POR_DEFECTO = "$130.000";
+/* ── INICIALIZACIÓN ──────────────────────────────────────────── */
+document.addEventListener("DOMContentLoaded", () => {
+  estados = cargarEstados();
+  initUpload();
+  initModal();
+  initBuscar();
+  initFiltros();
+});
 
 /* ================================================================
-   TAREA 07 — Normalización del teléfono
-   Produce dos valores separados:
-   - telefonoMensaje:   +57XXXXXXXXXX  (para el cuerpo del mensaje)
-   - telefonoWhatsApp:  57XXXXXXXXXX   (para la URL wa.me, sin "+")
+   CARGA DE EXCEL
    ================================================================ */
+function initUpload() {
+  const dropZone  = document.getElementById("drop-zone");
+  const inputFile = document.getElementById("input-excel");
+  const btnSubir  = document.getElementById("btn-subir");
+  const btnNueva  = document.getElementById("btn-nueva-carga");
 
-/**
- * Normaliza un número de teléfono colombiano.
- * @param {string} valorRaw  Valor ingresado por el operador.
- * @returns {{ telefonoMensaje: string, telefonoWhatsApp: string, valido: boolean }}
- */
-function normalizarTelefono(valorRaw) {
-  // Eliminar todos los caracteres que no sean dígitos
-  const soloDigitos = valorRaw.replace(/\D/g, "");
+  btnSubir.addEventListener("click", () => inputFile.click());
+  dropZone.addEventListener("click", (e) => {
+    if (e.target !== btnSubir) inputFile.click();
+  });
 
-  let digitos10 = "";
+  dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.classList.add("drag-over");
+  });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+  dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("drag-over");
+    const file = e.dataTransfer.files[0];
+    if (file) procesarArchivo(file);
+  });
 
-  if (soloDigitos.length === 12 && soloDigitos.startsWith("57")) {
-    // Ya tiene código de país (ej: 573001234567)
-    digitos10 = soloDigitos.slice(2);
-  } else if (soloDigitos.length === 10) {
-    // Número colombiano sin código de país (ej: 3001234567)
-    digitos10 = soloDigitos;
-  } else {
-    // Mejor esfuerzo: conservar lo que se pueda
-    digitos10 = soloDigitos;
-  }
+  inputFile.addEventListener("change", () => {
+    if (inputFile.files[0]) procesarArchivo(inputFile.files[0]);
+  });
 
-  const valido = digitos10.length >= 10;
+  btnNueva.addEventListener("click", () => {
+    pedidos = [];
+    document.getElementById("seccion-tabla").style.display = "none";
+    document.getElementById("seccion-upload").style.display = "flex";
+    inputFile.value = "";
+  });
+}
+
+function procesarArchivo(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb   = XLSX.read(data, { type: "array" });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+      if (!rows.length) {
+        alert("El archivo está vacío o no tiene datos.");
+        return;
+      }
+
+      pedidos = rows.map((row, i) => normalizarFila(row, i));
+      renderizarTabla(pedidos);
+
+      document.getElementById("seccion-upload").style.display = "none";
+      document.getElementById("seccion-tabla").style.display  = "block";
+    } catch (err) {
+      console.error(err);
+      alert("No se pudo leer el archivo. Asegúrate de que sea un Excel válido (.xlsx / .xls).");
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ================================================================
+   NORMALIZACIÓN DE FILAS
+   ================================================================ */
+function normalizarFila(row, index) {
+  const get = (aliases) => {
+    const rowLower = {};
+    for (const k of Object.keys(row)) rowLower[k.toLowerCase().trim()] = row[k];
+    for (const alias of aliases) {
+      if (rowLower[alias] !== undefined) return String(rowLower[alias]).trim();
+    }
+    return "";
+  };
+
+  const telefonoRaw   = get(COL_MAP.telefono);
+  const { telefonoMensaje, telefonoWhatsApp } = normalizarTelefono(telefonoRaw);
+  const correo        = get(COL_MAP.correo)  || CORREO_POR_DEFECTO;
+  const valor         = get(COL_MAP.valor)   || VALOR_POR_DEFECTO;
+  const talla         = aplicarReglasTalla(get(COL_MAP.talla));
+  const producto      = get(COL_MAP.producto);
 
   return {
-    telefonoMensaje:   "+57" + digitos10,   // ej: +573001234567
-    telefonoWhatsApp:  "57"  + digitos10,   // ej: 573001234567
-    valido
+    id: index,
+    nombre:          get(COL_MAP.nombre),
+    telefonoMensaje,
+    telefonoWhatsApp,
+    direccion:       get(COL_MAP.direccion),
+    ciudad:          get(COL_MAP.ciudad),
+    departamento:    get(COL_MAP.departamento),
+    correo,
+    talla,
+    producto,
+    valor,
   };
 }
 
 /* ================================================================
-   TAREA 08 — Reglas de correo y valor por defecto
+   RENDERIZADO DE LA TABLA
    ================================================================ */
+function renderizarTabla(filas) {
+  const tbody = document.getElementById("tabla-cuerpo");
+  tbody.innerHTML = "";
+  document.getElementById("badge-total").textContent = filas.length;
 
-/**
- * Aplica la regla de correo: si vacío, usa el correo corporativo por defecto.
- * @param {string} correoRaw Valor del campo correo.
- * @returns {string}
- */
-function aplicarReglasCorreo(correoRaw) {
-  return correoRaw.trim() !== "" ? correoRaw.trim() : CORREO_POR_DEFECTO;
-}
+  if (!filas.length) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:2rem;">Sin resultados.</td></tr>`;
+    return;
+  }
 
-/**
- * Aplica la regla de valor: si vacío, usa $130.000 por defecto.
- * @param {string} valorRaw Valor del campo valor a pagar.
- * @returns {string}
- */
-function aplicarReglasValor(valorRaw) {
-  return valorRaw.trim() !== "" ? valorRaw.trim() : VALOR_POR_DEFECTO;
+  filas.forEach((p, i) => {
+    const estado   = estados[p.id] || "Pendiente";
+    const rutaFoto = buscarFotoProducto(p.producto);
+    const tr       = document.createElement("tr");
+
+    tr.innerHTML = `
+      <td class="td-num">${i + 1}</td>
+      <td>
+        <div class="td-producto">
+          <img class="prod-thumb" src="${rutaFoto}" alt="${p.producto}" loading="lazy">
+          <div class="prod-info">
+            <div class="prod-nombre">${p.producto || "—"}</div>
+            <div class="prod-modelo">Ref. #${String(p.id + 1).padStart(2,"0")}</div>
+          </div>
+        </div>
+      </td>
+      <td>${p.nombre || "—"}</td>
+      <td>${p.telefonoMensaje || "—"}</td>
+      <td>${p.talla || "—"}</td>
+      <td>
+        <div class="td-ciudad">
+          <div class="ciudad-nombre">${p.ciudad || "—"}</div>
+          <div class="ciudad-depto">${p.departamento}</div>
+        </div>
+      </td>
+      <td>${p.valor}</td>
+      <td>
+        <span class="badge-estado ${claseEstado(estado)}" data-id="${p.id}">${estado}</span>
+      </td>
+      <td>
+        <div class="td-acciones">
+          <button class="btn-accion btn-accion-wa" data-id="${p.id}" title="Enviar por WhatsApp" aria-label="WhatsApp">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          </button>
+          <button class="btn-accion btn-accion-ver" data-id="${p.id}" title="Ver detalle" aria-label="Ver detalle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll(".badge-estado").forEach(badge => {
+    badge.addEventListener("click", () => ciclarEstado(Number(badge.dataset.id), badge));
+  });
+  tbody.querySelectorAll(".btn-accion-wa").forEach(btn => {
+    btn.addEventListener("click", () => abrirWhatsApp(Number(btn.dataset.id)));
+  });
+  tbody.querySelectorAll(".btn-accion-ver").forEach(btn => {
+    btn.addEventListener("click", () => abrirModal(Number(btn.dataset.id)));
+  });
 }
 
 /* ================================================================
-   TAREA 09 — Regla de talla / género
+   ESTADO DE PEDIDOS
    ================================================================ */
+const CICLO_ESTADOS = ["Pendiente", "Confirmado", "No confirma", "Cancelado"];
 
-/**
- * Aplica la regla de género a la talla ingresada:
- * - Si contiene indicador de género → dejar tal cual.
- * - Si NO está vacía y NO tiene indicador → agregar GENERO_POR_DEFECTO al final.
- * - Si está vacía → dejar en blanco.
- * @param {string} tallaRaw Valor del campo talla.
- * @returns {string}
- */
-function aplicarReglasTalla(tallaRaw) {
-  const talla = tallaRaw.trim();
+function ciclarEstado(id, badge) {
+  const actual = estados[id] || "Pendiente";
+  const nuevo  = CICLO_ESTADOS[(CICLO_ESTADOS.indexOf(actual) + 1) % CICLO_ESTADOS.length];
+  estados[id]  = nuevo;
+  guardarEstados();
+  badge.textContent = nuevo;
+  badge.className   = "badge-estado " + claseEstado(nuevo);
+}
 
-  // Caso: campo vacío — no asumir género
-  if (talla === "") {
-    return "";
-  }
+function claseEstado(estado) {
+  const m = {
+    "Pendiente":   "estado-pendiente",
+    "Confirmado":  "estado-confirmado",
+    "No confirma": "estado-no-confirma",
+    "Cancelado":   "estado-cancelado",
+  };
+  return m[estado] || "estado-pendiente";
+}
 
-  // Comprobar si ya contiene algún indicador de género (sin importar mayúsculas)
-  const tallaMin = talla.toLowerCase();
-  const tieneGenero = INDICADORES_GENERO.some(indicador => tallaMin.includes(indicador));
+function cargarEstados() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; }
+  catch { return {}; }
+}
 
-  if (tieneGenero) {
-    // Ya tiene indicador de género — devolver tal cual
-    return talla;
-  }
-
-  // No tiene indicador de género → agregar el género por defecto al final
-  return talla + " " + GENERO_POR_DEFECTO;
+function guardarEstados() {
+  localStorage.setItem(LS_KEY, JSON.stringify(estados));
 }
 
 /* ================================================================
-   TAREA 10 — Generación del mensaje con la plantilla exacta
-   Sin líneas en blanco entre campos.
+   BÚSQUEDA Y FILTROS
    ================================================================ */
+function initBuscar() {
+  document.getElementById("input-buscar").addEventListener("input", aplicarFiltros);
+}
 
-/**
- * Construye el mensaje de confirmación usando la plantilla exacta del proyecto.
- * @param {Object} datos Objeto con los campos procesados del pedido.
- * @returns {string} Mensaje listo para copiar/enviar.
- */
-function generarMensaje(datos) {
-  /* Plantilla EXACTA definida en CLAUDE.md — no modificar el formato */
+function initFiltros() {
+  document.getElementById("btn-filtros").addEventListener("click", () => {
+    const panel = document.getElementById("panel-filtros");
+    panel.style.display = panel.style.display === "none" ? "block" : "none";
+  });
+  document.getElementById("filtro-estado").addEventListener("change", aplicarFiltros);
+}
+
+function aplicarFiltros() {
+  const q      = document.getElementById("input-buscar").value.toLowerCase().trim();
+  const estado = document.getElementById("filtro-estado").value;
+
+  const filtrados = pedidos.filter(p => {
+    const matchQ = !q || [p.nombre, p.producto, p.telefonoMensaje, p.ciudad]
+      .some(v => v && v.toLowerCase().includes(q));
+    const matchE = !estado || (estados[p.id] || "Pendiente") === estado;
+    return matchQ && matchE;
+  });
+
+  renderizarTabla(filtrados);
+}
+
+/* ================================================================
+   WHATSAPP
+   ================================================================ */
+function abrirWhatsApp(id) {
+  const p   = pedidos[id];
+  const url = "https://wa.me/" + p.telefonoWhatsApp + "?text=" + encodeURIComponent(generarMensaje(p));
+  window.open(url, "_blank");
+}
+
+/* ================================================================
+   MODAL DE DETALLE
+   ================================================================ */
+function initModal() {
+  document.getElementById("modal-cerrar").addEventListener("click", cerrarModal);
+  document.getElementById("modal-overlay").addEventListener("click", (e) => {
+    if (e.target === document.getElementById("modal-overlay")) cerrarModal();
+  });
+
+  document.getElementById("modal-btn-copiar").addEventListener("click", () => {
+    const ta  = document.getElementById("modal-mensaje");
+    const btn = document.getElementById("modal-btn-copiar");
+    navigator.clipboard?.writeText(ta.value).then(() => {
+      const orig = btn.textContent;
+      btn.textContent = "¡Copiado! ✓";
+      setTimeout(() => btn.textContent = orig, 2000);
+    }).catch(() => { ta.select(); document.execCommand("copy"); });
+  });
+
+  document.getElementById("modal-btn-whatsapp").addEventListener("click", () => {
+    const id = Number(document.getElementById("modal-overlay").dataset.pedidoId);
+    descargarFoto(buscarFotoProducto(pedidos[id].producto));
+    abrirWhatsApp(id);
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") cerrarModal();
+  });
+}
+
+function abrirModal(id) {
+  const p        = pedidos[id];
+  const rutaFoto = buscarFotoProducto(p.producto);
+
+  document.getElementById("modal-producto").textContent         = p.producto || "Sin nombre";
+  document.getElementById("modal-img").src                      = rutaFoto;
+  document.getElementById("modal-descarga").href                = rutaFoto;
+  document.getElementById("modal-mensaje").value                = generarMensaje(p);
+  document.getElementById("modal-overlay").dataset.pedidoId     = id;
+  document.getElementById("modal-overlay").style.display        = "flex";
+  document.body.style.overflow = "hidden";
+}
+
+function cerrarModal() {
+  document.getElementById("modal-overlay").style.display = "none";
+  document.body.style.overflow = "";
+}
+
+function descargarFoto(src) {
+  const a = document.createElement("a");
+  a.href = src; a.download = "";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+/* ================================================================
+   GENERACIÓN DEL MENSAJE (plantilla exacta del proyecto)
+   ================================================================ */
+function generarMensaje(p) {
   return (
     "Hola 😊 te saluda Lilibeth. Tu pedido ya está listo para despacho 🚚✨ Por favor confirma que estos datos estén correctos:\n" +
-    "Nombre: "             + datos.nombre    + "\n" +
-    "Teléfono: "           + datos.telefono  + "\n" +
-    "Dirección: "          + datos.direccion + "\n" +
-    "Ciudad: "             + datos.ciudad    + "\n" +
-    "Departamento: "       + datos.departamento + "\n" +
-    "Correo: "             + datos.correo    + "\n" +
-    "Talla: "              + datos.talla     + "\n" +
-    "Nombre del Producto: "+ datos.producto  + "\n" +
-    "Valor a pagar: "      + datos.valor     + "\n" +
+    "Nombre: "              + p.nombre          + "\n" +
+    "Teléfono: "            + p.telefonoMensaje + "\n" +
+    "Dirección: "           + p.direccion       + "\n" +
+    "Ciudad: "              + p.ciudad          + "\n" +
+    "Departamento: "        + p.departamento    + "\n" +
+    "Correo: "              + p.correo          + "\n" +
+    "Talla: "               + p.talla           + "\n" +
+    "Nombre del Producto: " + p.producto        + "\n" +
+    "Valor a pagar: "       + p.valor           + "\n" +
     "✅ Si todo está correcto responde: CONFIRMO\n" +
     "✏️ Si deseas corregir algún dato, escríbelo en este chat.\n" +
     "🚚 Una vez confirmado, tu pedido será despachado en las próximas 24 horas."
@@ -151,363 +350,29 @@ function generarMensaje(datos) {
 }
 
 /* ================================================================
-   TAREA 11 — Búsqueda de foto del producto en el catálogo
+   REGLAS DE NEGOCIO
    ================================================================ */
+function normalizarTelefono(raw) {
+  const digits = raw.replace(/\D/g, "");
+  const d10 = digits.length === 12 && digits.startsWith("57") ? digits.slice(2) : digits;
+  return { telefonoMensaje: "+57" + d10, telefonoWhatsApp: "57" + d10 };
+}
 
-/**
- * Busca el producto en el catálogo de forma case-insensitive y trim-safe.
- * @param {string} nombreProducto Nombre ingresado por el operador.
- * @returns {string} Ruta de la imagen (catálogo o placeholder).
- */
-function buscarFotoProducto(nombreProducto) {
-  // Normalizar la búsqueda: minúsculas y sin espacios sobrantes
-  const busqueda = nombreProducto.trim().toLowerCase();
+function aplicarReglasTalla(raw) {
+  const t = raw.trim();
+  if (!t) return "";
+  if (INDICADORES_GENERO.some(g => t.toLowerCase().includes(g))) return t;
+  return t + " " + GENERO_POR_DEFECTO;
+}
 
-  // Recorrer las claves del catálogo normalizando también cada clave al comparar
+/* ================================================================
+   CATÁLOGO — foto del producto
+   ================================================================ */
+function buscarFotoProducto(nombre) {
+  if (!nombre) return "img/placeholder.png";
+  const q = nombre.trim().toLowerCase();
   for (const clave of Object.keys(CATALOGO)) {
-    if (clave.trim().toLowerCase() === busqueda) {
-      return CATALOGO[clave];   // encontrado — devolver ruta real
-    }
+    if (clave.trim().toLowerCase() === q) return CATALOGO[clave];
   }
-
-  // No encontrado — usar imagen placeholder
   return "img/placeholder.png";
 }
-
-/* ================================================================
-   TAREA 15 — Validación básica del formulario
-   ================================================================ */
-
-/**
- * Valida que los campos obligatorios no estén vacíos.
- * Muestra u oculta el mensaje de error según el resultado.
- * @param {Object} campos Objeto con los valores del formulario.
- * @returns {boolean} true si la validación pasa, false si hay errores.
- */
-function validarCamposObligatorios(campos) {
-  const obligatorios = [
-    { clave: "nombre",       etiqueta: "Nombre" },
-    { clave: "telefono",     etiqueta: "Teléfono" },
-    { clave: "direccion",    etiqueta: "Dirección" },
-    { clave: "ciudad",       etiqueta: "Ciudad" },
-    { clave: "departamento", etiqueta: "Departamento" },
-    { clave: "producto",     etiqueta: "Nombre del Producto" },
-  ];
-
-  const faltantes = obligatorios
-    .filter(c => campos[c.clave].trim() === "")
-    .map(c => c.etiqueta);
-
-  const divError = document.getElementById("error-msg");
-
-  if (faltantes.length > 0) {
-    // Mostrar cuáles campos faltan
-    divError.textContent = "Por favor completa los siguientes campos: " + faltantes.join(", ") + ".";
-    divError.classList.add("visible");
-    divError.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    return false;
-  }
-
-  // Sin errores — ocultar el div de error
-  divError.textContent = "";
-  divError.classList.remove("visible");
-  return true;
-}
-
-/* ================================================================
-   TAREA 12 — Botón "Copiar mensaje"
-   ================================================================ */
-
-/**
- * Inicializa el listener del botón copiar.
- */
-function iniciarBotonCopiar() {
-  const btnCopiar = document.getElementById("btn-copiar");
-
-  btnCopiar.addEventListener("click", function () {
-    const textoMensaje = document.getElementById("texto-mensaje").value;
-
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      // API de portapapeles moderna
-      navigator.clipboard.writeText(textoMensaje).then(function () {
-        mostrarFeedbackCopiado(btnCopiar);
-      }).catch(function () {
-        // Fallback si el usuario rechaza el permiso de portapapeles
-        copiarConFallback(textoMensaje, btnCopiar);
-      });
-    } else {
-      // Fallback para navegadores sin Clipboard API
-      copiarConFallback(textoMensaje, btnCopiar);
-    }
-  });
-}
-
-/**
- * Muestra "¡Copiado! ✓" en el botón por 2 segundos y restaura el texto original.
- * @param {HTMLButtonElement} btn
- */
-function mostrarFeedbackCopiado(btn) {
-  const textoOriginal = btn.textContent;
-  btn.textContent = "¡Copiado! ✓";
-  setTimeout(function () {
-    btn.textContent = textoOriginal;
-  }, 2000);
-}
-
-/**
- * Fallback para copiar usando el método execCommand (navegadores antiguos).
- * @param {string} texto
- * @param {HTMLButtonElement} btn
- */
-function copiarConFallback(texto, btn) {
-  try {
-    const textarea = document.getElementById("texto-mensaje");
-    textarea.select();
-    document.execCommand("copy");
-    mostrarFeedbackCopiado(btn);
-  } catch (e) {
-    // Si todo falla, instruir al usuario manualmente
-    alert("No se pudo copiar automáticamente. Selecciona el texto del mensaje y presiona Ctrl+C (o Cmd+C en Mac).");
-  }
-}
-
-/* ================================================================
-   TAREA 13 — Botón "Enviar a cliente"
-   Descarga la foto Y abre WhatsApp con el mensaje codificado.
-   ================================================================ */
-
-/**
- * Inicializa el listener del botón "Enviar a cliente".
- * Las variables de estado (telefonoWhatsApp, mensajeActual) se manejan en el cierre del módulo.
- */
-function iniciarBotonEnviar() {
-  const btnEnviar = document.getElementById("btn-enviar");
-
-  btnEnviar.addEventListener("click", function () {
-    // Leer el estado actual guardado en los elementos del DOM
-    const imgProducto  = document.getElementById("img-producto");
-    const textoMensaje = document.getElementById("texto-mensaje");
-
-    // Acción 1 — Descargar la foto del producto
-    descargarFoto(imgProducto.src);
-
-    // Acción 2 — Abrir WhatsApp con el mensaje codificado
-    const telefonoWhatsApp = btnEnviar.dataset.telefono; // guardado al generar el mensaje
-    const mensaje          = textoMensaje.value;
-    const urlWhatsApp = "https://wa.me/" + telefonoWhatsApp + "?text=" + encodeURIComponent(mensaje);
-    window.open(urlWhatsApp, "_blank");
-  });
-}
-
-/**
- * Descarga la imagen del producto mediante un <a download> temporal.
- * @param {string} srcImagen URL de la imagen a descargar.
- */
-function descargarFoto(srcImagen) {
-  // Actualizar el enlace de descarga visible (fallback)
-  const linkDescarga = document.getElementById("link-descarga");
-  linkDescarga.href = srcImagen;
-
-  // Crear elemento <a> temporal para la descarga programática
-  const enlace = document.createElement("a");
-  enlace.href = srcImagen;
-  enlace.download = "";        // el navegador deduce el nombre del archivo
-  document.body.appendChild(enlace);
-  enlace.click();
-  document.body.removeChild(enlace);
-}
-
-/* ================================================================
-   TAREA 14 — Botón "Nuevo pedido"
-   ================================================================ */
-
-/**
- * Inicializa el listener del botón "Nuevo pedido".
- */
-function iniciarBotonNuevo() {
-  const btnNuevo = document.getElementById("btn-nuevo");
-
-  btnNuevo.addEventListener("click", function () {
-    // Limpiar el formulario (todos los campos vuelven a su valor por defecto)
-    const formulario = document.getElementById("form-pedido");
-    formulario.reset();
-
-    // Ocultar la sección de vista previa
-    const seccionPreview = document.getElementById("seccion-preview");
-    seccionPreview.style.display = "none";
-
-    // Ocultar posible mensaje de error
-    const divError = document.getElementById("error-msg");
-    divError.textContent = "";
-    divError.classList.remove("visible");
-
-    // Ocultar aviso de mensaje largo
-    const avisoLargo = document.getElementById("aviso-largo");
-    avisoLargo.textContent = "";
-    avisoLargo.classList.remove("visible");
-
-    // Limpiar el textarea y la imagen
-    document.getElementById("texto-mensaje").value = "";
-    document.getElementById("img-producto").src = "img/placeholder.png";
-
-    // Subir al inicio y enfocar el primer campo
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    document.getElementById("input-nombre").focus();
-  });
-}
-
-/* ================================================================
-   TAREA 16 — Poblar el datalist de productos desde el catálogo
-   ================================================================ */
-
-/**
- * Llena el datalist #lista-productos con las claves de CATALOGO.
- * Se ejecuta al cargar el DOM para que las sugerencias estén disponibles
- * desde el primer momento.
- */
-function poblarDatalist() {
-  const datalist = document.getElementById("lista-productos");
-
-  // Limpiar el datalist por si se llama más de una vez
-  datalist.innerHTML = "";
-
-  // Agregar una <option> por cada producto del catálogo
-  Object.keys(CATALOGO).forEach(function (nombreProducto) {
-    const opcion = document.createElement("option");
-    opcion.value = nombreProducto;   // capitalización original
-    datalist.appendChild(opcion);
-  });
-}
-
-/* ================================================================
-   TAREA 20 — Advertencia de mensaje demasiado largo
-   ================================================================ */
-
-/**
- * Verifica la longitud del mensaje y muestra u oculta el aviso correspondiente.
- * El límite de seguridad es 1900 caracteres (margen antes del límite de WhatsApp).
- * @param {string} mensaje Texto del mensaje generado.
- */
-function verificarLongitudMensaje(mensaje) {
-  const LIMITE = 1900;
-  const avisoLargo = document.getElementById("aviso-largo");
-
-  if (mensaje.length > LIMITE) {
-    avisoLargo.textContent =
-      "⚠️ El mensaje es muy largo (" + mensaje.length + " caracteres). Puede que WhatsApp lo trunque. " +
-      "Considera acortar la dirección o el nombre del producto.";
-    avisoLargo.classList.add("visible");
-  } else {
-    avisoLargo.textContent = "";
-    avisoLargo.classList.remove("visible");
-  }
-}
-
-/* ================================================================
-   PUNTO DE ENTRADA — Listener al botón "Generar mensaje"
-   Orquesta todas las reglas de negocio (TAREAS 07–11, 15, 20)
-   ================================================================ */
-
-/**
- * Inicializa el listener principal del botón "Generar mensaje".
- */
-function iniciarBotonGenerar() {
-  const btnGenerar = document.getElementById("btn-generar");
-
-  btnGenerar.addEventListener("click", function () {
-    // ── Paso 1: Recolectar valores del formulario ──────────────────
-    const campos = {
-      nombre:      document.getElementById("input-nombre").value,
-      telefono:    document.getElementById("input-telefono").value,
-      direccion:   document.getElementById("input-direccion").value,
-      ciudad:      document.getElementById("input-ciudad").value,
-      departamento:document.getElementById("input-departamento").value,
-      correo:      document.getElementById("input-correo").value,
-      talla:       document.getElementById("input-talla").value,
-      producto:    document.getElementById("input-producto").value,
-      valor:       document.getElementById("input-valor").value,
-    };
-
-    // ── Paso 2 (TAREA 15): Validar campos obligatorios ────────────
-    const esValido = validarCamposObligatorios(campos);
-    if (!esValido) {
-      // Ocultar preview si había un mensaje previo
-      document.getElementById("seccion-preview").style.display = "none";
-      return;   // detener si faltan campos obligatorios
-    }
-
-    // ── Paso 2a (TAREA 07): Normalizar teléfono ───────────────────
-    const { telefonoMensaje, telefonoWhatsApp, valido: telefonoValido } = normalizarTelefono(campos.telefono);
-
-    if (!telefonoValido) {
-      // Teléfono con menos de 10 dígitos útiles — mostrar aviso y deshabilitar envío
-      const divError = document.getElementById("error-msg");
-      divError.textContent = "El teléfono ingresado no es válido. Debe tener al menos 10 dígitos.";
-      divError.classList.add("visible");
-      document.getElementById("seccion-preview").style.display = "none";
-      return;
-    }
-
-    // ── Paso 2b (TAREA 08): Reglas de correo y valor ──────────────
-    const correo  = aplicarReglasCorreo(campos.correo);
-    const valor   = aplicarReglasValor(campos.valor);
-
-    // ── Paso 2c (TAREA 09): Regla de talla / género ───────────────
-    const talla = aplicarReglasTalla(campos.talla);
-
-    // ── Paso 3 (TAREA 11): Buscar foto del producto ───────────────
-    const rutaFoto = buscarFotoProducto(campos.producto);
-    const imgProducto = document.getElementById("img-producto");
-    imgProducto.src = rutaFoto;
-
-    // Actualizar también el enlace de descarga fallback
-    const linkDescarga = document.getElementById("link-descarga");
-    linkDescarga.href = rutaFoto;
-
-    // ── Paso 4 (TAREA 10): Generar el mensaje con la plantilla ────
-    const datosProcessados = {
-      nombre:      campos.nombre.trim(),
-      telefono:    telefonoMensaje,          // con +57 para el cuerpo del mensaje
-      direccion:   campos.direccion.trim(),
-      ciudad:      campos.ciudad.trim(),
-      departamento:campos.departamento.trim(),
-      correo:      correo,
-      talla:       talla,
-      producto:    campos.producto.trim(),
-      valor:       valor,
-    };
-
-    const mensaje = generarMensaje(datosProcessados);
-
-    // ── Paso 5: Mostrar el mensaje en el textarea ─────────────────
-    const textoMensaje = document.getElementById("texto-mensaje");
-    textoMensaje.value = mensaje;
-
-    // ── Paso 6 (TAREA 20): Verificar longitud del mensaje ─────────
-    verificarLongitudMensaje(mensaje);
-
-    // ── Paso 7: Guardar teléfono para el botón "Enviar a cliente" ─
-    // Se almacena como dataset en el botón enviar para acceso posterior
-    document.getElementById("btn-enviar").dataset.telefono = telefonoWhatsApp;
-
-    // ── Paso 8: Mostrar la sección de preview ─────────────────────
-    const seccionPreview = document.getElementById("seccion-preview");
-    seccionPreview.style.display = "block";
-    seccionPreview.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
-}
-
-/* ================================================================
-   INICIALIZACIÓN — se ejecuta cuando el DOM está completamente cargado
-   (TAREA 16: poblar datalist; TAREAS 12–14: iniciar botones)
-   ================================================================ */
-document.addEventListener("DOMContentLoaded", function () {
-  // Poblar el datalist con los productos del catálogo (TAREA 16)
-  poblarDatalist();
-
-  // Iniciar los listeners de los botones de acción
-  iniciarBotonGenerar();   // TAREAS 07–11, 15, 20
-  iniciarBotonCopiar();    // TAREA 12
-  iniciarBotonEnviar();    // TAREA 13
-  iniciarBotonNuevo();     // TAREA 14
-});
