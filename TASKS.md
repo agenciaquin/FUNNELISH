@@ -33,7 +33,7 @@ Crear el directorio `img\` dentro de la raíz del proyecto y colocar en él una 
 
 ---
 
-### TAREA 02 — Crear `index.html` con estructura base
+### TAREA 02 ✅ — Crear `index.html` con estructura base
 
 **Descripción**
 Crear el archivo `index.html` con:
