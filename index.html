@@ -16,7 +16,63 @@
   <main>
     <!-- Sección 1: Formulario de datos del pedido -->
     <section id="seccion-formulario">
-      <!-- El formulario se agrega en TAREA 03 -->
+
+      <!-- Área de mensajes de error de validación -->
+      <div id="error-msg" role="alert" aria-live="assertive"></div>
+
+      <form id="form-pedido" novalidate>
+
+        <div class="campo">
+          <label for="input-nombre">Nombre</label>
+          <input type="text" id="input-nombre" name="nombre" placeholder="Nombre completo del cliente" required>
+        </div>
+
+        <div class="campo">
+          <label for="input-telefono">Teléfono</label>
+          <input type="tel" id="input-telefono" name="telefono" placeholder="Ej: 3001234567 o +573001234567" required>
+        </div>
+
+        <div class="campo">
+          <label for="input-direccion">Dirección</label>
+          <input type="text" id="input-direccion" name="direccion" placeholder="Dirección de envío" required>
+        </div>
+
+        <div class="campo">
+          <label for="input-ciudad">Ciudad</label>
+          <input type="text" id="input-ciudad" name="ciudad" placeholder="Ciudad de destino" required>
+        </div>
+
+        <div class="campo">
+          <label for="input-departamento">Departamento</label>
+          <input type="text" id="input-departamento" name="departamento" placeholder="Departamento" required>
+        </div>
+
+        <div class="campo">
+          <label for="input-correo">Correo <span class="opcional">(opcional)</span></label>
+          <input type="email" id="input-correo" name="correo" placeholder="correo@ejemplo.com">
+        </div>
+
+        <div class="campo">
+          <label for="input-talla">Talla <span class="opcional">(opcional)</span></label>
+          <input type="text" id="input-talla" name="talla" placeholder="Ej: M, L Mujer, XL Caballero">
+        </div>
+
+        <div class="campo">
+          <label for="input-producto">Nombre del Producto</label>
+          <!-- list apunta al datalist que se poblará desde app.js -->
+          <input type="text" id="input-producto" name="producto" list="lista-productos" placeholder="Nombre exacto del producto" required>
+          <datalist id="lista-productos"></datalist>
+        </div>
+
+        <div class="campo">
+          <label for="input-valor">Valor a pagar <span class="opcional">(opcional)</span></label>
+          <input type="text" id="input-valor" name="valor" placeholder="Ej: $130.000">
+        </div>
+
+        <button type="button" id="btn-generar">Generar mensaje</button>
+
+      </form>
+
     </section>
 
     <!-- Sección 2: Vista previa del mensaje y foto del producto -->

@@ -51,7 +51,7 @@ Crear el archivo `index.html` con:
 
 ---
 
-### TAREA 03 — Agregar el formulario completo en `index.html`
+### TAREA 03 ✅ — Agregar el formulario completo en `index.html`
 
 **Descripción**
 Dentro de `<section id="seccion-formulario">`, agregar un `<form id="form-pedido">` con los siguientes campos (en orden):
