@@ -381,7 +381,7 @@ Agregar en `styles.css` los estilos específicos para la sección de preview que
 
 ---
 
-### TAREA 18 — Prueba de integración completa y correcciones finales
+### TAREA 18 ✅ — Prueba de integración completa y correcciones finales
 
 **Descripción**
 Ejecutar el flujo completo de punta a punta y verificar todos los criterios globales:
