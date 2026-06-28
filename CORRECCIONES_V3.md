@@ -1,3 +1,43 @@
+# ConfirmaYa — Corrección V3: Imágenes de productos
+
+Reemplaza **`catalogo.js`** y **`app.js`** completos.
+
+---
+
+## `catalogo.js` — versión completa
+
+```js
+/* ================================================================
+   ConfirmaYa — KLIXMANT
+   catalogo.js — Catálogo de productos KLIXMANT
+   IMPORTANTE: La clave debe coincidir exactamente con el
+   "Product Name" que exporta Funnelish (case-insensitive).
+   Rutas con %20 para compatibilidad con GitHub Pages y navegadores.
+   ================================================================ */
+
+const CATALOGO = {
+  "NEGRO CO FRANJA 2026":        "img/NEGRO%20CO%20FRANJA%202026.jpg",
+  "BLANCO CO FRANJA 2026":       "img/BLANCO%20CO%20FRANJA%202026.jpg",
+  "BEIGE CO FRANJA 2026":        "img/BEIGE%20CO%20FRANJA%202026.jpg",
+  "ROJO CO FRANJA 2026":         "img/ROJO%20CO%20FRANJA%202026.jpg",
+  "BM NEGRO ÉLITE 2026":         "img/BM%20NEGRO%20%C3%89LITE%202026.jpg",
+  "BM AMARILLO ÉLITE 2026":      "img/BM%20AMARILLO%20%C3%89LITE%202026.jpg",
+  "BM AZUL OSCURO ÉLITE 2026":   "img/BM%20AZUL%20OSCURO%20%C3%89LITE%202026.jpg",
+  "BM BLANCO MARFIL ÉLITE 2026": "img/BM%20BLANCO%20MARFIL%20%C3%89LITE%202026.jpg",
+  "PROM AMARILLO 1990":          "img/PROM%20AMARILLO%201990.jpg",
+  "PROM NEGRO 1990":             "img/PROM%20NEGRO%201990.jpg",
+  "PROM ROJO 1990":              "img/PROM%20ROJO%201990.jpg",
+  /* Productos pack — usan la imagen del primer color disponible */
+  "PROM PACK X2 1990":           "img/PROM%20AMARILLO%201990.jpg",
+  "PROM PACK 3 1990":            "img/PROM%20AMARILLO%201990.jpg",
+};
+```
+
+---
+
+## `app.js` — versión completa
+
+```js
 /* ================================================================
    ConfirmaYa — KLIXMANT
    app.js — Lógica: Excel → Tabla → WhatsApp
@@ -38,7 +78,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 /* ================================================================
-   CARGA DE EXCEL
+   CARGA DE EXCEL / CSV
    ================================================================ */
 function initUpload() {
   const dropZone  = document.getElementById("drop-zone");
@@ -339,12 +379,12 @@ function abrirModal(id) {
   const p        = pedidos[id];
   const rutaFoto = buscarFotoProducto(p.producto);
 
-  document.getElementById("modal-producto").textContent         = p.producto || "Sin nombre";
-  document.getElementById("modal-img").src                      = rutaFoto;
-  document.getElementById("modal-descarga").href                = rutaFoto;
-  document.getElementById("modal-mensaje").value                = generarMensaje(p);
-  document.getElementById("modal-overlay").dataset.pedidoId     = id;
-  document.getElementById("modal-overlay").style.display        = "flex";
+  document.getElementById("modal-producto").textContent     = p.producto || "Sin nombre";
+  document.getElementById("modal-img").src                  = rutaFoto;
+  document.getElementById("modal-descarga").href            = rutaFoto;
+  document.getElementById("modal-mensaje").value            = generarMensaje(p);
+  document.getElementById("modal-overlay").dataset.pedidoId = id;
+  document.getElementById("modal-overlay").style.display    = "flex";
   document.body.style.overflow = "hidden";
 }
 
@@ -400,8 +440,9 @@ function aplicarReglasTalla(raw) {
    CATÁLOGO — foto del producto
    3 niveles de búsqueda:
    1. Exacta (case-insensitive)
-   2. El catálogo empieza por lo que trae el CSV (ej: "NEGRO CO FRANJA 2026 - ...")
-   3. El CSV empieza por una clave del catálogo (ej: "PROM PACK X2 1990 - ELIGE...")
+   2. El nombre CSV empieza por una clave del catálogo
+      Ej: "PROM  PACK X2 1990 - ELIGE DOS COLORES" → "PROM PACK X2 1990"
+   3. La clave del catálogo empieza por el nombre CSV (truncados)
    ================================================================ */
 function buscarFotoProducto(nombre) {
   if (!nombre) return "img/placeholder.png";
@@ -416,13 +457,12 @@ function buscarFotoProducto(nombre) {
   }
 
   // 2. El nombre del CSV empieza por una clave del catálogo
-  //    Ej: "PROM  PACK X2 1990 - ELIGE DOS COLORES" → "PROM PACK X2 1990"
   for (const clave of Object.keys(CATALOGO)) {
     const k = clave.trim().replace(/\s+/g, " ").toLowerCase();
     if (q.startsWith(k)) return CATALOGO[clave];
   }
 
-  // 3. La clave del catálogo empieza por el nombre del CSV (raro, pero cubre truncados)
+  // 3. La clave del catálogo empieza por el nombre del CSV
   for (const clave of Object.keys(CATALOGO)) {
     const k = clave.trim().replace(/\s+/g, " ").toLowerCase();
     if (k.startsWith(q)) return CATALOGO[clave];
@@ -430,3 +470,15 @@ function buscarFotoProducto(nombre) {
 
   return "img/placeholder.png";
 }
+```
+
+---
+
+## Qué se corrigió en esta versión
+
+| Problema | Causa | Solución |
+|---|---|---|
+| Imágenes no cargan (cuadro rojo) | Rutas con espacios no válidas en URLs | Rutas cambiadas a `%20` en catálogo |
+| Solo 4 productos en catálogo | Catálogo incompleto | 13 productos agregados (todos los de la carpeta `img`) |
+| Productos tipo "PROM PACK X2 1990 - ELIGE..." no encontraban imagen | Funnelish agrega texto extra al nombre | Matching en 3 niveles: exacto → startsWith → prefijo |
+| Datos del cliente vacíos (Nombre, Dirección, etc.) | Columnas del CSV de Funnelish en inglés no reconocidas | `COL_MAP` actualizado + `First Name` + `Last Name` se combinan |
