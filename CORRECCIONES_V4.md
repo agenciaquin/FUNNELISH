@@ -1,3 +1,71 @@
+# ConfirmaYa — Corrección V4: Botón copiar imagen
+
+Solo hay cambios en **`styles.css`** y **`app.js`**. `catalogo.js` e `index.html` no cambian.
+
+---
+
+## Cambio 1 — `styles.css`
+
+Reemplaza el bloque `.prod-thumb { ... }` con esto (incluye el wrapper y el botón):
+
+```css
+/* Wrapper relativo para overlay del botón copiar */
+.prod-thumb-wrap {
+  position: relative;
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+}
+
+.prod-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  display: block;
+}
+
+/* Botón copiar imagen — overlay sobre el thumbnail */
+.btn-copiar-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.55);
+  border: none;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--tr);
+  letter-spacing: 0.02em;
+}
+
+.prod-thumb-wrap:hover .btn-copiar-img { opacity: 1; }
+
+.btn-copiar-img svg { display: block; }
+
+/* Estado "copiado" */
+.btn-copiar-img.copiado {
+  opacity: 1;
+  background: rgba(39,174,96,0.75);
+}
+```
+
+---
+
+## Cambio 2 — `app.js` completo
+
+```js
 /* ================================================================
    ConfirmaYa — KLIXMANT
    app.js — Lógica: Excel → Tabla → WhatsApp
@@ -38,7 +106,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 /* ================================================================
-   CARGA DE EXCEL
+   CARGA DE EXCEL / CSV
    ================================================================ */
 function initUpload() {
   const dropZone  = document.getElementById("drop-zone");
@@ -84,7 +152,6 @@ function procesarArchivo(file) {
       let wb;
       if (esCSV) {
         const texto = e.target.result;
-        // Detectar separador: si hay más ";" que "," en la primera línea → punto y coma
         const primeraLinea = texto.split("\n")[0];
         const sep = (primeraLinea.split(";").length > primeraLinea.split(",").length) ? ";" : ",";
         wb = XLSX.read(texto, { type: "string", FS: sep });
@@ -120,7 +187,6 @@ function procesarArchivo(file) {
    NORMALIZACIÓN DE FILAS
    ================================================================ */
 function normalizarFila(row, index) {
-  /* Busca el valor de una columna probando múltiples alias en minúsculas */
   const get = (aliases) => {
     const rowLower = {};
     for (const k of Object.keys(row)) rowLower[k.toLowerCase().trim()] = row[k];
@@ -130,7 +196,6 @@ function normalizarFila(row, index) {
     return "";
   };
 
-  // Nombre completo = First Name + Last Name
   const primerNombre = get(COL_MAP.nombre);
   const apellido     = get(COL_MAP.apellido);
   const nombre       = [primerNombre, apellido].filter(Boolean).join(" ") || "—";
@@ -193,7 +258,8 @@ function renderizarTabla(filas) {
             <img class="prod-thumb" src="${rutaFoto}" alt="${p.producto}" loading="lazy">
             <button class="btn-copiar-img" data-foto="${rutaFoto}" title="Copiar imagen">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14">
-                <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                <rect x="9" y="9" width="13" height="13" rx="2"/>
+                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
               </svg>
               Copiar
             </button>
@@ -353,12 +419,12 @@ function abrirModal(id) {
   const p        = pedidos[id];
   const rutaFoto = buscarFotoProducto(p.producto);
 
-  document.getElementById("modal-producto").textContent         = p.producto || "Sin nombre";
-  document.getElementById("modal-img").src                      = rutaFoto;
-  document.getElementById("modal-descarga").href                = rutaFoto;
-  document.getElementById("modal-mensaje").value                = generarMensaje(p);
-  document.getElementById("modal-overlay").dataset.pedidoId     = id;
-  document.getElementById("modal-overlay").style.display        = "flex";
+  document.getElementById("modal-producto").textContent     = p.producto || "Sin nombre";
+  document.getElementById("modal-img").src                  = rutaFoto;
+  document.getElementById("modal-descarga").href            = rutaFoto;
+  document.getElementById("modal-mensaje").value            = generarMensaje(p);
+  document.getElementById("modal-overlay").dataset.pedidoId = id;
+  document.getElementById("modal-overlay").style.display    = "flex";
   document.body.style.overflow = "hidden";
 }
 
@@ -414,17 +480,15 @@ function aplicarReglasTalla(raw) {
    COPIAR IMAGEN AL PORTAPAPELES
    ================================================================ */
 async function copiarImagenAlPortapapeles(rutaFoto, btn) {
-  // Feedback inmediato
   const textoOrig = btn.innerHTML;
 
   try {
     const response = await fetch(rutaFoto);
     const blob     = await response.blob();
 
-    // Asegurarse de que el tipo sea PNG (Clipboard API lo requiere en algunos navegadores)
+    // Clipboard API requiere PNG — convertir si es necesario
     let blobFinal = blob;
     if (!blob.type.startsWith("image/png")) {
-      // Convertir a PNG via canvas
       blobFinal = await convertirAPng(blob);
     }
 
@@ -432,7 +496,6 @@ async function copiarImagenAlPortapapeles(rutaFoto, btn) {
       new ClipboardItem({ "image/png": blobFinal })
     ]);
 
-    // Mostrar ✓ durante 1.5s
     btn.innerHTML = "✓";
     btn.classList.add("copiado");
     setTimeout(() => {
@@ -441,8 +504,8 @@ async function copiarImagenAlPortapapeles(rutaFoto, btn) {
     }, 1500);
 
   } catch (err) {
-    console.warn("No se pudo copiar al portapapeles:", err);
-    // Fallback: abrir imagen en nueva pestaña para que el usuario la copie manualmente
+    console.warn("Portapapeles no disponible:", err);
+    // Fallback: abrir en nueva pestaña
     window.open(rutaFoto, "_blank");
     btn.innerHTML = "↗";
     setTimeout(() => { btn.innerHTML = textoOrig; }, 1500);
@@ -460,7 +523,7 @@ function convertirAPng(blob) {
       canvas.height = img.naturalHeight;
       canvas.getContext("2d").drawImage(img, 0, 0);
       URL.revokeObjectURL(url);
-      canvas.toBlob(b => b ? resolve(b) : reject(new Error("canvas.toBlob falló")), "image/png");
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error("toBlob falló")), "image/png");
     };
     img.onerror = reject;
     img.src = url;
@@ -470,30 +533,21 @@ function convertirAPng(blob) {
 /* ================================================================
    CATÁLOGO — foto del producto
    3 niveles de búsqueda:
-   1. Exacta (case-insensitive)
-   2. El catálogo empieza por lo que trae el CSV (ej: "NEGRO CO FRANJA 2026 - ...")
-   3. El CSV empieza por una clave del catálogo (ej: "PROM PACK X2 1990 - ELIGE...")
+   1. Exacta  2. CSV empieza por clave  3. Clave empieza por CSV
    ================================================================ */
 function buscarFotoProducto(nombre) {
   if (!nombre) return "img/placeholder.png";
 
-  // Normalizar: colapsar espacios múltiples, minúsculas, trim
   const q = nombre.trim().replace(/\s+/g, " ").toLowerCase();
 
-  // 1. Coincidencia exacta
   for (const clave of Object.keys(CATALOGO)) {
     const k = clave.trim().replace(/\s+/g, " ").toLowerCase();
     if (k === q) return CATALOGO[clave];
   }
-
-  // 2. El nombre del CSV empieza por una clave del catálogo
-  //    Ej: "PROM  PACK X2 1990 - ELIGE DOS COLORES" → "PROM PACK X2 1990"
   for (const clave of Object.keys(CATALOGO)) {
     const k = clave.trim().replace(/\s+/g, " ").toLowerCase();
     if (q.startsWith(k)) return CATALOGO[clave];
   }
-
-  // 3. La clave del catálogo empieza por el nombre del CSV (raro, pero cubre truncados)
   for (const clave of Object.keys(CATALOGO)) {
     const k = clave.trim().replace(/\s+/g, " ").toLowerCase();
     if (k.startsWith(q)) return CATALOGO[clave];
@@ -501,3 +555,15 @@ function buscarFotoProducto(nombre) {
 
   return "img/placeholder.png";
 }
+```
+
+---
+
+## Cómo funciona el botón copiar
+
+- **Pasa el cursor** sobre la miniatura del producto → aparece un overlay oscuro con el icono 📋 y "Copiar"
+- **Clic** → copia la imagen al portapapeles → el overlay se pone verde con ✓
+- Luego **Ctrl+V** directamente en WhatsApp Web para pegar la foto
+- Si el navegador no permite copiar imágenes (raro), abre la imagen en una pestaña nueva para copiarla manualmente
+
+> ⚠️ La copia al portapapeles funciona en **Chrome y Edge**. En Firefox puede no estar disponible — en ese caso se abre la imagen en nueva pestaña.
