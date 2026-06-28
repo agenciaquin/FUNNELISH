@@ -425,7 +425,7 @@ Verificar que no hay ninguna ruta absoluta ni dependencia que rompa en GitHub Pa
 
 ---
 
-### TAREA 20 — Advertencia de mensaje demasiado largo
+### TAREA 20 ✅ — Advertencia de mensaje demasiado largo
 
 **Descripción**
 En `app.js`, después de generar el mensaje, calcular su longitud. Si supera 1900 caracteres (margen de seguridad antes del límite de WhatsApp), mostrar un aviso visible en la sección preview (ej: un `<div>` con fondo amarillo/naranja) que diga: "⚠️ El mensaje es muy largo. Puede que WhatsApp lo trunque. Considera acortar la dirección o el nombre del producto."
