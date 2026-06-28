@@ -77,7 +77,36 @@
 
     <!-- Sección 2: Vista previa del mensaje y foto del producto -->
     <section id="seccion-preview">
-      <!-- El contenido se agrega en TAREA 04 -->
+
+      <h2 class="preview-titulo">Vista previa del mensaje</h2>
+
+      <!-- Advertencia cuando el mensaje supera el límite de WhatsApp (TAREA 20) -->
+      <div id="aviso-largo" class="aviso-largo" role="alert" aria-live="polite"></div>
+
+      <!-- Contenedor flex: foto a la izquierda, texto a la derecha (en desktop) -->
+      <div class="preview-contenido">
+
+        <!-- Foto del producto -->
+        <div class="preview-foto">
+          <img id="img-producto" src="img/placeholder.png" alt="Foto del producto">
+          <!-- Enlace de descarga como fallback si el click programático falla -->
+          <a id="link-descarga" class="link-descarga" download>Descargar foto</a>
+        </div>
+
+        <!-- Mensaje generado (solo lectura) -->
+        <div class="preview-mensaje">
+          <textarea id="texto-mensaje" readonly rows="18" aria-label="Mensaje generado para el cliente"></textarea>
+        </div>
+
+      </div>
+
+      <!-- Botones de acción -->
+      <div class="preview-acciones">
+        <button type="button" id="btn-copiar" class="btn-secundario">Copiar mensaje</button>
+        <button type="button" id="btn-enviar" class="btn-primario">Enviar a cliente</button>
+        <button type="button" id="btn-nuevo" class="btn-terciario">Nuevo pedido</button>
+      </div>
+
     </section>
   </main>
 

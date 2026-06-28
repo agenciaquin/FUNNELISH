@@ -79,7 +79,7 @@ Dentro de `<section id="seccion-formulario">`, agregar un `<form id="form-pedido
 
 ---
 
-### TAREA 04 — Agregar la sección de vista previa en `index.html`
+### TAREA 04 ✅ — Agregar la sección de vista previa en `index.html`
 
 **Descripción**
 Dentro de `<section id="seccion-preview">`, agregar:
