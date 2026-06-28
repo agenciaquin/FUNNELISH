@@ -359,7 +359,7 @@ Considerar almacenar las claves con capitalización original y normalizar solo a
 
 ---
 
-### TAREA 17 — Revisar y ajustar estilos de la sección preview
+### TAREA 17 ✅ — Revisar y ajustar estilos de la sección preview
 
 **Descripción**
 Agregar en `styles.css` los estilos específicos para la sección de preview que quizás falten tras las tareas anteriores:
