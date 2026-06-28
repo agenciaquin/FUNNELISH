@@ -1,3 +1,12 @@
+# ConfirmaYa — Corrección V2: Lectura correcta del CSV de Funnelish
+
+Solo necesitas reemplazar **`app.js`**. Los demás archivos no cambian.
+
+---
+
+## `app.js` — versión completa corregida
+
+```js
 /* ================================================================
    ConfirmaYa — KLIXMANT
    app.js — Lógica: Excel → Tabla → WhatsApp
@@ -38,7 +47,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 /* ================================================================
-   CARGA DE EXCEL
+   CARGA DE EXCEL / CSV
    ================================================================ */
 function initUpload() {
   const dropZone  = document.getElementById("drop-zone");
@@ -339,12 +348,12 @@ function abrirModal(id) {
   const p        = pedidos[id];
   const rutaFoto = buscarFotoProducto(p.producto);
 
-  document.getElementById("modal-producto").textContent         = p.producto || "Sin nombre";
-  document.getElementById("modal-img").src                      = rutaFoto;
-  document.getElementById("modal-descarga").href                = rutaFoto;
-  document.getElementById("modal-mensaje").value                = generarMensaje(p);
-  document.getElementById("modal-overlay").dataset.pedidoId     = id;
-  document.getElementById("modal-overlay").style.display        = "flex";
+  document.getElementById("modal-producto").textContent     = p.producto || "Sin nombre";
+  document.getElementById("modal-img").src                  = rutaFoto;
+  document.getElementById("modal-descarga").href            = rutaFoto;
+  document.getElementById("modal-mensaje").value            = generarMensaje(p);
+  document.getElementById("modal-overlay").dataset.pedidoId = id;
+  document.getElementById("modal-overlay").style.display    = "flex";
   document.body.style.overflow = "hidden";
 }
 
@@ -407,3 +416,15 @@ function buscarFotoProducto(nombre) {
   }
   return "img/placeholder.png";
 }
+```
+
+---
+
+## Qué se corrigió en esta versión
+
+| Problema | Causa | Solución |
+|---|---|---|
+| Cliente, dirección, ciudad vacíos | Columnas en inglés no reconocidas | `COL_MAP` actualizado con nombres reales de Funnelish |
+| Nombre aparecía `—` | Funnelish divide en `First Name` y `Last Name` | Se combinan automáticamente |
+| Valor sin formato (`149900`) | No había conversión | Ahora formatea como `$149.900` |
+| CSV con `;` no leía bien | Separador no detectado | Detección automática de `,` vs `;` |
