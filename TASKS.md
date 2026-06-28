@@ -153,7 +153,7 @@ const CATALOGO = {
 
 ---
 
-### TAREA 07 — Implementar en `app.js`: recolección de datos y regla de teléfono
+### TAREA 07 ✅ — Implementar en `app.js`: recolección de datos y regla de teléfono
 
 **Descripción**
 En `app.js`, agregar el listener al botón `#btn-generar`.
@@ -179,7 +179,7 @@ Para cada entrada se generan dos valores: `telefonoMensaje` (con `+`, para el cu
 
 ---
 
-### TAREA 08 — Implementar en `app.js`: regla de correo y regla de valor
+### TAREA 08 ✅ — Implementar en `app.js`: regla de correo y regla de valor
 
 **Descripción**
 Continuar en `app.js` con las otras dos reglas de valor por defecto:
@@ -194,7 +194,7 @@ Continuar en `app.js` con las otras dos reglas de valor por defecto:
 
 ---
 
-### TAREA 09 — Implementar en `app.js`: regla de talla/género
+### TAREA 09 ✅ — Implementar en `app.js`: regla de talla/género
 
 **Descripción**
 Aplicar la regla de género a la talla usando la constante `GENERO_POR_DEFECTO` definida al inicio de `app.js` (ver sección 7.8 del PLAN.md). Los tres casos son:
@@ -215,7 +215,7 @@ Indicadores de género reconocidos (case-insensitive): `dama`, `mujer`, `femenin
 
 ---
 
-### TAREA 10 — Implementar en `app.js`: generación del mensaje con plantilla exacta
+### TAREA 10 ✅ — Implementar en `app.js`: generación del mensaje con plantilla exacta
 
 **Descripción**
 Con los datos procesados, construir el mensaje usando la plantilla exacta de CLAUDE.md.
@@ -249,7 +249,7 @@ Mostrar la sección `#seccion-preview` (quitar `display:none`).
 
 ---
 
-### TAREA 11 — Implementar en `app.js`: búsqueda de foto del producto
+### TAREA 11 ✅ — Implementar en `app.js`: búsqueda de foto del producto
 
 **Descripción**
 Después de generar el mensaje, buscar el nombre del producto en `CATALOGO`:
@@ -264,7 +264,7 @@ Después de generar el mensaje, buscar el nombre del producto en `CATALOGO`:
 
 ---
 
-### TAREA 12 — Implementar en `app.js`: botón "Copiar mensaje"
+### TAREA 12 ✅ — Implementar en `app.js`: botón "Copiar mensaje"
 
 **Descripción**
 Agregar listener al botón `#btn-copiar`:
@@ -278,7 +278,7 @@ Agregar listener al botón `#btn-copiar`:
 
 ---
 
-### TAREA 13 — Implementar en `app.js`: botón "Enviar a cliente"
+### TAREA 13 ✅ — Implementar en `app.js`: botón "Enviar a cliente"
 
 **Descripción**
 Agregar listener al botón `#btn-enviar` que ejecuta DOS acciones:
@@ -300,7 +300,7 @@ Agregar listener al botón `#btn-enviar` que ejecuta DOS acciones:
 
 ---
 
-### TAREA 14 — Implementar en `app.js`: botón "Nuevo pedido"
+### TAREA 14 ✅ — Implementar en `app.js`: botón "Nuevo pedido"
 
 **Descripción**
 Agregar listener al botón `#btn-nuevo`:
@@ -316,7 +316,7 @@ Agregar listener al botón `#btn-nuevo`:
 
 ---
 
-### TAREA 15 — Agregar validación básica del formulario en `app.js`
+### TAREA 15 ✅ — Agregar validación básica del formulario en `app.js`
 
 **Descripción**
 Antes de generar el mensaje, verificar dos niveles de validación:
@@ -340,7 +340,7 @@ Antes de generar el mensaje, verificar dos niveles de validación:
 
 ---
 
-### TAREA 16 — Poblar el datalist de productos desde `catalogo.js`
+### TAREA 16 ✅ — Poblar el datalist de productos desde `catalogo.js`
 
 **Descripción**
 En `app.js`, dentro de un listener `DOMContentLoaded`, poblar el `<datalist id="lista-productos">` dinámicamente con las claves del objeto `CATALOGO`:
