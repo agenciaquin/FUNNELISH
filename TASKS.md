@@ -130,7 +130,7 @@ Crear `styles.css` con:
 
 ---
 
-### TAREA 06 — Crear `catalogo.js` con estructura del catálogo
+### TAREA 06 ✅ — Crear `catalogo.js` con estructura del catálogo
 
 **Descripción**
 Crear `catalogo.js` que define en el scope global el objeto `CATALOGO`:
