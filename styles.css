@@ -1,0 +1,378 @@
+/* ================================================================
+   ConfirmaYa — KLIXMANT
+   styles.css — Identidad visual: negro, dorado y blanco
+   Estilo streetwear premium
+   ================================================================ */
+
+/* ----------------------------------------------------------------
+   Variables de color (paleta del proyecto)
+   ---------------------------------------------------------------- */
+:root {
+  --color-bg:         #0a0a0a;   /* negro profundo — fondo general */
+  --color-surface:    #1a1a1a;   /* negro suave — tarjetas y formulario */
+  --color-gold:       #c9a84c;   /* dorado — acentos y botones primarios */
+  --color-gold-hover: #e8c96b;   /* dorado claro — estado hover */
+  --color-white:      #f5f5f5;   /* blanco suave — texto principal */
+  --color-muted:      #888888;   /* gris — texto secundario y placeholders */
+  --color-border:     #2a2a2a;   /* gris oscuro — bordes de inputs */
+  --color-error:      #e05252;   /* rojo suave — mensajes de error */
+  --color-warning:    #e89c34;   /* naranja — aviso mensaje largo */
+  --border-radius:    8px;
+  --transition:       0.2s ease;
+}
+
+/* ----------------------------------------------------------------
+   Reset básico
+   ---------------------------------------------------------------- */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ----------------------------------------------------------------
+   Estilos base del documento
+   ---------------------------------------------------------------- */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-white);
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* ----------------------------------------------------------------
+   Header
+   ---------------------------------------------------------------- */
+header {
+  text-align: center;
+  padding: 2rem 1rem 1.5rem;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+}
+
+header h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--color-gold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.header-subtitulo {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin-top: 0.25rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* ----------------------------------------------------------------
+   Contenido principal
+   ---------------------------------------------------------------- */
+main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 2rem 1rem 3rem;
+}
+
+/* ----------------------------------------------------------------
+   Sección formulario
+   ---------------------------------------------------------------- */
+#seccion-formulario {
+  background-color: var(--color-surface);
+  border-radius: var(--border-radius);
+  padding: 2rem 1.5rem;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* ----------------------------------------------------------------
+   Mensaje de error de validación
+   ---------------------------------------------------------------- */
+#error-msg {
+  display: none;                /* oculto por defecto, JS lo activa */
+  background-color: rgba(224, 82, 82, 0.12);
+  border: 1px solid var(--color-error);
+  border-radius: var(--border-radius);
+  color: var(--color-error);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+#error-msg.visible {
+  display: block;
+}
+
+/* ----------------------------------------------------------------
+   Campos del formulario
+   ---------------------------------------------------------------- */
+.campo {
+  margin-bottom: 1.25rem;
+}
+
+.campo label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-white);
+  margin-bottom: 0.4rem;
+  letter-spacing: 0.02em;
+}
+
+.campo .opcional {
+  font-weight: 400;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+}
+
+.campo input {
+  width: 100%;
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  color: var(--color-white);
+  font-size: 0.95rem;
+  padding: 0.65rem 0.85rem;
+  transition: border-color var(--transition), box-shadow var(--transition);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.campo input::placeholder {
+  color: var(--color-muted);
+}
+
+/* Borde dorado al enfocar el input */
+.campo input:focus {
+  border-color: var(--color-gold);
+  box-shadow: 0 0 0 2px rgba(201, 168, 76, 0.2);
+}
+
+/* ----------------------------------------------------------------
+   Botones — estilos base compartidos
+   ---------------------------------------------------------------- */
+button {
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: var(--border-radius);
+  border: none;
+  padding: 0.75rem 1.5rem;
+  transition: background-color var(--transition), color var(--transition),
+              border-color var(--transition), opacity var(--transition);
+  letter-spacing: 0.02em;
+}
+
+/* Botón primario: generar / enviar — fondo dorado, texto negro */
+#btn-generar,
+.btn-primario {
+  background-color: var(--color-gold);
+  color: #0a0a0a;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+#btn-generar:hover,
+.btn-primario:hover {
+  background-color: var(--color-gold-hover);
+}
+
+/* Botón secundario: copiar — borde dorado, fondo transparente */
+.btn-secundario {
+  background-color: transparent;
+  color: var(--color-gold);
+  border: 2px solid var(--color-gold);
+}
+
+.btn-secundario:hover {
+  background-color: rgba(201, 168, 76, 0.1);
+}
+
+/* Botón terciario: nuevo pedido — borde gris, texto gris */
+.btn-terciario {
+  background-color: transparent;
+  color: var(--color-muted);
+  border: 2px solid var(--color-border);
+}
+
+.btn-terciario:hover {
+  border-color: var(--color-muted);
+  color: var(--color-white);
+}
+
+/* ----------------------------------------------------------------
+   Sección de vista previa — oculta por defecto
+   ---------------------------------------------------------------- */
+#seccion-preview {
+  display: none;               /* JS la muestra al generar el mensaje */
+  margin-top: 2rem;
+  background-color: var(--color-surface);
+  border-radius: var(--border-radius);
+  padding: 2rem 1.5rem;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+}
+
+.preview-titulo {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-gold);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* ----------------------------------------------------------------
+   Aviso mensaje demasiado largo (TAREA 20)
+   ---------------------------------------------------------------- */
+.aviso-largo {
+  display: none;               /* oculto por defecto */
+  background-color: rgba(232, 156, 52, 0.15);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--border-radius);
+  color: var(--color-warning);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.aviso-largo.visible {
+  display: block;
+}
+
+/* ----------------------------------------------------------------
+   Layout de la vista previa: foto + textarea
+   ---------------------------------------------------------------- */
+.preview-contenido {
+  display: flex;
+  flex-direction: column;      /* apilado vertical por defecto (móvil) */
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+/* En desktop (640px+): foto y textarea lado a lado */
+@media (min-width: 640px) {
+  .preview-contenido {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .preview-foto {
+    flex: 0 0 auto;
+    width: 200px;
+  }
+
+  .preview-mensaje {
+    flex: 1 1 auto;
+  }
+}
+
+/* ----------------------------------------------------------------
+   Foto del producto
+   ---------------------------------------------------------------- */
+.preview-foto {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+#img-producto {
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: var(--border-radius);
+  border: 1px solid var(--color-gold);
+  object-fit: contain;
+  background-color: var(--color-bg);
+}
+
+/* Enlace de descarga como fallback visible */
+.link-descarga {
+  font-size: 0.8rem;
+  color: var(--color-gold);
+  text-decoration: underline;
+  text-align: center;
+}
+
+.link-descarga:hover {
+  color: var(--color-gold-hover);
+}
+
+/* ----------------------------------------------------------------
+   Textarea del mensaje generado
+   ---------------------------------------------------------------- */
+#texto-mensaje {
+  width: 100%;
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  color: var(--color-white);
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  padding: 0.85rem 1rem;
+  resize: vertical;
+  min-height: 280px;
+  outline: none;
+}
+
+/* ----------------------------------------------------------------
+   Botones de acción de la vista previa
+   ---------------------------------------------------------------- */
+.preview-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.preview-acciones button {
+  flex: 1 1 auto;
+  min-width: 140px;
+}
+
+/* ----------------------------------------------------------------
+   Footer
+   ---------------------------------------------------------------- */
+footer {
+  text-align: center;
+  padding: 1.5rem 1rem;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  border-top: 1px solid var(--color-border);
+}
+
+/* ----------------------------------------------------------------
+   Responsive — asegurar sin scroll horizontal en 390px
+   ---------------------------------------------------------------- */
+@media (max-width: 480px) {
+  header h1 {
+    font-size: 1.5rem;
+  }
+
+  #seccion-formulario,
+  #seccion-preview {
+    padding: 1.25rem 1rem;
+  }
+
+  main {
+    padding: 1rem 0.75rem 2rem;
+  }
+
+  .preview-acciones button {
+    min-width: unset;
+    width: 100%;
+  }
+}

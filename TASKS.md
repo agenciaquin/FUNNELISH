@@ -96,7 +96,7 @@ Dentro de `<section id="seccion-preview">`, agregar:
 
 ---
 
-### TAREA 05 — Crear `styles.css` con identidad visual y layout base
+### TAREA 05 ✅ — Crear `styles.css` con identidad visual y layout base
 
 **Descripción**
 Crear `styles.css` con:
