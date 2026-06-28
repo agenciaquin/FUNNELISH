@@ -407,7 +407,7 @@ Corregir cualquier defecto encontrado.
 
 ---
 
-### TAREA 19 — Verificar compatibilidad con GitHub Pages
+### TAREA 19 ✅ — Verificar compatibilidad con GitHub Pages
 
 **Descripción**
 Verificar que no hay ninguna ruta absoluta ni dependencia que rompa en GitHub Pages:
