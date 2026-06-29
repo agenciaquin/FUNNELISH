@@ -46,19 +46,9 @@ function initUpload() {
   const btnSubir  = document.getElementById("btn-subir");
   const btnNueva  = document.getElementById("btn-nueva-carga");
 
-  function abrirExplorador() {
-    inputFile.value = "";   // permite seleccionar el mismo archivo dos veces
-    inputFile.click();
-  }
-
-  btnSubir.addEventListener("click", function(e) {
-    e.stopPropagation();
-    abrirExplorador();
-  });
-
-  dropZone.addEventListener("click", function(e) {
-    if (e.target === btnSubir || e.target === inputFile) return;
-    abrirExplorador();
+  btnSubir.addEventListener("click", () => inputFile.click());
+  dropZone.addEventListener("click", (e) => {
+    if (e.target !== btnSubir) inputFile.click();
   });
 
   dropZone.addEventListener("dragover", (e) => {
