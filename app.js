@@ -46,9 +46,15 @@ function initUpload() {
   const btnSubir  = document.getElementById("btn-subir");
   const btnNueva  = document.getElementById("btn-nueva-carga");
 
-  btnSubir.addEventListener("click", () => inputFile.click());
+  btnSubir.addEventListener("click", (e) => {
+    e.stopPropagation();
+    inputFile.value = "";
+    inputFile.click();
+  });
   dropZone.addEventListener("click", (e) => {
-    if (e.target !== btnSubir) inputFile.click();
+    if (e.target === btnSubir) return;
+    inputFile.value = "";
+    inputFile.click();
   });
 
   dropZone.addEventListener("dragover", (e) => {
