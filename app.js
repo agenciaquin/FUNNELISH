@@ -46,11 +46,19 @@ function initUpload() {
   const btnSubir  = document.getElementById("btn-subir");
   const btnNueva  = document.getElementById("btn-nueva-carga");
 
-  // El label #btn-subir abre el explorador de archivos de forma nativa (sin JS)
-  // Solo necesitamos el clic en la zona para clicks fuera del label
-  dropZone.addEventListener("click", (e) => {
-    if (e.target === btnSubir || e.target === inputFile) return;
+  function abrirExplorador() {
+    inputFile.value = "";   // permite seleccionar el mismo archivo dos veces
     inputFile.click();
+  }
+
+  btnSubir.addEventListener("click", function(e) {
+    e.stopPropagation();
+    abrirExplorador();
+  });
+
+  dropZone.addEventListener("click", function(e) {
+    if (e.target === btnSubir || e.target === inputFile) return;
+    abrirExplorador();
   });
 
   dropZone.addEventListener("dragover", (e) => {
