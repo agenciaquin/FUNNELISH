@@ -495,4 +495,19 @@ function buscarFotoProducto(nombre) {
   for (const clave of Object.keys(CATALOGO)) {
     const k = clave.trim().replace(/\s+/g, " ").toLowerCase();
     if (k === q) return CATALOGO[clave];
-  
+  }
+
+  // 2. El nombre del CSV empieza por una clave del catálogo
+  for (const clave of Object.keys(CATALOGO)) {
+    const k = clave.trim().replace(/\s+/g, " ").toLowerCase();
+    if (q.startsWith(k)) return CATALOGO[clave];
+  }
+
+  // 3. La clave del catálogo empieza por el nombre del CSV
+  for (const clave of Object.keys(CATALOGO)) {
+    const k = clave.trim().replace(/\s+/g, " ").toLowerCase();
+    if (k.startsWith(q)) return CATALOGO[clave];
+  }
+
+  return "img/placeholder.png";
+}
