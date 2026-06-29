@@ -190,17 +190,18 @@ function renderizarTabla(filas) {
       <td>
         <div class="td-producto">
           <div class="prod-thumb-wrap">
-            <img class="prod-thumb" src="${rutaFoto}" alt="${p.producto}" loading="lazy">
-            <button class="btn-copiar-img" data-foto="${rutaFoto}" title="Copiar imagen">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14">
-                <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-              </svg>
-              Copiar
-            </button>
+            <img class="prod-thumb" src="${rutaFoto}" alt="${p.producto}" loading="lazy"
+                 data-foto="${rutaFoto}" title="Clic para copiar imagen">
           </div>
           <div class="prod-info">
             <div class="prod-nombre">${p.producto || "—"}</div>
             <div class="prod-modelo">Ref. #${String(p.id + 1).padStart(2,"0")}</div>
+            <button class="btn-copiar-img" data-foto="${rutaFoto}" title="Copiar imagen">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11">
+                <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+              </svg>
+              Copiar imagen
+            </button>
           </div>
         </div>
       </td>
@@ -244,6 +245,14 @@ function renderizarTabla(filas) {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       copiarImagenAlPortapapeles(btn.dataset.foto, btn);
+    });
+  });
+  // Clic en la imagen también copia (sin abrir nueva pestaña)
+  tbody.querySelectorAll(".prod-thumb").forEach(img => {
+    img.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const btn = img.closest(".td-producto").querySelector(".btn-copiar-img");
+      copiarImagenAlPortapapeles(img.dataset.foto, btn);
     });
   });
 }
@@ -378,7 +387,7 @@ function descargarFoto(src) {
    ================================================================ */
 function generarMensaje(p) {
   return (
-    "Hola 😊 te saluda Lilibeth. Tu pedido ya está listo para despacho 🚚✨ Por favor confirma que estos datos estén correctos:\n" +
+    "Hola, te saluda Lilibeth. Tu pedido ya está listo para despacho. Por favor confirma que estos datos estén correctos:\n" +
     "Nombre: "              + p.nombre          + "\n" +
     "Teléfono: "            + p.telefonoMensaje + "\n" +
     "Dirección: "           + p.direccion       + "\n" +
@@ -388,9 +397,9 @@ function generarMensaje(p) {
     "Talla: "               + p.talla           + "\n" +
     "Nombre del Producto: " + p.producto        + "\n" +
     "Valor a pagar: "       + p.valor           + "\n" +
-    "✅ Si todo está correcto responde: CONFIRMO\n" +
-    "✏️ Si deseas corregir algún dato, escríbelo en este chat.\n" +
-    "🚚 Una vez confirmado, tu pedido será despachado en las próximas 24 horas."
+    "Si todo está correcto responde: CONFIRMO\n" +
+    "Si deseas corregir algún dato, escríbelo en este chat.\n" +
+    "Una vez confirmado, tu pedido será despachado en las próximas 24 horas."
   );
 }
 
@@ -412,28 +421,32 @@ function aplicarReglasTalla(raw) {
 
 /* ================================================================
    COPIAR IMAGEN AL PORTAPAPELES
+   Usa canvas directamente (más fiable que fetch en servidor local)
    ================================================================ */
 async function copiarImagenAlPortapapeles(rutaFoto, btn) {
-  // Feedback inmediato
   const textoOrig = btn.innerHTML;
+  btn.innerHTML = "...";
 
   try {
-    const response = await fetch(rutaFoto);
-    const blob     = await response.blob();
+    // Cargar imagen en un elemento <img> y dibujar en canvas
+    const img = new Image();
+    await new Promise((res, rej) => {
+      img.onload = res;
+      img.onerror = rej;
+      img.src = rutaFoto;
+    });
 
-    // Asegurarse de que el tipo sea PNG (Clipboard API lo requiere en algunos navegadores)
-    let blobFinal = blob;
-    if (!blob.type.startsWith("image/png")) {
-      // Convertir a PNG via canvas
-      blobFinal = await convertirAPng(blob);
-    }
+    const canvas = document.createElement("canvas");
+    canvas.width  = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    canvas.getContext("2d").drawImage(img, 0, 0);
 
-    await navigator.clipboard.write([
-      new ClipboardItem({ "image/png": blobFinal })
-    ]);
+    const blob = await new Promise(res => canvas.toBlob(res, "image/png"));
+    if (!blob) throw new Error("canvas.toBlob falló");
 
-    // Mostrar ✓ durante 1.5s
-    btn.innerHTML = "✓";
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+
+    btn.innerHTML = "✓ Copiada";
     btn.classList.add("copiado");
     setTimeout(() => {
       btn.innerHTML = textoOrig;
@@ -442,29 +455,9 @@ async function copiarImagenAlPortapapeles(rutaFoto, btn) {
 
   } catch (err) {
     console.warn("No se pudo copiar al portapapeles:", err);
-    // Fallback: abrir imagen en nueva pestaña para que el usuario la copie manualmente
-    window.open(rutaFoto, "_blank");
-    btn.innerHTML = "↗";
+    btn.innerHTML = "✕ Error";
     setTimeout(() => { btn.innerHTML = textoOrig; }, 1500);
   }
-}
-
-/** Convierte un blob de imagen a PNG usando un canvas temporal */
-function convertirAPng(blob) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(blob);
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width  = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      canvas.getContext("2d").drawImage(img, 0, 0);
-      URL.revokeObjectURL(url);
-      canvas.toBlob(b => b ? resolve(b) : reject(new Error("canvas.toBlob falló")), "image/png");
-    };
-    img.onerror = reject;
-    img.src = url;
-  });
 }
 
 /* ================================================================
@@ -480,24 +473,13 @@ function buscarFotoProducto(nombre) {
   // Normalizar: colapsar espacios múltiples, minúsculas, trim
   const q = nombre.trim().replace(/\s+/g, " ").toLowerCase();
 
+  // Detección por palabra clave para packs (antes del catálogo)
+  // Captura cualquier variante: "pack x2", "pack 2", "packx2", etc.
+  if (q.includes("pack x2") || q.includes("pack2") || (q.includes("pack") && q.includes("x2"))) return "img/PACK%20X2.jpg";
+  if (q.includes("pack x3") || q.includes("pack3") || (q.includes("pack") && q.includes("x3")) || q.includes("pack 3")) return "img/PACK%20X3.jpg";
+
   // 1. Coincidencia exacta
   for (const clave of Object.keys(CATALOGO)) {
     const k = clave.trim().replace(/\s+/g, " ").toLowerCase();
     if (k === q) return CATALOGO[clave];
-  }
-
-  // 2. El nombre del CSV empieza por una clave del catálogo
-  //    Ej: "PROM  PACK X2 1990 - ELIGE DOS COLORES" → "PROM PACK X2 1990"
-  for (const clave of Object.keys(CATALOGO)) {
-    const k = clave.trim().replace(/\s+/g, " ").toLowerCase();
-    if (q.startsWith(k)) return CATALOGO[clave];
-  }
-
-  // 3. La clave del catálogo empieza por el nombre del CSV (raro, pero cubre truncados)
-  for (const clave of Object.keys(CATALOGO)) {
-    const k = clave.trim().replace(/\s+/g, " ").toLowerCase();
-    if (k.startsWith(q)) return CATALOGO[clave];
-  }
-
-  return "img/placeholder.png";
-}
+  

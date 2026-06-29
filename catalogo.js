@@ -18,7 +18,8 @@ const CATALOGO = {
   "PROM AMARILLO 1990":          "img/PROM%20AMARILLO%201990.jpg",
   "PROM NEGRO 1990":             "img/PROM%20NEGRO%201990.jpg",
   "PROM ROJO 1990":              "img/PROM%20ROJO%201990.jpg",
-  /* Productos pack — usan la imagen del primer color disponible */
-  "PROM PACK X2 1990":           "img/PROM%20AMARILLO%201990.jpg",
-  "PROM PACK 3 1990":            "img/PROM%20AMARILLO%201990.jpg",
+  /* Productos pack — imagen genérica propia */
+  "PROM PACK X2 1990":           "img/PACK%20X2.jpg",
+  "PROM PACK X3 1990":           "img/PACK%20X3.jpg",
+  "PROM PACK 3 1990":            "img/PACK%20X3.jpg",
 };
