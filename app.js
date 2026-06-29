@@ -46,12 +46,10 @@ function initUpload() {
   const btnSubir  = document.getElementById("btn-subir");
   const btnNueva  = document.getElementById("btn-nueva-carga");
 
-  btnSubir.addEventListener("click", (e) => {
-    e.stopPropagation();
-    inputFile.click();
-  });
+  // El label #btn-subir abre el explorador de archivos de forma nativa (sin JS)
+  // Solo necesitamos el clic en la zona para clicks fuera del label
   dropZone.addEventListener("click", (e) => {
-    if (e.target === btnSubir) return;
+    if (e.target === btnSubir || e.target === inputFile) return;
     inputFile.click();
   });
 
@@ -129,7 +127,8 @@ function normalizarFila(row, index) {
     const rowLower = {};
     for (const k of Object.keys(row)) rowLower[k.toLowerCase().trim()] = row[k];
     for (const alias of aliases) {
-      if (rowLower[alias] !== undefined) return String(rowLower[alias]).trim();
+      const val = String(rowLower[alias] ?? "").trim();
+      if (rowLower[alias] !== undefined && val !== "") return val;
     }
     return "";
   };
