@@ -393,14 +393,8 @@ function descargarFoto(src) {
    GENERACIÓN DEL MENSAJE (plantilla exacta del proyecto)
    ================================================================ */
 function generarMensaje(p) {
-  var SMILE    = "😊"; // 😊
-  var TRUCK    = "🚚"; // 🚚
-  var SPARKLES = "✨";       // ✨
-  var CHECK    = "✅";       // ✅
-  var PENCIL   = "✏️"; // ✏️
-
   return (
-    "Hola " + SMILE + " te saluda Lilibeth. Tu pedido ya está listo para despacho " + TRUCK + SPARKLES + " Por favor confirma que estos datos estén correctos:\n" +
+    "Hola, te saluda Lilibeth. Tu pedido ya está listo para despacho. Por favor confirma que estos datos estén correctos:\n" +
     "Nombre: "              + p.nombre          + "\n" +
     "Teléfono: "            + p.telefonoMensaje + "\n" +
     "Dirección: "           + p.direccion       + "\n" +
@@ -410,9 +404,9 @@ function generarMensaje(p) {
     "Talla: "               + p.talla           + "\n" +
     "Nombre del Producto: " + p.producto        + "\n" +
     "Valor a pagar: "       + p.valor           + "\n" +
-    CHECK + " Si todo está correcto responde: CONFIRMO\n" +
-    PENCIL + " Si deseas corregir algún dato, escríbelo en este chat.\n" +
-    TRUCK + " Una vez confirmado, tu pedido será despachado en las próximas 24 horas."
+    "Si todo está correcto responde: CONFIRMO\n" +
+    "Si deseas corregir algún dato, escríbelo en este chat.\n" +
+    "Una vez confirmado, tu pedido será despachado en las próximas 24 horas."
   );
 }
 
