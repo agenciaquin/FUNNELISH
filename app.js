@@ -335,10 +335,14 @@ function initFiltros() {
   });
   document.getElementById("filtro-estado").addEventListener("change", aplicarFiltros);
   document.getElementById("filtro-fecha-desde").addEventListener("change", aplicarFiltros);
+  document.getElementById("filtro-hora-desde").addEventListener("change", aplicarFiltros);
   document.getElementById("filtro-fecha-hasta").addEventListener("change", aplicarFiltros);
+  document.getElementById("filtro-hora-hasta").addEventListener("change", aplicarFiltros);
   document.getElementById("btn-limpiar-fechas").addEventListener("click", () => {
     document.getElementById("filtro-fecha-desde").value = "";
+    document.getElementById("filtro-hora-desde").value = "";
     document.getElementById("filtro-fecha-hasta").value = "";
+    document.getElementById("filtro-hora-hasta").value = "";
     aplicarFiltros();
   });
 }
@@ -346,10 +350,12 @@ function initFiltros() {
 function aplicarFiltros() {
   const q        = document.getElementById("input-buscar").value.toLowerCase().trim();
   const estado   = document.getElementById("filtro-estado").value;
-  const desdeVal = document.getElementById("filtro-fecha-desde").value;
-  const hastaVal = document.getElementById("filtro-fecha-hasta").value;
-  const desde    = desdeVal ? new Date(desdeVal + "T00:00:00") : null;
-  const hasta    = hastaVal ? new Date(hastaVal + "T23:59:59") : null;
+  const desdeVal  = document.getElementById("filtro-fecha-desde").value;
+  const desdeHora = document.getElementById("filtro-hora-desde").value || "00:00";
+  const hastaVal  = document.getElementById("filtro-fecha-hasta").value;
+  const hastaHora = document.getElementById("filtro-hora-hasta").value || "23:59";
+  const desde     = desdeVal ? new Date(desdeVal + "T" + desdeHora + ":00") : null;
+  const hasta     = hastaVal ? new Date(hastaVal + "T" + hastaHora + ":59") : null;
 
   const filtrados = pedidos.filter(p => {
     const matchQ = !q || [p.nombre, p.producto, p.telefonoMensaje, p.ciudad]

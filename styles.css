@@ -280,8 +280,15 @@ main {
   cursor: pointer;
 }
 
-#panel-filtros input[type="date"]::-webkit-calendar-picker-indicator {
+#panel-filtros input[type="date"]::-webkit-calendar-picker-indicator,
+#panel-filtros input[type="time"]::-webkit-calendar-picker-indicator {
   filter: invert(1);
+}
+
+.filtro-fecha-wrap {
+  display: flex;
+  gap: 4px;
+  align-items: center;
 }
 
 .btn-limpiar {

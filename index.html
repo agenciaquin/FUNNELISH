@@ -67,10 +67,16 @@
           </select>
         </label>
         <label>F. creación: Desde
-          <input type="date" id="filtro-fecha-desde">
+          <div class="filtro-fecha-wrap">
+            <input type="date" id="filtro-fecha-desde">
+            <input type="time" id="filtro-hora-desde">
+          </div>
         </label>
         <label>F. creación: Hasta
-          <input type="date" id="filtro-fecha-hasta">
+          <div class="filtro-fecha-wrap">
+            <input type="date" id="filtro-fecha-hasta">
+            <input type="time" id="filtro-hora-hasta">
+          </div>
         </label>
         <button type="button" id="btn-limpiar-fechas" class="btn-limpiar">✕ Limpiar fechas</button>
       </div>
