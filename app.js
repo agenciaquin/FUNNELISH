@@ -334,28 +334,39 @@ function initFiltros() {
     panel.style.display = panel.style.display === "none" ? "flex" : "none";
   });
   document.getElementById("filtro-estado").addEventListener("change", aplicarFiltros);
-  document.getElementById("filtro-fecha-desde").addEventListener("change", aplicarFiltros);
-  document.getElementById("filtro-hora-desde").addEventListener("change", aplicarFiltros);
-  document.getElementById("filtro-fecha-hasta").addEventListener("change", aplicarFiltros);
-  document.getElementById("filtro-hora-hasta").addEventListener("change", aplicarFiltros);
+  ["filtro-fecha-desde","filtro-hora-desde-h","filtro-hora-desde-m","filtro-hora-desde-p",
+   "filtro-fecha-hasta","filtro-hora-hasta-h","filtro-hora-hasta-m","filtro-hora-hasta-p"]
+    .forEach(id => document.getElementById(id).addEventListener("change", aplicarFiltros));
+  ["filtro-hora-desde-h","filtro-hora-desde-m","filtro-hora-hasta-h","filtro-hora-hasta-m"]
+    .forEach(id => document.getElementById(id).addEventListener("input", aplicarFiltros));
   document.getElementById("btn-limpiar-fechas").addEventListener("click", () => {
-    document.getElementById("filtro-fecha-desde").value = "";
-    document.getElementById("filtro-hora-desde").value = "";
-    document.getElementById("filtro-fecha-hasta").value = "";
-    document.getElementById("filtro-hora-hasta").value = "";
+    ["filtro-fecha-desde","filtro-hora-desde-h","filtro-hora-desde-m",
+     "filtro-fecha-hasta","filtro-hora-hasta-h","filtro-hora-hasta-m"]
+      .forEach(id => { document.getElementById(id).value = ""; });
+    document.getElementById("filtro-hora-desde-p").value = "AM";
+    document.getElementById("filtro-hora-hasta-p").value = "AM";
     aplicarFiltros();
   });
+}
+
+function leerHora12(prefijo, porDefecto) {
+  const hRaw = parseInt(document.getElementById("filtro-hora-" + prefijo + "-h").value);
+  const mRaw = parseInt(document.getElementById("filtro-hora-" + prefijo + "-m").value);
+  const p    = document.getElementById("filtro-hora-" + prefijo + "-p").value;
+  if (isNaN(hRaw)) return porDefecto;
+  let h24 = hRaw % 12;
+  if (p === "PM") h24 += 12;
+  const mm = isNaN(mRaw) ? "00" : String(Math.min(mRaw, 59)).padStart(2, "0");
+  return String(h24).padStart(2, "0") + ":" + mm;
 }
 
 function aplicarFiltros() {
   const q        = document.getElementById("input-buscar").value.toLowerCase().trim();
   const estado   = document.getElementById("filtro-estado").value;
   const desdeVal  = document.getElementById("filtro-fecha-desde").value;
-  const desdeHora = document.getElementById("filtro-hora-desde").value || "00:00";
   const hastaVal  = document.getElementById("filtro-fecha-hasta").value;
-  const hastaHora = document.getElementById("filtro-hora-hasta").value || "23:59";
-  const desde     = desdeVal ? new Date(desdeVal + "T" + desdeHora + ":00") : null;
-  const hasta     = hastaVal ? new Date(hastaVal + "T" + hastaHora + ":59") : null;
+  const desde     = desdeVal ? new Date(desdeVal + "T" + leerHora12("desde", "00:00") + ":00") : null;
+  const hasta     = hastaVal ? new Date(hastaVal + "T" + leerHora12("hasta", "23:59") + ":59") : null;
 
   const filtrados = pedidos.filter(p => {
     const matchQ = !q || [p.nombre, p.producto, p.telefonoMensaje, p.ciudad]

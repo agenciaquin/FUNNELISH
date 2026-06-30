@@ -287,9 +287,63 @@ main {
 
 .filtro-fecha-wrap {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   align-items: center;
+  flex-wrap: wrap;
 }
+
+.time-picker {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 6px;
+  height: 34px;
+}
+
+.tp-h, .tp-m {
+  background: transparent;
+  border: none;
+  color: var(--white);
+  font-size: 0.85rem;
+  width: 28px;
+  text-align: center;
+  outline: none;
+  -moz-appearance: textfield;
+  padding: 0;
+}
+
+.tp-h::-webkit-inner-spin-button,
+.tp-h::-webkit-outer-spin-button,
+.tp-m::-webkit-inner-spin-button,
+.tp-m::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+.tp-h::placeholder, .tp-m::placeholder { color: var(--muted); font-size: 0.78rem; }
+
+.tp-sep {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0 1px;
+}
+
+.tp-periodo {
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border);
+  color: var(--gold);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  outline: none;
+  padding: 0 4px;
+  margin-left: 2px;
+  height: 100%;
+}
+
+.tp-periodo option { background: var(--surface2); color: var(--white); }
 
 .btn-limpiar {
   background: transparent;

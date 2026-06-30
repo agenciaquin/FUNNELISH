@@ -69,13 +69,29 @@
         <label>F. creación: Desde
           <div class="filtro-fecha-wrap">
             <input type="date" id="filtro-fecha-desde">
-            <input type="time" id="filtro-hora-desde">
+            <div class="time-picker">
+              <input type="number" id="filtro-hora-desde-h" class="tp-h" min="1" max="12" placeholder="hh">
+              <span class="tp-sep">:</span>
+              <input type="number" id="filtro-hora-desde-m" class="tp-m" min="0" max="59" placeholder="mm">
+              <select id="filtro-hora-desde-p" class="tp-periodo">
+                <option value="AM">AM</option>
+                <option value="PM">PM</option>
+              </select>
+            </div>
           </div>
         </label>
         <label>F. creación: Hasta
           <div class="filtro-fecha-wrap">
             <input type="date" id="filtro-fecha-hasta">
-            <input type="time" id="filtro-hora-hasta">
+            <div class="time-picker">
+              <input type="number" id="filtro-hora-hasta-h" class="tp-h" min="1" max="12" placeholder="hh">
+              <span class="tp-sep">:</span>
+              <input type="number" id="filtro-hora-hasta-m" class="tp-m" min="0" max="59" placeholder="mm">
+              <select id="filtro-hora-hasta-p" class="tp-periodo">
+                <option value="AM">AM</option>
+                <option value="PM">PM</option>
+              </select>
+            </div>
           </div>
         </label>
         <button type="button" id="btn-limpiar-fechas" class="btn-limpiar">✕ Limpiar fechas</button>
