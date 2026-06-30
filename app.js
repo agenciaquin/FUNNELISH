@@ -386,7 +386,7 @@ function aplicarFiltros() {
 function abrirWhatsApp(id) {
   const p   = pedidos[id];
   const url = "https://web.whatsapp.com/send?phone=" + p.telefonoWhatsApp + "&text=" + encodeURIComponent(generarMensaje(p));
-  window.open(url, "_blank");
+  window.open(url, "whatsapp_web");
 }
 
 /* ================================================================
