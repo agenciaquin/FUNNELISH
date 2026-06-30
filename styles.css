@@ -247,30 +247,55 @@ main {
 
 /* ── PANEL FILTROS ───────────────────────────────────────────── */
 #panel-filtros {
+  display: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.85rem 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
 }
 
 #panel-filtros label {
-  font-size: 0.85rem;
-  color: var(--muted);
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
-#filtro-estado {
+#panel-filtros select,
+#panel-filtros input[type="date"] {
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--white);
-  padding: 0.3rem 0.6rem;
   font-size: 0.85rem;
-  outline: none;
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
 }
+
+#panel-filtros input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
+
+.btn-limpiar {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  margin-top: 16px;
+  transition: all var(--tr);
+}
+.btn-limpiar:hover { border-color: var(--gold); color: var(--gold); }
 
 /* ── TABLA ───────────────────────────────────────────────────── */
 .tabla-wrap {
@@ -641,3 +666,28 @@ footer {
   .toolbar-right { width: 100%; }
   #input-buscar { width: 100%; }
 }
+
+/* ── BOTÓN COPIAR TELÉFONO ───────────────────────────────────── */
+.td-telefono-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.btn-copiar-tel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 3px 5px;
+  transition: all var(--tr);
+  flex-shrink: 0;
+}
+
+.btn-copiar-tel:hover { border-color: var(--gold); color: var(--gold); }
+.btn-copiar-tel.copiado { border-color: var(--green); color: var(--green); background: rgba(39,174,96,0.12); }

@@ -22,6 +22,7 @@ const COL_MAP = {
   talla:       ["variant title", "talla", "size"],
   producto:    ["product name", "producto", "product", "nombre del producto", "referencia"],
   valor:       ["total", "valor", "valor a pagar", "precio", "price", "monto"],
+  fecha:       ["time", "created at", "fecha", "fecha creación", "date", "order date"],
 };
 
 /* ── ESTADO GLOBAL ───────────────────────────────────────────── */
@@ -150,10 +151,13 @@ function normalizarFila(row, index) {
   const valor    = formatearValor(valorRaw);
   const talla    = aplicarReglasTalla(get(COL_MAP.talla));
   const producto = get(COL_MAP.producto);
+  const fechaRaw = get(COL_MAP.fecha);
+  const fechaObj = fechaRaw ? new Date(fechaRaw.replace(/\.\d+/, "").replace(" UTC", "")) : null;
 
   return {
     id: index,
     nombre,
+    fechaObj,
     telefonoMensaje,
     telefonoWhatsApp,
     direccion:    get(COL_MAP.direccion),
@@ -213,7 +217,16 @@ function renderizarTabla(filas) {
         </div>
       </td>
       <td>${p.nombre || "—"}</td>
-      <td>${p.telefonoMensaje || "—"}</td>
+      <td>
+        <div class="td-telefono-wrap">
+          <span>${p.telefonoMensaje || "—"}</span>
+          ${p.telefonoMensaje ? `<button class="btn-copiar-tel" data-tel="${p.telefonoMensaje}" title="Copiar teléfono">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11">
+              <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+            </svg>
+          </button>` : ""}
+        </div>
+      </td>
       <td>${p.talla || "—"}</td>
       <td>
         <div class="td-ciudad">
@@ -255,6 +268,17 @@ function renderizarTabla(filas) {
     });
   });
   // Clic en la imagen también copia (sin abrir nueva pestaña)
+  tbody.querySelectorAll(".btn-copiar-tel").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const tel = btn.dataset.tel;
+      navigator.clipboard.writeText(tel).then(() => {
+        btn.classList.add("copiado");
+        setTimeout(() => btn.classList.remove("copiado"), 1500);
+      });
+    });
+  });
+
   tbody.querySelectorAll(".prod-thumb").forEach(img => {
     img.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -307,20 +331,33 @@ function initBuscar() {
 function initFiltros() {
   document.getElementById("btn-filtros").addEventListener("click", () => {
     const panel = document.getElementById("panel-filtros");
-    panel.style.display = panel.style.display === "none" ? "block" : "none";
+    panel.style.display = panel.style.display === "none" ? "flex" : "none";
   });
   document.getElementById("filtro-estado").addEventListener("change", aplicarFiltros);
+  document.getElementById("filtro-fecha-desde").addEventListener("change", aplicarFiltros);
+  document.getElementById("filtro-fecha-hasta").addEventListener("change", aplicarFiltros);
+  document.getElementById("btn-limpiar-fechas").addEventListener("click", () => {
+    document.getElementById("filtro-fecha-desde").value = "";
+    document.getElementById("filtro-fecha-hasta").value = "";
+    aplicarFiltros();
+  });
 }
 
 function aplicarFiltros() {
-  const q      = document.getElementById("input-buscar").value.toLowerCase().trim();
-  const estado = document.getElementById("filtro-estado").value;
+  const q        = document.getElementById("input-buscar").value.toLowerCase().trim();
+  const estado   = document.getElementById("filtro-estado").value;
+  const desdeVal = document.getElementById("filtro-fecha-desde").value;
+  const hastaVal = document.getElementById("filtro-fecha-hasta").value;
+  const desde    = desdeVal ? new Date(desdeVal + "T00:00:00") : null;
+  const hasta    = hastaVal ? new Date(hastaVal + "T23:59:59") : null;
 
   const filtrados = pedidos.filter(p => {
     const matchQ = !q || [p.nombre, p.producto, p.telefonoMensaje, p.ciudad]
       .some(v => v && v.toLowerCase().includes(q));
     const matchE = !estado || (estados[p.id] || "Pendiente") === estado;
-    return matchQ && matchE;
+    const matchDesde = !desde || (p.fechaObj && p.fechaObj >= desde);
+    const matchHasta = !hasta || (p.fechaObj && p.fechaObj <= hasta);
+    return matchQ && matchE && matchDesde && matchHasta;
   });
 
   renderizarTabla(filtrados);
