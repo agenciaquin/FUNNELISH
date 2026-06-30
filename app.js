@@ -331,7 +331,7 @@ function aplicarFiltros() {
    ================================================================ */
 function abrirWhatsApp(id) {
   const p   = pedidos[id];
-  const url = "https://wa.me/" + p.telefonoWhatsApp + "?text=" + encodeURIComponent(generarMensaje(p));
+  const url = "https://web.whatsapp.com/send?phone=" + p.telefonoWhatsApp + "&text=" + encodeURIComponent(generarMensaje(p));
   window.open(url, "_blank");
 }
 
