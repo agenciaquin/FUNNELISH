@@ -39,59 +39,81 @@
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { scroll-behavior: smooth; }
+    html, body { height: 100%; overflow: hidden; }
     body {
       background: var(--bg);
       color: var(--text);
       font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
       font-size: 14px;
-      min-height: 100vh;
       -webkit-font-smoothing: antialiased;
+      display: flex;
     }
 
-    /* ── HEADER ── */
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 1.75rem;
-      height: 58px;
-      background: rgba(9,9,9,0.96);
-      border-bottom: 1px solid var(--border);
-      position: sticky;
-      top: 0;
-      z-index: 100;
+    /* ── SIDEBAR ── */
+    .sidebar {
+      width: 220px; min-width: 220px;
+      background: #09090B;
+      border-right: 1px solid rgba(255,255,255,0.055);
+      display: flex; flex-direction: column;
+      height: 100vh; position: sticky; top: 0;
+      overflow-y: auto; flex-shrink: 0; z-index: 100;
     }
-    header::after {
-      content: '';
-      position: absolute;
-      bottom: -1px; left: 0; right: 0;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(201,168,76,0.5), transparent);
+    .sb-brand {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 1.1rem 0.875rem 0.875rem;
+      border-bottom: 1px solid rgba(255,255,255,0.055);
     }
-    .header-left { display: flex; align-items: center; gap: 1rem; }
-    .header-logo-img { height: 34px; background: #fff; border-radius: 7px; padding: 3px 6px; }
-    .header-info { display: flex; flex-direction: column; line-height: 1.15; }
-    .header-title { font-size: 0.95rem; font-weight: 800; color: var(--white); letter-spacing: -0.02em; }
-    .header-sub { font-size: 0.65rem; color: var(--text-2); letter-spacing: 0.09em; text-transform: uppercase; }
-    .header-nav { display: flex; align-items: center; gap: 0.5rem; }
-    .btn-nav {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      color: var(--text-2);
-      border-radius: var(--radius);
-      padding: 0.38rem 0.875rem;
-      font-size: 0.78rem;
-      font-weight: 500;
-      cursor: pointer;
-      text-decoration: none;
-      transition: all var(--tr);
-      font-family: inherit;
+    .sb-logo { width: 30px; height: 30px; background: #fff; border-radius: 6px; padding: 2px 4px; object-fit: contain; flex-shrink: 0; }
+    .sb-title { font-size: 0.8rem; font-weight: 800; color: #fff; }
+    .sb-sub   { font-size: 0.58rem; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.08em; }
+    .sb-nav   { flex: 1; padding: 0.6rem 0.5rem; display: flex; flex-direction: column; gap: 2px; }
+    .sb-section {
+      font-size: 0.58rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: rgba(255,255,255,0.2);
+      padding: 0.625rem 0.625rem 0.2rem; margin-top: 0.25rem;
     }
-    .btn-nav:hover { border-color: var(--gold); color: var(--gold); }
-    .btn-nav.active { color: var(--white); border-color: rgba(255,255,255,0.2); }
+    .sb-item {
+      display: flex; align-items: center; gap: 0.55rem;
+      padding: 0.5rem 0.625rem; border-radius: 7px;
+      font-size: 0.76rem; font-weight: 500;
+      color: rgba(255,255,255,0.42);
+      text-decoration: none; transition: all 0.14s ease;
+      border: 1px solid transparent;
+    }
+    .sb-item:hover  { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.78); }
+    .sb-item.active { background: rgba(201,168,76,0.10); color: #C9A84C; border-color: rgba(201,168,76,0.2); font-weight: 600; }
+    .sb-item .sb-ico { font-size: 0.9rem; flex-shrink: 0; line-height: 1; }
+    .sb-item.disabled { opacity: 0.35; pointer-events: none; }
+    .sb-footer {
+      padding: 0.75rem 0.875rem;
+      border-top: 1px solid rgba(255,255,255,0.055);
+      display: flex; align-items: center; gap: 0.55rem;
+    }
+    .sb-avatar {
+      width: 28px; height: 28px;
+      background: linear-gradient(135deg, #C9A84C, #E8C96B);
+      border-radius: 7px; display: flex; align-items: center; justify-content: center;
+      font-size: 0.6rem; font-weight: 800; color: #000; flex-shrink: 0;
+    }
+    .sb-user-name { font-size: 0.7rem; font-weight: 600; color: rgba(255,255,255,0.75); }
+    .sb-user-role { font-size: 0.6rem; color: rgba(255,255,255,0.28); }
+
+    /* ── CONTENT AREA ── */
+    .content-area { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow-y: auto; height: 100vh; }
+
+    /* ── PAGE HEADER ── */
+    .page-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1.1rem 1.5rem 0.875rem;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      flex-shrink: 0;
+    }
+    .page-hdr-title { font-size: 1rem; font-weight: 800; color: #fff; letter-spacing: -0.02em; margin-bottom: 0.1rem; }
+    .page-hdr-sub   { font-size: 0.7rem; color: rgba(255,255,255,0.38); }
 
     /* ── MAIN ── */
-    main { max-width: 1440px; margin: 0 auto; padding: 1.5rem 1.5rem 4rem; }
+    main { max-width: none; padding: 1.5rem 1.5rem 4rem; }
 
     /* ── UPLOAD SECTION ── */
     .upload-grid {
@@ -590,20 +612,47 @@
 </head>
 <body>
 
-  <!-- HEADER -->
-  <header>
-    <div class="header-left">
-      <img src="img/logo-quin.png" alt="Agencia Quin" class="header-logo-img">
-      <div class="header-info">
-        <span class="header-title">ConfirmaYa</span>
-        <span class="header-sub">Klixmant — Equipo Josué &amp; Mallerlis</span>
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sb-brand">
+      <img src="img/logo-quin.png" alt="Quin" class="sb-logo">
+      <div>
+        <div class="sb-title">ConfirmaYa</div>
+        <div class="sb-sub">Klixmant</div>
       </div>
     </div>
-    <nav class="header-nav">
-      <a href="index.html" class="btn-nav">← Confirmación de pedidos</a>
-      <a href="historial.html" class="btn-nav active">📊 Historial y Comparación</a>
+    <nav class="sb-nav">
+      <div class="sb-section">Principal</div>
+      <a href="index.html" class="sb-item">
+        <span class="sb-ico">✅</span> Confirmación de pedidos
+      </a>
+      <a href="historial.html" class="sb-item active">
+        <span class="sb-ico">📊</span> Historial y Comparación
+      </a>
+      <div class="sb-section">Próximamente</div>
+      <span class="sb-item disabled"><span class="sb-ico">📣</span> Campañas</span>
+      <span class="sb-item disabled"><span class="sb-ico">📈</span> Reportes</span>
+      <span class="sb-item disabled"><span class="sb-ico">⚙️</span> Configuración</span>
     </nav>
-  </header>
+    <div class="sb-footer">
+      <div class="sb-avatar">KQ</div>
+      <div>
+        <div class="sb-user-name">KLIXMANT</div>
+        <div class="sb-user-role">Josué &amp; Mallerlis</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- CONTENT -->
+  <div class="content-area">
+
+  <!-- PAGE HEADER -->
+  <div class="page-hdr">
+    <div>
+      <div class="page-hdr-title">Historial y Comparación</div>
+      <div class="page-hdr-sub">Sube tus archivos Funnelish y Effi para encontrar clientes por confirmar</div>
+    </div>
+  </div>
 
   <main>
 
@@ -789,5 +838,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="historial.js"></script>
+
+  </div><!-- /content-area -->
 </body>
 </html>

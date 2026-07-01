@@ -7,127 +7,352 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=22">
+  <link rel="stylesheet" href="styles.css?v=24">
+  <style>
+    /* ── LAYOUT CON SIDEBAR ─────────────────────────────────────── */
+    html, body { height: 100%; overflow: hidden; }
+    body        { display: flex; }
+    header      { display: none !important; }
+    main        { max-width: none !important; padding: 0 1.5rem 1.5rem !important; }
+    footer      { padding: 0.875rem 1.5rem; border-top: 1px solid rgba(255,255,255,0.06); }
+
+    /* ── SIDEBAR ────────────────────────────────────────────────── */
+    .sidebar {
+      width: 220px;
+      min-width: 220px;
+      background: #09090B;
+      border-right: 1px solid rgba(255,255,255,0.055);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      position: sticky;
+      top: 0;
+      overflow-y: auto;
+      flex-shrink: 0;
+      z-index: 100;
+    }
+
+    .sb-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 1.1rem 0.875rem 0.875rem;
+      border-bottom: 1px solid rgba(255,255,255,0.055);
+    }
+    .sb-logo {
+      width: 30px; height: 30px;
+      background: #fff; border-radius: 6px;
+      padding: 2px 4px; object-fit: contain; flex-shrink: 0;
+    }
+    .sb-title { font-size: 0.8rem; font-weight: 800; color: #fff; }
+    .sb-sub   { font-size: 0.58rem; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.08em; }
+
+    .sb-nav { flex: 1; padding: 0.6rem 0.5rem; display: flex; flex-direction: column; gap: 2px; }
+
+    .sb-section {
+      font-size: 0.58rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: rgba(255,255,255,0.2);
+      padding: 0.625rem 0.625rem 0.2rem;
+      margin-top: 0.25rem;
+    }
+
+    .sb-item {
+      display: flex; align-items: center; gap: 0.55rem;
+      padding: 0.5rem 0.625rem;
+      border-radius: 7px;
+      font-size: 0.76rem; font-weight: 500;
+      color: rgba(255,255,255,0.42);
+      text-decoration: none;
+      transition: all 0.14s ease;
+      border: 1px solid transparent;
+    }
+    .sb-item:hover  { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.78); }
+    .sb-item.active {
+      background: rgba(201,168,76,0.10);
+      color: #C9A84C;
+      border-color: rgba(201,168,76,0.2);
+      font-weight: 600;
+    }
+    .sb-item .sb-ico { font-size: 0.9rem; flex-shrink: 0; line-height: 1; }
+    .sb-item.disabled { opacity: 0.35; pointer-events: none; }
+
+    .sb-footer {
+      padding: 0.75rem 0.875rem;
+      border-top: 1px solid rgba(255,255,255,0.055);
+      display: flex; align-items: center; gap: 0.55rem;
+    }
+    .sb-avatar {
+      width: 28px; height: 28px;
+      background: linear-gradient(135deg, #C9A84C, #E8C96B);
+      border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.6rem; font-weight: 800; color: #000; flex-shrink: 0;
+    }
+    .sb-user-name { font-size: 0.7rem; font-weight: 600; color: rgba(255,255,255,0.75); }
+    .sb-user-role { font-size: 0.6rem; color: rgba(255,255,255,0.28); }
+
+    /* ── CONTENT AREA ───────────────────────────────────────────── */
+    .content-area {
+      flex: 1; display: flex; flex-direction: column;
+      min-width: 0; overflow-y: auto; height: 100vh;
+    }
+
+    /* ── PAGE HEADER ────────────────────────────────────────────── */
+    .page-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1.1rem 1.5rem 0.875rem;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      flex-shrink: 0;
+    }
+    .page-hdr-title { font-size: 1rem; font-weight: 800; color: #fff; letter-spacing: -0.02em; margin-bottom: 0.1rem; }
+    .page-hdr-sub   { font-size: 0.7rem; color: rgba(255,255,255,0.38); }
+    .page-hdr-right { display: flex; align-items: center; gap: 0.6rem; }
+
+    /* ── STATS BAR ──────────────────────────────────────────────── */
+    .stats-bar {
+      display: none;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0.625rem;
+      padding: 1rem 1.5rem 0;
+      flex-shrink: 0;
+    }
+    .stat-tile {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 10px;
+      padding: 0.875rem 1rem;
+      transition: border-color 0.15s ease;
+    }
+    .stat-tile:hover { border-color: rgba(255,255,255,0.12); }
+    .stat-tile-val {
+      font-size: 1.35rem; font-weight: 800; color: #fff;
+      line-height: 1; margin-bottom: 0.22rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-tile-lbl {
+      font-size: 0.6rem; text-transform: uppercase;
+      letter-spacing: 0.07em; font-weight: 600;
+      color: rgba(255,255,255,0.38);
+    }
+    .stat-tile.s-total      .stat-tile-val { color: #fff; }
+    .stat-tile.s-pendiente  .stat-tile-val { color: #EAB308; }
+    .stat-tile.s-confirmado .stat-tile-val { color: #22C55E; }
+    .stat-tile.s-noconf     .stat-tile-val { color: #EF4444; }
+    .stat-tile.s-cancelado  .stat-tile-val { color: #6B7280; }
+
+    /* Upload zone inside content-area */
+    #seccion-upload { min-height: calc(100vh - 140px); }
+
+    @media (max-width: 900px) {
+      .sidebar     { width: 60px; min-width: 60px; }
+      .sb-title, .sb-sub, .sb-user-name, .sb-user-role, .sb-section { display: none; }
+      .sb-brand    { justify-content: center; padding: 0.875rem 0; }
+      .sb-item     { justify-content: center; padding: 0.55rem; }
+      .sb-item .sb-ico { margin: 0; }
+      .sb-footer   { justify-content: center; }
+      .stats-bar   { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 600px) {
+      .stats-bar   { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
 </head>
 <body>
 
-  <!-- ── HEADER ─────────────────────────────────────────────── -->
-  <header>
-    <div class="header-left">
-      <img src="img/logo-quin.png" alt="Agencia Quin" class="header-logo-img">
-      <div class="header-info">
-        <span class="header-title">ConfirmaYa</span>
-        <span class="header-sub">Klixmant — Equipo Josué &amp; Mallerlis</span>
+  <!-- ── SIDEBAR ───────────────────────────────────────────────── -->
+  <aside class="sidebar">
+
+    <div class="sb-brand">
+      <img src="img/logo-quin.png" alt="Quin" class="sb-logo">
+      <div>
+        <div class="sb-title">ConfirmaYa</div>
+        <div class="sb-sub">Klixmant</div>
       </div>
     </div>
-    <div class="header-right" style="display:flex;align-items:center;gap:0.6rem;">
-      <a href="historial.html" style="background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.3);color:#C9A84C;border-radius:8px;padding:0.3rem 0.85rem;font-size:0.75rem;font-weight:600;text-decoration:none;" onmouseover="this.style.opacity='.75'" onmouseout="this.style.opacity='1'">📊 Historial</a>
-      <span id="badge-estado" class="badge-listo">✓ Listo</span>
+
+    <nav class="sb-nav">
+      <div class="sb-section">Principal</div>
+      <a href="index.html" class="sb-item active">
+        <span class="sb-ico">📦</span>
+        Confirmación de pedidos
+      </a>
+      <a href="historial.html" class="sb-item">
+        <span class="sb-ico">📊</span>
+        Historial y Comparación
+      </a>
+
+      <div class="sb-section" style="margin-top:0.5rem">Próximamente</div>
+      <span class="sb-item disabled">
+        <span class="sb-ico">📢</span>
+        Campañas WhatsApp
+      </span>
+      <span class="sb-item disabled">
+        <span class="sb-ico">📈</span>
+        Reportes
+      </span>
+      <span class="sb-item disabled">
+        <span class="sb-ico">⚙️</span>
+        Configuración
+      </span>
+    </nav>
+
+    <div class="sb-footer">
+      <div class="sb-avatar">JM</div>
+      <div>
+        <div class="sb-user-name">Josué &amp; Mallerlis</div>
+        <div class="sb-user-role">Equipo KLIXMANT</div>
+      </div>
     </div>
-  </header>
 
-  <main>
+  </aside>
 
-    <!-- ── ZONA DE CARGA ──────────────────────────────────────── -->
-    <section id="seccion-upload">
-      <div id="drop-zone">
-        <div class="drop-icon">📂</div>
-        <p class="drop-titulo">Arrastra el Excel de Funnelish aquí</p>
-        <p class="drop-sub">o haz clic para seleccionar el archivo</p>
-        <input type="file" id="input-excel" accept=".xlsx,.xls,.csv" style="position:absolute;opacity:0;width:1px;height:1px;overflow:hidden">
-        <button type="button" id="btn-subir">Seleccionar archivo</button>
+  <!-- ── CONTENT AREA ──────────────────────────────────────────── -->
+  <div class="content-area">
+
+    <!-- Page Header -->
+    <div class="page-hdr">
+      <div>
+        <div class="page-hdr-title">Confirmación de pedidos</div>
+        <div class="page-hdr-sub">Recibe y confirma los pedidos de tus clientes de Funnelish</div>
       </div>
-    </section>
+      <div class="page-hdr-right">
+        <span id="badge-estado" class="badge-listo">✓ Listo</span>
+      </div>
+    </div>
 
-    <!-- ── TABLA DE PEDIDOS ───────────────────────────────────── -->
-    <section id="seccion-tabla" style="display:none;">
+    <!-- Stats Bar (visible cuando hay datos) -->
+    <div id="stats-bar" class="stats-bar">
+      <div class="stat-tile s-total">
+        <div class="stat-tile-val" id="stat-total">0</div>
+        <div class="stat-tile-lbl">Total pedidos</div>
+      </div>
+      <div class="stat-tile s-pendiente">
+        <div class="stat-tile-val" id="stat-pendiente">0</div>
+        <div class="stat-tile-lbl">Pendientes</div>
+      </div>
+      <div class="stat-tile s-confirmado">
+        <div class="stat-tile-val" id="stat-confirmado">0</div>
+        <div class="stat-tile-lbl">Confirmados</div>
+      </div>
+      <div class="stat-tile s-noconf">
+        <div class="stat-tile-val" id="stat-noconf">0</div>
+        <div class="stat-tile-lbl">No confirman</div>
+      </div>
+      <div class="stat-tile s-cancelado">
+        <div class="stat-tile-val" id="stat-cancelado">0</div>
+        <div class="stat-tile-lbl">Cancelados</div>
+      </div>
+    </div>
 
-      <!-- Barra de herramientas -->
-      <div class="tabla-toolbar">
-        <div class="toolbar-left">
-          <span class="tabla-icono">📦</span>
-          <span class="tabla-titulo">Listado de productos / pedidos</span>
-          <span id="badge-total" class="badge-count">0</span>
+    <main>
+
+      <!-- ── ZONA DE CARGA ────────────────────────────────────── -->
+      <section id="seccion-upload">
+        <div id="drop-zone">
+          <div class="drop-icon">📂</div>
+          <p class="drop-titulo">Arrastra el Excel de Funnelish aquí</p>
+          <p class="drop-sub">o haz clic para seleccionar el archivo</p>
+          <input type="file" id="input-excel" accept=".xlsx,.xls,.csv" style="position:absolute;opacity:0;width:1px;height:1px;overflow:hidden">
+          <button type="button" id="btn-subir">Seleccionar archivo</button>
         </div>
-        <div class="toolbar-right">
-          <div class="search-wrap">
-            <span class="search-icon">🔍</span>
-            <input type="text" id="input-buscar" placeholder="Buscar por cliente, producto o teléfono...">
+      </section>
+
+      <!-- ── TABLA DE PEDIDOS ──────────────────────────────────── -->
+      <section id="seccion-tabla" style="display:none;">
+
+        <!-- Barra de herramientas -->
+        <div class="tabla-toolbar">
+          <div class="toolbar-left">
+            <span class="tabla-icono">📦</span>
+            <span class="tabla-titulo">Listado de productos / pedidos</span>
+            <span id="badge-total" class="badge-count">0</span>
           </div>
-          <button type="button" id="btn-filtros" class="btn-filtro">⚙ Filtros</button>
-          <button type="button" id="btn-nueva-carga" class="btn-nueva-carga">↩ Nuevo Excel</button>
+          <div class="toolbar-right">
+            <div class="search-wrap">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="input-buscar" placeholder="Buscar por cliente, producto o teléfono...">
+            </div>
+            <button type="button" id="btn-filtros" class="btn-filtro">⚙ Filtros</button>
+            <button type="button" id="btn-nueva-carga" class="btn-nueva-carga">↩ Nuevo Excel</button>
+          </div>
         </div>
-      </div>
 
-      <!-- Panel de filtros (oculto por defecto) -->
-      <div id="panel-filtros" style="display:none;">
-        <label>Estado:
-          <select id="filtro-estado">
-            <option value="">Todos</option>
-            <option value="Pendiente">Pendiente</option>
-            <option value="Confirmado">Confirmado</option>
-            <option value="No confirma">No confirma</option>
-            <option value="Cancelado">Cancelado</option>
-          </select>
-        </label>
-        <label>F. creación: Desde
-          <div class="filtro-fecha-wrap">
-            <input type="date" id="filtro-fecha-desde">
-            <div class="time-picker">
-              <input type="number" id="filtro-hora-desde-h" class="tp-h" min="1" max="12" placeholder="hh">
-              <span class="tp-sep">:</span>
-              <input type="number" id="filtro-hora-desde-m" class="tp-m" min="0" max="59" placeholder="mm">
-              <select id="filtro-hora-desde-p" class="tp-periodo">
-                <option value="AM">AM</option>
-                <option value="PM">PM</option>
-              </select>
+        <!-- Panel de filtros -->
+        <div id="panel-filtros" style="display:none;">
+          <label>Estado:
+            <select id="filtro-estado">
+              <option value="">Todos</option>
+              <option value="Pendiente">Pendiente</option>
+              <option value="Confirmado">Confirmado</option>
+              <option value="No confirma">No confirma</option>
+              <option value="Cancelado">Cancelado</option>
+            </select>
+          </label>
+          <label>F. creación: Desde
+            <div class="filtro-fecha-wrap">
+              <input type="date" id="filtro-fecha-desde">
+              <div class="time-picker">
+                <input type="number" id="filtro-hora-desde-h" class="tp-h" min="1" max="12" placeholder="hh">
+                <span class="tp-sep">:</span>
+                <input type="number" id="filtro-hora-desde-m" class="tp-m" min="0" max="59" placeholder="mm">
+                <select id="filtro-hora-desde-p" class="tp-periodo">
+                  <option value="AM">AM</option>
+                  <option value="PM">PM</option>
+                </select>
+              </div>
             </div>
-          </div>
-        </label>
-        <label>F. creación: Hasta
-          <div class="filtro-fecha-wrap">
-            <input type="date" id="filtro-fecha-hasta">
-            <div class="time-picker">
-              <input type="number" id="filtro-hora-hasta-h" class="tp-h" min="1" max="12" placeholder="hh">
-              <span class="tp-sep">:</span>
-              <input type="number" id="filtro-hora-hasta-m" class="tp-m" min="0" max="59" placeholder="mm">
-              <select id="filtro-hora-hasta-p" class="tp-periodo">
-                <option value="AM">AM</option>
-                <option value="PM">PM</option>
-              </select>
+          </label>
+          <label>F. creación: Hasta
+            <div class="filtro-fecha-wrap">
+              <input type="date" id="filtro-fecha-hasta">
+              <div class="time-picker">
+                <input type="number" id="filtro-hora-hasta-h" class="tp-h" min="1" max="12" placeholder="hh">
+                <span class="tp-sep">:</span>
+                <input type="number" id="filtro-hora-hasta-m" class="tp-m" min="0" max="59" placeholder="mm">
+                <select id="filtro-hora-hasta-p" class="tp-periodo">
+                  <option value="AM">AM</option>
+                  <option value="PM">PM</option>
+                </select>
+              </div>
             </div>
-          </div>
-        </label>
-        <button type="button" id="btn-limpiar-fechas" class="btn-limpiar">✕ Limpiar fechas</button>
-      </div>
+          </label>
+          <button type="button" id="btn-limpiar-fechas" class="btn-limpiar">✕ Limpiar fechas</button>
+        </div>
 
-      <!-- Tabla -->
-      <div class="tabla-wrap">
-        <table id="tabla-pedidos">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Producto</th>
-              <th>Cliente</th>
-              <th>Teléfono</th>
-              <th>Talla</th>
-              <th>Ciudad</th>
-              <th>Valor a pagar</th>
-              <th>Estado</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="tabla-cuerpo">
-            <!-- filas generadas por JS -->
-          </tbody>
-        </table>
-      </div>
+        <!-- Tabla -->
+        <div class="tabla-wrap">
+          <table id="tabla-pedidos">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Producto</th>
+                <th>Cliente</th>
+                <th>Teléfono</th>
+                <th>Talla</th>
+                <th>Ciudad</th>
+                <th>Valor a pagar</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-cuerpo">
+              <!-- filas generadas por JS -->
+            </tbody>
+          </table>
+        </div>
 
-    </section>
+      </section>
 
-  </main>
+    </main>
 
-  <!-- ── MODAL DE DETALLE ───────────────────────────────────── -->
+    <footer>
+      <p>ConfirmaYa &copy; 2024 — KLIXMANT</p>
+    </footer>
+
+  </div><!-- /content-area -->
+
+  <!-- ── MODAL DE DETALLE ───────────────────────────────────────── -->
   <div id="modal-overlay" style="display:none;">
     <div id="modal-caja">
       <button id="modal-cerrar" type="button">✕</button>
@@ -154,14 +379,39 @@
     </div>
   </div>
 
-  <footer>
-    <p>ConfirmaYa &copy; 2024 — KLIXMANT</p>
-  </footer>
-
   <!-- SheetJS para leer Excel -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="catalogo.js?v=21"></script>
-  <script src="app.js?v=21"></script>
+  <script src="catalogo.js?v=24"></script>
+  <script src="app.js?v=24"></script>
+
+  <script>
+    /* ── STATS BAR ── */
+    function actualizarStats() {
+      const pendientes  = document.querySelectorAll('.estado-pendiente').length;
+      const confirmados = document.querySelectorAll('.estado-confirmado').length;
+      const noConf      = document.querySelectorAll('.estado-no-confirma').length;
+      const cancelados  = document.querySelectorAll('.estado-cancelado').length;
+      const total       = pendientes + confirmados + noConf + cancelados;
+      document.getElementById('stat-total').textContent       = total;
+      document.getElementById('stat-pendiente').textContent   = pendientes;
+      document.getElementById('stat-confirmado').textContent  = confirmados;
+      document.getElementById('stat-noconf').textContent      = noConf;
+      document.getElementById('stat-cancelado').textContent   = cancelados;
+    }
+
+    // Mostrar stats-bar cuando la sección tabla sea visible
+    const secTabla = document.getElementById('seccion-tabla');
+    const statsBar = document.getElementById('stats-bar');
+    new MutationObserver(() => {
+      const visible = secTabla.style.display !== 'none';
+      statsBar.style.display = visible ? 'grid' : 'none';
+      if (visible) actualizarStats();
+    }).observe(secTabla, { attributes: true, attributeFilter: ['style'] });
+
+    // Actualizar stats cuando cambia la tabla
+    new MutationObserver(actualizarStats)
+      .observe(document.getElementById('tabla-cuerpo'), { childList: true, subtree: true });
+  </script>
 
 </body>
 </html>
