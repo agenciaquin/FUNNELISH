@@ -155,6 +155,7 @@ async function subirEffi(file) {
   try {
     const data = await readExcel(file);
     const now  = new Date();
+    if (data[0]) console.log('[DEBUG Effi] columnas detectadas:', Object.keys(data[0]));
     spinner(true, `Guardando ${data.length} confirmados...`);
 
     const { data: archivo, error: e1 } = await db
