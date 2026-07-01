@@ -118,7 +118,7 @@
     /* ── UPLOAD SECTION ── */
     .upload-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
       gap: 1rem;
       margin-bottom: 1.5rem;
     }
@@ -325,6 +325,7 @@
     }
     .btn-sm:hover { border-color: var(--gold); color: var(--gold); }
     .btn-sm.green:hover { border-color: var(--green); color: var(--green); }
+    .btn-limpiar:hover { border-color: var(--red) !important; color: var(--red) !important; }
     .btn-campana {
       background: linear-gradient(135deg, #A855F7, #7C3AED);
       color: #fff;
@@ -659,16 +660,6 @@
     <!-- UPLOAD CARDS -->
     <div class="upload-grid">
       <div class="upload-card">
-        <div class="upload-icon funne">📤</div>
-        <div class="upload-card-body">
-          <div class="upload-card-title">Subir archivo de Funnelish</div>
-          <div class="upload-card-sub">Clientes que realizaron un pedido</div>
-          <button class="btn-upload funne" id="btn-subir-funnelish">⬆ Subir archivo de Funnelish</button>
-          <input type="file" id="input-funnelish" accept=".xlsx,.xls,.csv" style="display:none">
-        </div>
-      </div>
-
-      <div class="upload-card">
         <div class="upload-icon effi">✅</div>
         <div class="upload-card-body">
           <div class="upload-card-title">Subir reporte Effi</div>
@@ -762,6 +753,7 @@
               <input type="text" id="buscar-clientes" placeholder="Buscar cliente o teléfono...">
             </div>
             <button class="btn-sm" id="btn-filtro-estado">Todos</button>
+            <button class="btn-sm btn-limpiar" id="btn-limpiar-filtros" title="Limpiar filtros">🗑 Limpiar</button>
             <button class="btn-sm" id="btn-config-msg" title="Editar mensaje WhatsApp">✏ Mensaje</button>
             <button class="btn-campana" id="btn-modo-campana">📢 Modo campaña</button>
           </div>

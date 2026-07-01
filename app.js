@@ -25,6 +25,17 @@ const COL_MAP = {
   fecha:       ["time", "created at", "fecha", "fecha creación", "date", "order date"],
 };
 
+/* ── SUPABASE (Historial automático) ─────────────────────────── */
+const SUPABASE_URL_H = 'https://glmnuqfnxwaibckufgtr.supabase.co';
+const SUPABASE_KEY_H = 'sb_publishable_TW1nS4T1g8vcZJ-mJeg0EA_8G1HZlKe';
+let dbH = null;
+// Se inicializa después de que la librería Supabase cargue
+window.addEventListener('DOMContentLoaded', () => {
+  if (window.supabase && window.supabase.createClient) {
+    dbH = window.supabase.createClient(SUPABASE_URL_H, SUPABASE_KEY_H);
+  }
+});
+
 /* ── ESTADO GLOBAL ───────────────────────────────────────────── */
 let pedidos = [];
 let estados = {};
@@ -82,6 +93,63 @@ function initUpload() {
   });
 }
 
+/* ================================================================
+   GUARDAR EN HISTORIAL (SUPABASE)
+   Se llama silenciosamente al subir cada Excel de confirmación
+   ================================================================ */
+async function guardarFunnelishEnDB(pedidosArr, filename) {
+  if (!dbH) return; // Supabase no disponible
+  try {
+    const now = new Date();
+    const { data: archivo, error: e1 } = await dbH
+      .from('archivos_funnelish')
+      .insert({ nombre: filename, anio: now.getFullYear(), mes: now.getMonth()+1, total_registros: pedidosArr.length })
+      .select().single();
+
+    if (e1) { console.warn('Historial: no se creó el archivo:', e1.message); return; }
+
+    const normTelH = (tel) => String(tel || '').replace(/\D/g,'').replace(/^57/,'').slice(-10);
+
+    const registros = pedidosArr
+      .filter(p => p.telefonoWhatsApp && p.telefonoWhatsApp.length >= 7)
+      .map(p => ({
+        archivo_id:   archivo.id,
+        telefono:     normTelH(p.telefonoWhatsApp),
+        nombre:       p.nombre === '—' ? '' : p.nombre,
+        ciudad:       p.ciudad       || '',
+        departamento: p.departamento || '',
+        direccion:    p.direccion    || '',
+        producto:     p.producto     || '',
+        talla:        p.talla        || '',
+        valor:        p.valor        || '',
+        correo:       p.correo       || '',
+        fecha_pedido: p.fechaObj ? p.fechaObj.toISOString().slice(0,10) : '',
+      }));
+
+    // Deduplicar dentro del batch por (telefono + fecha_pedido)
+    const deduped = [...new Map(
+      registros.map(r => [`${r.telefono}|${r.fecha_pedido}`, r])
+    ).values()];
+
+    // Verificar cuáles ya existen para no duplicar entre subidas del mismo archivo
+    const tels = [...new Set(deduped.map(r => r.telefono))];
+    const { data: exist } = await dbH
+      .from('clientes_funnelish')
+      .select('telefono, fecha_pedido')
+      .in('telefono', tels);
+
+    const existSet = new Set((exist || []).map(e => `${e.telefono}|${e.fecha_pedido}`));
+    const nuevos   = deduped.filter(r => !existSet.has(`${r.telefono}|${r.fecha_pedido}`));
+
+    for (let i = 0; i < nuevos.length; i += 500) {
+      await dbH.from('clientes_funnelish').insert(nuevos.slice(i, i + 500));
+    }
+    console.log(`[ConfirmaYa] Historial: ${nuevos.length} nuevos, ${deduped.length - nuevos.length} duplicados ignorados`);
+  } catch(err) {
+    console.warn('[ConfirmaYa] Historial Supabase error:', err.message || err);
+  }
+}
+
 function procesarArchivo(file) {
   const esCSV = file.name.toLowerCase().endsWith(".csv");
   const reader = new FileReader();
@@ -110,6 +178,9 @@ function procesarArchivo(file) {
 
       pedidos = rows.map((row, i) => normalizarFila(row, i));
       renderizarTabla(pedidos);
+
+      // Guardar silenciosamente en Historial (Supabase) con deduplicación
+      guardarFunnelishEnDB(pedidos, file.name).catch(() => {});
 
       document.getElementById("seccion-upload").style.display = "none";
       document.getElementById("seccion-tabla").style.display  = "block";

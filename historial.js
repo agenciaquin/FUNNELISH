@@ -18,7 +18,8 @@ let clientesData   = [];
 let clientesFiltro = [];
 let selectedIds    = new Set();
 let mensajeWA      = 'Hola {Nombre}, los Buzos se están agotando, aún tengo apartado el tuyo. Necesitamos tu confirmación para enviarlo.';
-let filtroEstado   = '';
+let filtroEstado     = '';
+let estadoIdxGlobal  = 0;
 
 // ── UTILS ────────────────────────────────────────────────────────
 function toast(msg, color) {
@@ -68,16 +69,20 @@ function readExcel(file) {
 }
 
 // ── SUBIR FUNNELISH ──────────────────────────────────────────────
-async function subirFunnelish(file) {
-  spinner(true, 'Leyendo archivo Funnelish...');
+// También se llama desde app.js (index.html) al subir el Excel de confirmación
+async function subirFunnelish(fileOrData, filename) {
+  const esArchivo = fileOrData instanceof File;
+  spinner(true, esArchivo ? 'Leyendo archivo Funnelish...' : 'Guardando en historial...');
   try {
-    const data = await readExcel(file);
-    const now  = new Date();
-    spinner(true, `Guardando ${data.length} registros...`);
+    const data  = esArchivo ? await readExcel(fileOrData) : fileOrData;
+    const fname = esArchivo ? fileOrData.name : (filename || 'archivo.csv');
+    const now   = new Date();
+
+    spinner(true, `Procesando ${data.length} registros...`);
 
     const { data: archivo, error: e1 } = await db
       .from('archivos_funnelish')
-      .insert({ nombre: file.name, anio: now.getFullYear(), mes: now.getMonth()+1, total_registros: data.length })
+      .insert({ nombre: fname, anio: now.getFullYear(), mes: now.getMonth()+1, total_registros: data.length })
       .select().single();
 
     if (e1) throw e1;
@@ -96,11 +101,28 @@ async function subirFunnelish(file) {
       fecha_pedido: getField(row, ['created at','fecha','date','time','order date']),
     })).filter(r => r.telefono.length >= 7);
 
-    for (let i = 0; i < registros.length; i += 500) {
-      await db.from('clientes_funnelish').insert(registros.slice(i, i + 500));
+    // 1. Deduplicar dentro del mismo archivo por (telefono + fecha_pedido)
+    const deduped = [...new Map(
+      registros.map(r => [`${r.telefono}|${r.fecha_pedido}`, r])
+    ).values()];
+
+    // 2. Verificar cuáles ya existen en la BD para no duplicar entre subidas
+    const tels = [...new Set(deduped.map(r => r.telefono))];
+    const { data: existentes } = await db
+      .from('clientes_funnelish')
+      .select('telefono, fecha_pedido')
+      .in('telefono', tels);
+
+    const existSet = new Set((existentes || []).map(e => `${e.telefono}|${e.fecha_pedido}`));
+    const nuevos   = deduped.filter(r => !existSet.has(`${r.telefono}|${r.fecha_pedido}`));
+
+    spinner(true, `Guardando ${nuevos.length} clientes nuevos (${deduped.length - nuevos.length} ya existían)...`);
+
+    for (let i = 0; i < nuevos.length; i += 500) {
+      await db.from('clientes_funnelish').insert(nuevos.slice(i, i + 500));
     }
 
-    toast(`✅ Funnelish cargado: ${registros.length} clientes guardados`, 'rgba(34,197,94,0.4)');
+    toast(`✅ Funnelish: ${nuevos.length} nuevos guardados (${deduped.length - nuevos.length} duplicados ignorados)`, 'rgba(34,197,94,0.4)');
     await cargarHistorial();
     await cargarStats();
   } catch(err) {
@@ -279,6 +301,15 @@ async function cargarStats() {
   document.getElementById('stat-enviados').textContent    = (cEnv  || 0).toLocaleString();
   document.getElementById('stat-alertas').textContent     = (cAlerta||0).toLocaleString();
   document.getElementById('stat-recuperacion').textContent = recup + '%';
+}
+
+// ── LIMPIAR FILTROS ──────────────────────────────────────────────
+function limpiarFiltros() {
+  document.getElementById('buscar-clientes').value = '';
+  filtroEstado = '';
+  document.getElementById('btn-filtro-estado').textContent = 'Todos';
+  estadoIdxGlobal = 0;
+  filtrarYRenderClientes();
 }
 
 // ── CARGAR CLIENTES POR CONFIRMAR ────────────────────────────────
@@ -481,13 +512,6 @@ async function init() {
     });
   });
 
-  // Upload Funnelish
-  document.getElementById('btn-subir-funnelish').addEventListener('click', () =>
-    document.getElementById('input-funnelish').click());
-  document.getElementById('input-funnelish').addEventListener('change', e => {
-    if (e.target.files[0]) { subirFunnelish(e.target.files[0]); e.target.value=''; }
-  });
-
   // Upload Effi
   document.getElementById('btn-subir-effi').addEventListener('click', () =>
     document.getElementById('input-effi').click());
@@ -509,15 +533,17 @@ async function init() {
   });
 
   // Filtro estado
-  const estados = ['', 'pendiente', 'mensaje_enviado'];
-  const labels  = ['Todos', 'Pendiente', 'Msg enviado'];
-  let estadoIdx = 0;
+  const estadosOpts = ['', 'pendiente', 'mensaje_enviado'];
+  const labelsOpts  = ['Todos', 'Pendiente', 'Msg enviado'];
   document.getElementById('btn-filtro-estado').addEventListener('click', () => {
-    estadoIdx = (estadoIdx + 1) % estados.length;
-    filtroEstado = estados[estadoIdx];
-    document.getElementById('btn-filtro-estado').textContent = labels[estadoIdx];
+    estadoIdxGlobal = (estadoIdxGlobal + 1) % estadosOpts.length;
+    filtroEstado = estadosOpts[estadoIdxGlobal];
+    document.getElementById('btn-filtro-estado').textContent = labelsOpts[estadoIdxGlobal];
     filtrarYRenderClientes();
   });
+
+  // Limpiar filtros
+  document.getElementById('btn-limpiar-filtros').addEventListener('click', limpiarFiltros);
 
   // Config mensaje
   document.getElementById('btn-config-msg').addEventListener('click', () => {
