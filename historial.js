@@ -50,9 +50,10 @@ function getField(row, aliases) {
   }
 
   // 2. Fallback ASCII parcial — maneja nombres de columna con encoding corrupto
-  //    (ej: "Teléfono" se lee como "Tel馯no" en archivos XLS-como-HTML)
+  //    (ej: "Teléfono" → "Tel馯no"; "teléfono" limpio = "telefono", prefix 3 = "tel"
+  //         "tel馯no" limpio = "telno", empieza con "tel" → MATCH)
   for (const a of aliases) {
-    const asciiPfx = a.replace(/[^\x00-\x7F]/g, '').slice(0, 4);
+    const asciiPfx = a.replace(/[^\x00-\x7F]/g, '').slice(0, 3);
     if (asciiPfx.length < 3) continue;
     for (const k of Object.keys(rowLow)) {
       const kAscii = k.replace(/[^\x00-\x7F]/g, '');
