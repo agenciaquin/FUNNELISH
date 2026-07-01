@@ -42,10 +42,26 @@ function normTel(tel) {
 function getField(row, aliases) {
   const rowLow = {};
   Object.keys(row).forEach(k => { rowLow[k.toLowerCase().trim()] = row[k]; });
+
+  // 1. Coincidencia exacta
   for (const a of aliases) {
     const v = String(rowLow[a] ?? '').trim();
     if (rowLow[a] !== undefined && v !== '') return v;
   }
+
+  // 2. Fallback ASCII parcial — maneja nombres de columna con encoding corrupto
+  //    (ej: "Teléfono" se lee como "Tel馯no" en archivos XLS-como-HTML)
+  for (const a of aliases) {
+    const asciiPfx = a.replace(/[^\x00-\x7F]/g, '').slice(0, 4);
+    if (asciiPfx.length < 3) continue;
+    for (const k of Object.keys(rowLow)) {
+      const kAscii = k.replace(/[^\x00-\x7F]/g, '');
+      if (kAscii.startsWith(asciiPfx) && String(rowLow[k]).trim() !== '') {
+        return String(rowLow[k]).trim();
+      }
+    }
+  }
+
   return '';
 }
 
