@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Historial y Comparación — KLIXMANT</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    /* ── VARIABLES ── */
+    :root {
+      --bg:         #080808;
+      --surface:    #0f0f0f;
+      --surface2:   #141414;
+      --surface3:   #1b1b1b;
+      --border:     rgba(255,255,255,0.07);
+      --border-h:   rgba(255,255,255,0.13);
+      --gold:       #C9A84C;
+      --gold-light: #E8C96B;
+      --gold-dim:   rgba(201,168,76,0.10);
+      --white:      #FFFFFF;
+      --text:       rgba(255,255,255,0.87);
+      --text-2:     rgba(255,255,255,0.46);
+      --text-3:     rgba(255,255,255,0.24);
+      --green:      #22C55E;
+      --green-dim:  rgba(34,197,94,0.11);
+      --yellow:     #EAB308;
+      --yellow-dim: rgba(234,179,8,0.11);
+      --red:        #EF4444;
+      --red-dim:    rgba(239,68,68,0.11);
+      --blue:       #3B82F6;
+      --blue-dim:   rgba(59,130,246,0.11);
+      --purple:     #A855F7;
+      --radius:     8px;
+      --radius-md:  12px;
+      --radius-lg:  16px;
+      --tr:         0.15s cubic-bezier(0.4,0,0.2,1);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── HEADER ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.75rem;
+      height: 58px;
+      background: rgba(9,9,9,0.96);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    header::after {
+      content: '';
+      position: absolute;
+      bottom: -1px; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(201,168,76,0.5), transparent);
+    }
+    .header-left { display: flex; align-items: center; gap: 1rem; }
+    .header-logo-img { height: 34px; background: #fff; border-radius: 7px; padding: 3px 6px; }
+    .header-info { display: flex; flex-direction: column; line-height: 1.15; }
+    .header-title { font-size: 0.95rem; font-weight: 800; color: var(--white); letter-spacing: -0.02em; }
+    .header-sub { font-size: 0.65rem; color: var(--text-2); letter-spacing: 0.09em; text-transform: uppercase; }
+    .header-nav { display: flex; align-items: center; gap: 0.5rem; }
+    .btn-nav {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      border-radius: var(--radius);
+      padding: 0.38rem 0.875rem;
+      font-size: 0.78rem;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all var(--tr);
+      font-family: inherit;
+    }
+    .btn-nav:hover { border-color: var(--gold); color: var(--gold); }
+    .btn-nav.active { color: var(--white); border-color: rgba(255,255,255,0.2); }
+
+    /* ── MAIN ── */
+    main { max-width: 1440px; margin: 0 auto; padding: 1.5rem 1.5rem 4rem; }
+
+    /* ── UPLOAD SECTION ── */
+    .upload-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .upload-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .upload-card.info-card {
+      background: rgba(59,130,246,0.06);
+      border-color: rgba(59,130,246,0.2);
+    }
+    .upload-icon {
+      width: 44px; height: 44px;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.25rem;
+      flex-shrink: 0;
+    }
+    .upload-icon.funne { background: rgba(201,168,76,0.15); }
+    .upload-icon.effi  { background: var(--green-dim); }
+    .upload-icon.info  { background: var(--blue-dim); }
+    .upload-card-body { flex: 1; }
+    .upload-card-title { font-size: 0.82rem; font-weight: 700; color: var(--white); margin-bottom: 0.2rem; }
+    .upload-card-sub   { font-size: 0.72rem; color: var(--text-2); margin-bottom: 0.75rem; line-height: 1.4; }
+    .btn-upload {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      border: none;
+      border-radius: var(--radius);
+      padding: 0.5rem 1.1rem;
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      transition: opacity var(--tr), transform var(--tr);
+    }
+    .btn-upload:hover { opacity: 0.85; transform: translateY(-1px); }
+    .btn-upload.funne { background: linear-gradient(135deg, #C9A84C, #E8C96B); color: #000; }
+    .btn-upload.effi  { background: linear-gradient(135deg, #22C55E, #16A34A); color: #fff; }
+    .info-text { font-size: 0.72rem; color: var(--blue); line-height: 1.5; }
+
+    /* ── STATS ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+    .stat-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 1rem 1.1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .stat-icon {
+      width: 36px; height: 36px;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+    .stat-body { min-width: 0; }
+    .stat-value { font-size: 1.3rem; font-weight: 800; color: var(--white); line-height: 1; margin-bottom: 0.2rem; }
+    .stat-label { font-size: 0.65rem; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+
+    /* ── MAIN GRID ── */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 1rem;
+      align-items: start;
+    }
+
+    /* ── HISTORIAL ── */
+    .historial-panel {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.875rem 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-title { font-size: 0.82rem; font-weight: 700; color: var(--white); display: flex; align-items: center; gap: 0.4rem; }
+    .historial-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+    }
+    .htab {
+      flex: 1;
+      padding: 0.6rem;
+      text-align: center;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-2);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all var(--tr);
+    }
+    .htab.active { color: var(--gold); border-bottom-color: var(--gold); }
+    .historial-body { padding: 0.75rem; max-height: calc(100vh - 380px); overflow-y: auto; }
+    .anio-grupo { margin-bottom: 0.5rem; }
+    .anio-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--text-2);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      padding: 0.25rem 0;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      cursor: pointer;
+    }
+    .mes-grupo { margin-left: 0.5rem; margin-bottom: 0.25rem; }
+    .mes-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-2);
+      padding: 0.2rem 0.4rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-radius: 4px;
+      transition: background var(--tr);
+    }
+    .mes-label:hover { background: var(--surface3); }
+    .mes-count {
+      background: var(--surface3);
+      border-radius: 20px;
+      padding: 1px 6px;
+      font-size: 0.62rem;
+    }
+    .archivo-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 0.6rem 0.35rem 1.2rem;
+      font-size: 0.72rem;
+      color: var(--text-2);
+      border-radius: 5px;
+      transition: background var(--tr);
+    }
+    .archivo-item:hover { background: var(--surface3); color: var(--text); }
+    .archivo-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .archivo-dot.funne { background: var(--gold); }
+    .archivo-dot.effi  { background: var(--green); }
+    .archivo-nombre { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .archivo-total { color: var(--text-3); font-size: 0.65rem; flex-shrink: 0; }
+    .historial-empty { text-align: center; color: var(--text-3); font-size: 0.78rem; padding: 2rem 1rem; }
+
+    /* ── CLIENTES POR CONFIRMAR ── */
+    .clientes-panel {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+    .clientes-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      padding: 0.875rem 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .toolbar-l { display: flex; align-items: center; gap: 0.5rem; }
+    .toolbar-r { display: flex; align-items: center; gap: 0.5rem; }
+    .badge-num {
+      background: var(--surface3);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 0.1rem 0.55rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--text-2);
+    }
+    .btn-sm {
+      background: var(--surface3);
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      border-radius: 6px;
+      padding: 0.35rem 0.7rem;
+      font-size: 0.72rem;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all var(--tr);
+    }
+    .btn-sm:hover { border-color: var(--gold); color: var(--gold); }
+    .btn-sm.green:hover { border-color: var(--green); color: var(--green); }
+    .btn-campana {
+      background: linear-gradient(135deg, #A855F7, #7C3AED);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 0.38rem 0.875rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      transition: opacity var(--tr);
+    }
+    .btn-campana:hover { opacity: 0.85; }
+    .search-clientes {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .search-clientes input {
+      background: var(--surface3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.78rem;
+      padding: 0.35rem 0.75rem 0.35rem 1.75rem;
+      width: 200px;
+      outline: none;
+      font-family: inherit;
+      transition: border-color var(--tr);
+    }
+    .search-clientes input:focus { border-color: rgba(201,168,76,0.38); }
+    .search-clientes::before {
+      content: '🔍';
+      position: absolute;
+      left: 0.5rem;
+      font-size: 0.7rem;
+      pointer-events: none;
+    }
+
+    /* Tabla clientes */
+    .clientes-table-wrap { overflow-x: auto; max-height: calc(100vh - 420px); overflow-y: auto; }
+    table.ct { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    table.ct thead { background: var(--surface3); position: sticky; top: 0; z-index: 2; }
+    table.ct th {
+      padding: 0.6rem 0.75rem;
+      text-align: left;
+      font-size: 0.62rem;
+      font-weight: 600;
+      color: var(--text-2);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+      border-bottom: 1px solid var(--border);
+    }
+    table.ct th.check-col { width: 36px; }
+    table.ct tbody tr { border-bottom: 1px solid var(--border); transition: background var(--tr); }
+    table.ct tbody tr:last-child { border-bottom: none; }
+    table.ct tbody tr:hover { background: rgba(255,255,255,0.02); }
+    table.ct tbody tr.selected { background: rgba(201,168,76,0.05); }
+    table.ct td { padding: 0.65rem 0.75rem; vertical-align: middle; }
+    .ct-check input[type="checkbox"] { width: 14px; height: 14px; cursor: pointer; accent-color: var(--gold); }
+    .ct-num { color: var(--text-3); font-size: 0.7rem; }
+    .ct-nombre { font-weight: 600; color: var(--white); }
+    .ct-tel { font-variant-numeric: tabular-nums; color: var(--text-2); }
+    .ct-producto { color: var(--text); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ct-dias {
+      font-weight: 700;
+      font-size: 0.75rem;
+      white-space: nowrap;
+    }
+    .dias-ok   { color: var(--green); }
+    .dias-warn { color: var(--yellow); }
+    .dias-crit { color: var(--red); }
+    .badge-estado-h {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      border-radius: 5px;
+      padding: 0.2rem 0.5rem;
+      font-size: 0.65rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .est-pendiente   { background: var(--yellow-dim); color: var(--yellow); }
+    .est-enviado     { background: var(--green-dim);  color: var(--green);  }
+    .est-alerta      { background: rgba(239,68,68,0.12); color: var(--red); }
+    .alerta-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 0.65rem;
+      color: var(--yellow);
+      font-weight: 600;
+    }
+    .ct-actions { display: flex; gap: 0.35rem; align-items: center; }
+    .btn-wa-row {
+      width: 30px; height: 30px;
+      border-radius: 6px;
+      border: 1px solid rgba(34,197,94,0.25);
+      background: transparent;
+      color: var(--green);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all var(--tr);
+    }
+    .btn-wa-row:hover { background: var(--green-dim); border-color: var(--green); }
+    .btn-wa-row svg { display: block; }
+    .clientes-empty { text-align: center; color: var(--text-3); font-size: 0.82rem; padding: 3rem 1rem; line-height: 1.6; }
+
+    /* ── MODAL CONFIG ── */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.8);
+      backdrop-filter: blur(8px);
+      z-index: 300;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-box {
+      background: var(--surface);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 520px;
+      padding: 1.75rem;
+      position: relative;
+    }
+    .modal-box::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(201,168,76,0.45), transparent);
+      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    }
+    .modal-title { font-size: 0.95rem; font-weight: 800; color: var(--white); margin-bottom: 1rem; }
+    .modal-label { font-size: 0.68rem; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 0.4rem; display: block; }
+    .modal-textarea {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.82rem;
+      line-height: 1.6;
+      padding: 0.875rem;
+      resize: vertical;
+      outline: none;
+      min-height: 100px;
+      transition: border-color var(--tr);
+      margin-bottom: 0.5rem;
+    }
+    .modal-textarea:focus { border-color: rgba(201,168,76,0.38); }
+    .modal-hint { font-size: 0.7rem; color: var(--text-3); margin-bottom: 1rem; }
+    .modal-actions { display: flex; gap: 0.6rem; justify-content: flex-end; }
+    .btn-modal-cancel {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      border-radius: var(--radius);
+      padding: 0.5rem 1rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all var(--tr);
+    }
+    .btn-modal-cancel:hover { border-color: var(--border-h); color: var(--white); }
+    .btn-modal-save {
+      background: linear-gradient(135deg, #C9A84C, #E8C96B);
+      color: #000;
+      border: none;
+      border-radius: var(--radius);
+      padding: 0.5rem 1.25rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      transition: opacity var(--tr);
+    }
+    .btn-modal-save:hover { opacity: 0.88; }
+    .btn-cerrar-modal {
+      position: absolute;
+      top: 1rem; right: 1rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-2);
+      font-size: 0.88rem;
+      cursor: pointer;
+      padding: 0.28rem 0.48rem;
+      transition: all var(--tr);
+    }
+    .btn-cerrar-modal:hover { color: var(--white); }
+
+    /* ── MODAL CAMPAÑA ── */
+    .campana-info { font-size: 0.82rem; color: var(--text-2); margin-bottom: 1rem; line-height: 1.5; }
+    .campana-progress { text-align: center; padding: 1rem 0; }
+    .progress-bar-wrap { background: var(--surface3); border-radius: 999px; height: 6px; margin: 0.75rem 0; overflow: hidden; }
+    .progress-bar { background: linear-gradient(90deg, #22C55E, #16A34A); height: 100%; border-radius: 999px; transition: width 0.3s ease; }
+    .progress-text { font-size: 0.78rem; color: var(--text-2); }
+    .btn-iniciar-campana {
+      background: linear-gradient(135deg, #A855F7, #7C3AED);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      padding: 0.6rem 1.5rem;
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      width: 100%;
+      margin-top: 0.75rem;
+      transition: opacity var(--tr);
+    }
+    .btn-iniciar-campana:hover { opacity: 0.88; }
+    .btn-iniciar-campana:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── TOAST ── */
+    #toast {
+      position: fixed;
+      bottom: 1.5rem; right: 1.5rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 0.75rem 1.25rem;
+      font-size: 0.82rem;
+      color: var(--text);
+      z-index: 500;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      opacity: 0;
+      transform: translateY(8px);
+      transition: all 0.25s ease;
+      pointer-events: none;
+      max-width: 320px;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+
+    /* ── LOADING SPINNER ── */
+    .spinner-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(4px);
+      z-index: 400;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .spinner-overlay.open { display: flex; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid rgba(201,168,76,0.2);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    .spinner-text { font-size: 0.82rem; color: var(--text-2); }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── FOOTER ── */
+    footer { text-align: center; padding: 1.1rem 1rem; color: var(--text-3); font-size: 0.7rem; border-top: 1px solid var(--border); letter-spacing: 0.04em; margin-top: 2rem; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 999px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+    @media (max-width: 1100px) {
+      .stats-grid { grid-template-columns: repeat(3, 1fr); }
+      .main-grid  { grid-template-columns: 1fr; }
+      .upload-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 700px) {
+      .upload-grid { grid-template-columns: 1fr; }
+      .stats-grid  { grid-template-columns: repeat(2, 1fr); }
+      main { padding: 1rem 0.75rem 3rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="header-left">
+      <img src="img/logo-quin.png" alt="Agencia Quin" class="header-logo-img">
+      <div class="header-info">
+        <span class="header-title">ConfirmaYa</span>
+        <span class="header-sub">Klixmant — Equipo Josué &amp; Mallerlis</span>
+      </div>
+    </div>
+    <nav class="header-nav">
+      <a href="index.html" class="btn-nav">← Confirmación de pedidos</a>
+      <a href="historial.html" class="btn-nav active">📊 Historial y Comparación</a>
+    </nav>
+  </header>
+
+  <main>
+
+    <!-- UPLOAD CARDS -->
+    <div class="upload-grid">
+      <div class="upload-card">
+        <div class="upload-icon funne">📤</div>
+        <div class="upload-card-body">
+          <div class="upload-card-title">Subir archivo de Funnelish</div>
+          <div class="upload-card-sub">Clientes que realizaron un pedido</div>
+          <button class="btn-upload funne" id="btn-subir-funnelish">⬆ Subir archivo de Funnelish</button>
+          <input type="file" id="input-funnelish" accept=".xlsx,.xls,.csv" style="display:none">
+        </div>
+      </div>
+
+      <div class="upload-card">
+        <div class="upload-icon effi">✅</div>
+        <div class="upload-card-body">
+          <div class="upload-card-title">Subir reporte Effi</div>
+          <div class="upload-card-sub">Clientes que ya confirmaron su compra</div>
+          <button class="btn-upload effi" id="btn-subir-effi">⬆ Subir reporte Effi</button>
+          <input type="file" id="input-effi" accept=".xlsx,.xls,.csv" style="display:none">
+        </div>
+      </div>
+
+      <div class="upload-card info-card">
+        <div class="upload-icon info">⚡</div>
+        <div class="upload-card-body">
+          <div class="upload-card-title">Comparación automática</div>
+          <div class="upload-card-sub info-text">Cada vez que subas un reporte Effi, el sistema comparará automáticamente con todos los archivos de Funnelish de los últimos 30 días e identificará los clientes que aún no han confirmado.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STATS -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon" style="background:rgba(201,168,76,0.12)">👥</div>
+        <div class="stat-body">
+          <div class="stat-value" id="stat-funnelish">0</div>
+          <div class="stat-label">Clientes Funnelish 30d</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--green-dim)">✅</div>
+        <div class="stat-body">
+          <div class="stat-value" id="stat-effi">0</div>
+          <div class="stat-label">Encontrados en Effi</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--yellow-dim)">⏳</div>
+        <div class="stat-body">
+          <div class="stat-value" id="stat-pendientes">0</div>
+          <div class="stat-label">Clientes por confirmar</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--blue-dim)">💬</div>
+        <div class="stat-body">
+          <div class="stat-value" id="stat-enviados">0</div>
+          <div class="stat-label">Mensajes enviados</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--red-dim)">⚠️</div>
+        <div class="stat-body">
+          <div class="stat-value" id="stat-alertas">0</div>
+          <div class="stat-label">Con alerta revisión</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:rgba(168,85,247,0.12)">📈</div>
+        <div class="stat-body">
+          <div class="stat-value" id="stat-recuperacion">0%</div>
+          <div class="stat-label">% Recuperación</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN GRID -->
+    <div class="main-grid">
+
+      <!-- HISTORIAL -->
+      <div class="historial-panel">
+        <div class="panel-header">
+          <span class="panel-title">📁 Historial de archivos</span>
+        </div>
+        <div class="historial-tabs">
+          <div class="htab active" data-tab="funnelish">Funnelish</div>
+          <div class="htab" data-tab="effi">Effi</div>
+        </div>
+        <div class="historial-body" id="historial-body">
+          <div class="historial-empty">Sube archivos para ver el historial</div>
+        </div>
+      </div>
+
+      <!-- CLIENTES POR CONFIRMAR -->
+      <div class="clientes-panel">
+        <div class="clientes-toolbar">
+          <div class="toolbar-l">
+            <span class="panel-title">👥 Clientes por confirmar</span>
+            <span class="badge-num" id="badge-clientes">0</span>
+          </div>
+          <div class="toolbar-r">
+            <div class="search-clientes">
+              <input type="text" id="buscar-clientes" placeholder="Buscar cliente o teléfono...">
+            </div>
+            <button class="btn-sm" id="btn-filtro-estado">Todos</button>
+            <button class="btn-sm" id="btn-config-msg" title="Editar mensaje WhatsApp">✏ Mensaje</button>
+            <button class="btn-campana" id="btn-modo-campana">📢 Modo campaña</button>
+          </div>
+        </div>
+        <div class="clientes-table-wrap">
+          <table class="ct">
+            <thead>
+              <tr>
+                <th class="check-col"><input type="checkbox" id="chk-all"></th>
+                <th>#</th>
+                <th>Cliente</th>
+                <th>Teléfono</th>
+                <th>Producto</th>
+                <th>Días sin confirmar</th>
+                <th>Estado</th>
+                <th>Alerta</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-clientes">
+              <tr><td colspan="9" class="clientes-empty">Sube un reporte Effi para ver los clientes por confirmar</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <footer>ConfirmaYa &copy; 2024 — KLIXMANT · Módulo Historial y Comparación</footer>
+
+  <!-- MODAL CONFIG MENSAJE -->
+  <div class="modal-overlay" id="modal-config">
+    <div class="modal-box">
+      <button class="btn-cerrar-modal" id="cerrar-config">✕</button>
+      <div class="modal-title">✏ Editar mensaje de WhatsApp</div>
+      <label class="modal-label">Plantilla del mensaje</label>
+      <textarea class="modal-textarea" id="textarea-mensaje" rows="4"></textarea>
+      <div class="modal-hint">Usa <strong>{Nombre}</strong> para insertar el nombre del cliente automáticamente.</div>
+      <div class="modal-actions">
+        <button class="btn-modal-cancel" id="cancelar-config">Cancelar</button>
+        <button class="btn-modal-save" id="guardar-config">Guardar mensaje</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CAMPAÑA -->
+  <div class="modal-overlay" id="modal-campana">
+    <div class="modal-box">
+      <button class="btn-cerrar-modal" id="cerrar-campana">✕</button>
+      <div class="modal-title">📢 Modo campaña</div>
+      <div class="campana-info" id="campana-info">
+        Selecciona los clientes en la tabla y presiona "Iniciar campaña" para abrir los chats de WhatsApp uno por uno con el mensaje ya preparado.
+      </div>
+      <div id="campana-progress" style="display:none">
+        <div class="progress-bar-wrap">
+          <div class="progress-bar" id="campana-bar" style="width:0%"></div>
+        </div>
+        <div class="progress-text" id="campana-text">Enviando 0 de 0...</div>
+      </div>
+      <button class="btn-iniciar-campana" id="btn-iniciar-campana">🚀 Iniciar campaña</button>
+    </div>
+  </div>
+
+  <!-- SPINNER -->
+  <div class="spinner-overlay" id="spinner">
+    <div class="spinner"></div>
+    <div class="spinner-text" id="spinner-text">Procesando...</div>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="historial.js"></script>
+</body>
+</html>
