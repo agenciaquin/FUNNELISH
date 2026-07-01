@@ -82,6 +82,16 @@ function formatFecha(fechaStr) {
   } catch { return ''; }
 }
 
+// Normaliza cualquier fecha a 'YYYY-MM-DD' para comparación uniforme en Supabase
+function normalizarFecha(fechaStr) {
+  if (!fechaStr) return '';
+  try {
+    const d = new Date(fechaStr);
+    if (isNaN(d.getTime())) return fechaStr.slice(0, 10);
+    return d.toISOString().slice(0, 10);
+  } catch { return ''; }
+}
+
 function readExcel(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -126,7 +136,7 @@ async function subirFunnelish(fileOrData, filename) {
       talla:        getField(row, ['size','talla','lineitem variant','variant']),
       valor:        getField(row, ['total','valor','price','grand total','subtotal']),
       correo:       getField(row, ['email','correo','payer email','optin email']),
-      fecha_pedido: getField(row, ['created at','fecha','date','time','order date']),
+      fecha_pedido: normalizarFecha(getField(row, ['created at','fecha','date','time','order date'])),
     })).filter(r => r.telefono.length >= 7);
 
     // 1. Deduplicar dentro del mismo archivo por (telefono + fecha_pedido)
@@ -183,14 +193,26 @@ async function subirEffi(file) {
       nombre:     getField(row, ['name','nombre','cliente','customer']),
     })).filter(r => r.telefono.length >= 7);
 
-    for (let i = 0; i < telefonos.length; i += 500) {
-      await db.from('telefonos_effi').insert(telefonos.slice(i, i + 500));
+    // Deduplicar dentro del archivo
+    const dedupEffi = [...new Map(telefonos.map(r => [r.telefono, r])).values()];
+
+    // Verificar cuáles ya existen en DB (evita sumar mismo cliente de archivos superpuestos)
+    const telNums = dedupEffi.map(r => r.telefono);
+    const { data: existentesEffi } = await db
+      .from('telefonos_effi')
+      .select('telefono')
+      .in('telefono', telNums);
+    const existeEffiSet = new Set((existentesEffi || []).map(e => e.telefono));
+    const nuevosEffi    = dedupEffi.filter(r => !existeEffiSet.has(r.telefono));
+
+    for (let i = 0; i < nuevosEffi.length; i += 500) {
+      await db.from('telefonos_effi').insert(nuevosEffi.slice(i, i + 500));
     }
 
     spinner(true, 'Ejecutando comparación automática...');
     await ejecutarComparacion();
 
-    toast(`✅ Effi cargado: ${telefonos.length} confirmados. Comparación ejecutada.`, 'rgba(34,197,94,0.4)');
+    toast(`✅ Effi cargado: ${nuevosEffi.length} nuevos (${dedupEffi.length - nuevosEffi.length} ya existían). Comparación ejecutada.`, 'rgba(34,197,94,0.4)');
     await cargarHistorial();
     await cargarStats();
     await cargarClientes();
@@ -204,29 +226,35 @@ async function subirEffi(file) {
 
 // ── COMPARACIÓN ──────────────────────────────────────────────────
 async function ejecutarComparacion() {
-  const hace30 = new Date(Date.now() - 30*24*60*60*1000).toISOString();
-
-  // Todos los clientes Funnelish últimos 30 días
+  // Todos los clientes Funnelish (histórico completo, hasta 10000)
   const { data: fClientes } = await db
     .from('clientes_funnelish')
     .select('telefono,nombre,ciudad,departamento,direccion,producto,talla,valor,correo,fecha_pedido')
-    .gte('fecha_carga', hace30);
+    .range(0, 9999);
 
-  // Todos los teléfonos Effi últimos 30 días
+  // Todos los teléfonos Effi ya deduplicados
   const { data: eTels } = await db
     .from('telefonos_effi')
     .select('telefono')
-    .gte('fecha_carga', hace30);
+    .range(0, 9999);
 
   const effiSet = new Set((eTels || []).map(e => e.telefono));
 
-  // Clientes en Funnelish pero NO en Effi
+  // 1. ELIMINAR de pendientes a cualquier cliente que ya apareció en Effi (confirmado)
+  const effiArray = [...effiSet];
+  for (let i = 0; i < effiArray.length; i += 100) {
+    await db.from('clientes_por_confirmar')
+      .delete()
+      .in('telefono', effiArray.slice(i, i + 100));
+  }
+
+  // 2. Agregar a pendientes: clientes Funnelish que NO están en Effi
   const pendientes = (fClientes || []).filter(c => !effiSet.has(c.telefono));
 
   // Deduplicar por teléfono (quedarse con el más reciente)
   const unique = [...new Map(pendientes.map(c => [c.telefono, c])).values()];
 
-  // Insertar solo los nuevos (ignorar duplicados)
+  // Upsert: si ya existe el teléfono no sobreescribir (puede tener estado 'mensaje_enviado')
   for (const c of unique) {
     await db.from('clientes_por_confirmar')
       .upsert({
@@ -241,20 +269,6 @@ async function ejecutarComparacion() {
         correo:      c.correo,
         fecha_pedido:c.fecha_pedido,
       }, { onConflict: 'telefono', ignoreDuplicates: true });
-  }
-
-  // Marcar alertas: clientes en "por confirmar" que ahora están en Effi
-  const { data: porConfirmar } = await db
-    .from('clientes_por_confirmar')
-    .select('id,telefono')
-    .eq('alerta_effi', false);
-
-  const conAlerta = (porConfirmar || []).filter(c => effiSet.has(c.telefono));
-  if (conAlerta.length > 0) {
-    const ids = conAlerta.map(c => c.id);
-    await db.from('clientes_por_confirmar')
-      .update({ alerta_effi: true, fecha_alerta_effi: new Date().toISOString() })
-      .in('id', ids);
   }
 }
 
@@ -305,7 +319,6 @@ async function cargarHistorial() {
 
 // ── CARGAR ESTADÍSTICAS ──────────────────────────────────────────
 async function cargarStats() {
-  const hace30    = new Date(Date.now() - 30*24*60*60*1000).toISOString();
   const desde     = document.getElementById('stat-desde')?.value || '';
   const hasta     = document.getElementById('stat-hasta')?.value || '';
   const hayFiltro = desde || hasta;
@@ -317,18 +330,22 @@ async function cargarStats() {
     if (hayFiltro) tag.textContent = (desde || '…') + ' → ' + (hasta || '…');
   }
 
-  // Queries Funnelish / Effi (por fecha_carga)
-  let qF = db.from('clientes_funnelish').select('*', { count:'exact', head:true });
-  let qE = db.from('telefonos_effi').select('*', { count:'exact', head:true });
-  if (hayFiltro) {
-    if (desde) { qF = qF.gte('fecha_carga', desde + 'T00:00:00'); qE = qE.gte('fecha_carga', desde + 'T00:00:00'); }
-    if (hasta) { qF = qF.lte('fecha_carga', hasta + 'T23:59:59'); qE = qE.lte('fecha_carga', hasta + 'T23:59:59'); }
-  } else {
-    qF = qF.gte('fecha_carga', hace30);
-    qE = qE.gte('fecha_carga', hace30);
-  }
+  // 1. Funnelish: filtra por fecha_pedido del cliente (no por cuándo se subió el Excel)
+  let qFPhones = db.from('clientes_funnelish').select('telefono').range(0, 9999);
+  if (desde) qFPhones = qFPhones.gte('fecha_pedido', desde);
+  if (hasta) qFPhones = qFPhones.lte('fecha_pedido', hasta);
+  const { data: fData } = await qFPhones;
+  const fPhoneSet = new Set((fData || []).map(r => r.telefono));
+  const cF = fPhoneSet.size;
 
-  // Queries clientes por confirmar (por fecha_pedido si hay filtro)
+  // 2. Effi: teléfonos únicos ya confirmados, intersectados con Funnelish en rango de fechas
+  const { data: eData } = await db.from('telefonos_effi').select('telefono').range(0, 9999);
+  const ePhones = (eData || []).map(r => r.telefono);
+  const cE = hayFiltro
+    ? new Set(ePhones.filter(t => fPhoneSet.has(t))).size   // solo confirmados dentro del rango
+    : new Set(ePhones).size;                                  // todos los confirmados (sin filtro)
+
+  // 3. Clientes por confirmar filtrados por fecha_pedido
   let qP   = db.from('clientes_por_confirmar').select('*', { count:'exact', head:true });
   let qEnv = db.from('clientes_por_confirmar').select('*', { count:'exact', head:true }).eq('estado','mensaje_enviado');
   let qAl  = db.from('clientes_por_confirmar').select('*', { count:'exact', head:true }).eq('alerta_effi', true);
@@ -338,17 +355,15 @@ async function cargarStats() {
   }
 
   const [
-    { count: cF },
-    { count: cE },
     { count: cP },
     { count: cEnv },
     { count: cAlerta },
-  ] = await Promise.all([qF, qE, qP, qEnv, qAl]);
+  ] = await Promise.all([qP, qEnv, qAl]);
 
   const recup = cP > 0 ? Math.round(((cAlerta||0) / (cP||1)) * 100) : 0;
 
-  document.getElementById('stat-funnelish').textContent    = (cF    || 0).toLocaleString();
-  document.getElementById('stat-effi').textContent         = (cE    || 0).toLocaleString();
+  document.getElementById('stat-funnelish').textContent    = cF.toLocaleString();
+  document.getElementById('stat-effi').textContent         = cE.toLocaleString();
   document.getElementById('stat-pendientes').textContent   = (cP    || 0).toLocaleString();
   document.getElementById('stat-enviados').textContent     = (cEnv  || 0).toLocaleString();
   document.getElementById('stat-alertas').textContent      = (cAlerta||0).toLocaleString();
@@ -401,10 +416,11 @@ function filtrarYRenderClientes() {
 
     const matchEstado = !filtroEstado || c.estado === filtroEstado;
 
-    // Filtro de fecha sobre fecha_primer_registro (TIMESTAMPTZ → fecha local YYYY-MM-DD)
+    // Filtro de fecha sobre fecha_pedido (fecha real de compra del cliente)
     let matchFecha = true;
-    if (hayFecha && c.fecha_primer_registro) {
-      const fechaCliente = c.fecha_primer_registro.slice(0, 10); // 'YYYY-MM-DD'
+    const fechaBase2 = c.fecha_pedido || c.fecha_primer_registro || '';
+    if (hayFecha && fechaBase2) {
+      const fechaCliente = fechaBase2.slice(0, 10); // 'YYYY-MM-DD'
       if (desde && fechaCliente < desde) matchFecha = false;
       if (hasta && fechaCliente > hasta) matchFecha = false;
     }
