@@ -67,8 +67,19 @@ function getField(row, aliases) {
 }
 
 function diasDesde(fecha) {
+  if (!fecha) return 0;
   const d = new Date(fecha);
-  return Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (isNaN(d.getTime())) return 0;
+  return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+}
+
+function formatFecha(fechaStr) {
+  if (!fechaStr || fechaStr === '') return '';
+  try {
+    const d = new Date(fechaStr);
+    if (isNaN(d.getTime())) return fechaStr.slice(0, 10);
+    return d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  } catch { return ''; }
 }
 
 function readExcel(file) {
@@ -389,8 +400,11 @@ function renderTablaClientes() {
   }
 
   tbody.innerHTML = clientesFiltro.map((c, i) => {
-    const dias  = diasDesde(c.fecha_primer_registro);
+    // Contar días desde la fecha de compra; fallback a fecha_primer_registro
+    const fechaBase = (c.fecha_pedido && c.fecha_pedido !== '') ? c.fecha_pedido : c.fecha_primer_registro;
+    const dias    = diasDesde(fechaBase);
     const clsDias = dias <= 7 ? 'dias-ok' : dias <= 15 ? 'dias-warn' : 'dias-crit';
+    const fechaDisplay = formatFecha(c.fecha_pedido);
     const sel   = selectedIds.has(c.id);
 
     let estadoHtml;
@@ -412,6 +426,7 @@ function renderTablaClientes() {
       <td>
         <div class="ct-nombre">${c.nombre || '—'}</div>
         <div style="font-size:0.68rem;color:var(--text-2)">${c.ciudad || ''} ${c.departamento ? '· '+c.departamento : ''}</div>
+        ${fechaDisplay ? `<div style="font-size:0.65rem;color:var(--gold);margin-top:2px">🗓 ${fechaDisplay}</div>` : ''}
       </td>
       <td class="ct-tel">${c.telefono}</td>
       <td class="ct-producto" title="${c.producto}">${c.producto || '—'}</td>
