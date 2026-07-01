@@ -306,9 +306,11 @@ async function cargarStats() {
 // ── LIMPIAR FILTROS ──────────────────────────────────────────────
 function limpiarFiltros() {
   document.getElementById('buscar-clientes').value = '';
-  filtroEstado = '';
-  document.getElementById('btn-filtro-estado').textContent = 'Todos';
+  document.getElementById('filtro-desde').value    = '';
+  document.getElementById('filtro-hasta').value    = '';
+  filtroEstado    = '';
   estadoIdxGlobal = 0;
+  document.getElementById('btn-filtro-estado').textContent = 'Todos';
   filtrarYRenderClientes();
 }
 
@@ -325,7 +327,19 @@ async function cargarClientes() {
 }
 
 function filtrarYRenderClientes() {
-  const busq = (document.getElementById('buscar-clientes').value || '').toLowerCase();
+  const busq   = (document.getElementById('buscar-clientes').value || '').toLowerCase();
+  const desde  = document.getElementById('filtro-desde').value;  // 'YYYY-MM-DD' o ''
+  const hasta  = document.getElementById('filtro-hasta').value;
+  const hayFecha = desde || hasta;
+
+  // Mostrar/ocultar tag "Filtro activo"
+  const tag = document.getElementById('filtro-fecha-tag');
+  if (tag) {
+    tag.style.display = hayFecha ? 'inline-flex' : 'none';
+    if (hayFecha) {
+      tag.textContent = (desde || '…') + ' → ' + (hasta || '…');
+    }
+  }
 
   clientesFiltro = clientesData.filter(c => {
     const matchBusq = !busq ||
@@ -334,7 +348,16 @@ function filtrarYRenderClientes() {
       (c.producto || '').toLowerCase().includes(busq);
 
     const matchEstado = !filtroEstado || c.estado === filtroEstado;
-    return matchBusq && matchEstado;
+
+    // Filtro de fecha sobre fecha_primer_registro (TIMESTAMPTZ → fecha local YYYY-MM-DD)
+    let matchFecha = true;
+    if (hayFecha && c.fecha_primer_registro) {
+      const fechaCliente = c.fecha_primer_registro.slice(0, 10); // 'YYYY-MM-DD'
+      if (desde && fechaCliente < desde) matchFecha = false;
+      if (hasta && fechaCliente > hasta) matchFecha = false;
+    }
+
+    return matchBusq && matchEstado && matchFecha;
   });
 
   renderTablaClientes();
@@ -521,6 +544,10 @@ async function init() {
 
   // Búsqueda
   document.getElementById('buscar-clientes').addEventListener('input', filtrarYRenderClientes);
+
+  // Filtro fechas
+  document.getElementById('filtro-desde').addEventListener('change', filtrarYRenderClientes);
+  document.getElementById('filtro-hasta').addEventListener('change', filtrarYRenderClientes);
 
   // Checkbox all
   document.getElementById('chk-all').addEventListener('change', e => {

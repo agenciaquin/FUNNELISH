@@ -302,6 +302,59 @@
     }
     .toolbar-l { display: flex; align-items: center; gap: 0.5rem; }
     .toolbar-r { display: flex; align-items: center; gap: 0.5rem; }
+
+    /* ── FILTRO FECHAS ── */
+    .filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+      flex-wrap: wrap;
+    }
+    .filter-bar-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--text-2);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      flex-shrink: 0;
+    }
+    .filter-date-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .filter-date-wrap span {
+      font-size: 0.7rem;
+      color: var(--text-3);
+    }
+    .input-fecha {
+      background: var(--surface3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: var(--radius);
+      padding: 0.35rem 0.6rem;
+      font-size: 0.74rem;
+      font-family: inherit;
+      cursor: pointer;
+      transition: border-color var(--tr);
+      color-scheme: dark;
+    }
+    .input-fecha:focus { outline: none; border-color: var(--gold); }
+    .filter-active-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      background: rgba(201,168,76,0.12);
+      border: 1px solid rgba(201,168,76,0.25);
+      color: var(--gold);
+      border-radius: 20px;
+      padding: 0.2rem 0.6rem;
+      font-size: 0.68rem;
+      font-weight: 600;
+    }
     .badge-num {
       background: var(--surface3);
       border: 1px solid var(--border);
@@ -758,6 +811,19 @@
             <button class="btn-campana" id="btn-modo-campana">📢 Modo campaña</button>
           </div>
         </div>
+
+        <!-- BARRA DE FILTRO FECHAS -->
+        <div class="filter-bar">
+          <span class="filter-bar-label">📅 Fecha de pedido</span>
+          <div class="filter-date-wrap">
+            <span>Desde</span>
+            <input type="date" class="input-fecha" id="filtro-desde">
+            <span>Hasta</span>
+            <input type="date" class="input-fecha" id="filtro-hasta">
+          </div>
+          <span class="filter-active-tag" id="filtro-fecha-tag" style="display:none">Filtro activo</span>
+        </div>
+
         <div class="clientes-table-wrap">
           <table class="ct">
             <thead>
