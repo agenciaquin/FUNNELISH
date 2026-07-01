@@ -731,6 +731,19 @@
       </div>
     </div>
 
+    <!-- FILTRO STATS -->
+    <div class="filter-bar" style="margin-bottom:0; border-top:none;">
+      <span class="filter-bar-label">📊 Filtrar estadísticas</span>
+      <div class="filter-date-wrap">
+        <span>Desde</span>
+        <input type="date" class="input-fecha" id="stat-desde">
+        <span>Hasta</span>
+        <input type="date" class="input-fecha" id="stat-hasta">
+      </div>
+      <button class="btn-sm btn-limpiar" id="btn-limpiar-stats" title="Ver todo (sin filtro)">🗑 Limpiar</button>
+      <span class="filter-active-tag" id="stat-fecha-tag" style="display:none">Filtro activo</span>
+    </div>
+
     <!-- STATS -->
     <div class="stats-grid">
       <div class="stat-card">

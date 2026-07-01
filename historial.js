@@ -305,7 +305,37 @@ async function cargarHistorial() {
 
 // ── CARGAR ESTADÍSTICAS ──────────────────────────────────────────
 async function cargarStats() {
-  const hace30 = new Date(Date.now() - 30*24*60*60*1000).toISOString();
+  const hace30    = new Date(Date.now() - 30*24*60*60*1000).toISOString();
+  const desde     = document.getElementById('stat-desde')?.value || '';
+  const hasta     = document.getElementById('stat-hasta')?.value || '';
+  const hayFiltro = desde || hasta;
+
+  // Tag visual
+  const tag = document.getElementById('stat-fecha-tag');
+  if (tag) {
+    tag.style.display = hayFiltro ? 'inline-flex' : 'none';
+    if (hayFiltro) tag.textContent = (desde || '…') + ' → ' + (hasta || '…');
+  }
+
+  // Queries Funnelish / Effi (por fecha_carga)
+  let qF = db.from('clientes_funnelish').select('*', { count:'exact', head:true });
+  let qE = db.from('telefonos_effi').select('*', { count:'exact', head:true });
+  if (hayFiltro) {
+    if (desde) { qF = qF.gte('fecha_carga', desde + 'T00:00:00'); qE = qE.gte('fecha_carga', desde + 'T00:00:00'); }
+    if (hasta) { qF = qF.lte('fecha_carga', hasta + 'T23:59:59'); qE = qE.lte('fecha_carga', hasta + 'T23:59:59'); }
+  } else {
+    qF = qF.gte('fecha_carga', hace30);
+    qE = qE.gte('fecha_carga', hace30);
+  }
+
+  // Queries clientes por confirmar (por fecha_pedido si hay filtro)
+  let qP   = db.from('clientes_por_confirmar').select('*', { count:'exact', head:true });
+  let qEnv = db.from('clientes_por_confirmar').select('*', { count:'exact', head:true }).eq('estado','mensaje_enviado');
+  let qAl  = db.from('clientes_por_confirmar').select('*', { count:'exact', head:true }).eq('alerta_effi', true);
+  if (hayFiltro) {
+    if (desde) { qP = qP.gte('fecha_pedido', desde); qEnv = qEnv.gte('fecha_pedido', desde); qAl = qAl.gte('fecha_pedido', desde); }
+    if (hasta) { qP = qP.lte('fecha_pedido', hasta); qEnv = qEnv.lte('fecha_pedido', hasta); qAl = qAl.lte('fecha_pedido', hasta); }
+  }
 
   const [
     { count: cF },
@@ -313,22 +343,15 @@ async function cargarStats() {
     { count: cP },
     { count: cEnv },
     { count: cAlerta },
-  ] = await Promise.all([
-    db.from('clientes_funnelish').select('*', { count:'exact', head:true }).gte('fecha_carga', hace30),
-    db.from('telefonos_effi').select('*', { count:'exact', head:true }).gte('fecha_carga', hace30),
-    db.from('clientes_por_confirmar').select('*', { count:'exact', head:true }),
-    db.from('clientes_por_confirmar').select('*', { count:'exact', head:true }).eq('estado','mensaje_enviado'),
-    db.from('clientes_por_confirmar').select('*', { count:'exact', head:true }).eq('alerta_effi', true),
-  ]);
+  ] = await Promise.all([qF, qE, qP, qEnv, qAl]);
 
-  // Recuperación = alertas / total por confirmar
-  const recup = cP > 0 ? Math.round(((cAlerta||0) / cP) * 100) : 0;
+  const recup = cP > 0 ? Math.round(((cAlerta||0) / (cP||1)) * 100) : 0;
 
-  document.getElementById('stat-funnelish').textContent   = (cF    || 0).toLocaleString();
-  document.getElementById('stat-effi').textContent        = (cE    || 0).toLocaleString();
-  document.getElementById('stat-pendientes').textContent  = (cP    || 0).toLocaleString();
-  document.getElementById('stat-enviados').textContent    = (cEnv  || 0).toLocaleString();
-  document.getElementById('stat-alertas').textContent     = (cAlerta||0).toLocaleString();
+  document.getElementById('stat-funnelish').textContent    = (cF    || 0).toLocaleString();
+  document.getElementById('stat-effi').textContent         = (cE    || 0).toLocaleString();
+  document.getElementById('stat-pendientes').textContent   = (cP    || 0).toLocaleString();
+  document.getElementById('stat-enviados').textContent     = (cEnv  || 0).toLocaleString();
+  document.getElementById('stat-alertas').textContent      = (cAlerta||0).toLocaleString();
   document.getElementById('stat-recuperacion').textContent = recup + '%';
 }
 
@@ -578,9 +601,18 @@ async function init() {
   // Búsqueda
   document.getElementById('buscar-clientes').addEventListener('input', filtrarYRenderClientes);
 
-  // Filtro fechas
+  // Filtro fechas tabla clientes
   document.getElementById('filtro-desde').addEventListener('change', filtrarYRenderClientes);
   document.getElementById('filtro-hasta').addEventListener('change', filtrarYRenderClientes);
+
+  // Filtro fechas stats
+  document.getElementById('stat-desde').addEventListener('change', cargarStats);
+  document.getElementById('stat-hasta').addEventListener('change', cargarStats);
+  document.getElementById('btn-limpiar-stats').addEventListener('click', () => {
+    document.getElementById('stat-desde').value = '';
+    document.getElementById('stat-hasta').value = '';
+    cargarStats();
+  });
 
   // Checkbox all
   document.getElementById('chk-all').addEventListener('change', e => {
