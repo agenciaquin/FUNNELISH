@@ -109,6 +109,17 @@
     .page-hdr-sub   { font-size: 0.7rem; color: rgba(255,255,255,0.38); }
     .page-hdr-right { display: flex; align-items: center; gap: 0.6rem; }
 
+    .btn-actualizar-top {
+      background: linear-gradient(135deg, #C9A84C, #B8943A);
+      border: none; color: #14120c;
+      border-radius: 8px; padding: 0.5rem 1rem;
+      font-size: 0.78rem; font-weight: 700; cursor: pointer;
+      font-family: inherit; transition: all 0.15s;
+      box-shadow: 0 2px 12px rgba(201,168,76,0.25);
+    }
+    .btn-actualizar-top:hover  { opacity: 0.88; transform: translateY(-1px); }
+    .btn-actualizar-top:active { transform: translateY(0); }
+
     /* ── STATS BAR ──────────────────────────────────────────────── */
     .stats-bar {
       display: grid;
@@ -276,6 +287,7 @@
         <div class="page-hdr-sub">Recibe y confirma los pedidos de tus clientes de Funnelish</div>
       </div>
       <div class="page-hdr-right">
+        <button type="button" id="btn-actualizar-top" class="btn-actualizar-top">📥 Actualizar clientes (Excel)</button>
         <span id="badge-estado" class="badge-listo">✓ Listo</span>
       </div>
     </div>

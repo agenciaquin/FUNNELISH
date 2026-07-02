@@ -60,13 +60,15 @@ document.addEventListener("DOMContentLoaded", () => {
 function initUpload() {
   const inputFile     = document.getElementById("input-excel");
   const btnActualizar = document.getElementById("btn-actualizar");
+  const btnActualizarTop = document.getElementById("btn-actualizar-top");
 
-  if (btnActualizar) {
-    btnActualizar.addEventListener("click", () => {
-      inputFile.value = "";
-      inputFile.click();
-    });
-  }
+  const abrirSelector = () => {
+    inputFile.value = "";
+    inputFile.click();
+  };
+
+  if (btnActualizar)    btnActualizar.addEventListener("click", abrirSelector);
+  if (btnActualizarTop) btnActualizarTop.addEventListener("click", abrirSelector);
 
   inputFile.addEventListener("change", () => {
     if (inputFile.files[0]) procesarArchivo(inputFile.files[0]);
