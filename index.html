@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=36">
+  <link rel="stylesheet" href="styles.css?v=37">
   <style>
     /* ── LAYOUT CON SIDEBAR ─────────────────────────────────────── */
     html, body { height: 100%; overflow: hidden; }
@@ -222,11 +222,27 @@
     }
     .btn-subir-effi:hover { background: rgba(249,115,22,0.22); }
 
+    /* Grupos de acciones en cada fila */
+    .td-acciones { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .accion-grupo {
+      display: flex; align-items: center; gap: 0.3rem;
+      padding: 0.2rem 0.4rem; border-radius: 7px;
+    }
+    .effi-grupo    { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
+    .confirmar-grupo { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); }
+
+    /* WA Remarketing: color naranja */
+    .btn-accion-remarketing {
+      background: rgba(249,115,22,0.18); border: 1px solid rgba(249,115,22,0.45);
+      color: #F97316 !important;
+    }
+    .btn-accion-remarketing:hover { background: rgba(249,115,22,0.32) !important; }
+
     /* Badges Effi en cada fila */
     .badge-effi {
       display: inline-flex; align-items: center;
-      border-radius: 5px; padding: 0.18rem 0.45rem;
-      font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em;
+      border-radius: 5px; padding: 0.15rem 0.4rem;
+      font-size: 0.58rem; font-weight: 700; letter-spacing: 0.04em;
       white-space: nowrap; flex-shrink: 0;
     }
     .effi-confirmada { background: rgba(59,130,246,0.15); border: 1px solid rgba(59,130,246,0.4); color: #60A5FA; }
@@ -520,8 +536,8 @@
   <!-- SheetJS para leer Excel -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="catalogo.js?v=36"></script>
-  <script src="app.js?v=36"></script>
+  <script src="catalogo.js?v=37"></script>
+  <script src="app.js?v=37"></script>
 
   <script>
     /* ── STATS BAR ── cuenta desde el array real, no desde el DOM */
