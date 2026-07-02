@@ -458,6 +458,17 @@ function abrirWhatsApp(id) {
   const p   = pedidos[id];
   const url = "whatsapp://send?phone=" + p.telefonoWhatsApp + "&text=" + encodeURIComponent(generarMensaje(p));
   window.open(url, "_self");
+
+  // Auto-confirmar: si estaba Pendiente, pasa a Confirmado al enviar el mensaje
+  if ((estados[id] || "Pendiente") === "Pendiente") {
+    estados[id] = "Confirmado";
+    guardarEstados();
+    const badge = document.querySelector(`.badge-estado[data-id="${id}"]`);
+    if (badge) {
+      badge.textContent = "Confirmado";
+      badge.className   = "badge-estado " + claseEstado("Confirmado");
+    }
+  }
 }
 
 /* ================================================================
