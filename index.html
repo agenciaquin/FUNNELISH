@@ -123,7 +123,7 @@
     /* ── STATS BAR ──────────────────────────────────────────────── */
     .stats-bar {
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 0.625rem;
       padding: 1rem 1.5rem 0;
       flex-shrink: 0;
@@ -247,6 +247,42 @@
     }
     .effi-confirmada { background: rgba(59,130,246,0.15); border: 1px solid rgba(59,130,246,0.4); color: #60A5FA; }
     .effi-pendiente  { background: rgba(249,115,22,0.15); border: 1px solid rgba(249,115,22,0.4); color: #F97316; }
+
+    /* Checkbox selección masiva */
+    .th-check, .td-check { width: 34px; text-align: center; padding: 0 0.3rem !important; }
+    .row-check, #check-all {
+      width: 15px; height: 15px; cursor: pointer; accent-color: #C9A84C;
+    }
+
+    /* Barra de acción masiva */
+    .barra-seleccion {
+      display: none; align-items: center; gap: 0.75rem;
+      padding: 0.5rem 1.25rem;
+      background: rgba(201,168,76,0.08); border-bottom: 1px solid rgba(201,168,76,0.2);
+      flex-shrink: 0;
+    }
+    .barra-seleccion-label { font-size: 0.75rem; color: #C9A84C; font-weight: 600; }
+    #btn-confirmar-sel {
+      background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.45);
+      color: #22C55E; border-radius: 7px; padding: 0.32rem 0.85rem;
+      font-size: 0.73rem; font-weight: 700; cursor: pointer; transition: all 0.15s;
+    }
+    #btn-confirmar-sel:hover { background: rgba(34,197,94,0.28); }
+    #btn-limpiar-sel {
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
+      color: rgba(255,255,255,0.5); border-radius: 7px; padding: 0.32rem 0.7rem;
+      font-size: 0.73rem; font-weight: 600; cursor: pointer; transition: all 0.15s;
+    }
+    #btn-limpiar-sel:hover { color: #fff; background: rgba(255,255,255,0.1); }
+
+    /* Conteo Effi en cabecera */
+    .effi-header-counts { display: flex; gap: 0.4rem; margin-top: 0.2rem; flex-wrap: wrap; }
+    .effi-count {
+      display: inline-flex; align-items: center; border-radius: 4px;
+      padding: 0.1rem 0.4rem; font-size: 0.58rem; font-weight: 700; white-space: nowrap;
+    }
+    .effi-count-conf { background: rgba(59,130,246,0.15); color: #60A5FA; border: 1px solid rgba(59,130,246,0.3); }
+    .effi-count-pend { background: rgba(249,115,22,0.15); color: #F97316; border: 1px solid rgba(249,115,22,0.3); }
 
     /* Paginación */
     .paginacion { padding: 0.75rem 1.25rem 1rem; display: flex; }
@@ -377,10 +413,6 @@
         <div class="stat-tile-val" id="stat-confirmado">0</div>
         <div class="stat-tile-lbl">Confirmados</div>
       </div>
-      <div class="stat-tile s-noconf">
-        <div class="stat-tile-val" id="stat-noconf">0</div>
-        <div class="stat-tile-lbl">No confirman</div>
-      </div>
       <div class="stat-tile s-cancelado">
         <div class="stat-tile-val" id="stat-cancelado">0</div>
         <div class="stat-tile-lbl">Cancelados</div>
@@ -414,6 +446,13 @@
             <button type="button" id="btn-filtros" class="btn-filtro">⚙ Filtros</button>
             <button type="button" id="btn-actualizar" class="btn-nueva-carga">📥 Actualizar clientes</button>
           </div>
+        </div>
+
+        <!-- Barra selección masiva -->
+        <div id="barra-seleccion" class="barra-seleccion">
+          <span class="barra-seleccion-label">☑ Seleccionados:</span>
+          <button id="btn-confirmar-sel" onclick="confirmarSeleccionados()">✓ Confirmar seleccionados</button>
+          <button id="btn-limpiar-sel" onclick="limpiarSeleccion()">✕ Deseleccionar</button>
         </div>
 
         <!-- Filtros por columna -->
@@ -476,6 +515,7 @@
           <table id="tabla-pedidos">
             <thead>
               <tr>
+                <th class="th-check"><input type="checkbox" id="check-all" title="Seleccionar todos"></th>
                 <th>#</th>
                 <th>Producto</th>
                 <th>Cliente</th>
@@ -484,7 +524,7 @@
                 <th>Ciudad</th>
                 <th>Valor a pagar</th>
                 <th>Confirmar datos cliente</th>
-                <th>Estado Effi / Remarketing</th>
+                <th id="th-effi">Estado Effi / Remarketing</th>
               </tr>
             </thead>
             <tbody id="tabla-cuerpo">
@@ -536,24 +576,22 @@
   <!-- SheetJS para leer Excel -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="catalogo.js?v=38"></script>
-  <script src="app.js?v=38"></script>
+  <script src="catalogo.js?v=39"></script>
+  <script src="app.js?v=39"></script>
 
   <script>
     /* ── STATS BAR ── cuenta desde el array real, no desde el DOM */
     function actualizarStats() {
       const arr = window.pedidos || [];
       const est = window.estados || {};
-      const pendientes  = arr.filter(p => (est[p._key]||'Pendiente') === 'Pendiente').length;
+      const pendientes  = arr.filter(p => !['Confirmado','Cancelado'].includes(est[p._key]||'Pendiente')).length;
       const confirmados = arr.filter(p => (est[p._key]||'Pendiente') === 'Confirmado').length;
-      const noConf      = arr.filter(p => (est[p._key]||'Pendiente') === 'No confirma').length;
       const cancelados  = arr.filter(p => (est[p._key]||'Pendiente') === 'Cancelado').length;
       const total       = arr.length;
-      document.getElementById('stat-total').textContent       = total;
-      document.getElementById('stat-pendiente').textContent   = pendientes;
-      document.getElementById('stat-confirmado').textContent  = confirmados;
-      document.getElementById('stat-noconf').textContent      = noConf;
-      document.getElementById('stat-cancelado').textContent   = cancelados;
+      document.getElementById('stat-total').textContent      = total;
+      document.getElementById('stat-pendiente').textContent  = pendientes;
+      document.getElementById('stat-confirmado').textContent = confirmados;
+      document.getElementById('stat-cancelado').textContent  = cancelados;
     }
 
     // Actualizar stats cuando cambia la tabla

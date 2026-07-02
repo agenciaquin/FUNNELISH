@@ -45,6 +45,7 @@ let modoPendientesEffi = false;   // solo muestra clientes sin confirmar en Effi
 let effiPhones         = new Set(); // teléfonos 10 dígitos que aparecen en Effi
 let paginaActual       = 1;
 const ITEMS_POR_PAG    = 30;
+let seleccionados      = new Set(); // _keys seleccionados para acción masiva
 
 /* ── INICIALIZACIÓN ──────────────────────────────────────────── */
 document.addEventListener("DOMContentLoaded", () => {
@@ -288,7 +289,7 @@ async function cargarEffiDeSupabase() {
   try {
     const { data } = await dbH.from('telefonos_effi').select('telefono').range(0, 9999);
     effiPhones = new Set((data || []).map(r => tel10(r.telefono)));
-    if (pedidos.length) aplicarFiltros();
+    if (pedidos.length) { aplicarFiltros(); actualizarHeaderEffi(); }
   } catch(err) { console.warn('cargarEffiDeSupabase error:', err); }
 }
 
@@ -331,6 +332,7 @@ async function procesarArchivoEffi(file) {
 
       telefonos.forEach(t => effiPhones.add(t));
       aplicarFiltros();
+      actualizarHeaderEffi();
       alert(`✅ Effi actualizado: ${telefonos.length} teléfonos procesados.`);
     } catch(err) {
       console.error(err);
@@ -406,7 +408,7 @@ function renderizarTabla(filas) {
   document.getElementById("badge-total").textContent = filas.length;
 
   if (!filas.length) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:2rem;">Sin resultados.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:2rem;">Sin resultados.</td></tr>`;
     return;
   }
 
@@ -415,7 +417,11 @@ function renderizarTabla(filas) {
     const rutaFoto = buscarFotoProducto(p.producto);
     const tr       = document.createElement("tr");
 
+    const estaSeleccionado = seleccionados.has(p._key);
     tr.innerHTML = `
+      <td class="td-check">
+        <input type="checkbox" class="row-check" data-key="${p._key}" ${estaSeleccionado ? 'checked' : ''}>
+      </td>
       <td class="td-num">${i + 1}</td>
       <td>
         <div class="td-producto">
@@ -484,8 +490,18 @@ function renderizarTabla(filas) {
     tbody.appendChild(tr);
   });
 
+  // Badge en columna "Confirmar datos": solo alterna Pendiente ↔ Confirmado
   tbody.querySelectorAll(".badge-estado").forEach(badge => {
-    badge.addEventListener("click", () => ciclarEstado(badge.dataset.key, badge));
+    badge.addEventListener("click", () => toggleConfirmar(badge.dataset.key, badge));
+  });
+
+  // Checkboxes de selección masiva
+  tbody.querySelectorAll(".row-check").forEach(chk => {
+    chk.addEventListener("change", () => {
+      if (chk.checked) seleccionados.add(chk.dataset.key);
+      else             seleccionados.delete(chk.dataset.key);
+      actualizarBarraSeleccion();
+    });
   });
   tbody.querySelectorAll(".btn-accion-wa").forEach(btn => {
     btn.addEventListener("click", () => abrirWhatsApp(Number(btn.dataset.id)));
@@ -546,6 +562,59 @@ function ciclarEstado(key, badge) {
   badge.className   = "badge-estado " + claseEstado(nuevo);
 }
 
+/* Toggle 2 estados: Pendiente ↔ Confirmado */
+function toggleConfirmar(key, badge) {
+  const actual = estados[key] || "Pendiente";
+  if (actual === "Cancelado") return;
+  const nuevo = actual === "Confirmado" ? "Pendiente" : "Confirmado";
+  estados[key] = nuevo;
+  guardarEstados();
+  badge.textContent = nuevo;
+  badge.className   = "badge-estado " + claseEstado(nuevo);
+}
+
+/* Confirmar todos los seleccionados */
+function confirmarSeleccionados() {
+  if (!seleccionados.size) return;
+  seleccionados.forEach(key => { estados[key] = "Confirmado"; });
+  guardarEstados();
+  seleccionados.clear();
+  aplicarFiltros(false);
+  actualizarBarraSeleccion();
+}
+
+/* Limpiar selección */
+function limpiarSeleccion() {
+  seleccionados.clear();
+  document.querySelectorAll(".row-check").forEach(c => { c.checked = false; });
+  const chkAll = document.getElementById("check-all");
+  if (chkAll) chkAll.checked = false;
+  actualizarBarraSeleccion();
+}
+
+/* Mostrar/ocultar barra de acción masiva */
+function actualizarBarraSeleccion() {
+  const barra = document.getElementById("barra-seleccion");
+  if (!barra) return;
+  const n = seleccionados.size;
+  barra.style.display = n > 0 ? "flex" : "none";
+  const btn = document.getElementById("btn-confirmar-sel");
+  if (btn) btn.textContent = `✓ Confirmar seleccionados (${n})`;
+}
+
+/* Actualizar conteo en cabecera de columna Effi */
+function actualizarHeaderEffi() {
+  const th = document.getElementById("th-effi");
+  if (!th || effiPhones.size === 0) return;
+  const enEffi     = pedidos.filter(p => effiPhones.has(tel10(p.telefonoWhatsApp))).length;
+  const pendientes = pedidos.filter(p => !effiPhones.has(tel10(p.telefonoWhatsApp))).length;
+  th.innerHTML = `Estado Effi / Remarketing
+    <div class="effi-header-counts">
+      <span class="effi-count effi-count-conf">✓ ${enEffi} en Effi</span>
+      <span class="effi-count effi-count-pend">⏳ ${pendientes} pendientes</span>
+    </div>`;
+}
+
 function claseEstado(estado) {
   const m = {
     "Pendiente":   "estado-pendiente",
@@ -585,6 +654,19 @@ function initBuscar() {
   document.getElementById("input-buscar").addEventListener("input", aplicarFiltros);
   document.getElementById("filtro-nombre").addEventListener("input", aplicarFiltros);
   document.getElementById("filtro-tel").addEventListener("input",    aplicarFiltros);
+
+  // "Seleccionar todos" del header
+  document.addEventListener("change", (e) => {
+    if (e.target.id === "check-all") {
+      const checked = e.target.checked;
+      document.querySelectorAll(".row-check").forEach(c => {
+        c.checked = checked;
+        if (checked) seleccionados.add(c.dataset.key);
+        else         seleccionados.delete(c.dataset.key);
+      });
+      actualizarBarraSeleccion();
+    }
+  });
 
   // "Sin mensaje WhatsApp" — solo Pendiente
   document.getElementById("btn-sin-wa").addEventListener("click", () => {
