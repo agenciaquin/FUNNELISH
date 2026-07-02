@@ -39,8 +39,12 @@ window.addEventListener('DOMContentLoaded', () => {
 /* ── ESTADO GLOBAL ───────────────────────────────────────────── */
 let pedidos        = [];
 let estados        = {};
-let modoSinWA      = false;   // solo muestra clientes sin mensaje enviado
-let modoCanceladas = false;   // muestra solo cancelados
+let modoSinWA          = false;   // solo muestra clientes sin mensaje enviado
+let modoCanceladas     = false;   // muestra solo cancelados
+let modoPendientesEffi = false;   // solo muestra clientes sin confirmar en Effi
+let effiPhones         = new Set(); // teléfonos 10 dígitos que aparecen en Effi
+let paginaActual       = 1;
+const ITEMS_POR_PAG    = 30;
 
 /* ── INICIALIZACIÓN ──────────────────────────────────────────── */
 document.addEventListener("DOMContentLoaded", () => {
@@ -52,6 +56,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initBuscar();
   initFiltros();
   cargarClientesDeSupabase();
+  cargarEffiDeSupabase();
 });
 
 /* ================================================================
@@ -73,6 +78,14 @@ function initUpload() {
   inputFile.addEventListener("change", () => {
     if (inputFile.files[0]) procesarArchivo(inputFile.files[0]);
   });
+
+  // Botón Subir Effi
+  const inputEffi   = document.getElementById("input-effi");
+  const btnSubirEff = document.getElementById("btn-subir-effi");
+  if (btnSubirEff && inputEffi) {
+    btnSubirEff.addEventListener("click", () => { inputEffi.value = ""; inputEffi.click(); });
+    inputEffi.addEventListener("change", () => { if (inputEffi.files[0]) procesarArchivoEffi(inputEffi.files[0]); });
+  }
 }
 
 /* ================================================================
@@ -259,6 +272,75 @@ async function cargarClientesDeSupabase() {
 }
 
 /* ================================================================
+   EFFI — Carga y comparación
+   ================================================================ */
+function tel10(telefono) {
+  return String(telefono || '').replace(/\D/g, '').replace(/^57/, '').slice(-10);
+}
+
+async function cargarEffiDeSupabase() {
+  for (let i = 0; i < 5; i++) {
+    if (dbH) break;
+    await new Promise(r => setTimeout(r, 300));
+    if (window.supabase?.createClient) dbH = window.supabase.createClient(SUPABASE_URL_H, SUPABASE_KEY_H);
+  }
+  if (!dbH) return;
+  try {
+    const { data } = await dbH.from('telefonos_effi').select('telefono').range(0, 9999);
+    effiPhones = new Set((data || []).map(r => tel10(r.telefono)));
+    if (pedidos.length) aplicarFiltros();
+  } catch(err) { console.warn('cargarEffiDeSupabase error:', err); }
+}
+
+async function procesarArchivoEffi(file) {
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const wb   = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      if (!rows.length) { alert('El archivo Effi está vacío.'); return; }
+
+      // Extrae teléfono: busca columna cuyo prefijo 3 ASCII sea "tel" o "cel"
+      const getPhone = (row) => {
+        for (const k of Object.keys(row)) {
+          const p3 = k.slice(0, 3).replace(/[^a-zA-Z]/g, '').toLowerCase();
+          if (p3 === 'tel' || p3 === 'cel' || p3 === 'fon' || p3 === 'pho') {
+            const v = String(row[k] || '').trim();
+            if (v && v.replace(/\D/g,'').length >= 7) return v;
+          }
+        }
+        return '';
+      };
+
+      const telefonos = [...new Set(
+        rows.map(r => tel10(getPhone(r))).filter(t => t.length === 10)
+      )];
+
+      if (!telefonos.length) { alert('No se encontraron teléfonos en el archivo Effi.'); return; }
+
+      // Guardar solo los nuevos en Supabase
+      if (dbH) {
+        const { data: exist } = await dbH.from('telefonos_effi').select('telefono').in('telefono', telefonos);
+        const existSet = new Set((exist || []).map(r => r.telefono));
+        const nuevos   = telefonos.filter(t => !existSet.has(t)).map(t => ({ telefono: t }));
+        for (let i = 0; i < nuevos.length; i += 500) {
+          await dbH.from('telefonos_effi').insert(nuevos.slice(i, i + 500));
+        }
+      }
+
+      telefonos.forEach(t => effiPhones.add(t));
+      aplicarFiltros();
+      alert(`✅ Effi actualizado: ${telefonos.length} teléfonos procesados.`);
+    } catch(err) {
+      console.error(err);
+      alert('No se pudo leer el archivo Effi. Asegúrate de que sea .xlsx o .xls');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ================================================================
    NORMALIZACIÓN DE FILAS
    ================================================================ */
 function normalizarFila(row, index) {
@@ -377,6 +459,7 @@ function renderizarTabla(filas) {
       </td>
       <td>
         <div class="td-acciones">
+          ${effiPhones.size > 0 ? `<span class="badge-effi ${effiPhones.has(tel10(p.telefonoWhatsApp)) ? 'effi-confirmada' : 'effi-pendiente'}">${effiPhones.has(tel10(p.telefonoWhatsApp)) ? '✓ CONFIRMADA EFFI' : '⏳ PENDIENTE'}</span>` : ''}
           ${!modoCanceladas ? `
           <button class="btn-accion btn-accion-wa" data-id="${p.id}" title="Enviar por WhatsApp" aria-label="WhatsApp">
             <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
@@ -473,28 +556,57 @@ function guardarEstados() {
 /* ================================================================
    BÚSQUEDA Y FILTROS
    ================================================================ */
+function limpiarTodosLosFiltros() {
+  modoSinWA          = false;
+  modoCanceladas     = false;
+  modoPendientesEffi = false;
+  document.getElementById("btn-sin-wa")?.classList.remove("active");
+  document.getElementById("btn-ver-canceladas")?.classList.remove("active");
+  const btnPend = document.getElementById("btn-pendientes-effi");
+  if (btnPend) { btnPend.classList.remove("active"); }
+  const btnVer = document.getElementById("btn-ver-canceladas");
+  if (btnVer) btnVer.textContent = "🗑 Canceladas";
+  aplicarFiltros();
+}
+
 function initBuscar() {
   document.getElementById("input-buscar").addEventListener("input", aplicarFiltros);
   document.getElementById("filtro-nombre").addEventListener("input", aplicarFiltros);
   document.getElementById("filtro-tel").addEventListener("input",    aplicarFiltros);
 
-  // Botón "Sin WA" — muestra solo clientes no contactados (Pendiente)
+  // "Sin mensaje WhatsApp" — solo Pendiente
   document.getElementById("btn-sin-wa").addEventListener("click", () => {
     modoSinWA = !modoSinWA;
-    if (modoSinWA) modoCanceladas = false;
+    if (modoSinWA) { modoCanceladas = false; modoPendientesEffi = false; }
     document.getElementById("btn-sin-wa").classList.toggle("active", modoSinWA);
+    document.getElementById("btn-ver-canceladas").classList.remove("active");
+    document.getElementById("btn-ver-canceladas").textContent = "🗑 Canceladas";
+    document.getElementById("btn-pendientes-effi")?.classList.remove("active");
+    aplicarFiltros();
+  });
+
+  // "Limpiar filtro" — regresa a vista normal completa
+  document.getElementById("btn-limpiar-wa")?.addEventListener("click", limpiarTodosLosFiltros);
+
+  // "Pendientes por confirmar" (Effi) — naranja
+  document.getElementById("btn-pendientes-effi")?.addEventListener("click", () => {
+    modoPendientesEffi = !modoPendientesEffi;
+    if (modoPendientesEffi) { modoSinWA = false; modoCanceladas = false; }
+    document.getElementById("btn-pendientes-effi").classList.toggle("active", modoPendientesEffi);
+    document.getElementById("btn-sin-wa").classList.remove("active");
     document.getElementById("btn-ver-canceladas").classList.remove("active");
     document.getElementById("btn-ver-canceladas").textContent = "🗑 Canceladas";
     aplicarFiltros();
   });
 
-  // Botón "Canceladas" — alterna entre vista activa y vista canceladas
+  // "Canceladas"
   document.getElementById("btn-ver-canceladas").addEventListener("click", () => {
     modoCanceladas = !modoCanceladas;
-    if (modoCanceladas) modoSinWA = false;
+    if (modoCanceladas) { modoSinWA = false; modoPendientesEffi = false; }
     document.getElementById("btn-ver-canceladas").classList.toggle("active", modoCanceladas);
     document.getElementById("btn-ver-canceladas").textContent = modoCanceladas ? "← Ver activos" : "🗑 Canceladas";
     document.getElementById("btn-sin-wa").classList.remove("active");
+    document.getElementById("btn-pendientes-effi")?.classList.remove("active");
     aplicarFiltros();
   });
 }
@@ -531,7 +643,9 @@ function leerHora12(prefijo, porDefecto) {
   return String(h24).padStart(2, "0") + ":" + mm;
 }
 
-function aplicarFiltros() {
+function aplicarFiltros(resetPage = true) {
+  if (resetPage) paginaActual = 1;
+
   const q        = document.getElementById("input-buscar").value.toLowerCase().trim();
   const qNombre  = (document.getElementById("filtro-nombre")?.value || "").toLowerCase().trim();
   const qTel     = (document.getElementById("filtro-tel")?.value    || "").trim();
@@ -544,14 +658,12 @@ function aplicarFiltros() {
   const filtrados = pedidos.filter(p => {
     const estadoActual = estados[p._key] || "Pendiente";
 
-    // Modo canceladas: solo muestra cancelados
     if (modoCanceladas) return estadoActual === "Cancelado";
-
-    // Vista activa: nunca muestra cancelados
     if (estadoActual === "Cancelado") return false;
-
-    // Modo sin WA: solo pendientes (no han recibido mensaje)
     if (modoSinWA && estadoActual !== "Pendiente") return false;
+
+    // Filtro Pendientes por confirmar Effi: solo los que NO están en Effi
+    if (modoPendientesEffi && effiPhones.size > 0 && effiPhones.has(tel10(p.telefonoWhatsApp))) return false;
 
     const matchQ      = !q       || [p.nombre, p.producto, p.telefonoMensaje, p.ciudad].some(v => v && v.toLowerCase().includes(q));
     const matchNombre = !qNombre || (p.nombre           || "").toLowerCase().includes(qNombre);
@@ -563,7 +675,31 @@ function aplicarFiltros() {
     return matchQ && matchNombre && matchTel && matchE && matchDesde && matchHasta;
   });
 
-  renderizarTabla(filtrados);
+  // Paginación
+  const inicio  = (paginaActual - 1) * ITEMS_POR_PAG;
+  const pagina  = filtrados.slice(inicio, inicio + ITEMS_POR_PAG);
+  renderizarTabla(pagina);
+  renderPaginacion(filtrados.length);
+}
+
+function renderPaginacion(total) {
+  const contenedor = document.getElementById("paginacion");
+  if (!contenedor) return;
+  const totalPags = Math.ceil(total / ITEMS_POR_PAG);
+  if (totalPags <= 1) { contenedor.innerHTML = ""; return; }
+
+  let html = '<div class="paginacion-inner">';
+  for (let i = 1; i <= totalPags; i++) {
+    html += `<button class="btn-pag ${i === paginaActual ? 'pag-activa' : ''}" onclick="irAPagina(${i})">${i}</button>`;
+  }
+  html += '</div>';
+  contenedor.innerHTML = html;
+}
+
+function irAPagina(n) {
+  paginaActual = n;
+  aplicarFiltros(false);
+  document.getElementById("seccion-tabla")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 /* ================================================================

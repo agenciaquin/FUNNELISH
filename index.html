@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=35">
+  <link rel="stylesheet" href="styles.css?v=36">
   <style>
     /* ── LAYOUT CON SIDEBAR ─────────────────────────────────────── */
     html, body { height: 100%; overflow: hidden; }
@@ -182,16 +182,69 @@
       letter-spacing: 0.07em; color: rgba(255,255,255,0.28); flex-shrink: 0;
     }
 
-    /* Botón Sin WA */
+    /* Botón Sin mensaje WhatsApp */
     .btn-sin-wa {
-      background: rgba(234,179,8,0.09); border: 1px solid rgba(234,179,8,0.28);
-      color: #EAB308; border-radius: 6px; padding: 0.3rem 0.65rem;
+      background: rgba(34,197,94,0.10); border: 1px solid rgba(34,197,94,0.35);
+      color: #22C55E; border-radius: 6px; padding: 0.3rem 0.65rem;
       font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.15s;
     }
-    .btn-sin-wa:hover { background: rgba(234,179,8,0.18); }
+    .btn-sin-wa:hover { background: rgba(34,197,94,0.20); }
     .btn-sin-wa.active {
-      background: rgba(234,179,8,0.22); border-color: rgba(234,179,8,0.6);
-      box-shadow: 0 0 0 1px rgba(234,179,8,0.3);
+      background: rgba(34,197,94,0.25); border-color: rgba(34,197,94,0.7);
+      box-shadow: 0 0 0 1px rgba(34,197,94,0.3);
+    }
+
+    /* Botón Limpiar filtro */
+    .btn-limpiar-wa {
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15);
+      color: rgba(255,255,255,0.55); border-radius: 6px; padding: 0.3rem 0.65rem;
+      font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.15s;
+    }
+    .btn-limpiar-wa:hover { background: rgba(255,255,255,0.10); color: #fff; }
+
+    /* Botón Pendientes por confirmar (Effi) */
+    .btn-pendientes-effi {
+      background: rgba(249,115,22,0.10); border: 1px solid rgba(249,115,22,0.35);
+      color: #F97316; border-radius: 6px; padding: 0.3rem 0.65rem;
+      font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.15s;
+    }
+    .btn-pendientes-effi:hover { background: rgba(249,115,22,0.20); }
+    .btn-pendientes-effi.active {
+      background: rgba(249,115,22,0.25); border-color: rgba(249,115,22,0.7);
+      box-shadow: 0 0 0 1px rgba(249,115,22,0.3);
+    }
+
+    /* Botón Subir Effi */
+    .btn-subir-effi {
+      background: rgba(249,115,22,0.12); border: 1px solid rgba(249,115,22,0.35);
+      color: #F97316; border-radius: 8px; padding: 0.45rem 0.9rem;
+      font-size: 0.75rem; font-weight: 700; cursor: pointer; transition: all 0.15s;
+    }
+    .btn-subir-effi:hover { background: rgba(249,115,22,0.22); }
+
+    /* Badges Effi en cada fila */
+    .badge-effi {
+      display: inline-flex; align-items: center;
+      border-radius: 5px; padding: 0.18rem 0.45rem;
+      font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em;
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .effi-confirmada { background: rgba(59,130,246,0.15); border: 1px solid rgba(59,130,246,0.4); color: #60A5FA; }
+    .effi-pendiente  { background: rgba(249,115,22,0.15); border: 1px solid rgba(249,115,22,0.4); color: #F97316; }
+
+    /* Paginación */
+    .paginacion { padding: 0.75rem 1.25rem 1rem; display: flex; }
+    .paginacion-inner { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+    .btn-pag {
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
+      color: rgba(255,255,255,0.55); border-radius: 6px;
+      padding: 0.3rem 0.7rem; font-size: 0.72rem; font-weight: 600;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .btn-pag:hover { background: rgba(255,255,255,0.10); color: #fff; }
+    .btn-pag.pag-activa {
+      background: rgba(201,168,76,0.18); border-color: rgba(201,168,76,0.5);
+      color: #C9A84C; box-shadow: 0 0 0 1px rgba(201,168,76,0.25);
     }
 
     /* Botón Ver Canceladas */
@@ -287,6 +340,8 @@
         <div class="page-hdr-sub">Recibe y confirma los pedidos de tus clientes de Funnelish</div>
       </div>
       <div class="page-hdr-right">
+        <button type="button" id="btn-subir-effi" class="btn-subir-effi">📊 Subir Effi</button>
+        <input type="file" id="input-effi" accept=".xlsx,.xls" style="position:absolute;opacity:0;width:1px;height:1px;overflow:hidden">
         <button type="button" id="btn-actualizar-top" class="btn-actualizar-top">📥 Actualizar clientes (Excel)</button>
         <span id="badge-estado" class="badge-listo">✓ Listo</span>
       </div>
@@ -332,7 +387,9 @@
             <span id="badge-total" class="badge-count">0</span>
           </div>
           <div class="toolbar-right">
-            <button type="button" id="btn-sin-wa" class="btn-sin-wa">📵 Sin WA</button>
+            <button type="button" id="btn-sin-wa" class="btn-sin-wa">📵 Sin mensaje WhatsApp</button>
+            <button type="button" id="btn-limpiar-wa" class="btn-limpiar-wa">✕ Limpiar filtro</button>
+            <button type="button" id="btn-pendientes-effi" class="btn-pendientes-effi">⏳ Pendientes por confirmar</button>
             <button type="button" id="btn-ver-canceladas" class="btn-ver-canceladas">🗑 Canceladas</button>
             <div class="search-wrap">
               <span class="search-icon">🔍</span>
@@ -399,7 +456,7 @@
         </div>
 
         <!-- Tabla -->
-        <div class="tabla-wrap">
+        <div class="tabla-wrap" id="tabla-top-anchor">
           <table id="tabla-pedidos">
             <thead>
               <tr>
@@ -419,6 +476,9 @@
             </tbody>
           </table>
         </div>
+
+        <!-- Paginación -->
+        <div id="paginacion" class="paginacion"></div>
 
       </section>
 
@@ -460,8 +520,8 @@
   <!-- SheetJS para leer Excel -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="catalogo.js?v=35"></script>
-  <script src="app.js?v=35"></script>
+  <script src="catalogo.js?v=36"></script>
+  <script src="app.js?v=36"></script>
 
   <script>
     /* ── STATS BAR ── cuenta desde el array real, no desde el DOM */
