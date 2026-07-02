@@ -37,8 +37,10 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 /* ── ESTADO GLOBAL ───────────────────────────────────────────── */
-let pedidos = [];
-let estados = {};
+let pedidos        = [];
+let estados        = {};
+let modoSinWA      = false;   // solo muestra clientes sin mensaje enviado
+let modoCanceladas = false;   // muestra solo cancelados
 
 /* ── INICIALIZACIÓN ──────────────────────────────────────────── */
 document.addEventListener("DOMContentLoaded", () => {
@@ -311,12 +313,15 @@ function renderizarTabla(filas) {
       </td>
       <td>
         <div class="td-acciones">
+          ${!modoCanceladas ? `
           <button class="btn-accion btn-accion-wa" data-id="${p.id}" title="Enviar por WhatsApp" aria-label="WhatsApp">
             <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
           </button>
           <button class="btn-accion btn-accion-ver" data-id="${p.id}" title="Ver detalle" aria-label="Ver detalle">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
+          <button class="btn-cancelar-venta" data-id="${p.id}">🚫 Venta cancelada</button>
+          ` : `<span style="font-size:0.68rem;color:rgba(239,68,68,0.6)">Cancelada</span>`}
         </div>
       </td>
     `;
@@ -328,6 +333,9 @@ function renderizarTabla(filas) {
   });
   tbody.querySelectorAll(".btn-accion-wa").forEach(btn => {
     btn.addEventListener("click", () => abrirWhatsApp(Number(btn.dataset.id)));
+  });
+  tbody.querySelectorAll(".btn-cancelar-venta").forEach(btn => {
+    btn.addEventListener("click", () => cancelarVenta(Number(btn.dataset.id)));
   });
   tbody.querySelectorAll(".btn-accion-ver").forEach(btn => {
     btn.addEventListener("click", () => abrirModal(Number(btn.dataset.id)));
@@ -364,6 +372,13 @@ function renderizarTabla(filas) {
    ================================================================ */
 const CICLO_ESTADOS = ["Pendiente", "Confirmado", "No confirma", "Cancelado"];
 
+function cancelarVenta(id) {
+  estados[id] = "Cancelado";
+  guardarEstados();
+  if (typeof window.actualizarStats === 'function') window.actualizarStats();
+  aplicarFiltros(); // oculta de la vista activa
+}
+
 function ciclarEstado(id, badge) {
   const actual = estados[id] || "Pendiente";
   const nuevo  = CICLO_ESTADOS[(CICLO_ESTADOS.indexOf(actual) + 1) % CICLO_ESTADOS.length];
@@ -397,6 +412,28 @@ function guardarEstados() {
    ================================================================ */
 function initBuscar() {
   document.getElementById("input-buscar").addEventListener("input", aplicarFiltros);
+  document.getElementById("filtro-nombre").addEventListener("input", aplicarFiltros);
+  document.getElementById("filtro-tel").addEventListener("input",    aplicarFiltros);
+
+  // Botón "Sin WA" — muestra solo clientes no contactados (Pendiente)
+  document.getElementById("btn-sin-wa").addEventListener("click", () => {
+    modoSinWA = !modoSinWA;
+    if (modoSinWA) modoCanceladas = false;
+    document.getElementById("btn-sin-wa").classList.toggle("active", modoSinWA);
+    document.getElementById("btn-ver-canceladas").classList.remove("active");
+    document.getElementById("btn-ver-canceladas").textContent = "🗑 Canceladas";
+    aplicarFiltros();
+  });
+
+  // Botón "Canceladas" — alterna entre vista activa y vista canceladas
+  document.getElementById("btn-ver-canceladas").addEventListener("click", () => {
+    modoCanceladas = !modoCanceladas;
+    if (modoCanceladas) modoSinWA = false;
+    document.getElementById("btn-ver-canceladas").classList.toggle("active", modoCanceladas);
+    document.getElementById("btn-ver-canceladas").textContent = modoCanceladas ? "← Ver activos" : "🗑 Canceladas";
+    document.getElementById("btn-sin-wa").classList.remove("active");
+    aplicarFiltros();
+  });
 }
 
 function initFiltros() {
@@ -433,19 +470,34 @@ function leerHora12(prefijo, porDefecto) {
 
 function aplicarFiltros() {
   const q        = document.getElementById("input-buscar").value.toLowerCase().trim();
+  const qNombre  = (document.getElementById("filtro-nombre")?.value || "").toLowerCase().trim();
+  const qTel     = (document.getElementById("filtro-tel")?.value    || "").trim();
   const estado   = document.getElementById("filtro-estado").value;
-  const desdeVal  = document.getElementById("filtro-fecha-desde").value;
-  const hastaVal  = document.getElementById("filtro-fecha-hasta").value;
-  const desde     = desdeVal ? new Date(desdeVal + "T" + leerHora12("desde", "00:00") + ":00") : null;
-  const hasta     = hastaVal ? new Date(hastaVal + "T" + leerHora12("hasta", "23:59") + ":59") : null;
+  const desdeVal = document.getElementById("filtro-fecha-desde").value;
+  const hastaVal = document.getElementById("filtro-fecha-hasta").value;
+  const desde    = desdeVal ? new Date(desdeVal + "T" + leerHora12("desde", "00:00") + ":00") : null;
+  const hasta    = hastaVal ? new Date(hastaVal + "T" + leerHora12("hasta", "23:59") + ":59") : null;
 
   const filtrados = pedidos.filter(p => {
-    const matchQ = !q || [p.nombre, p.producto, p.telefonoMensaje, p.ciudad]
-      .some(v => v && v.toLowerCase().includes(q));
-    const matchE = !estado || (estados[p.id] || "Pendiente") === estado;
-    const matchDesde = !desde || (p.fechaObj && p.fechaObj >= desde);
-    const matchHasta = !hasta || (p.fechaObj && p.fechaObj <= hasta);
-    return matchQ && matchE && matchDesde && matchHasta;
+    const estadoActual = estados[p.id] || "Pendiente";
+
+    // Modo canceladas: solo muestra cancelados
+    if (modoCanceladas) return estadoActual === "Cancelado";
+
+    // Vista activa: nunca muestra cancelados
+    if (estadoActual === "Cancelado") return false;
+
+    // Modo sin WA: solo pendientes (no han recibido mensaje)
+    if (modoSinWA && estadoActual !== "Pendiente") return false;
+
+    const matchQ      = !q       || [p.nombre, p.producto, p.telefonoMensaje, p.ciudad].some(v => v && v.toLowerCase().includes(q));
+    const matchNombre = !qNombre || (p.nombre           || "").toLowerCase().includes(qNombre);
+    const matchTel    = !qTel    || (p.telefonoMensaje  || "").includes(qTel);
+    const matchE      = !estado  || estadoActual === estado;
+    const matchDesde  = !desde   || (p.fechaObj && p.fechaObj >= desde);
+    const matchHasta  = !hasta   || (p.fechaObj && p.fechaObj <= hasta);
+
+    return matchQ && matchNombre && matchTel && matchE && matchDesde && matchHasta;
   });
 
   renderizarTabla(filtrados);
