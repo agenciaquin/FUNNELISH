@@ -45,53 +45,31 @@ let modoCanceladas = false;   // muestra solo cancelados
 /* ── INICIALIZACIÓN ──────────────────────────────────────────── */
 document.addEventListener("DOMContentLoaded", () => {
   estados = cargarEstados();
+  window.estados = estados;
+  window.pedidos = pedidos;
   initUpload();
   initModal();
   initBuscar();
   initFiltros();
+  cargarClientesDeSupabase();
 });
 
 /* ================================================================
    CARGA DE EXCEL
    ================================================================ */
 function initUpload() {
-  const dropZone  = document.getElementById("drop-zone");
-  const inputFile = document.getElementById("input-excel");
-  const btnSubir  = document.getElementById("btn-subir");
-  const btnNueva  = document.getElementById("btn-nueva-carga");
+  const inputFile     = document.getElementById("input-excel");
+  const btnActualizar = document.getElementById("btn-actualizar");
 
-  btnSubir.addEventListener("click", (e) => {
-    e.stopPropagation();
-    inputFile.value = "";
-    inputFile.click();
-  });
-  dropZone.addEventListener("click", (e) => {
-    if (e.target === btnSubir) return;
-    inputFile.value = "";
-    inputFile.click();
-  });
-
-  dropZone.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    dropZone.classList.add("drag-over");
-  });
-  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
-  dropZone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    dropZone.classList.remove("drag-over");
-    const file = e.dataTransfer.files[0];
-    if (file) procesarArchivo(file);
-  });
+  if (btnActualizar) {
+    btnActualizar.addEventListener("click", () => {
+      inputFile.value = "";
+      inputFile.click();
+    });
+  }
 
   inputFile.addEventListener("change", () => {
     if (inputFile.files[0]) procesarArchivo(inputFile.files[0]);
-  });
-
-  btnNueva.addEventListener("click", () => {
-    pedidos = [];
-    document.getElementById("seccion-tabla").style.display = "none";
-    document.getElementById("seccion-upload").style.display = "flex";
-    inputFile.value = "";
   });
 }
 
@@ -161,7 +139,6 @@ function procesarArchivo(file) {
       let wb;
       if (esCSV) {
         const texto = e.target.result;
-        // Detectar separador: si hay más ";" que "," en la primera línea → punto y coma
         const primeraLinea = texto.split("\n")[0];
         const sep = (primeraLinea.split(";").length > primeraLinea.split(",").length) ? ";" : ",";
         wb = XLSX.read(texto, { type: "string", FS: sep });
@@ -178,14 +155,31 @@ function procesarArchivo(file) {
         return;
       }
 
-      pedidos = rows.map((row, i) => normalizarFila(row, i));
-      renderizarTabla(pedidos);
+      // Parsear con offset para que los ids no colisionen con los existentes
+      const offset    = pedidos.length;
+      const nuevosRaw = rows.map((row, i) => normalizarFila(row, offset + i));
 
-      // Guardar silenciosamente en Historial (Supabase) con deduplicación
-      guardarFunnelishEnDB(pedidos, file.name).catch(() => {});
+      // Empalme: solo los que no existen por _key
+      const existingKeys = new Set(pedidos.map(p => p._key));
+      const nuevos       = nuevosRaw.filter(p => !existingKeys.has(p._key));
 
-      document.getElementById("seccion-upload").style.display = "none";
-      document.getElementById("seccion-tabla").style.display  = "block";
+      if (!nuevos.length) {
+        alert("Todos los clientes del Excel ya están en la lista. No hay datos nuevos.");
+        return;
+      }
+
+      // Re-indexar con id correcto
+      nuevos.forEach((p, i) => { p.id = offset + i; });
+
+      // Merge y re-render
+      pedidos = [...pedidos, ...nuevos];
+      window.pedidos = pedidos;
+      aplicarFiltros();
+
+      // Guardar solo los nuevos en Supabase
+      guardarFunnelishEnDB(nuevos, file.name).catch(() => {});
+
+      console.log(`[ConfirmaYa] Empalme: ${nuevos.length} nuevos clientes agregados`);
     } catch (err) {
       console.error(err);
       alert("No se pudo leer el archivo. Asegúrate de que sea un archivo válido (.xlsx / .xls / .csv).");
@@ -194,6 +188,72 @@ function procesarArchivo(file) {
 
   if (esCSV) reader.readAsText(file, "UTF-8");
   else        reader.readAsArrayBuffer(file);
+}
+
+/* ================================================================
+   CARGA INICIAL DESDE SUPABASE
+   ================================================================ */
+function supabaseAFormatoLocal(rec, index) {
+  const telefonoRaw = rec.telefono || '';
+  const { telefonoMensaje, telefonoWhatsApp } = normalizarTelefono(telefonoRaw);
+  const fechaObj = rec.fecha_pedido ? new Date(rec.fecha_pedido + 'T00:00:00') : null;
+  const fechaKey = fechaObj ? fechaObj.toISOString().slice(0, 10) : String(index);
+  return {
+    id:              index,
+    _key:            telefonoWhatsApp + '|' + fechaKey,
+    nombre:          rec.nombre || '—',
+    fechaObj,
+    telefonoMensaje,
+    telefonoWhatsApp,
+    direccion:       rec.direccion    || '',
+    ciudad:          rec.ciudad       || '',
+    departamento:    rec.departamento || '',
+    correo:          rec.correo       || CORREO_POR_DEFECTO,
+    talla:           rec.talla        || '',
+    producto:        rec.producto     || '',
+    valor:           rec.valor        || VALOR_POR_DEFECTO,
+  };
+}
+
+async function cargarClientesDeSupabase() {
+  const tbody = document.getElementById("tabla-cuerpo");
+  if (tbody) tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:2rem;">⏳ Cargando clientes...</td></tr>`;
+
+  // Supabase puede no estar listo aún — reintentamos hasta 3 veces
+  for (let intento = 0; intento < 3; intento++) {
+    if (dbH) break;
+    await new Promise(r => setTimeout(r, 300));
+    if (window.supabase && window.supabase.createClient) {
+      dbH = window.supabase.createClient(SUPABASE_URL_H, SUPABASE_KEY_H);
+    }
+  }
+
+  if (!dbH) {
+    if (tbody) tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:2rem;">Sin datos. Sube un Excel para comenzar.</td></tr>`;
+    return;
+  }
+
+  try {
+    const { data, error } = await dbH
+      .from('clientes_funnelish')
+      .select('*')
+      .order('fecha_pedido', { ascending: false })
+      .range(0, 9999);
+
+    if (error) { console.warn('Error cargando clientes:', error.message); return; }
+    if (!data || !data.length) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:2rem;">Sin clientes. Usa "Actualizar clientes" para subir el Excel.</td></tr>`;
+      return;
+    }
+
+    pedidos = data.map((rec, i) => supabaseAFormatoLocal(rec, i));
+    window.pedidos = pedidos;
+    renderizarTabla(pedidos);
+    if (typeof window.actualizarStats === 'function') window.actualizarStats();
+    console.log(`[ConfirmaYa] ${pedidos.length} clientes cargados desde Supabase`);
+  } catch(err) {
+    console.warn('[ConfirmaYa] cargarClientesDeSupabase error:', err);
+  }
 }
 
 /* ================================================================
@@ -227,8 +287,10 @@ function normalizarFila(row, index) {
   const fechaRaw = get(COL_MAP.fecha);
   const fechaObj = fechaRaw ? new Date(fechaRaw.replace(/\.\d+/, "").replace(" UTC", "")) : null;
 
+  const fechaKey = fechaObj ? fechaObj.toISOString().slice(0, 10) : String(index);
   return {
-    id: index,
+    id:              index,
+    _key:            telefonoWhatsApp + '|' + fechaKey, // clave estable: teléfono|fecha_pedido
     nombre,
     fechaObj,
     telefonoMensaje,
@@ -265,7 +327,7 @@ function renderizarTabla(filas) {
   }
 
   filas.forEach((p, i) => {
-    const estado   = estados[p.id] || "Pendiente";
+    const estado   = estados[p._key] || "Pendiente";
     const rutaFoto = buscarFotoProducto(p.producto);
     const tr       = document.createElement("tr");
 
@@ -309,7 +371,7 @@ function renderizarTabla(filas) {
       </td>
       <td>${p.valor}</td>
       <td>
-        <span class="badge-estado ${claseEstado(estado)}" data-id="${p.id}">${estado}</span>
+        <span class="badge-estado ${claseEstado(estado)}" data-key="${p._key}" data-id="${p.id}">${estado}</span>
       </td>
       <td>
         <div class="td-acciones">
@@ -320,7 +382,7 @@ function renderizarTabla(filas) {
           <button class="btn-accion btn-accion-ver" data-id="${p.id}" title="Ver detalle" aria-label="Ver detalle">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
-          <button class="btn-cancelar-venta" data-id="${p.id}">🚫 Venta cancelada</button>
+          <button class="btn-cancelar-venta" data-key="${p._key}">🚫 Venta cancelada</button>
           ` : `<span style="font-size:0.68rem;color:rgba(239,68,68,0.6)">Cancelada</span>`}
         </div>
       </td>
@@ -329,13 +391,13 @@ function renderizarTabla(filas) {
   });
 
   tbody.querySelectorAll(".badge-estado").forEach(badge => {
-    badge.addEventListener("click", () => ciclarEstado(Number(badge.dataset.id), badge));
+    badge.addEventListener("click", () => ciclarEstado(badge.dataset.key, badge));
   });
   tbody.querySelectorAll(".btn-accion-wa").forEach(btn => {
     btn.addEventListener("click", () => abrirWhatsApp(Number(btn.dataset.id)));
   });
   tbody.querySelectorAll(".btn-cancelar-venta").forEach(btn => {
-    btn.addEventListener("click", () => cancelarVenta(Number(btn.dataset.id)));
+    btn.addEventListener("click", () => cancelarVenta(btn.dataset.key));
   });
   tbody.querySelectorAll(".btn-accion-ver").forEach(btn => {
     btn.addEventListener("click", () => abrirModal(Number(btn.dataset.id)));
@@ -372,17 +434,16 @@ function renderizarTabla(filas) {
    ================================================================ */
 const CICLO_ESTADOS = ["Pendiente", "Confirmado", "No confirma", "Cancelado"];
 
-function cancelarVenta(id) {
-  estados[id] = "Cancelado";
+function cancelarVenta(key) {
+  estados[key] = "Cancelado";
   guardarEstados();
-  if (typeof window.actualizarStats === 'function') window.actualizarStats();
-  aplicarFiltros(); // oculta de la vista activa
+  aplicarFiltros();
 }
 
-function ciclarEstado(id, badge) {
-  const actual = estados[id] || "Pendiente";
+function ciclarEstado(key, badge) {
+  const actual = estados[key] || "Pendiente";
   const nuevo  = CICLO_ESTADOS[(CICLO_ESTADOS.indexOf(actual) + 1) % CICLO_ESTADOS.length];
-  estados[id]  = nuevo;
+  estados[key] = nuevo;
   guardarEstados();
   badge.textContent = nuevo;
   badge.className   = "badge-estado " + claseEstado(nuevo);
@@ -479,7 +540,7 @@ function aplicarFiltros() {
   const hasta    = hastaVal ? new Date(hastaVal + "T" + leerHora12("hasta", "23:59") + ":59") : null;
 
   const filtrados = pedidos.filter(p => {
-    const estadoActual = estados[p.id] || "Pendiente";
+    const estadoActual = estados[p._key] || "Pendiente";
 
     // Modo canceladas: solo muestra cancelados
     if (modoCanceladas) return estadoActual === "Cancelado";
@@ -512,10 +573,10 @@ function abrirWhatsApp(id) {
   window.open(url, "_self");
 
   // Auto-confirmar: si estaba Pendiente, pasa a Confirmado al enviar el mensaje
-  if ((estados[id] || "Pendiente") === "Pendiente") {
-    estados[id] = "Confirmado";
+  if ((estados[p._key] || "Pendiente") === "Pendiente") {
+    estados[p._key] = "Confirmado";
     guardarEstados();
-    const badge = document.querySelector(`.badge-estado[data-id="${id}"]`);
+    const badge = document.querySelector(`.badge-estado[data-key="${p._key}"]`);
     if (badge) {
       badge.textContent = "Confirmado";
       badge.className   = "badge-estado " + claseEstado("Confirmado");

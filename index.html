@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=25">
+  <link rel="stylesheet" href="styles.css?v=35">
   <style>
     /* ── LAYOUT CON SIDEBAR ─────────────────────────────────────── */
     html, body { height: 100%; overflow: hidden; }
@@ -111,7 +111,7 @@
 
     /* ── STATS BAR ──────────────────────────────────────────────── */
     .stats-bar {
-      display: none;
+      display: grid;
       grid-template-columns: repeat(5, 1fr);
       gap: 0.625rem;
       padding: 1rem 1.5rem 0;
@@ -140,9 +140,6 @@
     .stat-tile.s-confirmado .stat-tile-val { color: #22C55E; }
     .stat-tile.s-noconf     .stat-tile-val { color: #EF4444; }
     .stat-tile.s-cancelado  .stat-tile-val { color: #6B7280; }
-
-    /* Upload zone inside content-area */
-    #seccion-upload { min-height: calc(100vh - 140px); }
 
     /* ── FILTROS POR COLUMNA ───────────────────────────────────── */
     .col-filters-bar {
@@ -309,19 +306,11 @@
 
     <main>
 
-      <!-- ── ZONA DE CARGA ────────────────────────────────────── -->
-      <section id="seccion-upload">
-        <div id="drop-zone">
-          <div class="drop-icon">📂</div>
-          <p class="drop-titulo">Arrastra el Excel de Funnelish aquí</p>
-          <p class="drop-sub">o haz clic para seleccionar el archivo</p>
-          <input type="file" id="input-excel" accept=".xlsx,.xls,.csv" style="position:absolute;opacity:0;width:1px;height:1px;overflow:hidden">
-          <button type="button" id="btn-subir">Seleccionar archivo</button>
-        </div>
-      </section>
+      <!-- Input oculto para subir Excel -->
+      <input type="file" id="input-excel" accept=".xlsx,.xls,.csv" style="position:absolute;opacity:0;width:1px;height:1px;overflow:hidden">
 
       <!-- ── TABLA DE PEDIDOS ──────────────────────────────────── -->
-      <section id="seccion-tabla" style="display:none;">
+      <section id="seccion-tabla">
 
         <!-- Barra de herramientas -->
         <div class="tabla-toolbar">
@@ -338,7 +327,7 @@
               <input type="text" id="input-buscar" placeholder="Buscar producto, ciudad...">
             </div>
             <button type="button" id="btn-filtros" class="btn-filtro">⚙ Filtros</button>
-            <button type="button" id="btn-nueva-carga" class="btn-nueva-carga">↩ Nuevo Excel</button>
+            <button type="button" id="btn-actualizar" class="btn-nueva-carga">📥 Actualizar clientes</button>
           </div>
         </div>
 
@@ -459,34 +448,25 @@
   <!-- SheetJS para leer Excel -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="catalogo.js?v=34"></script>
-  <script src="app.js?v=34"></script>
+  <script src="catalogo.js?v=35"></script>
+  <script src="app.js?v=35"></script>
 
   <script>
     /* ── STATS BAR ── cuenta desde el array real, no desde el DOM */
     function actualizarStats() {
-      if (!window.pedidos || !window.pedidos.length) return;
+      const arr = window.pedidos || [];
       const est = window.estados || {};
-      const pendientes  = window.pedidos.filter(p => (est[p.id]||'Pendiente') === 'Pendiente').length;
-      const confirmados = window.pedidos.filter(p => (est[p.id]||'Pendiente') === 'Confirmado').length;
-      const noConf      = window.pedidos.filter(p => (est[p.id]||'Pendiente') === 'No confirma').length;
-      const cancelados  = window.pedidos.filter(p => (est[p.id]||'Pendiente') === 'Cancelado').length;
-      const total       = window.pedidos.length;
+      const pendientes  = arr.filter(p => (est[p._key]||'Pendiente') === 'Pendiente').length;
+      const confirmados = arr.filter(p => (est[p._key]||'Pendiente') === 'Confirmado').length;
+      const noConf      = arr.filter(p => (est[p._key]||'Pendiente') === 'No confirma').length;
+      const cancelados  = arr.filter(p => (est[p._key]||'Pendiente') === 'Cancelado').length;
+      const total       = arr.length;
       document.getElementById('stat-total').textContent       = total;
       document.getElementById('stat-pendiente').textContent   = pendientes;
       document.getElementById('stat-confirmado').textContent  = confirmados;
       document.getElementById('stat-noconf').textContent      = noConf;
       document.getElementById('stat-cancelado').textContent   = cancelados;
     }
-
-    // Mostrar stats-bar cuando la sección tabla sea visible
-    const secTabla = document.getElementById('seccion-tabla');
-    const statsBar = document.getElementById('stats-bar');
-    new MutationObserver(() => {
-      const visible = secTabla.style.display !== 'none';
-      statsBar.style.display = visible ? 'grid' : 'none';
-      if (visible) actualizarStats();
-    }).observe(secTabla, { attributes: true, attributeFilter: ['style'] });
 
     // Actualizar stats cuando cambia la tabla
     new MutationObserver(actualizarStats)
