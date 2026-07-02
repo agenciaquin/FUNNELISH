@@ -389,8 +389,7 @@ async function cargarClientes() {
     .order('fecha_primer_registro', { ascending: false });
 
   clientesData = data || [];
-  filtrarYRenderClientes();
-  document.getElementById('badge-clientes').textContent = clientesData.length;
+  filtrarYRenderClientes(); // también actualiza el badge
 }
 
 function filtrarYRenderClientes() {
@@ -429,6 +428,10 @@ function filtrarYRenderClientes() {
   });
 
   renderTablaClientes();
+
+  // Actualizar badge con el conteo visible (filtrado)
+  const badge = document.getElementById('badge-clientes');
+  if (badge) badge.textContent = clientesFiltro.length;
 }
 
 function renderTablaClientes() {
@@ -621,12 +624,24 @@ async function init() {
   document.getElementById('filtro-desde').addEventListener('change', filtrarYRenderClientes);
   document.getElementById('filtro-hasta').addEventListener('change', filtrarYRenderClientes);
 
-  // Filtro fechas stats
-  document.getElementById('stat-desde').addEventListener('change', cargarStats);
-  document.getElementById('stat-hasta').addEventListener('change', cargarStats);
+  // Filtro fechas stats → sincroniza tabla de clientes automáticamente
+  function actualizarConFiltroStats() {
+    const desde = document.getElementById('stat-desde').value;
+    const hasta  = document.getElementById('stat-hasta').value;
+    // Propagar las mismas fechas al filtro de la tabla
+    document.getElementById('filtro-desde').value = desde;
+    document.getElementById('filtro-hasta').value = hasta;
+    filtrarYRenderClientes(); // tabla + badge
+    cargarStats();            // tarjetas
+  }
+  document.getElementById('stat-desde').addEventListener('change', actualizarConFiltroStats);
+  document.getElementById('stat-hasta').addEventListener('change', actualizarConFiltroStats);
   document.getElementById('btn-limpiar-stats').addEventListener('click', () => {
-    document.getElementById('stat-desde').value = '';
-    document.getElementById('stat-hasta').value = '';
+    document.getElementById('stat-desde').value  = '';
+    document.getElementById('stat-hasta').value  = '';
+    document.getElementById('filtro-desde').value = '';
+    document.getElementById('filtro-hasta').value = '';
+    filtrarYRenderClientes();
     cargarStats();
   });
 
