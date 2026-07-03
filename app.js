@@ -968,19 +968,21 @@ function descargarFoto(src) {
    GENERACIÓN DEL MENSAJE (plantilla exacta del proyecto)
    ================================================================ */
 function generarMensaje(p) {
+  const uc  = (v) => (v || '').toUpperCase();
+  const val = p.valor.replace(/^\$/, ''); // quitar $ del inicio para no duplicar
   return (
-    "Hola, te saluda Lilibeth. Tu pedido ya está listo para despacho. Por favor confirma que estos datos estén correctos:\n" +
-    "Nombre: "              + p.nombre          + "\n" +
-    "Teléfono: "            + p.telefonoMensaje + "\n" +
-    "Dirección: "           + p.direccion       + "\n" +
-    "Ciudad: "              + p.ciudad          + "\n" +
-    "Departamento: "        + p.departamento    + "\n" +
-    "Correo: "              + p.correo          + "\n" +
-    "Talla: "               + p.talla           + "\n" +
-    "Nombre del Producto: " + p.producto        + "\n" +
-    "Valor a pagar: "       + p.valor           + "\n" +
-    "Si todo está correcto responde: CONFIRMO\n" +
-    "Si deseas corregir algún dato, escríbelo en este chat.\n" +
+    "Hola, te saluda Santiago Tu pedido ya está listo para despacho. me confirmas si los datos estén correctos:\n\n" +
+    "*NOMBRE:* "              + uc(p.nombre)          + "\n" +
+    "*TELEFONO:* "            + uc(p.telefonoMensaje) + "\n" +
+    "*DIRECCION:* "           + uc(p.direccion)       + "\n" +
+    "*CIUDAD:* "              + uc(p.ciudad)          + "\n" +
+    "*DEPARTAMENTO:* "        + uc(p.departamento)    + "\n" +
+    "*CORREO :* "             + uc(p.correo)          + "\n" +
+    "*TALLA :* "              + uc(p.talla)           + "\n" +
+    "*Nombre del Producto:* " + uc(p.producto)        + "\n" +
+    "*Valor a pagar: $* "     + val                   + "\n\n" +
+    "Si todo está correcto escribeme: CONFIRMO\n" +
+    "Si deseas corregir algún dato, escribeme cual seria.\n" +
     "Una vez confirmado, tu pedido será despachado en las próximas 24 horas."
   );
 }
