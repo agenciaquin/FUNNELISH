@@ -45,12 +45,15 @@ let modoPendientesEffi = false;   // solo muestra clientes sin confirmar en Effi
 let effiPhones         = new Set(); // teléfonos 10 dígitos que aparecen en Effi
 let paginaActual       = 1;
 const ITEMS_POR_PAG    = 30;
-let seleccionados      = new Set(); // _keys seleccionados para acción masiva
+let seleccionados        = new Set(); // _keys seleccionados para acción masiva
+let remarketingEnviados  = new Set(); // _keys con mensaje de remarketing enviado
+const LS_KEY_REMARKETING = "confirmaYa_remarketing";
 
 /* ── INICIALIZACIÓN ──────────────────────────────────────────── */
 document.addEventListener("DOMContentLoaded", () => {
   estados = cargarEstados();
   window.estados = estados;
+  remarketingEnviados = cargarRemarketingLS();
   window.pedidos = pedidos;
   initUpload();
   initModal();
@@ -265,15 +268,15 @@ async function cargarClientesDeSupabase() {
     pedidos = data.map((rec, i) => supabaseAFormatoLocal(rec, i));
     window.pedidos = pedidos;
 
-    // Cargar estados desde Supabase (columna 'estado' en clientes_funnelish)
+    // Cargar estados y remarketing desde Supabase
     data.forEach(rec => {
-      if (rec.estado) {
-        const tel10d = String(rec.telefono || '').replace(/\D/g, '').replace(/^57/, '').slice(-10);
-        const key    = '57' + tel10d + '|' + (rec.fecha_pedido || '');
-        estados[key] = rec.estado;
-      }
+      const tel10d = String(rec.telefono || '').replace(/\D/g, '').replace(/^57/, '').slice(-10);
+      const key    = '57' + tel10d + '|' + (rec.fecha_pedido || '');
+      if (rec.estado) estados[key] = rec.estado;
+      if (rec.remarketing_enviado) remarketingEnviados.add(key);
     });
-    guardarEstados(); // sincronizar localStorage también
+    guardarEstados();
+    guardarRemarketingLS();
 
     renderizarTabla(pedidos);
     if (typeof window.actualizarStats === 'function') window.actualizarStats();
@@ -489,6 +492,7 @@ function renderizarTabla(filas) {
         ` : `<span style="font-size:0.68rem;color:rgba(239,68,68,0.6)">Cancelada</span>`}
       </td>
       <td class="td-col-effi">
+        ${remarketingEnviados.has(p._key) ? '<div class="badge-remarketing-enviado">✅ MENSAJE ENVIADO</div>' : ''}
         ${effiPhones.size > 0 ? `
         <div class="accion-grupo effi-grupo">
           <span class="badge-effi ${effiPhones.has(tel10(p.telefonoWhatsApp)) ? 'effi-confirmada' : 'effi-pendiente'}">${effiPhones.has(tel10(p.telefonoWhatsApp)) ? '✓ EFFI' : '⏳ PENDIENTE'}</span>
@@ -864,6 +868,46 @@ function abrirWhatsAppRemarketing(id) {
   const msg = `Hola ${primerNombre}, los Buzos se están agotando, aún tengo apartado el tuyo. Necesitamos tu confirmación para enviarlo.`;
   const url = "whatsapp://send?phone=" + p.telefonoWhatsApp + "&text=" + encodeURIComponent(msg);
   window.open(url, "_self");
+
+  // Marcar como mensaje enviado
+  remarketingEnviados.add(p._key);
+  guardarRemarketingLS();
+  sincronizarRemarketingEnSupabase(p._key);
+
+  // Mostrar badge en DOM inmediatamente (sin re-renderizar)
+  const btn = document.querySelector(`.btn-accion-remarketing[data-id="${id}"]`);
+  const td  = btn?.closest('td');
+  if (td && !td.querySelector('.badge-remarketing-enviado')) {
+    const badge = document.createElement('div');
+    badge.className   = 'badge-remarketing-enviado';
+    badge.textContent = '✅ MENSAJE ENVIADO';
+    td.insertBefore(badge, td.firstChild);
+  }
+}
+
+/* Guarda/carga el estado de remarketing en localStorage */
+function guardarRemarketingLS() {
+  localStorage.setItem(LS_KEY_REMARKETING, JSON.stringify([...remarketingEnviados]));
+}
+function cargarRemarketingLS() {
+  try { return new Set(JSON.parse(localStorage.getItem(LS_KEY_REMARKETING)) || []); }
+  catch { return new Set(); }
+}
+
+/* Sincroniza remarketing con Supabase (fire & forget) */
+async function sincronizarRemarketingEnSupabase(key) {
+  if (!dbH) return;
+  try {
+    const partes = key.split('|');
+    const tel10  = partes[0].replace(/^57/, '');
+    const fecha  = partes[1] || '';
+    await dbH.from('clientes_funnelish')
+      .update({ remarketing_enviado: true })
+      .eq('telefono', tel10)
+      .eq('fecha_pedido', fecha);
+  } catch(err) {
+    console.warn('[ConfirmaYa] No se pudo guardar remarketing en Supabase:', err);
+  }
 }
 
 /* ================================================================
