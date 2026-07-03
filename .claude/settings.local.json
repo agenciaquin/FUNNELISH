@@ -3,7 +3,9 @@
     "allow": [
       "PowerShell(git init *)",
       "PowerShell(gh repo *)",
-      "PowerShell(Get-Content *)"
+      "PowerShell(Get-Content *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
     ]
   }
 }
