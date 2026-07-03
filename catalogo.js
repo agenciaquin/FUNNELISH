@@ -15,11 +15,17 @@ const CATALOGO = {
   "BM AMARILLO ÉLITE 2026":      "img/BM%20AMARILLO%20%C3%89LITE%202026.jpg",
   "BM AZUL OSCURO ÉLITE 2026":   "img/BM%20AZUL%20OSCURO%20%C3%89LITE%202026.jpg",
   "BM BLANCO MARFIL ÉLITE 2026": "img/BM%20BLANCO%20MARFIL%20%C3%89LITE%202026.jpg",
-  "PROM AMARILLO 1990":          "img/PROM%20AMARILLO%201990.jpg",
-  "PROM NEGRO 1990":             "img/PROM%20NEGRO%201990.jpg",
-  "PROM ROJO 1990":              "img/PROM%20ROJO%201990.jpg",
+  "PROM AMARILLO 1990":               "img/PROM%20AMARILLO%201990.jpg",
+  "PROM NEGRO 1990":                  "img/PROM%20NEGRO%201990.jpg",
+  "PROM ROJO 1990":                   "img/PROM%20ROJO%201990.jpg",
+  /* Productos RETRO */
+  "RETRO BLANCO MARFIL 1990":         "img/RETRO%20%20BLANCO%20MARFIL%201990.jpeg",
+  "RETRO NEGRO 1990":                 "img/RETRO%20NEGRO%201990.jpeg",
+  "RETRO AMARILLO 1990":              "img/RETRO%20AMARILLO%201990.jpg",
+  "RETRO ROJO 1990":                  "img/RETRO%20ROJO%201990.jpeg",
+  "RETRO AMARILLO MARIPOSA CUELLO ALTO": "img/RETRO%20AMARILLO%20MARIPOSA%20%20CUELLO%20ALTO.jpeg",
   /* Productos pack — imagen genérica propia */
-  "PROM PACK X2 1990":           "img/PACK%20X2.jpg",
-  "PROM PACK X3 1990":           "img/PACK%20X3.jpg",
-  "PROM PACK 3 1990":            "img/PACK%20X3.jpg",
+  "PROM PACK X2 1990":                "img/PACK%20X2.jpg",
+  "PROM PACK X3 1990":                "img/PACK%20X3.jpg",
+  "PROM PACK 3 1990":                 "img/PACK%20X3.jpg",
 };
