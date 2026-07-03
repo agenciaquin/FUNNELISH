@@ -769,6 +769,14 @@ function aplicarFiltros(resetPage = true) {
     return matchQ && matchNombre && matchTel && matchE && matchDesde && matchHasta;
   });
 
+  // Más recientes primero
+  filtrados.sort((a, b) => {
+    if (!a.fechaObj && !b.fechaObj) return 0;
+    if (!a.fechaObj) return 1;
+    if (!b.fechaObj) return -1;
+    return b.fechaObj - a.fechaObj;
+  });
+
   // Paginación
   const inicio  = (paginaActual - 1) * ITEMS_POR_PAG;
   const pagina  = filtrados.slice(inicio, inicio + ITEMS_POR_PAG);
