@@ -264,6 +264,17 @@ async function cargarClientesDeSupabase() {
 
     pedidos = data.map((rec, i) => supabaseAFormatoLocal(rec, i));
     window.pedidos = pedidos;
+
+    // Cargar estados desde Supabase (columna 'estado' en clientes_funnelish)
+    data.forEach(rec => {
+      if (rec.estado) {
+        const tel10d = String(rec.telefono || '').replace(/\D/g, '').replace(/^57/, '').slice(-10);
+        const key    = '57' + tel10d + '|' + (rec.fecha_pedido || '');
+        estados[key] = rec.estado;
+      }
+    });
+    guardarEstados(); // sincronizar localStorage también
+
     renderizarTabla(pedidos);
     if (typeof window.actualizarStats === 'function') window.actualizarStats();
     console.log(`[ConfirmaYa] ${pedidos.length} clientes cargados desde Supabase`);
@@ -550,7 +561,24 @@ const CICLO_ESTADOS = ["Pendiente", "Confirmado", "No confirma", "Cancelado"];
 function cancelarVenta(key) {
   estados[key] = "Cancelado";
   guardarEstados();
+  sincronizarEstadoEnSupabase(key, "Cancelado");
   aplicarFiltros();
+}
+
+/* Guarda el estado de un cliente en Supabase (fire & forget) */
+async function sincronizarEstadoEnSupabase(key, nuevoEstado) {
+  if (!dbH) return;
+  try {
+    const partes  = key.split('|');
+    const tel10   = partes[0].replace(/^57/, ''); // quitar prefijo 57
+    const fecha   = partes[1] || '';
+    await dbH.from('clientes_funnelish')
+      .update({ estado: nuevoEstado })
+      .eq('telefono', tel10)
+      .eq('fecha_pedido', fecha);
+  } catch(err) {
+    console.warn('[ConfirmaYa] No se pudo guardar estado en Supabase:', err);
+  }
 }
 
 function ciclarEstado(key, badge) {
@@ -571,12 +599,16 @@ function toggleConfirmar(key, badge) {
   guardarEstados();
   badge.textContent = nuevo;
   badge.className   = "badge-estado " + claseEstado(nuevo);
+  sincronizarEstadoEnSupabase(key, nuevo);
 }
 
 /* Confirmar todos los seleccionados */
 function confirmarSeleccionados() {
   if (!seleccionados.size) return;
-  seleccionados.forEach(key => { estados[key] = "Confirmado"; });
+  seleccionados.forEach(key => {
+    estados[key] = "Confirmado";
+    sincronizarEstadoEnSupabase(key, "Confirmado");
+  });
   guardarEstados();
   seleccionados.clear();
   aplicarFiltros(false);
@@ -816,6 +848,7 @@ function abrirWhatsApp(id) {
   if ((estados[p._key] || "Pendiente") === "Pendiente") {
     estados[p._key] = "Confirmado";
     guardarEstados();
+    sincronizarEstadoEnSupabase(p._key, "Confirmado");
     const badge = document.querySelector(`.badge-estado[data-key="${p._key}"]`);
     if (badge) {
       badge.textContent = "Confirmado";
