@@ -46,14 +46,17 @@ let effiPhones         = new Set(); // teléfonos 10 dígitos que aparecen en Ef
 let paginaActual       = 1;
 const ITEMS_POR_PAG    = 30;
 let seleccionados        = new Set(); // _keys seleccionados para acción masiva
-let remarketingEnviados  = new Set(); // _keys con mensaje de remarketing enviado
-const LS_KEY_REMARKETING = "confirmaYa_remarketing";
+let remarketingEnviados  = new Set(); // _keys con 1er mensaje de remarketing enviado
+let remarketing2Enviados = new Set(); // _keys con 2do mensaje de remarketing enviado
+const LS_KEY_REMARKETING  = "confirmaYa_remarketing";
+const LS_KEY_REMARKETING2 = "confirmaYa_remarketing2";
 
 /* ── INICIALIZACIÓN ──────────────────────────────────────────── */
 document.addEventListener("DOMContentLoaded", () => {
   estados = cargarEstados();
   window.estados = estados;
-  remarketingEnviados = cargarRemarketingLS();
+  remarketingEnviados  = cargarRemarketingLS();
+  remarketing2Enviados = cargarRemarketingLS2();
   window.pedidos = pedidos;
   initUpload();
   initModal();
@@ -273,10 +276,12 @@ async function cargarClientesDeSupabase() {
       const tel10d = String(rec.telefono || '').replace(/\D/g, '').replace(/^57/, '').slice(-10);
       const key    = '57' + tel10d + '|' + (rec.fecha_pedido || '');
       if (rec.estado) estados[key] = rec.estado;
-      if (rec.remarketing_enviado) remarketingEnviados.add(key);
+      if (rec.remarketing_enviado)   remarketingEnviados.add(key);
+      if (rec.remarketing_2_enviado) remarketing2Enviados.add(key);
     });
     guardarEstados();
     guardarRemarketingLS();
+    guardarRemarketingLS2();
 
     renderizarTabla(pedidos);
     if (typeof window.actualizarStats === 'function') window.actualizarStats();
@@ -492,7 +497,11 @@ function renderizarTabla(filas) {
         ` : `<span style="font-size:0.68rem;color:rgba(239,68,68,0.6)">Cancelada</span>`}
       </td>
       <td class="td-col-effi">
-        ${remarketingEnviados.has(p._key) ? '<div class="badge-remarketing-enviado">✅ MENSAJE ENVIADO</div>' : ''}
+        ${remarketing2Enviados.has(p._key)
+            ? '<div class="badge-remarketing-2">📨 2 MENSAJES ENVIADOS</div>'
+            : remarketingEnviados.has(p._key)
+              ? '<div class="badge-remarketing-enviado">✅ MENSAJE ENVIADO</div>'
+              : ''}
         ${effiPhones.size > 0 ? `
         <div class="accion-grupo effi-grupo">
           <span class="badge-effi ${effiPhones.has(tel10(p.telefonoWhatsApp)) ? 'effi-confirmada' : 'effi-pendiente'}">${effiPhones.has(tel10(p.telefonoWhatsApp)) ? '✓ EFFI' : '⏳ PENDIENTE'}</span>
@@ -875,19 +884,31 @@ function abrirWhatsAppRemarketing(id) {
   const url = "whatsapp://send?phone=" + p.telefonoWhatsApp + "&text=" + encodeURIComponent(msg);
   window.open(url, "_self");
 
-  // Marcar como mensaje enviado
-  remarketingEnviados.add(p._key);
-  guardarRemarketingLS();
-  sincronizarRemarketingEnSupabase(p._key);
-
-  // Mostrar badge en DOM inmediatamente (sin re-renderizar)
+  // Actualizar estado según si es 1er o 2do mensaje
   const btn = document.querySelector(`.btn-accion-remarketing[data-id="${id}"]`);
   const td  = btn?.closest('td');
-  if (td && !td.querySelector('.badge-remarketing-enviado')) {
-    const badge = document.createElement('div');
-    badge.className   = 'badge-remarketing-enviado';
-    badge.textContent = '✅ MENSAJE ENVIADO';
-    td.insertBefore(badge, td.firstChild);
+  const badgeExistente = td?.querySelector('.badge-remarketing-enviado, .badge-remarketing-2');
+
+  if (yaEnviado) {
+    // Segundo mensaje → cambiar badge a azul
+    remarketing2Enviados.add(p._key);
+    guardarRemarketingLS2();
+    sincronizarRemarketingEnSupabase2(p._key);
+    if (badgeExistente) {
+      badgeExistente.className   = 'badge-remarketing-2';
+      badgeExistente.textContent = '📨 2 MENSAJES ENVIADOS';
+    }
+  } else {
+    // Primer mensaje → badge verde
+    remarketingEnviados.add(p._key);
+    guardarRemarketingLS();
+    sincronizarRemarketingEnSupabase(p._key);
+    if (td && !badgeExistente) {
+      const badge = document.createElement('div');
+      badge.className   = 'badge-remarketing-enviado';
+      badge.textContent = '✅ MENSAJE ENVIADO';
+      td.insertBefore(badge, td.firstChild);
+    }
   }
 }
 
@@ -897,6 +918,13 @@ function guardarRemarketingLS() {
 }
 function cargarRemarketingLS() {
   try { return new Set(JSON.parse(localStorage.getItem(LS_KEY_REMARKETING)) || []); }
+  catch { return new Set(); }
+}
+function guardarRemarketingLS2() {
+  localStorage.setItem(LS_KEY_REMARKETING2, JSON.stringify([...remarketing2Enviados]));
+}
+function cargarRemarketingLS2() {
+  try { return new Set(JSON.parse(localStorage.getItem(LS_KEY_REMARKETING2)) || []); }
   catch { return new Set(); }
 }
 
@@ -913,6 +941,20 @@ async function sincronizarRemarketingEnSupabase(key) {
       .eq('fecha_pedido', fecha);
   } catch(err) {
     console.warn('[ConfirmaYa] No se pudo guardar remarketing en Supabase:', err);
+  }
+}
+async function sincronizarRemarketingEnSupabase2(key) {
+  if (!dbH) return;
+  try {
+    const partes = key.split('|');
+    const tel10  = partes[0].replace(/^57/, '');
+    const fecha  = partes[1] || '';
+    await dbH.from('clientes_funnelish')
+      .update({ remarketing_2_enviado: true })
+      .eq('telefono', tel10)
+      .eq('fecha_pedido', fecha);
+  } catch(err) {
+    console.warn('[ConfirmaYa] No se pudo guardar remarketing 2 en Supabase:', err);
   }
 }
 
