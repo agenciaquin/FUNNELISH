@@ -865,7 +865,13 @@ function abrirWhatsApp(id) {
 function abrirWhatsAppRemarketing(id) {
   const p = pedidos[id];
   const primerNombre = (p.nombre === '—' ? 'cliente' : p.nombre.split(' ')[0]);
-  const msg = `Hola ${primerNombre}, los Buzos se están agotando, aún tengo apartado el tuyo. Necesitamos tu confirmación para enviarlo.`;
+
+  // Si ya se envió el primer mensaje → segundo mensaje de seguimiento
+  const yaEnviado = remarketingEnviados.has(p._key);
+  const msg = yaEnviado
+    ? `Hola ${primerNombre}, Necesitamos tu confirmación para enviarlo. me confirmas el pedido?`
+    : `Hola ${primerNombre}, los Buzos se están agotando, aún tengo apartado el tuyo. Necesitamos tu confirmación para enviarlo.`;
+
   const url = "whatsapp://send?phone=" + p.telefonoWhatsApp + "&text=" + encodeURIComponent(msg);
   window.open(url, "_self");
 
