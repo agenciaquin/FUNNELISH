@@ -10,6 +10,8 @@ const DEVOLUCION_COSTO = 23000; // costo fijo por devolución
 let dbB         = null;
 let remisiones  = [];
 let filtroActual = 'todos';
+let fechaDesde   = '';
+let fechaHasta   = '';
 
 /* ── INIT ── */
 window.addEventListener('DOMContentLoaded', async () => {
@@ -38,6 +40,23 @@ window.addEventListener('DOMContentLoaded', async () => {
       btn.classList.add('active');
       renderTabla();
     });
+  });
+
+  // Filtro de fechas
+  document.getElementById('fecha-desde').addEventListener('change', e => {
+    fechaDesde = e.target.value;
+    renderTabla();
+  });
+  document.getElementById('fecha-hasta').addEventListener('change', e => {
+    fechaHasta = e.target.value;
+    renderTabla();
+  });
+  document.getElementById('btn-limpiar-fechas').addEventListener('click', () => {
+    fechaDesde = '';
+    fechaHasta = '';
+    document.getElementById('fecha-desde').value = '';
+    document.getElementById('fecha-hasta').value = '';
+    renderTabla();
   });
 
   cargarDatos();
@@ -230,6 +249,14 @@ function renderTabla() {
   else if (filtroActual === 'pendientes') filas = s.pendientes;
   else if (filtroActual === 'devueltas')  filas = s.devueltas;
   else                                    filas = remisiones;
+
+  // Filtro de fechas: fecha_creacion tiene formato "2026-07-04 06:45:37"
+  if (fechaDesde) {
+    filas = filas.filter(r => r.fecha_creacion && r.fecha_creacion.slice(0, 10) >= fechaDesde);
+  }
+  if (fechaHasta) {
+    filas = filas.filter(r => r.fecha_creacion && r.fecha_creacion.slice(0, 10) <= fechaHasta);
+  }
 
   const countEl = document.getElementById('filtro-count');
   if (countEl) countEl.textContent = `${filas.length} registros`;
