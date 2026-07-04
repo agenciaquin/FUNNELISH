@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Billetera QUINO — KLIXMANT</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --gold: #C9A84C; --gold-light: #E8C96B;
+      --bg: #0d0d0d; --surface: #111113; --border: rgba(255,255,255,0.06);
+      --muted: rgba(255,255,255,0.28);
+    }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: #fff; font-family: 'Inter', sans-serif; }
+    body { display: flex; }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      width: 220px; min-width: 220px; background: #09090B;
+      border-right: 1px solid rgba(255,255,255,0.055);
+      display: flex; flex-direction: column; height: 100vh;
+      position: sticky; top: 0; overflow-y: auto; flex-shrink: 0; z-index: 100;
+    }
+    .sb-brand {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 1.1rem 0.875rem 0.875rem;
+      border-bottom: 1px solid rgba(255,255,255,0.055);
+    }
+    .sb-logo { width: 30px; height: 30px; background: #fff; border-radius: 6px; padding: 2px 4px; object-fit: contain; flex-shrink: 0; }
+    .sb-title { font-size: 0.8rem; font-weight: 800; color: #fff; }
+    .sb-sub   { font-size: 0.58rem; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.08em; }
+    .sb-nav   { flex: 1; padding: 0.6rem 0.5rem; display: flex; flex-direction: column; gap: 2px; }
+    .sb-section {
+      font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+      color: rgba(255,255,255,0.2); padding: 0.625rem 0.625rem 0.2rem; margin-top: 0.25rem;
+    }
+    .sb-item {
+      display: flex; align-items: center; gap: 0.55rem;
+      padding: 0.5rem 0.625rem; border-radius: 7px;
+      font-size: 0.76rem; font-weight: 500; color: rgba(255,255,255,0.42);
+      text-decoration: none; transition: all 0.14s ease; border: 1px solid transparent;
+    }
+    .sb-item:hover  { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.78); }
+    .sb-item.active { background: rgba(201,168,76,0.10); color: #C9A84C; border-color: rgba(201,168,76,0.2); font-weight: 600; }
+    .sb-item .sb-ico { font-size: 0.9rem; flex-shrink: 0; line-height: 1; }
+    .sb-item.disabled { opacity: 0.35; pointer-events: none; }
+    .sb-footer {
+      padding: 0.75rem 0.875rem; border-top: 1px solid rgba(255,255,255,0.055);
+      display: flex; align-items: center; gap: 0.55rem;
+    }
+    .sb-avatar {
+      width: 28px; height: 28px; background: linear-gradient(135deg, #C9A84C, #E8C96B);
+      border-radius: 7px; display: flex; align-items: center; justify-content: center;
+      font-size: 0.6rem; font-weight: 800; color: #000; flex-shrink: 0;
+    }
+    .sb-user-name { font-size: 0.7rem; font-weight: 600; color: rgba(255,255,255,0.75); }
+    .sb-user-role { font-size: 0.6rem; color: rgba(255,255,255,0.28); }
+
+    /* ── CONTENT ── */
+    .content-area { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow-y: auto; height: 100vh; }
+
+    /* ── PAGE HEADER ── */
+    .page-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1.1rem 1.5rem 0.875rem;
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .page-hdr-title { font-size: 1rem; font-weight: 800; color: #fff; letter-spacing: -0.02em; margin-bottom: 0.1rem; }
+    .page-hdr-sub   { font-size: 0.7rem; color: var(--muted); }
+    .page-hdr-right { display: flex; align-items: center; gap: 0.6rem; }
+
+    .btn-subir {
+      background: linear-gradient(135deg, #C9A84C, #B8943A);
+      border: none; color: #14120c; border-radius: 8px; padding: 0.5rem 1rem;
+      font-size: 0.78rem; font-weight: 700; cursor: pointer; font-family: inherit;
+      transition: all 0.15s; box-shadow: 0 2px 12px rgba(201,168,76,0.25);
+    }
+    .btn-subir:hover { opacity: 0.88; transform: translateY(-1px); }
+
+    /* ── STATS ── */
+    .stats-bar {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 0.625rem; padding: 1rem 1.5rem 0; flex-shrink: 0;
+    }
+    .stat-tile {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 0.875rem 1rem;
+    }
+    .stat-label { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-bottom: 0.35rem; }
+    .stat-value { font-size: 1.35rem; font-weight: 800; letter-spacing: -0.03em; }
+    .stat-sub   { font-size: 0.62rem; color: var(--muted); margin-top: 0.2rem; }
+    .stat-gold  .stat-value { color: var(--gold); }
+    .stat-green .stat-value { color: #22c55e; }
+    .stat-red   .stat-value { color: #ef4444; }
+    .stat-blue  .stat-value { color: #60A5FA; }
+
+    /* ── FILTROS ── */
+    .filtros-bar {
+      display: flex; gap: 0.5rem; align-items: center;
+      padding: 0.875rem 1.5rem; flex-shrink: 0; flex-wrap: wrap;
+    }
+    .btn-filtro {
+      border: 1px solid rgba(255,255,255,0.12); background: transparent; color: rgba(255,255,255,0.55);
+      border-radius: 20px; padding: 0.3rem 0.85rem; font-size: 0.72rem; font-weight: 600;
+      cursor: pointer; font-family: inherit; transition: all 0.14s;
+    }
+    .btn-filtro:hover { background: rgba(255,255,255,0.07); color: #fff; }
+    .btn-filtro.active.todos      { background: rgba(201,168,76,0.15); border-color: var(--gold); color: var(--gold); }
+    .btn-filtro.active.entregadas { background: rgba(34,197,94,0.15);  border-color: #22c55e; color: #22c55e; }
+    .btn-filtro.active.pendientes { background: rgba(249,115,22,0.15); border-color: #F97316; color: #F97316; }
+    .btn-filtro.active.devueltas  { background: rgba(239,68,68,0.15);  border-color: #ef4444; color: #ef4444; }
+    .filtro-count { font-size: 0.62rem; color: var(--muted); margin-left: auto; }
+
+    /* ── TABLA ── */
+    .tabla-wrap {
+      flex: 1; overflow: auto; padding: 0 1.5rem 1.5rem; margin-top: 0.5rem;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    thead th {
+      background: #09090B; color: rgba(255,255,255,0.4); font-size: 0.62rem;
+      font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em;
+      padding: 0.6rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 2;
+    }
+    tbody tr { border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.1s; }
+    tbody tr:hover { background: rgba(255,255,255,0.025); }
+    tbody td { padding: 0.6rem 0.75rem; color: rgba(255,255,255,0.82); vertical-align: middle; }
+    .td-num { color: var(--muted); font-size: 0.65rem; width: 36px; text-align: center; }
+    .td-cliente { font-weight: 600; color: #fff; }
+    .td-tel { font-size: 0.65rem; color: var(--muted); margin-top: 0.1rem; }
+    .val-num { text-align: right; font-variant-numeric: tabular-nums; }
+    .val-positivo { color: #22c55e !important; }
+    .val-negativo { color: #ef4444 !important; }
+
+    /* Badges de estado */
+    .badge-estado-bill {
+      display: inline-block; border-radius: 5px; padding: 0.18rem 0.5rem;
+      font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap;
+    }
+    .badge-entregada { background: rgba(34,197,94,0.15);  border: 1px solid rgba(34,197,94,0.3);  color: #22c55e; }
+    .badge-pendiente { background: rgba(249,115,22,0.15); border: 1px solid rgba(249,115,22,0.3); color: #F97316; }
+    .badge-devuelta  { background: rgba(239,68,68,0.15);  border: 1px solid rgba(239,68,68,0.3);  color: #ef4444; }
+  </style>
+</head>
+<body>
+
+<!-- ── SIDEBAR ── -->
+<aside class="sidebar">
+  <div class="sb-brand">
+    <img src="img/logo-quin.png" class="sb-logo" alt="QUIN">
+    <div>
+      <div class="sb-title">ConfirmaYa</div>
+      <div class="sb-sub">KLIXMANT</div>
+    </div>
+  </div>
+
+  <nav class="sb-nav">
+    <div class="sb-section">Principal</div>
+    <a href="index.html" class="sb-item">
+      <span class="sb-ico">📦</span>
+      Confirmación de pedidos
+    </a>
+    <a href="historial.html" class="sb-item">
+      <span class="sb-ico">📊</span>
+      Historial y Comparación
+    </a>
+    <a href="billetera.html" class="sb-item active">
+      <span class="sb-ico">💰</span>
+      Billetera QUINO
+    </a>
+
+    <div class="sb-section" style="margin-top:0.5rem">Próximamente</div>
+    <span class="sb-item disabled"><span class="sb-ico">📢</span> Campañas WhatsApp</span>
+    <span class="sb-item disabled"><span class="sb-ico">📈</span> Reportes</span>
+    <span class="sb-item disabled"><span class="sb-ico">⚙️</span> Configuración</span>
+  </nav>
+
+  <div class="sb-footer">
+    <div class="sb-avatar">JM</div>
+    <div>
+      <div class="sb-user-name">Josué &amp; Mallerlis</div>
+      <div class="sb-user-role">AGENCIA QUIN</div>
+    </div>
+  </div>
+</aside>
+
+<!-- ── CONTENIDO ── -->
+<div class="content-area">
+
+  <!-- Header -->
+  <div class="page-hdr">
+    <div>
+      <div class="page-hdr-title">💰 Billetera QUINO</div>
+      <div class="page-hdr-sub">Comisiones de ventas Funnelish · Agencia QUIN</div>
+    </div>
+    <div class="page-hdr-right">
+      <button class="btn-subir" id="btn-subir-reporte">📁 Subir Reporte Effi</button>
+      <input type="file" id="input-reporte" accept=".xls,.xlsx,.csv" style="display:none">
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-bar">
+    <div class="stat-tile stat-green">
+      <div class="stat-label">✓ Comisión entregada</div>
+      <div class="stat-value" id="stat-entregado">$0</div>
+      <div class="stat-sub" id="stat-entregado-n">0 pedidos</div>
+    </div>
+    <div class="stat-tile stat-gold">
+      <div class="stat-label">⏳ Pendiente por entregar</div>
+      <div class="stat-value" id="stat-pendiente">$0</div>
+      <div class="stat-sub" id="stat-pendiente-n">0 pedidos</div>
+    </div>
+    <div class="stat-tile stat-red">
+      <div class="stat-label">↩ Devoluciones</div>
+      <div class="stat-value" id="stat-devolucion">-$0</div>
+      <div class="stat-sub" id="stat-devolucion-n">0 devoluciones × $23.000</div>
+    </div>
+    <div class="stat-tile stat-blue">
+      <div class="stat-label">🏆 Ganancia final</div>
+      <div class="stat-value" id="stat-ganancia">$0</div>
+      <div class="stat-sub" id="stat-total">Entregado − devoluciones</div>
+    </div>
+  </div>
+
+  <!-- Filtros -->
+  <div class="filtros-bar">
+    <button class="btn-filtro todos active" data-filtro="todos">Todos</button>
+    <button class="btn-filtro entregadas" data-filtro="entregadas">✓ Entregados</button>
+    <button class="btn-filtro pendientes" data-filtro="pendientes">⏳ Pendientes</button>
+    <button class="btn-filtro devueltas"  data-filtro="devueltas">↩ Devueltos</button>
+    <span class="filtro-count" id="filtro-count"></span>
+  </div>
+
+  <!-- Tabla -->
+  <div class="tabla-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Cliente</th>
+          <th>Estado</th>
+          <th style="text-align:right">Total neto</th>
+          <th style="text-align:right">Costo manual</th>
+          <th style="text-align:right">Flete</th>
+          <th style="text-align:right">Comisión</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-cuerpo">
+        <tr><td colspan="7" style="text-align:center;color:rgba(255,255,255,0.3);padding:2.5rem;">⏳ Cargando datos...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="billetera.js"></script>
+</body>
+</html>
