@@ -5,7 +5,8 @@
 
 const SUPABASE_URL_B  = 'https://glmnuqfnxwaibckufgtr.supabase.co';
 const SUPABASE_KEY_B  = 'sb_publishable_TW1nS4T1g8vcZJ-mJeg0EA_8G1HZlKe';
-const DEVOLUCION_COSTO = 23000; // costo fijo por devolución
+const DEVOLUCION_COSTO = 23000;
+const LS_KEY_REM       = 'billetera_remisiones'; // backup local
 
 let dbB         = null;
 let remisiones  = [];
@@ -62,26 +63,50 @@ window.addEventListener('DOMContentLoaded', async () => {
   cargarDatos();
 });
 
-/* ── CARGA DESDE SUPABASE ── */
-async function cargarDatos() {
-  if (!dbB) {
-    document.getElementById('tabla-cuerpo').innerHTML =
-      `<tr><td colspan="7" style="text-align:center;color:rgba(255,255,255,0.3);padding:2.5rem;">Sin conexión a Supabase. Sube un reporte para comenzar.</td></tr>`;
-    return;
-  }
-
+/* ── GUARDAR EN LOCALSTORAGE ── */
+function guardarLocalStorage() {
   try {
-    const { data, error } = await dbB
-      .from('remisiones_effi')
-      .select('*')
-      .order('fecha_creacion', { ascending: false });
-
-    if (error) { console.warn('Error cargando:', error.message); return; }
-    remisiones = data || [];
-    actualizarUI();
-  } catch(err) {
-    console.warn('cargarDatos error:', err);
+    localStorage.setItem(LS_KEY_REM, JSON.stringify(remisiones));
+  } catch(e) {
+    console.warn('localStorage lleno o bloqueado:', e);
   }
+}
+
+/* ── CARGA DESDE SUPABASE (con fallback a localStorage) ── */
+async function cargarDatos() {
+  // Intentar Supabase primero
+  if (dbB) {
+    try {
+      const { data, error } = await dbB
+        .from('remisiones_effi')
+        .select('*')
+        .order('fecha_creacion', { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        remisiones = data;
+        guardarLocalStorage(); // sincronizar localStorage
+        actualizarUI();
+        return;
+      }
+      if (error) console.warn('Supabase error:', error.message);
+    } catch(err) {
+      console.warn('cargarDatos error:', err);
+    }
+  }
+
+  // Fallback: localStorage
+  try {
+    const local = localStorage.getItem(LS_KEY_REM);
+    if (local) {
+      remisiones = JSON.parse(local);
+      actualizarUI();
+      return;
+    }
+  } catch(e) { console.warn('localStorage parse error:', e); }
+
+  // Sin datos
+  remisiones = [];
+  actualizarUI();
 }
 
 /* ── PROCESAR ARCHIVO ── */
@@ -96,27 +121,27 @@ function procesarArchivo(file) {
         return;
       }
 
-      // Deduplicar por id_remision
-      const existIds  = new Set(remisiones.map(r => r.id_remision));
-      const soloNuevas = nuevas.filter(r => !existIds.has(r.id_remision));
-
-      // Guardar solo las nuevas (upsert por si acaso)
-      if (dbB && soloNuevas.length) {
-        for (let i = 0; i < soloNuevas.length; i += 500) {
-          const { error } = await dbB
-            .from('remisiones_effi')
-            .upsert(soloNuevas.slice(i, i + 500), { onConflict: 'id_remision' });
-          if (error) console.warn('Error guardando:', error.message);
-        }
-      }
-
-      // Merge local: actualizar estados de las existentes + agregar nuevas
+      // Merge: las del archivo sobreescriben las existentes (actualiza estado)
       const mapaExistente = new Map(remisiones.map(r => [r.id_remision, r]));
+      const soloNuevas = nuevas.filter(r => !mapaExistente.has(r.id_remision));
       nuevas.forEach(r => mapaExistente.set(r.id_remision, r));
       remisiones = [...mapaExistente.values()];
 
+      // Guardar TODAS las del archivo en Supabase (upsert actualiza estado también)
+      if (dbB) {
+        for (let i = 0; i < nuevas.length; i += 500) {
+          const { error } = await dbB
+            .from('remisiones_effi')
+            .upsert(nuevas.slice(i, i + 500), { onConflict: 'id_remision' });
+          if (error) console.warn('Error guardando en Supabase:', error.message);
+        }
+      }
+
+      // Guardar TODO en localStorage como respaldo permanente
+      guardarLocalStorage();
+
       actualizarUI();
-      alert(`✅ Reporte actualizado:\n• ${soloNuevas.length} nuevas remisiones agregadas\n• ${nuevas.length - soloNuevas.length} ya existían (estado actualizado)`);
+      alert(`✅ Reporte actualizado:\n• ${soloNuevas.length} nuevas remisiones agregadas\n• ${nuevas.length - soloNuevas.length} actualizadas\n• Total acumulado: ${remisiones.length} registros`);
     } catch(err) {
       console.error(err);
       alert('No se pudo leer el archivo. Asegúrate de que sea el reporte de Effi (.xls).');
