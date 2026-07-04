@@ -575,7 +575,7 @@ function cancelarVenta(key) {
   estados[key] = "Cancelado";
   guardarEstados();
   sincronizarEstadoEnSupabase(key, "Cancelado");
-  aplicarFiltros();
+  aplicarFiltros(false); // mantener página actual
 }
 
 /* Guarda el estado de un cliente en Supabase (fire & forget) */
