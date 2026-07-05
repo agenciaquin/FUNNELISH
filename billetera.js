@@ -88,41 +88,36 @@ function guardarLocalStorage() {
   }
 }
 
-/* ── CARGA DESDE SUPABASE (con fallback a localStorage) ── */
+/* ── CARGA DE DATOS ── */
 async function cargarDatos() {
-  // Intentar Supabase primero
-  if (dbB) {
-    try {
-      const { data, error } = await dbB
-        .from('remisiones_effi')
-        .select('*')
-        .order('fecha_creacion', { ascending: true });
-
-      if (!error && data && data.length > 0) {
-        remisiones = data;
-        guardarLocalStorage(); // sincronizar localStorage
-        actualizarUI();
-        return;
-      }
-      if (error) console.warn('Supabase error:', error.message);
-    } catch(err) {
-      console.warn('cargarDatos error:', err);
-    }
-  }
-
-  // Fallback: localStorage
+  // 1. localStorage PRIMERO — instantáneo, siempre disponible
   try {
     const local = localStorage.getItem(LS_KEY_REM);
     if (local) {
       remisiones = JSON.parse(local);
-      actualizarUI();
-      return;
+      actualizarUI(); // mostrar datos locales de inmediato
     }
   } catch(e) { console.warn('localStorage parse error:', e); }
 
-  // Sin datos
-  remisiones = [];
-  actualizarUI();
+  // 2. Supabase en segundo plano — solo AGREGA/ACTUALIZA, nunca borra lo local
+  if (!dbB) return;
+  try {
+    const { data, error } = await dbB
+      .from('remisiones_effi')
+      .select('*')
+      .order('fecha_creacion', { ascending: true });
+
+    if (!error && data && data.length > 0) {
+      // Merge: localStorage + Supabase → Supabase actualiza estados de los existentes
+      const mapa = new Map(remisiones.map(r => [r.id_remision, r]));
+      data.forEach(r => mapa.set(r.id_remision, r));
+      remisiones = [...mapa.values()];
+      guardarLocalStorage();
+      actualizarUI();
+    }
+  } catch(err) {
+    console.warn('Supabase merge error:', err);
+  }
 }
 
 /* ── PROCESAR ARCHIVO ── */
@@ -143,21 +138,20 @@ function procesarArchivo(file) {
       nuevas.forEach(r => mapaExistente.set(r.id_remision, r));
       remisiones = [...mapaExistente.values()];
 
-      // Guardar TODAS las del archivo en Supabase (upsert actualiza estado también)
+      // 1. Guardar en localStorage INMEDIATAMENTE — nunca se pierde
+      guardarLocalStorage();
+      actualizarUI();
+      alert(`✅ Reporte actualizado:\n• ${soloNuevas.length} nuevas remisiones agregadas\n• ${nuevas.length - soloNuevas.length} actualizadas\n• Total acumulado: ${remisiones.length} registros`);
+
+      // 2. Intentar Supabase en background (si falla no afecta nada)
       if (dbB) {
         for (let i = 0; i < nuevas.length; i += 500) {
           const { error } = await dbB
             .from('remisiones_effi')
             .upsert(nuevas.slice(i, i + 500), { onConflict: 'id_remision' });
-          if (error) console.warn('Error guardando en Supabase:', error.message);
+          if (error) console.warn('Error Supabase (no crítico):', error.message);
         }
       }
-
-      // Guardar TODO en localStorage como respaldo permanente
-      guardarLocalStorage();
-
-      actualizarUI();
-      alert(`✅ Reporte actualizado:\n• ${soloNuevas.length} nuevas remisiones agregadas\n• ${nuevas.length - soloNuevas.length} actualizadas\n• Total acumulado: ${remisiones.length} registros`);
     } catch(err) {
       console.error(err);
       alert('No se pudo leer el archivo. Asegúrate de que sea el reporte de Effi (.xls).');
