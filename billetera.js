@@ -293,7 +293,7 @@ function formatFecha(f) {
 function abrirBonoWA(idRem, tel, nombre) {
   const telLimpio = limpiarTel(tel);
   const msg = 'Esto es para ti: 20.000 de descuento en tu próxima compra Klixmant. Gracias por ser parte de nuestra familia. Escríbenos ahora y asegura tu bono.';
-  window.open(`https://wa.me/57${telLimpio}?text=${encodeURIComponent(msg)}`, '_blank');
+  window.open(`whatsapp://send?phone=57${telLimpio}&text=${encodeURIComponent(msg)}`, '_self');
 
   bonosEnviados.add(idRem);
   try { localStorage.setItem(LS_KEY_BONO, JSON.stringify([...bonosEnviados])); } catch(e) {}
