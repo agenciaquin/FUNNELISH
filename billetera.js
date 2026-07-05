@@ -7,12 +7,15 @@ const SUPABASE_URL_B  = 'https://glmnuqfnxwaibckufgtr.supabase.co';
 const SUPABASE_KEY_B  = 'sb_publishable_TW1nS4T1g8vcZJ-mJeg0EA_8G1HZlKe';
 const DEVOLUCION_COSTO = 23000;
 const LS_KEY_REM       = 'billetera_remisiones'; // backup local
+const LS_KEY_BONO      = 'billetera_bonos';       // bonos enviados
 
-let dbB         = null;
-let remisiones  = [];
+let dbB          = null;
+let remisiones   = [];
 let filtroActual = 'todos';
+let filtroSinWA  = false;
 let fechaDesde   = '';
 let fechaHasta   = '';
+let bonosEnviados = new Set();
 
 /* ── INIT ── */
 window.addEventListener('DOMContentLoaded', async () => {
@@ -25,6 +28,12 @@ window.addEventListener('DOMContentLoaded', async () => {
     await new Promise(r => setTimeout(r, 300));
   }
 
+  // Cargar bonos enviados desde localStorage
+  try {
+    const b = JSON.parse(localStorage.getItem(LS_KEY_BONO) || '[]');
+    bonosEnviados = new Set(b);
+  } catch(e) {}
+
   // Botón subir reporte
   const btnSubir  = document.getElementById('btn-subir-reporte');
   const inputFile = document.getElementById('input-reporte');
@@ -33,12 +42,19 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (inputFile.files[0]) procesarArchivo(inputFile.files[0]);
   });
 
-  // Botones de filtro
+  // Botones de filtro (categoría + Sin WA)
   document.querySelectorAll('.btn-filtro').forEach(btn => {
     btn.addEventListener('click', () => {
-      filtroActual = btn.dataset.filtro;
-      document.querySelectorAll('.btn-filtro').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+      const f = btn.dataset.filtro;
+      if (f === 'sin-wa') {
+        // toggle sin-wa independiente
+        filtroSinWA = !filtroSinWA;
+        btn.classList.toggle('active', filtroSinWA);
+      } else {
+        filtroActual = f;
+        document.querySelectorAll('.btn-filtro:not(.sin-wa)').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      }
       renderTabla();
     });
   });
@@ -80,7 +96,7 @@ async function cargarDatos() {
       const { data, error } = await dbB
         .from('remisiones_effi')
         .select('*')
-        .order('fecha_creacion', { ascending: false });
+        .order('fecha_creacion', { ascending: true });
 
       if (!error && data && data.length > 0) {
         remisiones = data;
@@ -265,6 +281,57 @@ function actualizarUI() {
   renderTabla();
 }
 
+/* ── HELPERS ── */
+function limpiarTel(tel) {
+  let t = String(tel || '').replace(/\D/g, '');
+  if (t.startsWith('57') && t.length === 12) t = t.slice(2);
+  return t;
+}
+
+function formatFecha(f) {
+  if (!f) return '—';
+  const d = new Date(String(f).replace(' ', 'T'));
+  if (isNaN(d)) return String(f).slice(0, 10) || '—';
+  return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+/* ── ENVIAR BONO WA ── */
+function abrirBonoWA(idRem, tel, nombre) {
+  const telLimpio = limpiarTel(tel);
+  const msg = 'Esto es para ti: 20.000 de descuento en tu próxima compra Klixmant. Gracias por ser parte de nuestra familia. Escríbenos ahora y asegura tu bono.';
+  window.open(`https://wa.me/57${telLimpio}?text=${encodeURIComponent(msg)}`, '_blank');
+
+  bonosEnviados.add(idRem);
+  try { localStorage.setItem(LS_KEY_BONO, JSON.stringify([...bonosEnviados])); } catch(e) {}
+
+  // Actualizar DOM sin re-render completo
+  const btn = document.querySelector(`[data-bono-id="${idRem}"]`);
+  if (btn) {
+    const td = btn.closest('td');
+    if (td && !td.querySelector('.badge-bono-enviado')) {
+      const badge = document.createElement('div');
+      badge.className = 'badge-bono-enviado';
+      badge.textContent = '✅ MENSAJE ENVIADO';
+      td.insertBefore(badge, btn);
+    }
+    btn.style.opacity = '0.6';
+  }
+}
+
+/* ── COPIAR IMAGEN BONO ── */
+async function copiarImagenBono(btn) {
+  try {
+    const resp = await fetch('img/BONO.png');
+    const blob = await resp.blob();
+    await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+    const orig = btn.textContent;
+    btn.textContent = '✅ Copiada';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  } catch(e) {
+    alert('No se pudo copiar la imagen. Haz clic derecho → Copiar imagen.');
+  }
+}
+
 /* ── RENDERIZAR TABLA ── */
 function renderTabla() {
   const s = calcularStats();
@@ -273,15 +340,23 @@ function renderTabla() {
   if      (filtroActual === 'entregadas') filas = s.entregadas;
   else if (filtroActual === 'pendientes') filas = s.pendientes;
   else if (filtroActual === 'devueltas')  filas = s.devueltas;
-  else                                    filas = remisiones;
+  else                                    filas = [...remisiones];
 
-  // Filtro de fechas: fecha_creacion tiene formato "2026-07-04 06:45:37"
-  if (fechaDesde) {
-    filas = filas.filter(r => r.fecha_creacion && r.fecha_creacion.slice(0, 10) >= fechaDesde);
+  // Filtro "Sin WA Bono"
+  if (filtroSinWA) {
+    filas = filas.filter(r => !bonosEnviados.has(r.id_remision));
   }
-  if (fechaHasta) {
-    filas = filas.filter(r => r.fecha_creacion && r.fecha_creacion.slice(0, 10) <= fechaHasta);
-  }
+
+  // Filtro de fechas
+  if (fechaDesde) filas = filas.filter(r => r.fecha_creacion && r.fecha_creacion.slice(0, 10) >= fechaDesde);
+  if (fechaHasta) filas = filas.filter(r => r.fecha_creacion && r.fecha_creacion.slice(0, 10) <= fechaHasta);
+
+  // Orden: más antiguo primero
+  filas.sort((a, b) => {
+    const fa = a.fecha_creacion || '';
+    const fb = b.fecha_creacion || '';
+    return fa < fb ? -1 : fa > fb ? 1 : 0;
+  });
 
   const countEl = document.getElementById('filtro-count');
   if (countEl) countEl.textContent = `${filas.length} registros`;
@@ -289,7 +364,7 @@ function renderTabla() {
   const tbody = document.getElementById('tabla-cuerpo');
 
   if (!filas.length) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:rgba(255,255,255,0.3);padding:2rem;">
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:rgba(255,255,255,0.3);padding:2rem;">
       ${remisiones.length === 0 ? '📁 Sube el reporte de Effi para ver los datos.' : 'Sin registros para este filtro.'}
     </td></tr>`;
     return;
@@ -302,14 +377,18 @@ function renderTabla() {
     const esDev = r.es_devolucion;
 
     const badgeClass = esDev ? 'badge-devuelta'  : esEnt ? 'badge-entregada' : 'badge-pendiente';
-    const badgeText  = esDev ? '↩ Devuelta'       : esEnt ? '✓ Entregada'    : '⏳ ' + (r.estado || 'Pendiente');
+    const badgeText  = esDev ? '↩ Devuelta'      : esEnt ? '✓ Entregada'    : '⏳ ' + (r.estado || 'Pendiente');
 
-    const comisionVal  = esDev ? -DEVOLUCION_COSTO : (r.comision || 0);
-    const comisionTxt  = esDev ? `-$${DEVOLUCION_COSTO.toLocaleString('es-CO')}` : fmt(r.comision || 0);
-    const comisionCls  = comisionVal < 0 ? 'val-negativo' : comisionVal > 0 ? 'val-positivo' : '';
+    const comisionVal = esDev ? -DEVOLUCION_COSTO : (r.comision || 0);
+    const comisionTxt = esDev ? `-$${DEVOLUCION_COSTO.toLocaleString('es-CO')}` : fmt(r.comision || 0);
+    const comisionCls = comisionVal < 0 ? 'val-negativo' : comisionVal > 0 ? 'val-positivo' : '';
+
+    const telLimpio = limpiarTel(r.telefono);
+    const bonoEnv   = bonosEnviados.has(r.id_remision);
 
     return `<tr>
       <td class="td-num">${i + 1}</td>
+      <td class="td-fecha">${formatFecha(r.fecha_creacion)}</td>
       <td>
         <div class="td-cliente">${r.cliente || '—'}</div>
         <div class="td-tel">${r.telefono || ''}</div>
@@ -319,6 +398,17 @@ function renderTabla() {
       <td class="val-num">${fmt(r.costo_manual || 0)}</td>
       <td class="val-num">${fmt(r.valor_flete || 0)}</td>
       <td class="val-num ${comisionCls}"><strong>${comisionTxt}</strong></td>
+      <td class="td-wa-bono">
+        ${bonoEnv ? '<div class="badge-bono-enviado">✅ MENSAJE ENVIADO</div>' : ''}
+        <button class="btn-wa-bono" data-bono-id="${r.id_remision}"
+          onclick="abrirBonoWA('${r.id_remision.replace(/'/g,"\\'")}','${telLimpio}','${(r.cliente||'').replace(/'/g,"\\'")}')">
+          📱 Enviar Bono
+        </button>
+      </td>
+      <td class="td-img-bono">
+        <img src="img/BONO.png" class="img-bono-thumb" alt="Bono">
+        <button class="btn-copiar-bono" onclick="copiarImagenBono(this)">📋 Copiar</button>
+      </td>
     </tr>`;
   }).join('');
 }
