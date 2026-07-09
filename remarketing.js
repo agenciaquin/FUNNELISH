@@ -262,7 +262,31 @@ function actualizarUI() {
   document.getElementById('stat-devueltas-n').textContent  = `${s.devueltas.length} guías`;
   document.getElementById('stat-sin-gest').textContent     = s.sinGestionar.length;
   document.getElementById('stat-sin-gest-n').textContent   = 'por contactar';
+  actualizarDistribucion(s);
   renderTabla();
+}
+
+/* ── BARRA DE DISTRIBUCIÓN PORCENTUAL ── */
+function actualizarDistribucion(s) {
+  const total = s.entregadas.length + s.pendientes.length + s.devueltas.length;
+  if (total === 0) return;
+
+  const pEnt = (s.entregadas.length / total * 100);
+  const pPen = (s.pendientes.length / total * 100);
+  const pDev = (s.devueltas.length  / total * 100);
+
+  // Ajuste para que sumen exactamente 100 (error de redondeo)
+  const pEntR = Math.round(pEnt * 10) / 10;
+  const pPenR = Math.round(pPen * 10) / 10;
+  const pDevR = Math.round((100 - pEntR - pPenR) * 10) / 10;
+
+  document.getElementById('dist-total').textContent    = `${total} guías totales`;
+  document.getElementById('dist-seg-ent').style.width  = `${pEntR}%`;
+  document.getElementById('dist-seg-pen').style.width  = `${pPenR}%`;
+  document.getElementById('dist-seg-dev').style.width  = `${pDevR}%`;
+  document.getElementById('dist-pct-ent').textContent  = `${pEntR}%`;
+  document.getElementById('dist-pct-pen').textContent  = `${pPenR}%`;
+  document.getElementById('dist-pct-dev').textContent  = `${pDevR}%`;
 }
 
 /* ── HELPERS ── */

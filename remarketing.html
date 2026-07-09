@@ -108,6 +108,27 @@
     .btn-accion-ent:hover { background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.38); }
     .btn-accion-dev    { border: 1px solid rgba(239,68,68,0.2); color: #ef4444; }
     .btn-accion-dev:hover { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.38); }
+
+    /* ── BARRA DE DISTRIBUCIÓN ── */
+    .dist-wrap { padding: 0.875rem 1.5rem 0; flex-shrink: 0; }
+    .dist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+    .dist-title { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+    .dist-total { font-size: 0.62rem; color: rgba(255,255,255,0.2); }
+    .dist-bar { display: flex; height: 10px; border-radius: 6px; overflow: hidden; gap: 2px; background: rgba(255,255,255,0.04); }
+    .dist-seg { height: 100%; border-radius: 6px; transition: width 0.5s ease; min-width: 0; }
+    .dist-seg-ent { background: #22c55e; }
+    .dist-seg-pen { background: #F97316; }
+    .dist-seg-dev { background: #ef4444; }
+    .dist-labels { display: flex; gap: 1.25rem; margin-top: 0.5rem; flex-wrap: wrap; }
+    .dist-lbl { display: flex; align-items: center; gap: 0.35rem; font-size: 0.65rem; color: rgba(255,255,255,0.55); }
+    .dist-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dist-dot-ent { background: #22c55e; }
+    .dist-dot-pen { background: #F97316; }
+    .dist-dot-dev { background: #ef4444; }
+    .dist-pct { font-weight: 800; font-size: 0.72rem; }
+    .dist-pct-ent { color: #22c55e; }
+    .dist-pct-pen { color: #F97316; }
+    .dist-pct-dev { color: #ef4444; }
   </style>
 </head>
 <body>
@@ -177,6 +198,36 @@
       <div class="stat-label">📵 Sin gestionar</div>
       <div class="stat-value" id="stat-sin-gest">0</div>
       <div class="stat-sub"  id="stat-sin-gest-n">por contactar</div>
+    </div>
+  </div>
+
+  <!-- Barra de distribución porcentual -->
+  <div class="dist-wrap">
+    <div class="dist-header">
+      <span class="dist-title">Distribución de guías</span>
+      <span class="dist-total" id="dist-total">0 guías totales</span>
+    </div>
+    <div class="dist-bar">
+      <div class="dist-seg dist-seg-ent" id="dist-seg-ent" style="width:0%"></div>
+      <div class="dist-seg dist-seg-pen" id="dist-seg-pen" style="width:0%"></div>
+      <div class="dist-seg dist-seg-dev" id="dist-seg-dev" style="width:0%"></div>
+    </div>
+    <div class="dist-labels">
+      <span class="dist-lbl">
+        <span class="dist-dot dist-dot-ent"></span>
+        <span class="dist-pct dist-pct-ent" id="dist-pct-ent">0%</span>
+        Entregadas
+      </span>
+      <span class="dist-lbl">
+        <span class="dist-dot dist-dot-pen"></span>
+        <span class="dist-pct dist-pct-pen" id="dist-pct-pen">0%</span>
+        En tránsito
+      </span>
+      <span class="dist-lbl">
+        <span class="dist-dot dist-dot-dev"></span>
+        <span class="dist-pct dist-pct-dev" id="dist-pct-dev">0%</span>
+        Devoluciones
+      </span>
     </div>
   </div>
 
