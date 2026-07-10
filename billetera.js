@@ -59,21 +59,21 @@ window.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Filtro de fechas
+  // Filtro de fechas — actualizarUI() para que tiles también se recalculen
   document.getElementById('fecha-desde').addEventListener('change', e => {
     fechaDesde = e.target.value;
-    renderTabla();
+    actualizarUI();
   });
   document.getElementById('fecha-hasta').addEventListener('change', e => {
     fechaHasta = e.target.value;
-    renderTabla();
+    actualizarUI();
   });
   document.getElementById('btn-limpiar-fechas').addEventListener('click', () => {
     fechaDesde = '';
     fechaHasta = '';
     document.getElementById('fecha-desde').value = '';
     document.getElementById('fecha-hasta').value = '';
-    renderTabla();
+    actualizarUI();
   });
 
   cargarDatos();
@@ -231,13 +231,18 @@ function parsearHTMLXLS(htmlText) {
   return data;
 }
 
-/* ── CÁLCULO DE STATS ── */
+/* ── CÁLCULO DE STATS (respeta filtro de fechas) ── */
 function calcularStats() {
-  const entregadas = remisiones.filter(r =>
+  // Aplicar filtro de fechas al conjunto base — los tiles reflejan el período seleccionado
+  let base = remisiones;
+  if (fechaDesde) base = base.filter(r => r.fecha_creacion && r.fecha_creacion.slice(0, 10) >= fechaDesde);
+  if (fechaHasta) base = base.filter(r => r.fecha_creacion && r.fecha_creacion.slice(0, 10) <= fechaHasta);
+
+  const entregadas = base.filter(r =>
     r.estado?.toLowerCase().includes('entregad') && !r.es_devolucion
   );
-  const devueltas  = remisiones.filter(r => r.es_devolucion);
-  const pendientes = remisiones.filter(r =>
+  const devueltas  = base.filter(r => r.es_devolucion);
+  const pendientes = base.filter(r =>
     !r.estado?.toLowerCase().includes('entregad') && !r.es_devolucion
   );
 
@@ -247,6 +252,7 @@ function calcularStats() {
     entregadas,
     devueltas,
     pendientes,
+    base, // todos del período (usado en renderTabla para filtro 'todos')
     totalEntregado:  Math.round(sum(entregadas)),
     totalPendiente:  Math.round(sum(pendientes)),
     totalDevolucion: devueltas.length * DEVOLUCION_COSTO,
@@ -263,6 +269,9 @@ function actualizarUI() {
     return sign + '$' + abs.toLocaleString('es-CO');
   };
 
+  const hayFiltroFecha = !!(fechaDesde || fechaHasta);
+  const totalPeriodo   = s.base.length;
+
   document.getElementById('stat-entregado').textContent    = fmt(s.totalEntregado);
   document.getElementById('stat-entregado-n').textContent  = `${s.entregadas.length} pedidos entregados`;
   document.getElementById('stat-pendiente').textContent    = fmt(s.totalPendiente);
@@ -270,7 +279,9 @@ function actualizarUI() {
   document.getElementById('stat-devolucion').textContent   = `-$${(s.totalDevolucion).toLocaleString('es-CO')}`;
   document.getElementById('stat-devolucion-n').textContent = `${s.devueltas.length} devoluciones × $23.000`;
   document.getElementById('stat-ganancia').textContent     = fmt(s.gananciaFinal);
-  document.getElementById('stat-total').textContent        = `${remisiones.length} registros totales`;
+  document.getElementById('stat-total').textContent        = hayFiltroFecha
+    ? `${totalPeriodo} en el período · ${remisiones.length} total`
+    : `${remisiones.length} registros totales`;
 
   renderTabla();
 }
@@ -327,19 +338,15 @@ function renderTabla() {
   const s = calcularStats();
 
   let filas;
-  if      (filtroActual === 'entregadas') filas = s.entregadas;
-  else if (filtroActual === 'pendientes') filas = s.pendientes;
-  else if (filtroActual === 'devueltas')  filas = s.devueltas;
-  else                                    filas = [...remisiones];
+  if      (filtroActual === 'entregadas') filas = [...s.entregadas];
+  else if (filtroActual === 'pendientes') filas = [...s.pendientes];
+  else if (filtroActual === 'devueltas')  filas = [...s.devueltas];
+  else                                    filas = [...s.base]; // s.base ya tiene filtro de fecha
 
   // Filtro "Sin WA Bono"
   if (filtroSinWA) {
     filas = filas.filter(r => !bonosEnviados.has(r.id_remision));
   }
-
-  // Filtro de fechas
-  if (fechaDesde) filas = filas.filter(r => r.fecha_creacion && r.fecha_creacion.slice(0, 10) >= fechaDesde);
-  if (fechaHasta) filas = filas.filter(r => r.fecha_creacion && r.fecha_creacion.slice(0, 10) <= fechaHasta);
 
   // Orden: más antiguo primero
   filas.sort((a, b) => {
