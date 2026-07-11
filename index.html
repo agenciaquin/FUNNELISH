@@ -152,6 +152,28 @@
     .stat-tile.s-noconf     .stat-tile-val { color: #EF4444; }
     .stat-tile.s-cancelado  .stat-tile-val { color: #6B7280; }
 
+    /* ── BARRA DE CONVERSIÓN ───────────────────────────────────── */
+    .conv-wrap { padding: 0.875rem 1.5rem 0; flex-shrink: 0; }
+    .conv-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.45rem; }
+    .conv-title { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(255,255,255,0.28); }
+    .conv-total-lbl { font-size: 0.6rem; color: rgba(255,255,255,0.18); }
+    .conv-bar { display: flex; height: 10px; border-radius: 6px; overflow: hidden; gap: 2px; background: rgba(255,255,255,0.04); }
+    .conv-seg { height: 100%; border-radius: 6px; transition: width 0.5s ease; min-width: 0; }
+    .conv-seg-effi { background: #F97316; }
+    .conv-seg-pend { background: #EAB308; }
+    .conv-seg-can  { background: #6B7280; }
+    .conv-labels { display: flex; gap: 1.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
+    .conv-lbl { display: flex; align-items: center; gap: 0.3rem; font-size: 0.63rem; color: rgba(255,255,255,0.45); }
+    .conv-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .conv-dot-effi { background: #F97316; }
+    .conv-dot-pend { background: #EAB308; }
+    .conv-dot-can  { background: #6B7280; }
+    .conv-pct { font-weight: 800; font-size: 0.72rem; }
+    .conv-pct-effi { color: #F97316; }
+    .conv-pct-pend { color: #EAB308; }
+    .conv-pct-can  { color: #9CA3AF; }
+    .conv-n { font-size: 0.58rem; color: rgba(255,255,255,0.22); margin-left: 0.15rem; }
+
     /* ── FILTROS POR COLUMNA ───────────────────────────────────── */
     .col-filters-bar {
       display: flex; align-items: center; gap: 0.75rem;
@@ -456,6 +478,39 @@
       </div>
     </div>
 
+    <!-- Barra de conversión (deduplicada por tel + fecha) -->
+    <div class="conv-wrap">
+      <div class="conv-header">
+        <span class="conv-title">📊 Tasa de conversión · clientes únicos (tel + fecha)</span>
+        <span class="conv-total-lbl" id="conv-total">—</span>
+      </div>
+      <div class="conv-bar">
+        <div class="conv-seg conv-seg-effi" id="conv-seg-effi" style="width:0%"></div>
+        <div class="conv-seg conv-seg-pend" id="conv-seg-pend" style="width:0%"></div>
+        <div class="conv-seg conv-seg-can"  id="conv-seg-can"  style="width:0%"></div>
+      </div>
+      <div class="conv-labels">
+        <span class="conv-lbl">
+          <span class="conv-dot conv-dot-effi"></span>
+          <span class="conv-pct conv-pct-effi" id="conv-pct-effi">0%</span>
+          Confirmadas en Effi
+          <span class="conv-n" id="conv-n-effi"></span>
+        </span>
+        <span class="conv-lbl">
+          <span class="conv-dot conv-dot-pend"></span>
+          <span class="conv-pct conv-pct-pend" id="conv-pct-pend">0%</span>
+          Pendiente por confirmar
+          <span class="conv-n" id="conv-n-pend"></span>
+        </span>
+        <span class="conv-lbl">
+          <span class="conv-dot conv-dot-can"></span>
+          <span class="conv-pct conv-pct-can" id="conv-pct-can">0%</span>
+          Canceladas
+          <span class="conv-n" id="conv-n-can"></span>
+        </span>
+      </div>
+    </div>
+
     <main>
 
       <!-- Input oculto para subir Excel -->
@@ -629,6 +684,54 @@
       document.getElementById('stat-pendiente').textContent  = pendientes;
       document.getElementById('stat-confirmado').textContent = confirmados;
       document.getElementById('stat-cancelado').textContent  = cancelados;
+      actualizarBarraConversion();
+    }
+
+    /* ── BARRA DE CONVERSIÓN (deduplicada por tel + fecha) ── */
+    function actualizarBarraConversion() {
+      const arr = window.pedidos || [];
+      const est = window.estados || {};
+      const eff = window.effiPhones || new Set();
+      if (!arr.length) return;
+
+      // Deduplicar por _key (tel+fecha): mismo cliente misma fecha = 1 venta
+      const mapaUnico = new Map();
+      arr.forEach(p => { if (!mapaUnico.has(p._key)) mapaUnico.set(p._key, p); });
+      const unicos = [...mapaUnico.values()];
+
+      let enEffi = 0, pendientes = 0, cancelados = 0;
+      unicos.forEach(p => {
+        const estado = est[p._key] || 'Pendiente';
+        if (estado === 'Cancelado') {
+          cancelados++;
+        } else {
+          // Quitar prefijo 57 para comparar con effiPhones (10 dígitos)
+          const tel10 = (p.telefonoWhatsApp || '').replace(/^57/, '');
+          if (eff.size > 0 && eff.has(tel10)) enEffi++;
+          else pendientes++;
+        }
+      });
+
+      const total = enEffi + pendientes + cancelados;
+      if (!total) return;
+
+      const pEff = Math.round(enEffi    / total * 1000) / 10;
+      const pPen = Math.round(pendientes / total * 1000) / 10;
+      const pCan = Math.round((100 - pEff - pPen) * 10) / 10;
+
+      document.getElementById('conv-seg-effi').style.width = pEff + '%';
+      document.getElementById('conv-seg-pend').style.width = pPen + '%';
+      document.getElementById('conv-seg-can').style.width  = Math.max(pCan, 0) + '%';
+
+      document.getElementById('conv-pct-effi').textContent = pEff + '%';
+      document.getElementById('conv-pct-pend').textContent = pPen + '%';
+      document.getElementById('conv-pct-can').textContent  = Math.max(pCan, 0) + '%';
+
+      document.getElementById('conv-n-effi').textContent = '(' + enEffi    + ')';
+      document.getElementById('conv-n-pend').textContent = '(' + pendientes + ')';
+      document.getElementById('conv-n-can').textContent  = '(' + cancelados + ')';
+
+      document.getElementById('conv-total').textContent = total + ' clientes únicos';
     }
 
     // Actualizar stats cuando cambia la tabla

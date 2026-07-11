@@ -308,7 +308,9 @@ async function cargarEffiDeSupabase() {
   try {
     const { data } = await dbH.from('telefonos_effi').select('telefono').range(0, 9999);
     effiPhones = new Set((data || []).map(r => tel10(r.telefono)));
+    window.effiPhones = effiPhones; // exponer para barra de conversión
     if (pedidos.length) { aplicarFiltros(); actualizarHeaderEffi(); }
+    if (typeof window.actualizarBarraConversion === 'function') window.actualizarBarraConversion();
   } catch(err) { console.warn('cargarEffiDeSupabase error:', err); }
 }
 
@@ -350,8 +352,10 @@ async function procesarArchivoEffi(file) {
       }
 
       telefonos.forEach(t => effiPhones.add(t));
+      window.effiPhones = effiPhones; // exponer para barra de conversión
       aplicarFiltros();
       actualizarHeaderEffi();
+      if (typeof window.actualizarBarraConversion === 'function') window.actualizarBarraConversion();
       alert(`✅ Effi actualizado: ${telefonos.length} teléfonos procesados.`);
     } catch(err) {
       console.error(err);
