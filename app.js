@@ -362,7 +362,29 @@ async function procesarArchivoEffi(file) {
         alert('No se encontraron teléfonos en el archivo Effi.'); return;
       }
 
-      // Guardar teléfonos normales
+      // Clasificar: solo-anulados (no en vigentes), solo-vigentes (no en anulados), ambos (ANULADA + VIGENTE)
+      const setAnulados = new Set(telefonosAnulados);
+      const setVigentes = new Set(telefonos);
+      const soloAnulados = telefonosAnulados.filter(t => !setVigentes.has(t)); // pasan a ser SOLO anulados → sacar de vigentes
+      const soloVigentes = telefonos.filter(t => !setAnulados.has(t));         // pasan a ser SOLO vigentes → sacar de anulados
+
+      // Limpiar cruce: solo-anulados se eliminan de effi (ya no son vigentes)
+      if (dbH && soloAnulados.length) {
+        for (let i = 0; i < soloAnulados.length; i += 500) {
+          await dbH.from('telefonos_effi').delete().in('telefono', soloAnulados.slice(i, i + 500));
+        }
+        soloAnulados.forEach(t => effiPhones.delete(t));
+      }
+
+      // Limpiar cruce: solo-vigentes se eliminan de effi_anulados (ya no están anulados)
+      if (dbH && soloVigentes.length) {
+        for (let i = 0; i < soloVigentes.length; i += 500) {
+          await dbH.from('telefonos_effi_anulados').delete().in('telefono', soloVigentes.slice(i, i + 500));
+        }
+        soloVigentes.forEach(t => effiAnuladosPhones.delete(t));
+      }
+
+      // Guardar teléfonos normales (vigentes)
       if (dbH && telefonos.length) {
         const { data: exist } = await dbH.from('telefonos_effi').select('telefono').in('telefono', telefonos);
         const existSet = new Set((exist || []).map(r => r.telefono));
