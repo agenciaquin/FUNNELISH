@@ -18,10 +18,10 @@
 
     /* ── SIDEBAR ────────────────────────────────────────────────── */
     .sidebar {
-      width: 220px;
-      min-width: 220px;
-      background: #09090B;
-      border-right: 1px solid rgba(255,255,255,0.055);
+      width: 228px;
+      min-width: 228px;
+      background: #0B0B0D;
+      border-right: 1px solid rgba(255,255,255,0.06);
       display: flex;
       flex-direction: column;
       height: 100vh;
@@ -35,17 +35,19 @@
     .sb-brand {
       display: flex;
       align-items: center;
-      gap: 0.6rem;
-      padding: 1.1rem 0.875rem 0.875rem;
-      border-bottom: 1px solid rgba(255,255,255,0.055);
+      gap: 0.75rem;
+      padding: 1.2rem 1rem 1rem;
+      border-bottom: 1px solid rgba(201,168,76,0.12);
+      background: linear-gradient(180deg, rgba(201,168,76,0.04) 0%, transparent 100%);
     }
     .sb-logo {
-      width: 30px; height: 30px;
-      background: #fff; border-radius: 6px;
-      padding: 2px 4px; object-fit: contain; flex-shrink: 0;
+      width: 42px; height: 42px;
+      background: #fff; border-radius: 10px;
+      padding: 3px; object-fit: contain; flex-shrink: 0;
+      box-shadow: 0 2px 12px rgba(201,168,76,0.2);
     }
-    .sb-title { font-size: 0.8rem; font-weight: 800; color: #fff; }
-    .sb-sub   { font-size: 0.58rem; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.08em; }
+    .sb-title { font-size: 0.85rem; font-weight: 800; color: #fff; letter-spacing: -0.01em; }
+    .sb-sub   { font-size: 0.6rem; color: #C9A84C; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
 
     .sb-nav { flex: 1; padding: 0.6rem 0.5rem; display: flex; flex-direction: column; gap: 2px; }
 
@@ -101,50 +103,71 @@
     /* ── PAGE HEADER ────────────────────────────────────────────── */
     .page-hdr {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 1.1rem 1.5rem 0.875rem;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
+      padding: 1.1rem 1.5rem 0.9rem;
+      border-bottom: 1px solid rgba(201,168,76,0.12);
+      background: linear-gradient(180deg, rgba(201,168,76,0.02) 0%, transparent 100%);
       flex-shrink: 0;
     }
-    .page-hdr-title { font-size: 1rem; font-weight: 800; color: #fff; letter-spacing: -0.02em; margin-bottom: 0.1rem; }
-    .page-hdr-sub   { font-size: 0.7rem; color: rgba(255,255,255,0.38); }
-    .page-hdr-right { display: flex; align-items: center; gap: 0.6rem; }
+    .page-hdr-title { font-size: 1.05rem; font-weight: 800; color: #fff; letter-spacing: -0.02em; margin-bottom: 0.15rem; }
+    .page-hdr-sub   { font-size: 0.7rem; color: rgba(255,255,255,0.35); }
+    .page-hdr-right { display: flex; align-items: center; gap: 0.65rem; }
 
     .btn-actualizar-top {
       background: linear-gradient(135deg, #C9A84C, #B8943A);
       border: none; color: #14120c;
-      border-radius: 8px; padding: 0.5rem 1rem;
+      border-radius: 20px; padding: 0.5rem 1.1rem;
       font-size: 0.78rem; font-weight: 700; cursor: pointer;
-      font-family: inherit; transition: all 0.15s;
-      box-shadow: 0 2px 12px rgba(201,168,76,0.25);
+      font-family: inherit; transition: all 0.18s;
+      box-shadow: 0 2px 14px rgba(201,168,76,0.3);
+      display: flex; align-items: center; gap: 0.4rem;
     }
-    .btn-actualizar-top:hover  { opacity: 0.88; transform: translateY(-1px); }
+    .btn-actualizar-top:hover  { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 4px 18px rgba(201,168,76,0.4); }
     .btn-actualizar-top:active { transform: translateY(0); }
 
     /* ── STATS BAR ──────────────────────────────────────────────── */
     .stats-bar {
       display: grid;
       grid-template-columns: repeat(5, 1fr);
-      gap: 0.625rem;
-      padding: 1rem 1.5rem 0;
+      gap: 0.75rem;
+      padding: 1.1rem 1.5rem 0;
       flex-shrink: 0;
     }
     .stat-tile {
-      background: rgba(255,255,255,0.03);
-      border: 1px solid rgba(255,255,255,0.07);
-      border-radius: 10px;
-      padding: 0.875rem 1rem;
-      transition: border-color 0.15s ease;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+      padding: 1rem 1.1rem;
+      display: flex; align-items: center; gap: 0.875rem;
+      transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+      cursor: default;
     }
-    .stat-tile:hover { border-color: rgba(255,255,255,0.12); }
+    .stat-tile:hover {
+      border-color: rgba(255,255,255,0.15);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+    }
+    /* Icono circular de cada stat */
+    .stat-ico-wrap {
+      width: 44px; height: 44px; flex-shrink: 0;
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem;
+    }
+    .st-total-ico     { background: rgba(255,255,255,0.07); }
+    .st-pendiente-ico { background: rgba(234,179,8,0.14); }
+    .st-confirmado-ico{ background: rgba(34,197,94,0.14); }
+    .st-cancelado-ico { background: rgba(107,114,128,0.14); }
+    .st-anuladas-ico  { background: rgba(234,179,8,0.12); border: 1px solid rgba(234,179,8,0.2); }
+    .stat-tile-body { display: flex; flex-direction: column; min-width: 0; }
     .stat-tile-val {
-      font-size: 1.35rem; font-weight: 800; color: #fff;
-      line-height: 1; margin-bottom: 0.22rem;
+      font-size: 1.5rem; font-weight: 800; color: #fff;
+      line-height: 1; margin-bottom: 0.25rem;
       font-variant-numeric: tabular-nums;
     }
     .stat-tile-lbl {
-      font-size: 0.6rem; text-transform: uppercase;
-      letter-spacing: 0.07em; font-weight: 600;
-      color: rgba(255,255,255,0.38);
+      font-size: 0.58rem; text-transform: uppercase;
+      letter-spacing: 0.06em; font-weight: 600;
+      color: rgba(255,255,255,0.35); line-height: 1.35;
     }
     .stat-tile.s-total      .stat-tile-val { color: #fff; }
     .stat-tile.s-pendiente  .stat-tile-val { color: #EAB308; }
@@ -152,7 +175,9 @@
     .stat-tile.s-noconf     .stat-tile-val { color: #EF4444; }
     .stat-tile.s-cancelado  .stat-tile-val { color: #6B7280; }
     .stat-tile.s-anuladas   .stat-tile-val { color: #EAB308; }
-    .stat-tile.s-anuladas   { border-color: rgba(234,179,8,0.2); }
+    .stat-tile.s-anuladas   { border-color: rgba(234,179,8,0.15); }
+    .stat-tile.s-confirmado { border-color: rgba(34,197,94,0.12); }
+    .stat-tile.s-pendiente  { border-color: rgba(234,179,8,0.12); }
 
     /* ── BARRA DE CONVERSIÓN ───────────────────────────────────── */
     .conv-wrap { padding: 0.875rem 1.5rem 0; flex-shrink: 0; }
@@ -209,42 +234,45 @@
     /* Botón Sin mensaje WhatsApp */
     .btn-sin-wa {
       background: rgba(34,197,94,0.10); border: 1px solid rgba(34,197,94,0.35);
-      color: #22C55E; border-radius: 6px; padding: 0.3rem 0.65rem;
-      font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.15s;
+      color: #22C55E; border-radius: 20px; padding: 0.35rem 0.9rem;
+      font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.18s;
+      display: inline-flex; align-items: center; gap: 0.3rem;
     }
-    .btn-sin-wa:hover { background: rgba(34,197,94,0.20); }
+    .btn-sin-wa:hover { background: rgba(34,197,94,0.20); transform: translateY(-1px); }
     .btn-sin-wa.active {
-      background: rgba(34,197,94,0.25); border-color: rgba(34,197,94,0.7);
-      box-shadow: 0 0 0 1px rgba(34,197,94,0.3);
+      background: rgba(34,197,94,0.22); border-color: rgba(34,197,94,0.7);
+      box-shadow: 0 0 0 2px rgba(34,197,94,0.2), 0 2px 10px rgba(34,197,94,0.15);
     }
 
     /* Botón Limpiar filtro */
     .btn-limpiar-wa {
-      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15);
-      color: rgba(255,255,255,0.55); border-radius: 6px; padding: 0.3rem 0.65rem;
-      font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.15s;
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
+      color: rgba(255,255,255,0.5); border-radius: 20px; padding: 0.35rem 0.9rem;
+      font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.18s;
     }
     .btn-limpiar-wa:hover { background: rgba(255,255,255,0.10); color: #fff; }
 
     /* Botón Pendientes por confirmar (Effi) */
     .btn-pendientes-effi {
       background: rgba(249,115,22,0.10); border: 1px solid rgba(249,115,22,0.35);
-      color: #F97316; border-radius: 6px; padding: 0.3rem 0.65rem;
-      font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.15s;
+      color: #F97316; border-radius: 20px; padding: 0.35rem 0.9rem;
+      font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.18s;
+      display: inline-flex; align-items: center; gap: 0.3rem;
     }
-    .btn-pendientes-effi:hover { background: rgba(249,115,22,0.20); }
+    .btn-pendientes-effi:hover { background: rgba(249,115,22,0.20); transform: translateY(-1px); }
     .btn-pendientes-effi.active {
-      background: rgba(249,115,22,0.25); border-color: rgba(249,115,22,0.7);
-      box-shadow: 0 0 0 1px rgba(249,115,22,0.3);
+      background: rgba(249,115,22,0.22); border-color: rgba(249,115,22,0.7);
+      box-shadow: 0 0 0 2px rgba(249,115,22,0.2), 0 2px 10px rgba(249,115,22,0.15);
     }
 
     /* Botón Subir Effi */
     .btn-subir-effi {
-      background: rgba(249,115,22,0.12); border: 1px solid rgba(249,115,22,0.35);
-      color: #F97316; border-radius: 8px; padding: 0.45rem 0.9rem;
-      font-size: 0.75rem; font-weight: 700; cursor: pointer; transition: all 0.15s;
+      background: rgba(249,115,22,0.12); border: 1px solid rgba(249,115,22,0.4);
+      color: #F97316; border-radius: 20px; padding: 0.5rem 1.1rem;
+      font-size: 0.76rem; font-weight: 700; cursor: pointer; transition: all 0.18s;
+      display: inline-flex; align-items: center; gap: 0.35rem;
     }
-    .btn-subir-effi:hover { background: rgba(249,115,22,0.22); }
+    .btn-subir-effi:hover { background: rgba(249,115,22,0.22); transform: translateY(-1px); box-shadow: 0 3px 12px rgba(249,115,22,0.2); }
 
     /* Grupos de acciones en cada fila */
     .td-acciones { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
@@ -363,13 +391,15 @@
 
     /* Botón Ver Canceladas */
     .btn-ver-canceladas {
-      background: rgba(107,114,128,0.09); border: 1px solid rgba(107,114,128,0.28);
-      color: #9CA3AF; border-radius: 6px; padding: 0.3rem 0.65rem;
-      font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.15s;
+      background: rgba(107,114,128,0.09); border: 1px solid rgba(107,114,128,0.25);
+      color: #9CA3AF; border-radius: 20px; padding: 0.35rem 0.9rem;
+      font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.18s;
+      display: inline-flex; align-items: center; gap: 0.3rem;
     }
-    .btn-ver-canceladas:hover { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.3); color: #EF4444; }
+    .btn-ver-canceladas:hover { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.3); color: #EF4444; transform: translateY(-1px); }
     .btn-ver-canceladas.active {
       background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.5); color: #EF4444;
+      box-shadow: 0 0 0 2px rgba(239,68,68,0.15);
     }
 
     /* Botón Venta cancelada en cada fila */
@@ -475,24 +505,39 @@
     <!-- Stats Bar (visible cuando hay datos) -->
     <div id="stats-bar" class="stats-bar">
       <div class="stat-tile s-total">
-        <div class="stat-tile-val" id="stat-total">0</div>
-        <div class="stat-tile-lbl">Total pedidos en Funnelish</div>
+        <div class="stat-ico-wrap st-total-ico">🛍️</div>
+        <div class="stat-tile-body">
+          <div class="stat-tile-val" id="stat-total">0</div>
+          <div class="stat-tile-lbl">Total pedidos en Funnelish</div>
+        </div>
       </div>
       <div class="stat-tile s-pendiente">
-        <div class="stat-tile-val" id="stat-pendiente">0</div>
-        <div class="stat-tile-lbl">Pendiente sin mensaje de WhatsApp</div>
+        <div class="stat-ico-wrap st-pendiente-ico">⏱️</div>
+        <div class="stat-tile-body">
+          <div class="stat-tile-val" id="stat-pendiente">0</div>
+          <div class="stat-tile-lbl">Pendiente sin mensaje de WhatsApp</div>
+        </div>
       </div>
       <div class="stat-tile s-confirmado">
-        <div class="stat-tile-val" id="stat-confirmado">0</div>
-        <div class="stat-tile-lbl">Mensaje de WhatsApp enviado</div>
+        <div class="stat-ico-wrap st-confirmado-ico">💬</div>
+        <div class="stat-tile-body">
+          <div class="stat-tile-val" id="stat-confirmado">0</div>
+          <div class="stat-tile-lbl">Mensaje de WhatsApp enviado</div>
+        </div>
       </div>
       <div class="stat-tile s-cancelado">
-        <div class="stat-tile-val" id="stat-cancelado">0</div>
-        <div class="stat-tile-lbl">Cancelados</div>
+        <div class="stat-ico-wrap st-cancelado-ico">🚫</div>
+        <div class="stat-tile-body">
+          <div class="stat-tile-val" id="stat-cancelado">0</div>
+          <div class="stat-tile-lbl">Cancelados</div>
+        </div>
       </div>
       <div class="stat-tile s-anuladas">
-        <div class="stat-tile-val" id="stat-anuladas">0</div>
-        <div class="stat-tile-lbl">Anuladas en Effi</div>
+        <div class="stat-ico-wrap st-anuladas-ico">⚠️</div>
+        <div class="stat-tile-body">
+          <div class="stat-tile-val" id="stat-anuladas">0</div>
+          <div class="stat-tile-lbl">Anuladas en Effi</div>
+        </div>
       </div>
     </div>
 
