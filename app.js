@@ -906,8 +906,11 @@ function aplicarFiltros(resetPage = true) {
     // Filtro Pendientes por confirmar Effi: solo los que NO están en Effi
     if (modoPendientesEffi && effiPhones.size > 0 && effiPhones.has(tel10(p.telefonoWhatsApp))) return false;
 
-    // Filtro Anuladas en Effi: solo los que están en effiAnuladosPhones
-    if (modoAnuladas && !effiAnuladosPhones.has(tel10(p.telefonoWhatsApp))) return false;
+    // Filtro Anuladas en Effi: solo puras anuladas (NO las que también son vigentes "volvieron")
+    if (modoAnuladas) {
+      const t = tel10(p.telefonoWhatsApp);
+      if (!effiAnuladosPhones.has(t) || effiPhones.has(t)) return false;
+    }
 
     const matchQ      = !q       || [p.nombre, p.producto, p.telefonoMensaje, p.ciudad].some(v => v && v.toLowerCase().includes(q));
     const matchNombre = !qNombre || (p.nombre           || "").toLowerCase().includes(qNombre);
