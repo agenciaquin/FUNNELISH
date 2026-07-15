@@ -342,20 +342,13 @@ async function procesarArchivoEffi(file) {
         return '';
       };
 
-      // Detecta columna "Estado remisión" para separar anuladas
-      // "remisión" ya contiene "remis" como substring — sin necesidad de quitar acentos
-      const getEstadoRemision = (row) => {
-        for (const k of Object.keys(row)) {
-          const kl = k.toLowerCase();
-          if (kl.includes('estado') && kl.includes('remis')) {
-            return String(row[k] || '').trim().toLowerCase();
-          }
-        }
-        return '';
-      };
+      // Detecta filas anuladas buscando el valor exacto "anulado" en cualquier celda
+      // (más robusto que buscar por nombre de columna, que puede variar entre versiones del Excel)
+      const esAnulado = (row) =>
+        Object.values(row).some(v => String(v || '').trim().toLowerCase() === 'anulado');
 
-      const rowsAnuladas = rows.filter(r => getEstadoRemision(r) === 'anulado');
-      const rowsNormales = rows.filter(r => getEstadoRemision(r) !== 'anulado');
+      const rowsAnuladas = rows.filter(r => esAnulado(r));
+      const rowsNormales = rows.filter(r => !esAnulado(r));
 
       const telefonosAnulados = [...new Set(
         rowsAnuladas.map(r => tel10(getPhone(r))).filter(t => t.length === 10)
