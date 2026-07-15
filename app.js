@@ -43,6 +43,7 @@ let modoSinWA          = false;   // solo muestra clientes sin mensaje enviado
 let modoCanceladas     = false;   // muestra solo cancelados
 let modoPendientesEffi = false;   // solo muestra clientes sin confirmar en Effi
 let effiPhones         = new Set(); // teléfonos 10 dígitos que aparecen en Effi
+let effiAnuladosPhones = new Set(); // teléfonos anulados en Effi
 let paginaActual       = 1;
 const ITEMS_POR_PAG    = 30;
 let seleccionados        = new Set(); // _keys seleccionados para acción masiva
@@ -306,11 +307,17 @@ async function cargarEffiDeSupabase() {
   }
   if (!dbH) return;
   try {
-    const { data } = await dbH.from('telefonos_effi').select('telefono').range(0, 9999);
-    effiPhones = new Set((data || []).map(r => tel10(r.telefono)));
-    window.effiPhones = effiPhones; // exponer para barra de conversión
+    const [{ data: effiData }, { data: anulData }] = await Promise.all([
+      dbH.from('telefonos_effi').select('telefono').range(0, 9999),
+      dbH.from('telefonos_effi_anulados').select('telefono').range(0, 9999),
+    ]);
+    effiPhones         = new Set((effiData || []).map(r => tel10(r.telefono)));
+    effiAnuladosPhones = new Set((anulData  || []).map(r => tel10(r.telefono)));
+    window.effiPhones         = effiPhones;
+    window.effiAnuladosPhones = effiAnuladosPhones;
     if (pedidos.length) { aplicarFiltros(); actualizarHeaderEffi(); }
     if (typeof window.actualizarBarraConversion === 'function') window.actualizarBarraConversion();
+    if (typeof window.actualizarStats === 'function') window.actualizarStats();
   } catch(err) { console.warn('cargarEffiDeSupabase error:', err); }
 }
 
@@ -335,14 +342,33 @@ async function procesarArchivoEffi(file) {
         return '';
       };
 
+      // Detecta columna "Estado remisión" para separar anuladas
+      const getEstadoRemision = (row) => {
+        for (const k of Object.keys(row)) {
+          const kn = k.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+          if (kn.includes('estado') && (kn.includes('remis') || kn.includes('remission'))) {
+            return String(row[k] || '').trim().toLowerCase();
+          }
+        }
+        return '';
+      };
+
+      const rowsAnuladas = rows.filter(r => getEstadoRemision(r) === 'anulado');
+      const rowsNormales = rows.filter(r => getEstadoRemision(r) !== 'anulado');
+
+      const telefonosAnulados = [...new Set(
+        rowsAnuladas.map(r => tel10(getPhone(r))).filter(t => t.length === 10)
+      )];
       const telefonos = [...new Set(
-        rows.map(r => tel10(getPhone(r))).filter(t => t.length === 10)
+        rowsNormales.map(r => tel10(getPhone(r))).filter(t => t.length === 10)
       )];
 
-      if (!telefonos.length) { alert('No se encontraron teléfonos en el archivo Effi.'); return; }
+      if (!telefonos.length && !telefonosAnulados.length) {
+        alert('No se encontraron teléfonos en el archivo Effi.'); return;
+      }
 
-      // Guardar solo los nuevos en Supabase
-      if (dbH) {
+      // Guardar teléfonos normales
+      if (dbH && telefonos.length) {
         const { data: exist } = await dbH.from('telefonos_effi').select('telefono').in('telefono', telefonos);
         const existSet = new Set((exist || []).map(r => r.telefono));
         const nuevos   = telefonos.filter(t => !existSet.has(t)).map(t => ({ telefono: t }));
@@ -351,12 +377,25 @@ async function procesarArchivoEffi(file) {
         }
       }
 
+      // Guardar teléfonos anulados en tabla separada
+      if (dbH && telefonosAnulados.length) {
+        const { data: existA } = await dbH.from('telefonos_effi_anulados').select('telefono').in('telefono', telefonosAnulados);
+        const existSetA = new Set((existA || []).map(r => r.telefono));
+        const nuevosA   = telefonosAnulados.filter(t => !existSetA.has(t)).map(t => ({ telefono: t }));
+        for (let i = 0; i < nuevosA.length; i += 500) {
+          await dbH.from('telefonos_effi_anulados').insert(nuevosA.slice(i, i + 500));
+        }
+      }
+
       telefonos.forEach(t => effiPhones.add(t));
-      window.effiPhones = effiPhones; // exponer para barra de conversión
+      telefonosAnulados.forEach(t => effiAnuladosPhones.add(t));
+      window.effiPhones         = effiPhones;
+      window.effiAnuladosPhones = effiAnuladosPhones;
       aplicarFiltros();
       actualizarHeaderEffi();
       if (typeof window.actualizarBarraConversion === 'function') window.actualizarBarraConversion();
-      alert(`✅ Effi actualizado: ${telefonos.length} teléfonos procesados.`);
+      if (typeof window.actualizarStats === 'function') window.actualizarStats();
+      alert(`✅ Effi actualizado: ${telefonos.length} normales, ${telefonosAnulados.length} anuladas.`);
     } catch(err) {
       console.error(err);
       alert('No se pudo leer el archivo Effi. Asegúrate de que sea .xlsx o .xls');
@@ -508,7 +547,7 @@ function renderizarTabla(filas) {
               : ''}
         ${effiPhones.size > 0 ? `
         <div class="accion-grupo effi-grupo">
-          <span class="badge-effi ${effiPhones.has(tel10(p.telefonoWhatsApp)) ? 'effi-confirmada' : 'effi-pendiente'}">${effiPhones.has(tel10(p.telefonoWhatsApp)) ? '✓ EFFI' : '⏳ PENDIENTE'}</span>
+          <span class="badge-effi ${effiPhones.has(tel10(p.telefonoWhatsApp)) ? 'effi-confirmada' : 'effi-pendiente'}">${effiPhones.has(tel10(p.telefonoWhatsApp)) ? '✓ EFFI' : '⏳ no confirmado'}</span>
           <button class="btn-accion btn-accion-remarketing" data-id="${p.id}" title="Enviar remarketing" aria-label="Remarketing WA">
             <svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
           </button>
