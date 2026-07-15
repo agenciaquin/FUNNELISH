@@ -123,7 +123,7 @@
     /* ── STATS BAR ──────────────────────────────────────────────── */
     .stats-bar {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 0.625rem;
       padding: 1rem 1.5rem 0;
       flex-shrink: 0;
@@ -151,6 +151,8 @@
     .stat-tile.s-confirmado .stat-tile-val { color: #22C55E; }
     .stat-tile.s-noconf     .stat-tile-val { color: #EF4444; }
     .stat-tile.s-cancelado  .stat-tile-val { color: #6B7280; }
+    .stat-tile.s-anuladas   .stat-tile-val { color: #EAB308; }
+    .stat-tile.s-anuladas   { border-color: rgba(234,179,8,0.2); }
 
     /* ── BARRA DE CONVERSIÓN ───────────────────────────────────── */
     .conv-wrap { padding: 0.875rem 1.5rem 0; flex-shrink: 0; }
@@ -260,6 +262,13 @@
     }
     .btn-accion-remarketing:hover { background: rgba(249,115,22,0.32) !important; }
 
+    /* WA Anulada en Effi: color amarillo */
+    .btn-accion-anulada-wa {
+      background: rgba(234,179,8,0.18); border: 1px solid rgba(234,179,8,0.55);
+      color: #EAB308 !important;
+    }
+    .btn-accion-anulada-wa:hover { background: rgba(234,179,8,0.32) !important; }
+
     /* Badges Effi en cada fila */
     .badge-effi {
       display: inline-flex; align-items: center;
@@ -269,6 +278,7 @@
     }
     .effi-confirmada { background: rgba(59,130,246,0.15); border: 1px solid rgba(59,130,246,0.4); color: #60A5FA; }
     .effi-pendiente  { background: rgba(249,115,22,0.15); border: 1px solid rgba(249,115,22,0.4); color: #F97316; }
+    .effi-anulada    { background: rgba(234,179,8,0.18);  border: 1px solid rgba(234,179,8,0.5);  color: #EAB308; font-weight: 800; }
 
     /* Badge "Mensaje Enviado" — Remarketing */
     .badge-remarketing-enviado {
@@ -334,6 +344,7 @@
     }
     .effi-count-conf { background: rgba(59,130,246,0.15); color: #60A5FA; border: 1px solid rgba(59,130,246,0.3); }
     .effi-count-pend { background: rgba(249,115,22,0.15); color: #F97316; border: 1px solid rgba(249,115,22,0.3); }
+    .effi-count-anul { background: rgba(234,179,8,0.15);  color: #EAB308; border: 1px solid rgba(234,179,8,0.3); font-weight: 800; }
 
     /* Paginación */
     .paginacion { padding: 0.75rem 1.25rem 1rem; display: flex; }
@@ -377,6 +388,9 @@
       .sb-item     { justify-content: center; padding: 0.55rem; }
       .sb-item .sb-ico { margin: 0; }
       .sb-footer   { justify-content: center; }
+      .stats-bar   { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 700px) {
       .stats-bar   { grid-template-columns: repeat(3, 1fr); }
     }
     @media (max-width: 600px) {
@@ -475,6 +489,10 @@
       <div class="stat-tile s-cancelado">
         <div class="stat-tile-val" id="stat-cancelado">0</div>
         <div class="stat-tile-lbl">Cancelados</div>
+      </div>
+      <div class="stat-tile s-anuladas">
+        <div class="stat-tile-val" id="stat-anuladas">0</div>
+        <div class="stat-tile-lbl">Anuladas en Effi</div>
       </div>
     </div>
 
@@ -669,23 +687,29 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="catalogo.js?v=39"></script>
-  <script src="app.js?v=39"></script>
+  <script src="app.js?v=40"></script>
 
   <script>
     /* ── STATS BAR ── cuenta desde el array real, no desde el DOM */
     function actualizarStats() {
-      const arr = window.pedidos || [];
-      const est = window.estados || {};
+      const arr  = window.pedidos || [];
+      const est  = window.estados || {};
+      const aSet = window.effiAnuladosPhones || new Set();
       const pendientes  = arr.filter(p => !['Confirmado','Cancelado'].includes(est[p._key]||'Pendiente')).length;
       const confirmados = arr.filter(p => (est[p._key]||'Pendiente') === 'Confirmado').length;
       const cancelados  = arr.filter(p => (est[p._key]||'Pendiente') === 'Cancelado').length;
-      const total       = arr.length;
+      const anuladas    = aSet.size > 0
+        ? arr.filter(p => aSet.has((p.telefonoWhatsApp||'').replace(/^57/,''))).length
+        : 0;
+      const total = arr.length;
       document.getElementById('stat-total').textContent      = total;
       document.getElementById('stat-pendiente').textContent  = pendientes;
       document.getElementById('stat-confirmado').textContent = confirmados;
       document.getElementById('stat-cancelado').textContent  = cancelados;
+      document.getElementById('stat-anuladas').textContent   = anuladas;
       actualizarBarraConversion();
     }
+    window.actualizarStats = actualizarStats;
 
     /* ── BARRA DE CONVERSIÓN (deduplicada por tel + fecha) ── */
     function actualizarBarraConversion() {
