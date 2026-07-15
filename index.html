@@ -392,6 +392,19 @@
       color: #C9A84C; box-shadow: 0 0 0 1px rgba(201,168,76,0.25);
     }
 
+    /* Botón Ver Anuladas en Effi */
+    .btn-ver-anuladas {
+      background: rgba(234,179,8,0.10); border: 1px solid rgba(234,179,8,0.35);
+      color: #EAB308; border-radius: 20px; padding: 0.35rem 0.9rem;
+      font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.18s;
+      display: inline-flex; align-items: center; gap: 0.3rem;
+    }
+    .btn-ver-anuladas:hover { background: rgba(234,179,8,0.20); transform: translateY(-1px); }
+    .btn-ver-anuladas.active {
+      background: rgba(234,179,8,0.22); border-color: rgba(234,179,8,0.7);
+      box-shadow: 0 0 0 2px rgba(234,179,8,0.2), 0 2px 10px rgba(234,179,8,0.15);
+    }
+
     /* Botón Ver Canceladas */
     .btn-ver-canceladas {
       background: rgba(107,114,128,0.09); border: 1px solid rgba(107,114,128,0.25);
@@ -596,6 +609,7 @@
             <button type="button" id="btn-sin-wa" class="btn-sin-wa">📵 Sin mensaje WhatsApp</button>
             <button type="button" id="btn-limpiar-wa" class="btn-limpiar-wa">✕ Limpiar filtro</button>
             <button type="button" id="btn-pendientes-effi" class="btn-pendientes-effi">⏳ Pendiente sin mensaje de WhatsApp</button>
+            <button type="button" id="btn-ver-anuladas" class="btn-ver-anuladas">⚠ Anuladas en Effi</button>
             <button type="button" id="btn-ver-canceladas" class="btn-ver-canceladas">🗑 Canceladas</button>
             <div class="search-wrap">
               <span class="search-icon">🔍</span>

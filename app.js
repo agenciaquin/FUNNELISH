@@ -42,6 +42,7 @@ let estados        = {};
 let modoSinWA          = false;   // solo muestra clientes sin mensaje enviado
 let modoCanceladas     = false;   // muestra solo cancelados
 let modoPendientesEffi = false;   // solo muestra clientes sin confirmar en Effi
+let modoAnuladas       = false;   // solo muestra clientes anulados en Effi
 let effiPhones         = new Set(); // teléfonos 10 dígitos que aparecen en Effi
 let effiAnuladosPhones = new Set(); // teléfonos anulados en Effi
 let paginaActual       = 1;
@@ -751,10 +752,11 @@ function limpiarTodosLosFiltros() {
   modoSinWA          = false;
   modoCanceladas     = false;
   modoPendientesEffi = false;
+  modoAnuladas       = false;
   document.getElementById("btn-sin-wa")?.classList.remove("active");
   document.getElementById("btn-ver-canceladas")?.classList.remove("active");
-  const btnPend = document.getElementById("btn-pendientes-effi");
-  if (btnPend) { btnPend.classList.remove("active"); }
+  document.getElementById("btn-pendientes-effi")?.classList.remove("active");
+  document.getElementById("btn-ver-anuladas")?.classList.remove("active");
   const btnVer = document.getElementById("btn-ver-canceladas");
   if (btnVer) btnVer.textContent = "🗑 Canceladas";
   aplicarFiltros();
@@ -806,10 +808,23 @@ function initBuscar() {
   // "Canceladas"
   document.getElementById("btn-ver-canceladas").addEventListener("click", () => {
     modoCanceladas = !modoCanceladas;
-    if (modoCanceladas) { modoSinWA = false; modoPendientesEffi = false; }
+    if (modoCanceladas) { modoSinWA = false; modoPendientesEffi = false; modoAnuladas = false; }
     document.getElementById("btn-ver-canceladas").classList.toggle("active", modoCanceladas);
     document.getElementById("btn-ver-canceladas").textContent = modoCanceladas ? "← Ver activos" : "🗑 Canceladas";
     document.getElementById("btn-sin-wa").classList.remove("active");
+    document.getElementById("btn-pendientes-effi")?.classList.remove("active");
+    document.getElementById("btn-ver-anuladas")?.classList.remove("active");
+    aplicarFiltros();
+  });
+
+  // "Anuladas en Effi" — solo muestra clientes en effiAnuladosPhones
+  document.getElementById("btn-ver-anuladas")?.addEventListener("click", () => {
+    modoAnuladas = !modoAnuladas;
+    if (modoAnuladas) { modoSinWA = false; modoCanceladas = false; modoPendientesEffi = false; }
+    document.getElementById("btn-ver-anuladas").classList.toggle("active", modoAnuladas);
+    document.getElementById("btn-sin-wa").classList.remove("active");
+    document.getElementById("btn-ver-canceladas").classList.remove("active");
+    document.getElementById("btn-ver-canceladas").textContent = "🗑 Canceladas";
     document.getElementById("btn-pendientes-effi")?.classList.remove("active");
     aplicarFiltros();
   });
@@ -868,6 +883,9 @@ function aplicarFiltros(resetPage = true) {
 
     // Filtro Pendientes por confirmar Effi: solo los que NO están en Effi
     if (modoPendientesEffi && effiPhones.size > 0 && effiPhones.has(tel10(p.telefonoWhatsApp))) return false;
+
+    // Filtro Anuladas en Effi: solo los que están en effiAnuladosPhones
+    if (modoAnuladas && !effiAnuladosPhones.has(tel10(p.telefonoWhatsApp))) return false;
 
     const matchQ      = !q       || [p.nombre, p.producto, p.telefonoMensaje, p.ciudad].some(v => v && v.toLowerCase().includes(q));
     const matchNombre = !qNombre || (p.nombre           || "").toLowerCase().includes(qNombre);
