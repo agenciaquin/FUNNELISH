@@ -471,7 +471,7 @@ export default function ManualPanel() {
                   <div style={{
                     fontSize: 11, fontWeight: isActive ? 700 : 500,
                     color: isActive ? TEAL : '#9CA3AF',
-                    letterSpacing: '0.03em', truncate: 'truncate',
+                    letterSpacing: '0.03em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
                     {sec.title}
                   </div>
