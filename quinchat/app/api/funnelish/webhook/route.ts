@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sendTextMessage } from '@/lib/whatsapp';
+import { sendTextMessage, sendConfirmacionTemplate } from '@/lib/whatsapp';
+import { getProductImageUrl } from '@/lib/product-catalog';
 import { createServerSupabaseClient } from '@/lib/supabase';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -62,12 +63,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: 'ignored' });
   }
 
-  // DEBUG TEMPORAL — ver meta y extra_data de Funnelish
-  const productRaw = Array.isArray(body.products) ? body.products[0] : null;
-  console.error('[DEBUG] meta:', JSON.stringify(body.meta));
-  console.error('[DEBUG] extra_data:', JSON.stringify(body.extra_data));
-  console.error('[DEBUG] avatar:', JSON.stringify(body.avatar));
-
   // ── Parse fields ─────────────────────────────────────────────────────────────
   const firstName  = String(body.first_name  ?? '').trim();
   const lastName   = String(body.last_name   ?? '').trim();
@@ -81,10 +76,9 @@ export async function POST(req: NextRequest) {
   const departamento = String(body.state            ?? body.shipping_state   ?? '—').trim();
   const correo       = String(body.optin_email      ?? 'Gerenciaquin7@gmail.com').trim() || 'Gerenciaquin7@gmail.com';
 
-  const product      = Array.isArray(body.products) ? body.products[0] : null;
-  const productoNombre = product?.name     ? String(product.name).trim()    : '—';
+  const product        = Array.isArray(body.products) ? body.products[0] : null;
+  const productoNombre = product?.name     ? String(product.name).trim()         : '—';
   const variantName    = product?.variant_name ? String(product.variant_name).trim() : '';
-  // variant_name "SELECCIONA UNA TALLA" means no talla selected yet
   const talla = (variantName && !variantName.toUpperCase().includes('SELECCIONA'))
     ? variantName
     : 'Por confirmar';
@@ -99,12 +93,13 @@ export async function POST(req: NextRequest) {
   }
 
   const mensaje = buildMensaje({ nombre, telefono: tel10, direccion, ciudad, departamento, correo, talla, producto: productoNombre, valor });
+  const imageUrl = getProductImageUrl(productoNombre);
 
   const supabase = createServerSupabaseClient();
   const now = new Date().toISOString();
 
   // ── Upsert in clientes_funnelish ──────────────────────────────────────────────
-  const { data: clienteUpsert } = await supabase
+  await supabase
     .from('clientes_funnelish')
     .upsert({
       telefono:    tel10,
@@ -126,11 +121,24 @@ export async function POST(req: NextRequest) {
     .select('id')
     .maybeSingle();
 
-  // ── Send WhatsApp confirmation (solo a números de prueba mientras el bot está en desarrollo) ──
+  // ── Send WhatsApp (solo whitelist mientras el bot está en desarrollo) ──────────
   const enWhitelist = TEST_WHITELIST.has(tel10);
-  const sent = enWhitelist ? await sendTextMessage(waPhone, mensaje) : false;
-  if (!enWhitelist) {
-    console.log(`[Funnelish] Order ${referencia} → ${waPhone} | MODO PRUEBA: número no en whitelist, WA no enviado`);
+  let sent = false;
+
+  if (enWhitelist) {
+    // Intentar template primero (funciona incluso sin ventana 24h)
+    sent = await sendConfirmacionTemplate(waPhone, {
+      nombre, telefono: tel10, direccion, ciudad, departamento,
+      correo, talla, producto: productoNombre, valor, imageUrl,
+    });
+
+    // Si el template falla (ej: aún en revisión), caer al texto plano
+    if (!sent) {
+      console.warn('[Funnelish] Template failed, falling back to text message');
+      sent = await sendTextMessage(waPhone, mensaje);
+    }
+  } else {
+    console.log(`[Funnelish] Order ${referencia} → ${waPhone} | MODO PRUEBA: número no en whitelist`);
   }
 
   if (sent) {
@@ -163,6 +171,6 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  console.log(`[Funnelish] Order ${referencia} → ${waPhone} | sent=${sent}`);
+  console.log(`[Funnelish] Order ${referencia} → ${waPhone} | sent=${sent} | img=${imageUrl}`);
   return NextResponse.json({ success: true, phone: waPhone, sent });
 }
