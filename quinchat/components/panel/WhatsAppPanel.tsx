@@ -94,6 +94,16 @@ export default function WhatsAppPanel({ userName }: Props) {
     setConversations(prev => prev.map(c => c.id === id ? { ...c, unread_count: 0 } : c));
   }
 
+  // ── Delete conversation ───────────────────────────────────────────────────
+  async function deleteConversation(id: string) {
+    await fetch(`/api/conversations/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    setConversations(prev => prev.filter(c => c.id !== id));
+    if (selectedId === id) {
+      setSelectedId(null);
+      setMessages([]);
+    }
+  }
+
   const selectedConversation = conversations.find(c => c.id === selectedId) ?? null;
 
   return (
@@ -111,6 +121,7 @@ export default function WhatsAppPanel({ userName }: Props) {
             conversations={conversations}
             selectedId={selectedId}
             onSelect={selectConversation}
+            onDelete={deleteConversation}
             loading={loading}
           />
           <ChatArea

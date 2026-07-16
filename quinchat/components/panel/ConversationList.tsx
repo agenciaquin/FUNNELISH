@@ -27,12 +27,16 @@ interface Props {
   conversations: Conversation[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onDelete: (id: string) => Promise<void>;
   loading: boolean;
 }
 
-export default function ConversationList({ conversations, selectedId, onSelect, loading }: Props) {
-  const [search, setSearch] = useState('');
+export default function ConversationList({ conversations, selectedId, onSelect, onDelete, loading }: Props) {
+  const [search, setSearch]           = useState('');
   const [statusFilter, setStatusFilter] = useState<'todos' | ConversationStatus>('todos');
+  const [hoveredId, setHoveredId]     = useState<string | null>(null);
+  const [confirmId, setConfirmId]     = useState<string | null>(null);
+  const [deleting, setDeleting]       = useState<string | null>(null);
 
   const filtered = conversations.filter(c => {
     const matchSearch =
@@ -42,12 +46,22 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
     return matchSearch && matchStatus;
   });
 
-  // Count per status for badges
   const counts = conversations.reduce((acc, c) => {
     const s = (c.status ?? 'nuevo') as ConversationStatus;
     acc[s] = (acc[s] ?? 0) + 1;
     return acc;
   }, {} as Record<ConversationStatus, number>);
+
+  async function handleDelete(id: string) {
+    setDeleting(id);
+    try {
+      await onDelete(id);
+    } finally {
+      setDeleting(null);
+      setConfirmId(null);
+      setHoveredId(null);
+    }
+  }
 
   return (
     <div className="w-[290px] flex flex-col bg-[#0D0D0D] border-r border-[#1C1C1C] shrink-0">
@@ -123,65 +137,103 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
         )}
 
         {filtered.map(conv => {
-          const selected = selectedId === conv.id;
-          const initial = conv.contact_name.charAt(0).toUpperCase() || '?';
-          const status = (conv.status ?? 'nuevo') as ConversationStatus;
-          const cfg = STATUS_CONFIG[status];
+          const selected  = selectedId === conv.id;
+          const isHovered = hoveredId === conv.id;
+          const isConfirm = confirmId === conv.id;
+          const isDeleting = deleting === conv.id;
+          const initial   = conv.contact_name.charAt(0).toUpperCase() || '?';
+          const status    = (conv.status ?? 'nuevo') as ConversationStatus;
+          const cfg       = STATUS_CONFIG[status];
 
           return (
-            <button
+            <div
               key={conv.id}
-              onClick={() => onSelect(conv.id)}
-              className={`w-full text-left px-3 py-3 border-b border-[#111] transition-all relative ${
-                selected
-                  ? 'bg-[#C9A84C]/10'
-                  : 'hover:bg-white/[0.03]'
+              className={`relative border-b border-[#111] transition-all ${
+                selected ? 'bg-[#C9A84C]/10' : isHovered ? 'bg-white/[0.03]' : ''
               }`}
+              onMouseEnter={() => setHoveredId(conv.id)}
+              onMouseLeave={() => { setHoveredId(null); if (!isConfirm) setConfirmId(null); }}
             >
               {/* Gold left bar when selected */}
               {selected && (
-                <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#C9A84C] rounded-r" />
+                <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#C9A84C] rounded-r z-10" />
               )}
 
-              <div className="flex items-center gap-2.5">
-                {/* Avatar */}
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
-                  selected ? 'bg-[#C9A84C]/20 text-[#C9A84C]' : 'bg-[#1A1A1A] text-gray-400'
-                }`}>
-                  {initial}
+              {/* Confirmation overlay */}
+              {isConfirm && (
+                <div className="absolute inset-0 bg-[#0D0D0D]/95 z-20 flex items-center justify-center gap-2 px-3">
+                  <span className="text-[11px] text-gray-400">¿Eliminar chat?</span>
+                  <button
+                    onClick={() => handleDelete(conv.id)}
+                    disabled={isDeleting}
+                    className="px-2.5 py-1 bg-red-500/20 border border-red-500/40 text-red-400 text-[10px] font-bold rounded-lg hover:bg-red-500/30 transition-all disabled:opacity-50"
+                  >
+                    {isDeleting ? '...' : 'Sí, borrar'}
+                  </button>
+                  <button
+                    onClick={() => setConfirmId(null)}
+                    className="px-2.5 py-1 bg-white/5 border border-white/10 text-gray-500 text-[10px] rounded-lg hover:bg-white/10 transition-all"
+                  >
+                    Cancelar
+                  </button>
                 </div>
+              )}
 
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-0.5">
-                    <span className={`text-xs font-semibold truncate ${selected ? 'text-[#C9A84C]' : 'text-white'}`}>
-                      {conv.contact_name}
-                    </span>
-                    <span className="text-[10px] text-gray-600 shrink-0 ml-1">
-                      {formatTime(conv.last_message_time)}
-                    </span>
+              {/* Main row */}
+              <button
+                onClick={() => { if (!isConfirm) onSelect(conv.id); }}
+                className="w-full text-left px-3 py-3"
+              >
+                <div className="flex items-center gap-2.5">
+                  {/* Avatar */}
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
+                    selected ? 'bg-[#C9A84C]/20 text-[#C9A84C]' : 'bg-[#1A1A1A] text-gray-400'
+                  }`}>
+                    {initial}
                   </div>
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-[11px] text-gray-600 truncate leading-tight">
-                      {conv.last_message || '—'}
-                    </span>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {conv.unread_count > 0 && (
-                        <span className="bg-[#C9A84C] text-black text-[9px] font-bold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
-                          {conv.unread_count > 9 ? '9+' : conv.unread_count}
-                        </span>
-                      )}
-                      {/* Status dot */}
-                      <span
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={{ background: cfg.color }}
-                        title={cfg.label}
-                      />
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className={`text-xs font-semibold truncate ${selected ? 'text-[#C9A84C]' : 'text-white'}`}>
+                        {conv.contact_name}
+                      </span>
+                      <span className="text-[10px] text-gray-600 shrink-0 ml-1">
+                        {formatTime(conv.last_message_time)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[11px] text-gray-600 truncate leading-tight">
+                        {conv.last_message || '—'}
+                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {conv.unread_count > 0 && (
+                          <span className="bg-[#C9A84C] text-black text-[9px] font-bold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
+                            {conv.unread_count > 9 ? '9+' : conv.unread_count}
+                          </span>
+                        )}
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ background: cfg.color }}
+                          title={cfg.label}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </button>
+              </button>
+
+              {/* Delete button — visible on hover */}
+              {isHovered && !isConfirm && (
+                <button
+                  onClick={e => { e.stopPropagation(); setConfirmId(conv.id); }}
+                  title="Eliminar conversación"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-6 h-6 flex items-center justify-center rounded-md bg-[#1A1A1A] border border-[#2A2A2A] text-gray-600 hover:text-red-400 hover:border-red-500/30 hover:bg-red-500/10 transition-all text-xs"
+                >
+                  🗑
+                </button>
+              )}
+            </div>
           );
         })}
       </div>
