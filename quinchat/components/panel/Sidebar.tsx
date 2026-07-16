@@ -2,14 +2,17 @@
 
 import { signOut } from 'next-auth/react';
 
-export type PanelSection = 'chat' | 'entrenamiento' | 'plantillas' | 'disparadores' | 'ajustes';
+export type PanelSection = 'chat' | 'entrenamiento' | 'plantillas' | 'disparadores' | 'contactos' | 'integraciones' | 'ajustes' | 'manual';
 
 const NAV_MAIN: { key: PanelSection; label: string; icon: string }[] = [
   { key: 'chat',          label: 'Chat',          icon: '💬' },
   { key: 'entrenamiento', label: 'Entrenamiento',  icon: '🎓' },
   { key: 'plantillas',    label: 'Plantillas',     icon: '📋' },
   { key: 'disparadores',  label: 'Disparadores',   icon: '⚡' },
+  { key: 'contactos',     label: 'Contactos',      icon: '👥' },
+  { key: 'integraciones', label: 'Integraciones',  icon: '🔗' },
   { key: 'ajustes',       label: 'Ajustes',        icon: '⚙️' },
+  { key: 'manual',        label: 'Manual',         icon: '📖' },
 ];
 
 interface Props {

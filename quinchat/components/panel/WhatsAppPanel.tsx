@@ -13,6 +13,9 @@ const EntrenamientoPanel = dynamic(() => import('./EntrenamientoPanel'), { ssr: 
 const PlantillasPanel    = dynamic(() => import('./PlantillasPanel'),    { ssr: false });
 const DisparadoresPanel  = dynamic(() => import('./DisparadoresPanel'),  { ssr: false });
 const AjustesPanel       = dynamic(() => import('./AjustesPanel'),       { ssr: false });
+const ContactosPanel     = dynamic(() => import('./ContactosPanel'),     { ssr: false });
+const IntegracionesPanel = dynamic(() => import('./IntegracionesPanel'), { ssr: false });
+const ManualPanel        = dynamic(() => import('./ManualPanel'),        { ssr: false });
 
 interface Props {
   userName: string;
@@ -123,7 +126,10 @@ export default function WhatsAppPanel({ userName }: Props) {
       {activeSection === 'entrenamiento' && <EntrenamientoPanel />}
       {activeSection === 'plantillas'    && <PlantillasPanel />}
       {activeSection === 'disparadores'  && <DisparadoresPanel />}
+      {activeSection === 'contactos'      && <ContactosPanel />}
+      {activeSection === 'integraciones' && <IntegracionesPanel />}
       {activeSection === 'ajustes'       && <AjustesPanel />}
+      {activeSection === 'manual'        && <ManualPanel />}
     </div>
   );
 }
