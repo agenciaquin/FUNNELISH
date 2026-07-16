@@ -37,4 +37,9 @@ const CATALOGO = {
   "PROM PACK X2 1990":                "img/PACK%20X2.jpg",
   "PROM PACK X3 1990":                "img/PACK%20X3.jpg",
   "PROM PACK 3 1990":                 "img/PACK%20X3.jpg",
+  /* Productos NEW YORK */
+  "NEGRO NEW YORK":                   "img/NEGRO%20NEW%20YORK.jpg",
+  "ROJO NEW YORK":                    "img/ROJO%20NEW%20YORK.jpg",
+  "BEIGE NEW YORK":                   "img/BEIGE%20NEW%20YORK.jpg",
+  "BLANCO MARFIL NEW YORK":           "img/BLANCO%20MARFIL%20NEW%20YORK.jpg",
 };

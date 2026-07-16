@@ -42,8 +42,12 @@ const CATALOG: Record<string, string> = {
   'RETRO AMARILLO 1990':                `${BASE}RETRO%20AMARILLO%201990.jpg`,
   'RETRO ROJO 1990':                    `${BASE}RETRO%20ROJO%201990.jpeg`,
   'RETRO AMARILLO MARIPOSA CUELLO ALTO':`${BASE}RETRO%20AMARILLO%20MARIPOSA%20%20CUELLO%20ALTO.jpeg`,
+  // ── NEW YORK ──────────────────────────────────────────────────────────
+  'NEGRO NEW YORK':                     `${BASE}NEGRO%20NEW%20YORK.jpg`,
+  'ROJO NEW YORK':                      `${BASE}ROJO%20NEW%20YORK.jpg`,
+  'BEIGE NEW YORK':                     `${BASE}BEIGE%20NEW%20YORK.jpg`,
+  'BLANCO MARFIL NEW YORK':             `${BASE}BLANCO%20MARFIL%20NEW%20YORK.jpg`,
   // ── AGREGAR PRODUCTOS NUEVOS AQUÍ ─────────────────────────────────────
-  // 'NEGRO NEW YORK':                  `${BASE}NEGRO%20NEW%20YORK.jpg`,
 };
 
 /**
