@@ -4,14 +4,17 @@ import { useState, useEffect } from 'react';
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 type TopTab = 'general' | 'ia' | 'chat';
-type GeneralSubTab = 'general' | 'texto' | 'audio';
-type ChatSubTab = 'whatsapp';
+type IASubTab = 'general' | 'texto' | 'audio';
 
 interface Ajustes {
   nombre: string;
+  telefono_prefijo: string;
+  telefono_numero: string;
+  mensaje_bienvenida: string;
+  referencia: string;
   estado: 'activo' | 'dormido';
   tiempo_respuesta: number;
-  respuesta_texto_pct: number; // 0-100 (100 = todo texto)
+  respuesta_texto_pct: number;
   phone_number_id: string;
   waba_id: string;
   meta_app_id: string;
@@ -23,6 +26,10 @@ const WEBHOOK_URL = 'https://quinchat-agencia-quin.vercel.app/api/whatsapp/webho
 
 const DEFAULT: Ajustes = {
   nombre: 'KLIXMANT',
+  telefono_prefijo: '+57',
+  telefono_numero: '',
+  mensaje_bienvenida: '',
+  referencia: '',
   estado: 'activo',
   tiempo_respuesta: 15,
   respuesta_texto_pct: 80,
@@ -57,7 +64,7 @@ function FieldRow({
 }: { label: string; description: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start gap-6 py-5 border-b border-[#1C1C1C]">
-      <div className="w-56 shrink-0">
+      <div className="w-52 shrink-0">
         <p className="text-sm font-semibold text-white">{label}</p>
       </div>
       <div className="flex-1">{children}</div>
@@ -72,8 +79,7 @@ function FieldRow({
 export default function AjustesPanel() {
   const [ajustes, setAjustes] = useState<Ajustes>(DEFAULT);
   const [topTab, setTopTab] = useState<TopTab>('general');
-  const [genSub, setGenSub] = useState<GeneralSubTab>('general');
-  const [chatSub] = useState<ChatSubTab>('whatsapp');
+  const [iaSub, setIaSub] = useState<IASubTab>('general');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showToken, setShowToken] = useState(false);
@@ -117,7 +123,6 @@ export default function AjustesPanel() {
     );
   }
 
-  /* ── Render ── */
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-[#0C0C0C]">
 
@@ -139,7 +144,7 @@ export default function AjustesPanel() {
           <button
             key={t}
             onClick={() => setTopTab(t)}
-            className={`px-8 py-3 text-sm font-medium capitalize border-b-2 transition-all -mb-[1px] ${
+            className={`px-8 py-3 text-sm font-medium border-b-2 transition-all -mb-[1px] ${
               topTab === t
                 ? 'border-[#C9A84C] text-[#C9A84C]'
                 : 'border-transparent text-gray-500 hover:text-gray-300'
@@ -153,17 +158,93 @@ export default function AjustesPanel() {
       {/* Body */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
 
-        {/* ── GENERAL TAB ── */}
+        {/* ══════════════════ GENERAL TAB ══════════════════ */}
         {topTab === 'general' && (
+          <div className="flex-1 overflow-y-auto px-8">
+
+            <FieldRow
+              label="Nombre"
+              description="Este parámetro permite personalizar el nombre al asistente y brindarle una identificación única."
+            >
+              <input
+                type="text"
+                value={ajustes.nombre}
+                onChange={e => set('nombre', e.target.value)}
+                className="w-full max-w-md bg-[#111] border border-[#2A2A2A] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#C9A84C]/50"
+              />
+            </FieldRow>
+
+            <FieldRow
+              label="Teléfono"
+              description="Permite ingresar información de contacto o identificación telefónica al asistente."
+            >
+              <div className="flex gap-2 max-w-md">
+                <select
+                  value={ajustes.telefono_prefijo}
+                  onChange={e => set('telefono_prefijo', e.target.value)}
+                  className="w-28 bg-[#111] border border-[#2A2A2A] text-white text-sm rounded-lg px-2 py-2 focus:outline-none focus:border-[#C9A84C]/50"
+                >
+                  <option value="+57">CO +57</option>
+                  <option value="+1">US +1</option>
+                  <option value="+52">MX +52</option>
+                  <option value="+34">ES +34</option>
+                  <option value="+54">AR +54</option>
+                  <option value="+51">PE +51</option>
+                  <option value="+56">CL +56</option>
+                </select>
+                <input
+                  type="text"
+                  value={ajustes.telefono_numero}
+                  onChange={e => set('telefono_numero', e.target.value)}
+                  placeholder="3004362800"
+                  className="flex-1 bg-[#111] border border-[#2A2A2A] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#C9A84C]/50"
+                />
+              </div>
+            </FieldRow>
+
+            <FieldRow
+              label="Mensaje de bienvenida"
+              description="Permite personalizar el mensaje inicial que se muestra a los usuarios al iniciar una conversación con el asistente."
+            >
+              <input
+                type="text"
+                value={ajustes.mensaje_bienvenida}
+                onChange={e => set('mensaje_bienvenida', e.target.value)}
+                placeholder="Nombre de la plantilla de bienvenida"
+                className="w-full max-w-md bg-[#111] border border-[#2A2A2A] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#C9A84C]/50"
+              />
+            </FieldRow>
+
+            <FieldRow
+              label="Usar referencia (Opcional)"
+              description="Aquí puedes usar el Id de otro asistente creado para que todas sus configuraciones (Plantillas, Disparadores, Entrenamiento, etc.) se puedan replicar en este asistente."
+            >
+              <div className="flex gap-2 max-w-md">
+                <input
+                  type="text"
+                  value={ajustes.referencia}
+                  onChange={e => set('referencia', e.target.value)}
+                  placeholder=""
+                  className="flex-1 bg-[#111] border border-[#2A2A2A] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#C9A84C]/50"
+                />
+                <CopyBtn value={ajustes.referencia} />
+              </div>
+            </FieldRow>
+
+          </div>
+        )}
+
+        {/* ══════════════════ IA TAB ══════════════════ */}
+        {topTab === 'ia' && (
           <>
             {/* Left sub-nav */}
             <div className="w-44 shrink-0 border-r border-[#1C1C1C] pt-4 px-2 flex flex-col gap-1">
-              {(['general', 'texto', 'audio'] as GeneralSubTab[]).map(s => (
+              {(['general', 'texto', 'audio'] as IASubTab[]).map(s => (
                 <button
                   key={s}
-                  onClick={() => setGenSub(s)}
+                  onClick={() => setIaSub(s)}
                   className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                    genSub === s
+                    iaSub === s
                       ? 'bg-[#C9A84C] text-black'
                       : 'text-gray-400 hover:bg-[#1A1A1A] hover:text-white'
                   }`}
@@ -175,11 +256,11 @@ export default function AjustesPanel() {
 
             {/* Right content */}
             <div className="flex-1 overflow-y-auto px-8">
-              {genSub === 'general' && (
+              {iaSub === 'general' && (
                 <>
                   <FieldRow
                     label="Estado"
-                    description="Si está activo el asistente responderá automáticamente. En dormido, no responderá mensajes nuevos."
+                    description="Establece el estado del asistente. Si está activo responderá todos los mensajes automáticamente, en cambio si está dormido no responderá ningún mensaje nuevo que llegue."
                   >
                     <select
                       value={ajustes.estado}
@@ -193,7 +274,7 @@ export default function AjustesPanel() {
 
                   <FieldRow
                     label="Tiempo de respuesta"
-                    description="Intervalo en segundos que el asistente espera antes de responder cuando llegan mensajes nuevos."
+                    description="Establece el intervalo de tiempo en el que el asistente debe responder las conversaciones cuando llegan mensajes nuevos."
                   >
                     <div className="flex items-center gap-3">
                       <button
@@ -216,7 +297,7 @@ export default function AjustesPanel() {
 
                   <FieldRow
                     label="Respuesta del asistente"
-                    description="Porcentaje de respuestas en texto vs audio. El resto será en audio de voz."
+                    description="Establece la probabilidad de que las respuestas del asistente sean en texto o en audio. El valor del deslizante indica el porcentaje de respuestas en texto, mientras que el resto serán en audio."
                   >
                     <div className="flex flex-col gap-2 w-72">
                       <div className="flex justify-between text-xs text-gray-400">
@@ -237,28 +318,16 @@ export default function AjustesPanel() {
                       </div>
                     </div>
                   </FieldRow>
-
-                  <FieldRow
-                    label="Nombre del asistente"
-                    description="Nombre que identifica al asistente dentro del panel."
-                  >
-                    <input
-                      type="text"
-                      value={ajustes.nombre}
-                      onChange={e => set('nombre', e.target.value)}
-                      className="w-72 bg-[#111] border border-[#2A2A2A] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#C9A84C]/50"
-                    />
-                  </FieldRow>
                 </>
               )}
 
-              {genSub === 'texto' && (
+              {iaSub === 'texto' && (
                 <div className="py-10 text-center text-gray-600 text-sm">
                   Opciones de texto próximamente
                 </div>
               )}
 
-              {genSub === 'audio' && (
+              {iaSub === 'audio' && (
                 <div className="py-10 text-center text-gray-600 text-sm">
                   Opciones de audio próximamente
                 </div>
@@ -267,25 +336,12 @@ export default function AjustesPanel() {
           </>
         )}
 
-        {/* ── IA TAB ── */}
-        {topTab === 'ia' && (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <p className="text-4xl mb-3">🤖</p>
-              <p className="text-gray-500 text-sm">Configuración de IA próximamente</p>
-              <p className="text-gray-700 text-xs mt-1">Modelo, temperatura, límites de tokens…</p>
-            </div>
-          </div>
-        )}
-
-        {/* ── CHAT TAB ── */}
+        {/* ══════════════════ CHAT TAB ══════════════════ */}
         {topTab === 'chat' && (
           <>
             {/* Left sub-nav */}
             <div className="w-44 shrink-0 border-r border-[#1C1C1C] pt-4 px-2 flex flex-col gap-1">
-              <button
-                className="w-full text-left px-3 py-2 rounded-lg text-sm font-medium bg-[#C9A84C] text-black"
-              >
+              <button className="w-full text-left px-3 py-2 rounded-lg text-sm font-medium bg-[#C9A84C] text-black">
                 WhatsApp
               </button>
             </div>
@@ -293,132 +349,126 @@ export default function AjustesPanel() {
             {/* Right content */}
             <div className="flex-1 overflow-y-auto px-8">
 
-              {chatSub === 'whatsapp' && (
-                <>
-                  <FieldRow
-                    label="Id. Número de teléfono"
-                    description="Valor único asignado por WhatsApp Business API Cloud para identificar tu número de teléfono al enviar y recibir mensajes."
-                  >
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={ajustes.phone_number_id}
-                        onChange={e => set('phone_number_id', e.target.value)}
-                        placeholder="Ej: 123456789012345"
-                        className="flex-1 max-w-xs bg-[#111] border border-[#2A2A2A] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#C9A84C]/50 font-mono"
-                      />
-                      <CopyBtn value={ajustes.phone_number_id} />
-                    </div>
-                  </FieldRow>
+              <FieldRow
+                label="Id. Número de teléfono"
+                description="Valor único asignado por WhatsApp Business API Cloud para identificar tu número de teléfono al enviar y recibir mensajes."
+              >
+                <div className="flex gap-2 max-w-md">
+                  <input
+                    type="text"
+                    value={ajustes.phone_number_id}
+                    onChange={e => set('phone_number_id', e.target.value)}
+                    placeholder="Ej: 1046498425221624"
+                    className="flex-1 bg-[#111] border border-[#2A2A2A] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#C9A84C]/50 font-mono"
+                  />
+                  <CopyBtn value={ajustes.phone_number_id} />
+                </div>
+              </FieldRow>
 
-                  <FieldRow
-                    label="Id. cuenta de WhatsApp Business (Opcional)"
-                    description="Permite gestionar plantillas de WhatsApp desde el panel y operar tu cuenta Business de forma eficiente."
-                  >
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={ajustes.waba_id}
-                        onChange={e => set('waba_id', e.target.value)}
-                        placeholder="Ej: 952346933913193"
-                        className="flex-1 max-w-xs bg-[#111] border border-[#2A2A2A] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#C9A84C]/50 font-mono"
-                      />
-                      <CopyBtn value={ajustes.waba_id} />
-                    </div>
-                  </FieldRow>
+              <FieldRow
+                label="Id. cuenta de WhatsApp Business (Opcional)"
+                description="Identificador de la cuenta de WhatsApp Business. Permite que las plantillas de WhatsApp se puedan ver, crear, editar y eliminar desde el panel."
+              >
+                <div className="flex gap-2 max-w-md">
+                  <input
+                    type="text"
+                    value={ajustes.waba_id}
+                    onChange={e => set('waba_id', e.target.value)}
+                    placeholder="Ej: 952346933913193"
+                    className="flex-1 bg-[#111] border border-[#2A2A2A] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#C9A84C]/50 font-mono"
+                  />
+                  <CopyBtn value={ajustes.waba_id} />
+                </div>
+              </FieldRow>
 
-                  <FieldRow
-                    label="Id. de la aplicación de Meta (Opcional)"
-                    description="Identificador de la app Meta donde está alojado el número. Permite crear y editar plantillas de imagen, video y documento."
-                  >
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={ajustes.meta_app_id}
-                        onChange={e => set('meta_app_id', e.target.value)}
-                        placeholder="Ej: 1392339379328297"
-                        className="flex-1 max-w-xs bg-[#111] border border-[#2A2A2A] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#C9A84C]/50 font-mono"
-                      />
-                      <CopyBtn value={ajustes.meta_app_id} />
-                    </div>
-                  </FieldRow>
+              <FieldRow
+                label="Id. de la aplicación de Meta (Opcional)"
+                description="Identificador de la aplicación de Meta donde se encuentra alojado el número. Permite crear, editar y eliminar plantillas de imagen, video y documento."
+              >
+                <div className="flex gap-2 max-w-md">
+                  <input
+                    type="text"
+                    value={ajustes.meta_app_id}
+                    onChange={e => set('meta_app_id', e.target.value)}
+                    placeholder="Ej: 1392339379328297"
+                    className="flex-1 bg-[#111] border border-[#2A2A2A] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#C9A84C]/50 font-mono"
+                  />
+                  <CopyBtn value={ajustes.meta_app_id} />
+                </div>
+              </FieldRow>
 
-                  <FieldRow
-                    label="Token permanente"
-                    description="Token de acceso permanente de Meta para autenticar las llamadas a la API de WhatsApp. Debe ser el token permanente, no el temporal."
-                  >
-                    <div className="flex gap-2">
-                      <div className="relative flex-1 max-w-xs">
-                        <input
-                          type={showToken ? 'text' : 'password'}
-                          value={ajustes.access_token}
-                          onChange={e => set('access_token', e.target.value)}
-                          placeholder="EAAxxxxxxxxxxxxxxx"
-                          className="w-full bg-[#111] border border-[#2A2A2A] text-white text-sm rounded-lg px-3 py-2 pr-10 focus:outline-none focus:border-[#C9A84C]/50 font-mono"
-                        />
-                        <button
-                          onClick={() => setShowToken(p => !p)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-sm"
-                        >
-                          {showToken ? '🙈' : '👁'}
-                        </button>
-                      </div>
-                      <CopyBtn value={ajustes.access_token} />
-                    </div>
-                  </FieldRow>
-
-                  {/* Webhook config */}
-                  <div className="py-5">
-                    <p className="text-sm font-semibold text-white mb-4">Configuración de Webhook</p>
-                    <p className="text-xs text-gray-500 mb-5 leading-relaxed max-w-2xl">
-                      Copia la URL y el Token de verificación y pégalos en{' '}
-                      <span className="text-[#C9A84C]">Facebook Developer → WhatsApp → Configuración → Webhook</span>.
-                      Esta URL es donde Meta enviará los mensajes entrantes y salientes en tiempo real.
-                    </p>
-
-                    <div className="flex flex-col gap-3">
-                      {/* URL */}
-                      <div className="flex gap-2 items-center">
-                        <div className="flex-1 bg-[#111] border border-[#2A2A2A] rounded-lg px-3 py-2 text-xs text-gray-400 font-mono truncate">
-                          {WEBHOOK_URL}
-                        </div>
-                        <CopyBtn value={WEBHOOK_URL} />
-                        <span className="text-xs text-gray-600 shrink-0">URL del webhook</span>
-                      </div>
-
-                      {/* Verify token */}
-                      <div className="flex gap-2 items-center">
-                        <input
-                          type="text"
-                          value={ajustes.webhook_verify_token}
-                          onChange={e => set('webhook_verify_token', e.target.value)}
-                          placeholder="Token de verificación (ej: mi_token_secreto)"
-                          className="flex-1 bg-[#111] border border-[#2A2A2A] text-white text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-[#C9A84C]/50 font-mono"
-                        />
-                        <CopyBtn value={ajustes.webhook_verify_token} />
-                        <span className="text-xs text-gray-600 shrink-0">Token de verificación</span>
-                      </div>
-                    </div>
-
-                    {/* Status indicator */}
-                    <div className={`mt-5 inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${
-                      ajustes.phone_number_id && ajustes.access_token
-                        ? 'bg-green-500/10 text-green-400 border border-green-500/20'
-                        : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
-                    }`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${
-                        ajustes.phone_number_id && ajustes.access_token ? 'bg-green-400' : 'bg-yellow-400'
-                      }`} />
-                      {ajustes.phone_number_id && ajustes.access_token
-                        ? 'WhatsApp configurado'
-                        : 'Pendiente configurar WhatsApp'}
-                    </div>
+              <FieldRow
+                label="Token permanente"
+                description="Cadena de caracteres utilizado para autenticar el acceso a la API de Meta. Debe ser el permanente ya que Meta utiliza otros tokens que tienen caducidad."
+              >
+                <div className="flex gap-2 max-w-md">
+                  <div className="relative flex-1">
+                    <input
+                      type={showToken ? 'text' : 'password'}
+                      value={ajustes.access_token}
+                      onChange={e => set('access_token', e.target.value)}
+                      placeholder="EAATyU0YclSkBRO2j9Q8aTdl…"
+                      className="w-full bg-[#111] border border-[#2A2A2A] text-white text-sm rounded-lg px-3 py-2 pr-10 focus:outline-none focus:border-[#C9A84C]/50 font-mono"
+                    />
+                    <button
+                      onClick={() => setShowToken(p => !p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-sm"
+                    >
+                      {showToken ? '🙈' : '👁'}
+                    </button>
                   </div>
-                </>
-              )}
+                  <CopyBtn value={ajustes.access_token} />
+                </div>
+              </FieldRow>
+
+              {/* Webhook */}
+              <div className="py-5">
+                <p className="text-sm font-semibold text-white mb-2">Configuración de Webhook</p>
+                <p className="text-xs text-gray-500 mb-5 leading-relaxed max-w-2xl">
+                  Los parámetros Url Webhook y Token son esenciales para establecer una conexión bidireccional entre QuinChat y WhatsApp a través de la API. Copia estos valores y pégalos en{' '}
+                  <span className="text-[#C9A84C]">Facebook Developer → WhatsApp → Configuración → Webhook</span>.
+                </p>
+
+                <div className="flex flex-col gap-3 max-w-2xl">
+                  <div className="flex gap-2 items-center">
+                    <div className="flex-1 bg-[#111] border border-[#2A2A2A] rounded-lg px-3 py-2 text-xs text-gray-400 font-mono truncate">
+                      {WEBHOOK_URL}
+                    </div>
+                    <CopyBtn value={WEBHOOK_URL} />
+                    <span className="text-xs text-gray-600 shrink-0 w-28">URL del webhook</span>
+                  </div>
+
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="text"
+                      value={ajustes.webhook_verify_token}
+                      onChange={e => set('webhook_verify_token', e.target.value)}
+                      placeholder="Token de verificación"
+                      className="flex-1 bg-[#111] border border-[#2A2A2A] text-white text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-[#C9A84C]/50 font-mono"
+                    />
+                    <CopyBtn value={ajustes.webhook_verify_token} />
+                    <span className="text-xs text-gray-600 shrink-0 w-28">Token verificación</span>
+                  </div>
+                </div>
+
+                <div className={`mt-5 inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${
+                  ajustes.phone_number_id && ajustes.access_token
+                    ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                    : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    ajustes.phone_number_id && ajustes.access_token ? 'bg-green-400' : 'bg-yellow-400'
+                  }`} />
+                  {ajustes.phone_number_id && ajustes.access_token
+                    ? 'WhatsApp configurado'
+                    : 'Pendiente configurar WhatsApp'}
+                </div>
+              </div>
+
             </div>
           </>
         )}
+
       </div>
     </div>
   );

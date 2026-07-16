@@ -25,14 +25,19 @@ const COL_MAP = {
   fecha:       ["time", "created at", "fecha", "fecha creación", "date", "order date"],
 };
 
-/* ── SUPABASE (Historial automático) ─────────────────────────── */
-const SUPABASE_URL_H = 'https://glmnuqfnxwaibckufgtr.supabase.co';
-const SUPABASE_KEY_H = 'sb_publishable_TW1nS4T1g8vcZJ-mJeg0EA_8G1HZlKe';
+/* ── SUPABASE (QuinChat — base de datos compartida) ─────────────────────── */
+const SUPABASE_URL_H = 'https://bjbjqmbuzpyjvcugbusx.supabase.co';
+const SUPABASE_KEY_H = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJqYmpxbWJ1enB5anZjdWdidXN4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwNzYyMjUsImV4cCI6MjA5OTY1MjIyNX0.iIMsyFbA59OvRm89BRvQnYAHVXMBS5rfoLnw7sUhL_4';
+
+/* ── QUINCHAT BOT API ──────────────────────────────────────────── */
+const QUINCHAT_URL     = 'https://quinchat-agencia-quin.vercel.app';
+const QUINCHAT_API_KEY = 'klixmant-confirma-2026';
 let dbH = null;
 // Se inicializa después de que la librería Supabase cargue
 window.addEventListener('DOMContentLoaded', () => {
   if (window.supabase && window.supabase.createClient) {
     dbH = window.supabase.createClient(SUPABASE_URL_H, SUPABASE_KEY_H);
+    suscribirConfirmacionesBot();
   }
 });
 
@@ -960,22 +965,78 @@ function irAPagina(n) {
 /* ================================================================
    WHATSAPP
    ================================================================ */
-function abrirWhatsApp(id) {
-  const p   = pedidos[id];
-  const url = "whatsapp://send?phone=" + p.telefonoWhatsApp + "&text=" + encodeURIComponent(generarMensaje(p));
-  window.open(url, "_self");
+async function abrirWhatsApp(id) {
+  const p      = pedidos[id];
+  const mensaje = generarMensaje(p);
 
-  // Auto-confirmar: si estaba Pendiente, pasa a Confirmado al enviar el mensaje
-  if ((estados[p._key] || "Pendiente") === "Pendiente") {
-    estados[p._key] = "Confirmado";
-    guardarEstados();
-    sincronizarEstadoEnSupabase(p._key, "Confirmado");
-    const badge = document.querySelector(`.badge-estado[data-key="${p._key}"]`);
-    if (badge) {
-      badge.textContent = "Confirmado";
-      badge.className   = "badge-estado " + claseEstado("Confirmado");
+  // Mostrar estado visual inmediato
+  const btn = document.querySelector(`.btn-accion-wa[data-id="${id}"]`);
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+
+  try {
+    const res = await fetch(`${QUINCHAT_URL}/api/whatsapp/confirmar`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': QUINCHAT_API_KEY },
+      body:    JSON.stringify({ telefono: p.telefonoWhatsApp, mensaje }),
+    });
+
+    if (res.ok) {
+      // Marcar WA enviado en UI
+      if (btn) { btn.textContent = '✅'; btn.style.opacity = '0.5'; }
+      mostrarBadgeWaEnviado(p._key);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      console.error('[QuinChat] Error al enviar:', err);
+      // Fallback: abrir WhatsApp manual
+      if (btn) { btn.textContent = '📱'; btn.disabled = false; }
+      window.open("whatsapp://send?phone=" + p.telefonoWhatsApp + "&text=" + encodeURIComponent(mensaje), "_self");
     }
+  } catch (e) {
+    console.error('[QuinChat] Error de red:', e);
+    // Fallback: abrir WhatsApp manual
+    if (btn) { btn.textContent = '📱'; btn.disabled = false; }
+    window.open("whatsapp://send?phone=" + p.telefonoWhatsApp + "&text=" + encodeURIComponent(mensaje), "_self");
   }
+}
+
+function mostrarBadgeWaEnviado(key) {
+  const badge = document.querySelector(`.badge-estado[data-key="${key}"]`);
+  if (badge && badge.textContent === 'Pendiente') {
+    badge.textContent = 'WA Enviado';
+    badge.className   = 'badge-estado estado-wa-enviado';
+  }
+}
+
+function mostrarBadgeConfirmadoBot(telefono) {
+  // Buscar pedido por teléfono y mostrar badge CONFIRMADO
+  const p = pedidos.find(pd => {
+    const t10 = String(pd.telefonoWhatsApp || '').replace(/^57/, '').slice(-10);
+    return t10 === telefono;
+  });
+  if (!p) return;
+  const badge = document.querySelector(`.badge-estado[data-key="${p._key}"]`);
+  if (badge) {
+    badge.textContent = '✅ CONFIRMADO (bot)';
+    badge.className   = 'badge-estado estado-confirmado';
+    badge.style.background = '#16a34a';
+    badge.style.color = '#fff';
+  }
+}
+
+// Realtime: escuchar cuando el bot detecta CONFIRMO y actualiza clientes_funnelish
+function suscribirConfirmacionesBot() {
+  if (!dbH) return;
+  dbH.channel('confirma-ya-bot')
+    .on('postgres_changes', {
+      event:  'UPDATE',
+      schema: 'public',
+      table:  'clientes_funnelish',
+    }, (payload) => {
+      if (payload.new?.confirmado && !payload.old?.confirmado) {
+        mostrarBadgeConfirmadoBot(String(payload.new.telefono));
+      }
+    })
+    .subscribe();
 }
 
 /* Botón de Remarketing Effi */
