@@ -45,15 +45,16 @@ export async function sendTextMessage(to: string, text: string): Promise<boolean
 // ── Template message ──────────────────────────────────────────────────────────
 
 export interface ConfirmacionParams {
-  nombre: string;
-  telefono: string;
-  direccion: string;
-  ciudad: string;
-  departamento: string;
-  correo: string;
-  talla: string;
-  producto: string;
-  valor: string;
+  saludo: string;   // {{1}} — nombre en el saludo "Hola {{1}} 😊"
+  nombre: string;   // {{2}}
+  telefono: string; // {{3}}
+  direccion: string;// {{4}}
+  ciudad: string;   // {{5}}
+  departamento: string; // {{6}}
+  correo: string;   // {{7}}
+  talla: string;    // {{8}}
+  producto: string; // {{9}}
+  valor: string;    // {{10}}
   imageUrl: string;
 }
 
@@ -99,15 +100,16 @@ export async function sendConfirmacionTemplate(
         {
           type: 'body',
           parameters: [
-            { type: 'text', text: params.nombre },
-            { type: 'text', text: params.telefono },
-            { type: 'text', text: params.direccion },
-            { type: 'text', text: params.ciudad },
-            { type: 'text', text: params.departamento },
-            { type: 'text', text: params.correo },
-            { type: 'text', text: params.talla },
-            { type: 'text', text: params.producto },
-            { type: 'text', text: params.valor },
+            { type: 'text', text: params.saludo },      // {{1}} saludo
+            { type: 'text', text: params.nombre },       // {{2}}
+            { type: 'text', text: params.telefono },     // {{3}}
+            { type: 'text', text: params.direccion },    // {{4}}
+            { type: 'text', text: params.ciudad },       // {{5}}
+            { type: 'text', text: params.departamento }, // {{6}}
+            { type: 'text', text: params.correo },       // {{7}}
+            { type: 'text', text: params.talla },        // {{8}}
+            { type: 'text', text: params.producto },     // {{9}}
+            { type: 'text', text: params.valor },        // {{10}}
           ],
         },
       ],

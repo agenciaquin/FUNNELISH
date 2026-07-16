@@ -128,6 +128,7 @@ export async function POST(req: NextRequest) {
   if (enWhitelist) {
     // Intentar template primero (funciona incluso sin ventana 24h)
     sent = await sendConfirmacionTemplate(waPhone, {
+      saludo:   firstName || nombre,
       nombre, telefono: tel10, direccion, ciudad, departamento,
       correo, talla, producto: productoNombre, valor, imageUrl,
     });
