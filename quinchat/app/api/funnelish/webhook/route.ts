@@ -62,12 +62,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: 'ignored' });
   }
 
-  // DEBUG TEMPORAL — ver estructura completa del body de Funnelish
-  const productRaw = Array.isArray(body.products) ? body.products[0] : (body.product ?? null);
-  console.error('[DEBUG] body keys:', Object.keys(body).join(', '));
-  console.error('[DEBUG] product raw:', JSON.stringify(productRaw));
-  console.error('[DEBUG] products field:', JSON.stringify(body.products));
-  console.error('[DEBUG] product field:', JSON.stringify(body.product));
+  // DEBUG TEMPORAL — ver meta y extra_data de Funnelish
+  const productRaw = Array.isArray(body.products) ? body.products[0] : null;
+  console.error('[DEBUG] meta:', JSON.stringify(body.meta));
+  console.error('[DEBUG] extra_data:', JSON.stringify(body.extra_data));
+  console.error('[DEBUG] avatar:', JSON.stringify(body.avatar));
 
   // ── Parse fields ─────────────────────────────────────────────────────────────
   const firstName  = String(body.first_name  ?? '').trim();
