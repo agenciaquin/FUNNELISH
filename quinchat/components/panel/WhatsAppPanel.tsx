@@ -12,6 +12,7 @@ import dynamic from 'next/dynamic';
 const EntrenamientoPanel = dynamic(() => import('./EntrenamientoPanel'), { ssr: false });
 const PlantillasPanel    = dynamic(() => import('./PlantillasPanel'),    { ssr: false });
 const DisparadoresPanel  = dynamic(() => import('./DisparadoresPanel'),  { ssr: false });
+const AjustesPanel       = dynamic(() => import('./AjustesPanel'),       { ssr: false });
 
 interface Props {
   userName: string;
@@ -122,6 +123,7 @@ export default function WhatsAppPanel({ userName }: Props) {
       {activeSection === 'entrenamiento' && <EntrenamientoPanel />}
       {activeSection === 'plantillas'    && <PlantillasPanel />}
       {activeSection === 'disparadores'  && <DisparadoresPanel />}
+      {activeSection === 'ajustes'       && <AjustesPanel />}
     </div>
   );
 }

@@ -2,13 +2,14 @@
 
 import { signOut } from 'next-auth/react';
 
-export type PanelSection = 'chat' | 'entrenamiento' | 'plantillas' | 'disparadores';
+export type PanelSection = 'chat' | 'entrenamiento' | 'plantillas' | 'disparadores' | 'ajustes';
 
 const NAV_MAIN: { key: PanelSection; label: string; icon: string }[] = [
   { key: 'chat',          label: 'Chat',          icon: '💬' },
   { key: 'entrenamiento', label: 'Entrenamiento',  icon: '🎓' },
   { key: 'plantillas',    label: 'Plantillas',     icon: '📋' },
   { key: 'disparadores',  label: 'Disparadores',   icon: '⚡' },
+  { key: 'ajustes',       label: 'Ajustes',        icon: '⚙️' },
 ];
 
 interface Props {
