@@ -34,6 +34,28 @@ function isCompleteAddress(addr: string | null | undefined): boolean {
   return false;
 }
 
+// ─── Frases de confirmación natural ──────────────────────────────────────────
+
+const NATURAL_CONFIRM_PHRASES = [
+  'si esta bien', 'sí está bien', 'si está bien', 'sí esta bien',
+  'si correcto', 'sí correcto', 'si todo correcto', 'sí todo correcto',
+  'todo correcto', 'todo está correcto', 'todo esta correcto',
+  'si esos son mis datos', 'sí esos son mis datos', 'esos son mis datos',
+  'si todo esta bien', 'sí todo está bien', 'sí todo esta bien',
+  'confirmado', 'si confirmo', 'sí confirmo',
+  'si eso es', 'sí eso es', 'si todo bien', 'sí todo bien',
+  'así está bien', 'asi esta bien', 'de acuerdo', 'todo bien',
+  'si perfecto', 'sí perfecto', 'perfecto así',
+];
+
+/** True cuando la dirección es recogida en oficina/interrapidísimo (no domicilio). */
+function isDirOficina(addr: string | null | undefined): boolean {
+  if (!addr || addr.trim() === '' || addr === '—') return false;
+  const a = addr.toLowerCase();
+  return a.includes('interrapid') || a.includes('reclamo') || a.includes('reclamar')
+    || (a.includes('oficina') && !isCompleteAddress(addr));
+}
+
 // ─── Helpers de catálogo para cambio de color ─────────────────────────────────
 
 type ProductFamily = 'PORTUGAL' | 'ARGENTINA' | 'CO_FRANJA' | 'NEW_YORK' | 'RETRO' | 'BM_ELITE' | 'PROM' | '';
@@ -327,7 +349,7 @@ export async function POST(req: NextRequest) {
         await supabase.from('conversations').update({ label: 'VENTA REALIZADA' }).eq('id', from);
       }
 
-      const confirmReply = '✅ ¡Perfecto! Tu pedido ha sido *confirmado*. Lo despacharemos en las próximas 24 horas. ¡Gracias por tu compra! 🚚✨';
+      const confirmReply = '¡Gracias por tu compra, cuando lo envie te estara llegando el número de guía desde nuestro chatbot, cuyo número asociado es 3142576239, para que puedas realizarle seguimiento a tu paquete.';
       const wamid = await sendTextMessage(from, confirmReply);
       await saveAndSend(supabase, from, confirmReply, 'text', wamid);
       continue;
@@ -448,7 +470,10 @@ export async function POST(req: NextRequest) {
 
     // ── Estado actual de campos ──────────────────────────────────────────────
     const stillMissingTalla = !currentTalla || currentTalla === 'Por confirmar';
-    const stillMissingDir   = !isCompleteAddress(currentDireccion);
+    const isDirOficinaType  = isDirOficina(currentDireccion);
+    // Dir OK si es una dirección real completa. Las dirs de oficina no cuentan como "missing"
+    // porque el abono es el sustituto — pero tampoco cuentan como "listas" para confirmar.
+    const stillMissingDir   = !isCompleteAddress(currentDireccion) && !isDirOficinaType;
 
     // ── Respuesta fija si el cliente acaba de dar un dato ────────────────────
     let fixedReply: string | null = null;
@@ -456,20 +481,39 @@ export async function POST(req: NextRequest) {
     if (clientGaveTalla && clientGaveDireccion) {
       fixedReply = stillMissingTalla || stillMissingDir
         ? null // edge case — no debería pasar
-        : `✅ Perfecto, talla *${currentTalla}* y dirección anotadas.\n\nTodo está listo 🎉 Responde *CONFIRMO* para que despachemos tu *${pendingPedido.producto}* en las próximas 24 horas. 🚚`;
+        : `✅ Perfecto, talla *${currentTalla}* y dirección anotadas.\n\nTodo está listo 🎉 Responde *CONFIRMO*, "si está bien" o dime que confirmas para que despachemos tu *${pendingPedido.producto}*. 🚚`;
     } else if (clientGaveTalla) {
-      fixedReply = stillMissingDir
-        ? `✅ Talla *${currentTalla}* confirmada.\n\n📍 Para completar el pedido necesito tu dirección de domicilio completa (ej: Calle 15 # 20-30, Barrio). ¿Cuál es?`
-        : `✅ Talla *${currentTalla}* confirmada. Todo listo 🎉\n\nResponde *CONFIRMO* para que despachemos tu *${pendingPedido.producto}*. 🚚`;
+      if (isDirOficinaType) {
+        // Dirección es oficina → recordar el abono en vez de pedir dirección
+        fixedReply = `✅ Talla *${currentTalla}* anotada.\n\nRecuerda que para el despacho por la oficina de Interrapidísimo necesitas hacer el abono de $5.000. Cuando lo hayas hecho, envíame el comprobante por aquí 📷`;
+      } else if (stillMissingDir) {
+        fixedReply = `✅ Talla *${currentTalla}* confirmada.\n\n📍 Para completar el pedido necesito tu dirección de domicilio completa (ej: Calle 15 # 20-30, Barrio). ¿Cuál es?`;
+      } else {
+        fixedReply = `✅ Talla *${currentTalla}* confirmada. Todo listo 🎉\n\nEscribe *CONFIRMO*, "si está bien" o dime que confirmas para que despachemos tu *${pendingPedido.producto}*. 🚚`;
+      }
     } else if (clientGaveDireccion) {
       fixedReply = stillMissingTalla
         ? `✅ Dirección anotada.\n\n📋 ¿Me confirmas tu talla del buzo? (XS, S, M, L, XL, XXL, XXXL)`
-        : `✅ Dirección anotada. Todo listo 🎉\n\nResponde *CONFIRMO* para que despachemos tu *${pendingPedido.producto}*. 🚚`;
+        : `✅ Dirección anotada. Todo listo 🎉\n\nEscribe *CONFIRMO*, "si está bien" o dime que confirmas para que despachemos tu *${pendingPedido.producto}*. 🚚`;
     }
 
     if (fixedReply) {
       const wamid = await sendTextMessage(from, fixedReply);
       await saveAndSend(supabase, from, fixedReply, 'text', wamid);
+      continue;
+    }
+
+    // ── Confirmación por lenguaje natural cuando todo está completo ──────────
+    // Solo se activa cuando: hay pedido + talla ok + dirección domicilio ok (no oficina) + mensaje corto afirmativo
+    const allDataReady = !stillMissingTalla && !stillMissingDir && !isDirOficinaType;
+    if (allDataReady && textLower.trim().length < 60 && NATURAL_CONFIRM_PHRASES.some(p => textLower.includes(p))) {
+      await supabase.from('clientes_funnelish').update({
+        confirmado: true, confirmado_at: new Date().toISOString(), estado: 'confirmado',
+      }).eq('id', pendingPedido.id);
+      await supabase.from('conversations').update({ label: 'VENTA REALIZADA' }).eq('id', from);
+      const finalMsg = '¡Gracias por tu compra, cuando lo envie te estara llegando el número de guía desde nuestro chatbot, cuyo número asociado es 3142576239, para que puedas realizarle seguimiento a tu paquete.';
+      const wamid = await sendTextMessage(from, finalMsg);
+      await saveAndSend(supabase, from, finalMsg, 'text', wamid);
       continue;
     }
 
@@ -487,7 +531,7 @@ export async function POST(req: NextRequest) {
       `Pedido: *${pendingPedido.producto}* — Valor: *${pendingPedido.valor}*\n` +
       `${missingList.length > 0
         ? `Aún falta: ${missingList.join(' y ')}. Pide SOLO eso, de forma amable y breve.`
-        : `Todos los datos están completos. Pídele que responda CONFIRMO para despachar.`
+        : `Todos los datos están completos. Pídele que confirme el pedido (puede escribir CONFIRMO, "si está bien", "confirmado" o cualquier frase afirmativa).`
       }\n` +
       `PROHIBIDO: mencionar otros productos, catálogo, precios de otros artículos.\n` +
       `Si el cliente pregunta por el envío o cuándo llega, responde brevemente y vuelve al tema.\n` +
