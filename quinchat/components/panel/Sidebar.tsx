@@ -1,8 +1,9 @@
 'use client';
 
+import Image from 'next/image';
 import { signOut } from 'next-auth/react';
 
-export type PanelSection = 'chat' | 'entrenamiento' | 'plantillas' | 'disparadores' | 'contactos' | 'integraciones' | 'ajustes' | 'manual';
+export type PanelSection = 'chat' | 'entrenamiento' | 'plantillas' | 'disparadores' | 'contactos' | 'etiquetas' | 'integraciones' | 'ajustes' | 'manual';
 
 const NAV_MAIN: { key: PanelSection; label: string; icon: string }[] = [
   { key: 'chat',          label: 'Chat',          icon: '💬' },
@@ -10,6 +11,7 @@ const NAV_MAIN: { key: PanelSection; label: string; icon: string }[] = [
   { key: 'plantillas',    label: 'Plantillas',     icon: '📋' },
   { key: 'disparadores',  label: 'Disparadores',   icon: '⚡' },
   { key: 'contactos',     label: 'Contactos',      icon: '👥' },
+  { key: 'etiquetas',     label: 'Etiquetas',      icon: '🏷️' },
   { key: 'integraciones', label: 'Integraciones',  icon: '🔗' },
   { key: 'ajustes',       label: 'Ajustes',        icon: '⚙️' },
   { key: 'manual',        label: 'Manual',         icon: '📖' },
@@ -25,27 +27,31 @@ export default function Sidebar({ userName, activeSection, onSectionChange }: Pr
   const initial = userName.charAt(0).toUpperCase() || 'U';
 
   return (
-    <aside className="w-[190px] flex flex-col bg-[#080808] border-r border-[#1C1C1C] shrink-0">
+    <aside className="w-[190px] flex flex-col bg-white border-r border-[#E8E8E8] shrink-0">
 
-      {/* Brand */}
-      <div className="px-4 py-4 border-b border-[#1C1C1C]">
-        <div className="leading-none mb-1">
-          <span className="text-[#C9A84C] font-black text-sm tracking-widest">QUIN</span>
-          <span className="text-white font-black text-sm tracking-widest">CHAT</span>
-        </div>
-        <p className="text-[10px] text-gray-600">Panel de administración</p>
+      {/* Brand — logo Agencia Quin */}
+      <div className="px-4 py-4 border-b border-[#E8E8E8]">
+        <Image
+          src="/logo-agencia-quin.png"
+          alt="Agencia Quin"
+          width={120}
+          height={48}
+          className="object-contain"
+          priority
+        />
+        <p className="text-[10px] text-[#6B6B6B] mt-1">Panel de administración</p>
       </div>
 
       {/* Account */}
-      <div className="px-3 py-3 border-b border-[#1C1C1C] flex items-center gap-2.5">
-        <div className="w-8 h-8 rounded-full bg-[#C9A84C]/20 border border-[#C9A84C]/30 flex items-center justify-center text-xs font-bold text-[#C9A84C] shrink-0">
+      <div className="px-3 py-3 border-b border-[#E8E8E8] flex items-center gap-2.5">
+        <div className="w-8 h-8 rounded-full bg-[#00A89D]/15 border border-[#00A89D]/30 flex items-center justify-center text-xs font-bold text-[#00A89D] shrink-0">
           {initial}
         </div>
         <div className="min-w-0">
-          <div className="text-xs font-semibold text-white truncate">{userName || 'KLIXMANT'}</div>
+          <div className="text-xs font-semibold text-[#0D0D0D] truncate">{userName || 'Agencia Quin'}</div>
           <div className="flex items-center gap-1 mt-0.5">
             <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
-            <span className="text-[10px] text-gray-600">Activo</span>
+            <span className="text-[10px] text-[#6B6B6B]">Activo</span>
           </div>
         </div>
       </div>
@@ -60,14 +66,14 @@ export default function Sidebar({ userName, activeSection, onSectionChange }: Pr
               onClick={() => onSectionChange(item.key)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left ${
                 active
-                  ? 'bg-[#C9A84C]/12 text-[#C9A84C] border border-[#C9A84C]/20'
-                  : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.04] border border-transparent'
+                  ? 'bg-[#00A89D]/10 text-[#00A89D] border border-[#00A89D]/20'
+                  : 'text-[#6B6B6B] hover:text-[#0D0D0D] hover:bg-[#F5F5F5] border border-transparent'
               }`}
             >
               <span className="text-base shrink-0">{item.icon}</span>
               <span className="truncate">{item.label}</span>
               {active && (
-                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[#C9A84C] shrink-0" />
+                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[#00A89D] shrink-0" />
               )}
             </button>
           );
@@ -75,10 +81,10 @@ export default function Sidebar({ userName, activeSection, onSectionChange }: Pr
       </nav>
 
       {/* Bottom */}
-      <div className="px-2 pb-4 border-t border-[#1C1C1C] pt-3">
+      <div className="px-2 pb-4 border-t border-[#E8E8E8] pt-3">
         <button
           onClick={() => signOut({ callbackUrl: '/login' })}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-600 hover:text-red-400 hover:bg-red-500/5 transition-all border border-transparent"
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-[#6B6B6B] hover:text-red-500 hover:bg-red-50 transition-all border border-transparent"
         >
           <span className="text-base shrink-0">↩</span>
           <span>Cerrar sesión</span>

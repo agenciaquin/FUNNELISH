@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sendTextMessage, sendConfirmacionTemplate } from '@/lib/whatsapp';
+import { sendTextMessage, sendConfirmacionTemplate, sendAudioByUrl } from '@/lib/whatsapp';
 import { getProductImageUrl } from '@/lib/product-catalog';
 import { createServerSupabaseClient } from '@/lib/supabase';
 
@@ -34,6 +34,36 @@ function buildMensaje(data: {
     `Correo: ${data.correo}`,
     `Talla: ${data.talla}`,
     `Nombre del Producto: ${data.producto}`,
+    `Valor a pagar: ${data.valor}`,
+    '✅ Si todo está correcto responde: CONFIRMO',
+    '✏️ Si deseas corregir algún dato, escríbelo en este chat.',
+    '🚚 Una vez confirmado, tu pedido será despachado en las próximas 24 horas.',
+  ].join('\n');
+}
+
+/** Texto que replica el cuerpo del template de Meta (para mostrar en QuinChat) */
+function buildMensajeTemplate(data: {
+  saludo: string;
+  nombre: string;
+  telefono: string;
+  direccion: string;
+  ciudad: string;
+  departamento: string;
+  correo: string;
+  talla: string;
+  producto: string;
+  valor: string;
+}): string {
+  return [
+    `Hola ${data.saludo} 😊 te saludo de klixmant Tu pedido ya está listo para despacho 🚚`,
+    `Nombre: ${data.nombre}`,
+    `Teléfono: ${data.telefono}`,
+    `Dirección: ${data.direccion}`,
+    `Ciudad: ${data.ciudad}`,
+    `Departamento: ${data.departamento}`,
+    `Correo: ${data.correo}`,
+    `Talla: ${data.talla}`,
+    `Producto: ${data.producto}`,
     `Valor a pagar: ${data.valor}`,
     '✅ Si todo está correcto responde: CONFIRMO',
     '✏️ Si deseas corregir algún dato, escríbelo en este chat.',
@@ -124,25 +154,37 @@ export async function POST(req: NextRequest) {
   // ── Send WhatsApp (solo whitelist mientras el bot está en desarrollo) ──────────
   const enWhitelist = TEST_WHITELIST.has(tel10);
   let sent = false;
+  let templateSent = false;
 
   if (enWhitelist) {
     // Intentar template primero (funciona incluso sin ventana 24h)
-    sent = await sendConfirmacionTemplate(waPhone, {
+    sent = !!(await sendConfirmacionTemplate(waPhone, {
       saludo:   firstName || nombre,
       nombre, telefono: tel10, direccion, ciudad, departamento,
       correo, talla, producto: productoNombre, valor, imageUrl,
-    });
+    }));
+    templateSent = sent;
 
     // Si el template falla (ej: aún en revisión), caer al texto plano
     if (!sent) {
       console.warn('[Funnelish] Template failed, falling back to text message');
-      sent = await sendTextMessage(waPhone, mensaje);
+      sent = !!(await sendTextMessage(waPhone, mensaje));
     }
   } else {
     console.log(`[Funnelish] Order ${referencia} → ${waPhone} | MODO PRUEBA: número no en whitelist`);
   }
 
   if (sent) {
+    // Texto a guardar en QuinChat: si se envió template, usar el texto del template;
+    // si se cayó a texto plano, usar el mensaje antiguo.
+    const mensajeAlmacenado = templateSent
+      ? buildMensajeTemplate({
+          saludo: firstName || nombre,
+          nombre, telefono: tel10, direccion, ciudad, departamento,
+          correo, talla, producto: productoNombre, valor,
+        })
+      : mensaje;
+
     // Mark wa_enviado
     await supabase
       .from('clientes_funnelish')
@@ -150,26 +192,88 @@ export async function POST(req: NextRequest) {
       .eq('telefono', tel10)
       .eq('confirmado', false);
 
-    // Upsert conversation in QuinChat
+    // Upsert conversation in QuinChat — auto-asignar etiqueta "PENDIENTE POR CONFIRMACIÓN"
     await supabase.from('conversations').upsert({
       id:                waPhone,
       contact_name:      nombre,
-      last_message:      mensaje.slice(0, 80) + '…',
+      last_message:      mensajeAlmacenado.slice(0, 80) + '…',
       last_message_time: now,
-      unread_count:      0,
+      unread_count:      1,
       bot_enabled:       true,
+      label:             'PENDIENTE POR CONFIRMACIÓN',
     }, { onConflict: 'id' });
+
+    // Store product image (so panel renders the photo just like WhatsApp does)
+    if (imageUrl && imageUrl.startsWith('http')) {
+      await supabase.from('messages').insert({
+        id:              `funnelish-img-${referencia || Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        conversation_id: waPhone,
+        content:         imageUrl,
+        role:            'assistant',
+        type:            'image',
+        created_at:      now,
+      });
+    }
 
     // Store sent message
     const msgId = `funnelish-${referencia || Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     await supabase.from('messages').insert({
       id:              msgId,
       conversation_id: waPhone,
-      content:         mensaje,
+      content:         mensajeAlmacenado,
       role:            'assistant',
       type:            'text',
       created_at:      now,
     });
+
+    // ── Auto-send audio if address mentions oficina/reclamo ──────────────────
+    const AUDIO_OFICINA_URL = 'https://bjbjqmbuzpyjvcugbusx.supabase.co/storage/v1/object/public/chat-media/audios-bot/abono-oficina.ogg';
+    const dirLower = direccion.toLowerCase();
+    const isOficinaDir = dirLower.includes('oficina')
+      || dirLower.includes('reclamo')
+      || dirLower.includes('interrapidisimo')
+      || dirLower.includes('interrapidísimo');
+
+    if (isOficinaDir) {
+      const audioWamid = await sendAudioByUrl(waPhone, AUDIO_OFICINA_URL);
+      if (audioWamid) {
+        await supabase.from('messages').insert({
+          id:              `funnelish-audio-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          conversation_id: waPhone,
+          content:         AUDIO_OFICINA_URL,
+          role:            'assistant',
+          type:            'audio',
+          whatsapp_id:     audioWamid,
+          created_at:      new Date().toISOString(),
+        });
+      }
+    }
+
+    // ── Ask for missing fields ────────────────────────────────────────────────
+    const missing: string[] = [];
+    if (!direccion || direccion === '—') missing.push('dirección completa de envío');
+    if (!ciudad    || ciudad    === '—') missing.push('ciudad de envío');
+    if (!departamento || departamento === '—') missing.push('departamento');
+    if (talla === 'Por confirmar') missing.push('talla del buzo (XS, S, M, L, XL, XXL, XXXL)');
+
+    if (missing.length > 0) {
+      const missingMsg = missing.length === 1
+        ? `📋 ¿Me confirmas tu ${missing[0]}?`
+        : `📋 Para completar tu pedido necesito confirmar:\n${missing.map(f => `• Tu ${f}`).join('\n')}`;
+
+      const missingWamid = await sendTextMessage(waPhone, missingMsg);
+      if (missingWamid) {
+        await supabase.from('messages').insert({
+          id:              `funnelish-missing-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          conversation_id: waPhone,
+          content:         missingMsg,
+          role:            'assistant',
+          type:            'text',
+          whatsapp_id:     missingWamid,
+          created_at:      new Date().toISOString(),
+        });
+      }
+    }
   }
 
   console.log(`[Funnelish] Order ${referencia} → ${waPhone} | sent=${sent} | img=${imageUrl}`);

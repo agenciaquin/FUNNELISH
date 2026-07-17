@@ -14,6 +14,7 @@ const PlantillasPanel    = dynamic(() => import('./PlantillasPanel'),    { ssr: 
 const DisparadoresPanel  = dynamic(() => import('./DisparadoresPanel'),  { ssr: false });
 const AjustesPanel       = dynamic(() => import('./AjustesPanel'),       { ssr: false });
 const ContactosPanel     = dynamic(() => import('./ContactosPanel'),     { ssr: false });
+const EtiquetasPanel     = dynamic(() => import('./EtiquetasPanel'),     { ssr: false });
 const IntegracionesPanel = dynamic(() => import('./IntegracionesPanel'), { ssr: false });
 const ManualPanel        = dynamic(() => import('./ManualPanel'),        { ssr: false });
 
@@ -107,7 +108,7 @@ export default function WhatsAppPanel({ userName }: Props) {
   const selectedConversation = conversations.find(c => c.id === selectedId) ?? null;
 
   return (
-    <div className="flex h-screen bg-[#0A0A0A] text-white overflow-hidden">
+    <div className="flex h-screen bg-[#FAF9F6] overflow-hidden">
       <Sidebar
         userName={userName}
         activeSection={activeSection}
@@ -137,7 +138,8 @@ export default function WhatsAppPanel({ userName }: Props) {
       {activeSection === 'entrenamiento' && <EntrenamientoPanel />}
       {activeSection === 'plantillas'    && <PlantillasPanel />}
       {activeSection === 'disparadores'  && <DisparadoresPanel />}
-      {activeSection === 'contactos'      && <ContactosPanel />}
+      {activeSection === 'contactos'     && <ContactosPanel />}
+      {activeSection === 'etiquetas'     && <EtiquetasPanel />}
       {activeSection === 'integraciones' && <IntegracionesPanel />}
       {activeSection === 'ajustes'       && <AjustesPanel />}
       {activeSection === 'manual'        && <ManualPanel />}

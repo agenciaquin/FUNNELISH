@@ -1,17 +1,84 @@
 const WA_API_URL = 'https://graph.facebook.com/v19.0';
 
+// ── Upload media to Meta and get media_id ─────────────────────────────────────
+export async function uploadWhatsAppMedia(
+  buffer: Buffer,
+  mimeType: string,
+  filename: string,
+): Promise<string | null> {
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const token = process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!phoneNumberId || !token) return null;
+
+  const form = new FormData();
+  form.append('messaging_product', 'whatsapp');
+  form.append('type', mimeType);
+  form.append('file', new Blob([Uint8Array.from(buffer)], { type: mimeType }), filename);
+
+  try {
+    const res = await fetch(`${WA_API_URL}/${phoneNumberId}/media`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    if (!res.ok) { console.error('[WhatsApp] uploadMedia failed:', await res.text()); return null; }
+    const data = await res.json();
+    return data.id as string;
+  } catch (e) {
+    console.error('[WhatsApp] uploadMedia network error:', e);
+    return null;
+  }
+}
+
+// ── Send a media message using a media_id ─────────────────────────────────────
+// Returns: WhatsApp wamid string on success, null on failure
+export async function sendMediaMessage(
+  to: string,
+  mediaId: string,
+  type: 'image' | 'document' | 'audio' | 'video',
+  options: { caption?: string; filename?: string } = {},
+): Promise<string | null> {
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const token = process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!phoneNumberId || !token) return null;
+
+  const mediaObj: Record<string, string> = { id: mediaId };
+  if (options.caption && (type === 'image' || type === 'document')) mediaObj.caption = options.caption;
+  if (options.filename && type === 'document') mediaObj.filename = options.filename;
+
+  try {
+    const res = await fetch(`${WA_API_URL}/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type,
+        [type]: mediaObj,
+      }),
+    });
+    if (!res.ok) { console.error('[WhatsApp] sendMedia failed:', await res.text()); return null; }
+    const data = await res.json();
+    return (data.messages?.[0]?.id as string) ?? null;
+  } catch (e) {
+    console.error('[WhatsApp] sendMedia network error:', e);
+    return null;
+  }
+}
+
 /**
  * Sends a plain text message via WhatsApp Cloud API.
- * Only works within the 24h customer-initiated window.
+ * Returns: WhatsApp wamid string on success, null on failure.
  * Server-only — never call from browser code.
  */
-export async function sendTextMessage(to: string, text: string): Promise<boolean> {
+export async function sendTextMessage(to: string, text: string): Promise<string | null> {
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
 
   if (!phoneNumberId || !token) {
     console.error('[WhatsApp] Missing WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_ACCESS_TOKEN');
-    return false;
+    return null;
   }
 
   try {
@@ -33,12 +100,68 @@ export async function sendTextMessage(to: string, text: string): Promise<boolean
     if (!res.ok) {
       const err = await res.text();
       console.error('[WhatsApp] sendText failed:', err);
+      return null;
     }
 
-    return res.ok;
+    const data = await res.json();
+    return (data.messages?.[0]?.id as string) ?? null;
   } catch (e) {
     console.error('[WhatsApp] Network error (sendText):', e);
-    return false;
+    return null;
+  }
+}
+
+// ── Send image by public URL (no media_id required) ──────────────────────────
+export async function sendImageByUrl(to: string, imageUrl: string, caption?: string): Promise<string | null> {
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const token = process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!phoneNumberId || !token) return null;
+  try {
+    const imageObj: Record<string, string> = { link: imageUrl };
+    if (caption) imageObj.caption = caption;
+    const res = await fetch(`${WA_API_URL}/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'image',
+        image: imageObj,
+      }),
+    });
+    if (!res.ok) { console.error('[WhatsApp] sendImageByUrl failed:', await res.text()); return null; }
+    const data = await res.json();
+    return (data.messages?.[0]?.id as string) ?? null;
+  } catch (e) {
+    console.error('[WhatsApp] sendImageByUrl network error:', e);
+    return null;
+  }
+}
+
+// ── Send audio by public URL (no media_id required) ──────────────────────────
+export async function sendAudioByUrl(to: string, audioUrl: string): Promise<string | null> {
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const token = process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!phoneNumberId || !token) return null;
+  try {
+    const res = await fetch(`${WA_API_URL}/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'audio',
+        audio: { link: audioUrl },
+      }),
+    });
+    if (!res.ok) { console.error('[WhatsApp] sendAudioByUrl failed:', await res.text()); return null; }
+    const data = await res.json();
+    return (data.messages?.[0]?.id as string) ?? null;
+  } catch (e) {
+    console.error('[WhatsApp] sendAudioByUrl network error:', e);
+    return null;
   }
 }
 

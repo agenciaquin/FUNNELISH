@@ -27,6 +27,9 @@ export interface Message {
   // 'user'      = incoming from WhatsApp customer
   // 'assistant' = auto-reply by Claude bot
   // 'agent'     = manual reply sent from this panel
-  type: string; // 'text' | 'image' | 'audio' etc.
+  type: string; // 'text' | 'image' | 'audio' | 'video' | 'reaction' etc.
   created_at: string;
+  media_url?: string;    // ephemeral object URL for outgoing media (in-session only)
+  whatsapp_id?: string;  // WhatsApp wamid — used to match reply context
+  reply_to?: string;     // content/URL of the message being quoted (if any)
 }

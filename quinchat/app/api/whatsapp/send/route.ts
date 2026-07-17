@@ -29,12 +29,12 @@ export async function POST(req: NextRequest) {
   }
 
   // Send via WhatsApp Cloud API
-  const sent = await sendTextMessage(to, message.trim());
-  if (!sent) {
+  const wamid = await sendTextMessage(to, message.trim());
+  if (!wamid) {
     return NextResponse.json({ error: 'WhatsApp API error' }, { status: 500 });
   }
 
-  // Store in DB
+  // Store in DB (include whatsapp_id so client replies can be matched)
   const supabase = createServerSupabaseClient();
   const msgId = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
     content: message.trim(),
     role: 'agent',
     type: 'text',
+    whatsapp_id: wamid,
     created_at: new Date().toISOString(),
   });
 

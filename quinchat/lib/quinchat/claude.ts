@@ -44,7 +44,7 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
-    system: getSystemPrompt(req.tenantId),
+    system: req.systemPrompt ?? getSystemPrompt(req.tenantId),
     messages: messages.map((m) => ({
       role: m.role,
       content: m.content,

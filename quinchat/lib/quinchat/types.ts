@@ -18,6 +18,8 @@ export interface ChatRequest {
   messages: Pick<ChatMessage, 'role' | 'content'>[];
   /** Para multi-tenant futuro: identifica al negocio/cliente */
   tenantId?: string;
+  /** System prompt override (cargado desde bot_config en Supabase) */
+  systemPrompt?: string;
 }
 
 /** Respuesta exitosa del API route */

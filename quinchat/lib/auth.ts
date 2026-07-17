@@ -1,6 +1,6 @@
 // =====================================================
 // QUINCHAT — Configuración de NextAuth
-// Usuarios definidos con contraseñas en variables de entorno
+// Login con correo electrónico + contraseña
 // =====================================================
 
 import type { NextAuthOptions } from 'next-auth';
@@ -10,20 +10,14 @@ const USERS = [
   {
     id: '1',
     name: 'Agencia Quin',
-    username: 'agencia-quin',
+    email: 'agenciaquin43@gmail.com',
     passwordEnv: 'USER_AGENCIA_QUIN_PASSWORD',
   },
   {
     id: '2',
     name: 'Gerencia',
-    username: 'gerencia',
+    email: 'gerenciaquin7@gmail.com',
     passwordEnv: 'USER_GERENCIA_PASSWORD',
-  },
-  {
-    id: '3',
-    name: 'Genérico Quin',
-    username: 'generico-quin',
-    passwordEnv: 'USER_GENERICO_QUIN_PASSWORD',
   },
 ];
 
@@ -32,26 +26,26 @@ export const authOptions: NextAuthOptions = {
     CredentialsProvider({
       name: 'Credentials',
       credentials: {
-        username: { label: 'Usuario', type: 'text' },
+        email:    { label: 'Correo',     type: 'email'    },
         password: { label: 'Contraseña', type: 'password' },
       },
       async authorize(credentials) {
-        if (!credentials?.username || !credentials?.password) return null;
+        if (!credentials?.email || !credentials?.password) return null;
 
         const user = USERS.find(
-          (u) => u.username === credentials.username.toLowerCase().trim()
+          u => u.email === credentials.email.toLowerCase().trim()
         );
         if (!user) return null;
 
         const expectedPassword = process.env[user.passwordEnv];
         if (!expectedPassword) {
-          console.error(`[AUTH] Contraseña no configurada para ${user.username}`);
+          console.error(`[AUTH] Contraseña no configurada para ${user.email}`);
           return null;
         }
 
         if (credentials.password !== expectedPassword) return null;
 
-        return { id: user.id, name: user.name };
+        return { id: user.id, name: user.name, email: user.email };
       },
     }),
   ],
@@ -65,11 +59,11 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
   callbacks: {
     async jwt({ token, user }) {
-      if (user) token.name = user.name;
+      if (user) { token.name = user.name; token.email = user.email; }
       return token;
     },
     async session({ session, token }) {
-      if (token?.name) session.user = { name: token.name as string };
+      if (token?.name) session.user = { name: token.name as string, email: token.email as string };
       return session;
     },
   },
