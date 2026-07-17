@@ -201,7 +201,7 @@ export async function sendConfirmacionTemplate(
 
   if (!phoneNumberId || !token) {
     console.error('[WhatsApp] Missing credentials for template send');
-    return false;
+    return null;
   }
 
   const payload = {
