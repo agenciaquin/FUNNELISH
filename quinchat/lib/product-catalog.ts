@@ -4,7 +4,7 @@
  * Agregar aquí cada producto nuevo con su URL de imagen.
  */
 
-const BASE = 'https://agenciaquin.github.io/FUNNELISH/img/';
+const BASE = 'https://raw.githubusercontent.com/agenciaquin/FUNNELISH/master/img/';
 
 /** URL de imagen cuando el producto no está en el catálogo */
 export const FALLBACK_IMAGE = `${BASE}placeholder.png`;
