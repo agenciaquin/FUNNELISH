@@ -1,507 +1,520 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { sendTextMessage, sendAudioByUrl, sendImageByUrl } from '@/lib/whatsapp';
-import { getProductImageUrl, FALLBACK_IMAGE } from '@/lib/product-catalog';
+import { PRODUCT_NAMES, FALLBACK_IMAGE, getProductImageUrl } from '@/lib/product-catalog';
 import { chat } from '@/lib/quinchat/claude';
 import type { ChatRequest } from '@/lib/quinchat/types';
 
-/** Fetch WhatsApp media URL from Meta (expires after ~5 min, good for real-time display) */
-async function getWhatsAppMediaUrl(mediaId: string): Promise<string | null> {
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-  if (!token) return null;
-  try {
-    const res = await fetch(`https://graph.facebook.com/v19.0/${mediaId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return (data.url as string) ?? null;
-  } catch {
-    return null;
+// ─── Helpers de dirección ─────────────────────────────────────────────────────
+
+/**
+ * Valida si una cadena es una dirección de domicilio completa.
+ * Reglas definidas por el equipo Klixmant.
+ */
+function isCompleteAddress(addr: string | null | undefined): boolean {
+  if (!addr || addr.trim() === '' || addr === '—') return false;
+  const a = addr.toLowerCase().trim();
+  if (a.length < 5) return false;
+
+  // Calle / Carrera / Diagonal / Transversal / Avenida + número + # + número
+  if (/\b(calle|carrera|diagonal|transversal|avenida|cl\b|cra\b|cr\b|kr\b|diag\b|av\b|cll\b)\s*\d+\s*[#\-]\s*\d/.test(a)) return true;
+
+  // Manzana + Casa
+  if (/\b(manzana|mz\.?)\b.{0,40}\b(casa|cs\.?)\b/.test(a)) return true;
+
+  // Conjunto + Casa o Apartamento
+  if (/\b(conjunto|conj\.?)\b.{0,60}\b(casa|cs\.?|apartamento|apto\.?|apt\.?)\b/.test(a)) return true;
+
+  // Edificio + Apartamento
+  if (/\b(edificio|edif\.?)\b.{0,40}\b(apartamento|apto\.?|apt\.?)\b/.test(a)) return true;
+
+  // Vereda + Finca
+  if (/\b(vereda|vda\.?)\b.{0,40}\b(finca)\b/.test(a)) return true;
+
+  return false;
+}
+
+// ─── Helpers de catálogo para cambio de color ─────────────────────────────────
+
+type ProductFamily = 'PORTUGAL' | 'ARGENTINA' | 'CO_FRANJA' | 'NEW_YORK' | 'RETRO' | 'BM_ELITE' | 'PROM' | '';
+
+function getProductFamily(productName: string): ProductFamily {
+  const n = productName.toUpperCase();
+  if (n.startsWith('PORTUGAL'))                           return 'PORTUGAL';
+  if (n.startsWith('ARGENTINA'))                          return 'ARGENTINA';
+  if (n.includes('CO FRANJA'))                            return 'CO_FRANJA';
+  if (n.includes('NEW YORK'))                             return 'NEW_YORK';
+  if (n.startsWith('RETRO'))                              return 'RETRO';
+  if (n.startsWith('BM'))                                 return 'BM_ELITE';
+  if (n.startsWith('PROM'))                               return 'PROM';
+  return '';
+}
+
+function getProductsInFamily(family: ProductFamily): string[] {
+  return PRODUCT_NAMES.filter(name => {
+    const n = name.toUpperCase();
+    switch (family) {
+      case 'PORTUGAL':   return n.startsWith('PORTUGAL');
+      case 'ARGENTINA':  return n.startsWith('ARGENTINA');
+      case 'CO_FRANJA':  return n.includes('CO FRANJA');
+      case 'NEW_YORK':   return n.includes('NEW YORK');
+      case 'RETRO':      return n.startsWith('RETRO');
+      case 'BM_ELITE':   return n.startsWith('BM');
+      case 'PROM':       return n.startsWith('PROM');
+      default:           return false;
+    }
+  });
+}
+
+function familyDisplayName(family: ProductFamily): string {
+  const map: Record<string, string> = {
+    PORTUGAL: 'Portugal', ARGENTINA: 'Argentina', CO_FRANJA: 'Colombia',
+    NEW_YORK: 'New York', RETRO: 'Retro', BM_ELITE: 'BM Élite', PROM: 'Prom',
+  };
+  return map[family] ?? family;
+}
+
+/** Detecta el color mencionado en el texto y busca un producto de esa familia con ese color. */
+function findProductByColor(family: ProductFamily, colorText: string): string | null {
+  const products = getProductsInFamily(family);
+  if (!products.length) return null;
+
+  const cLower = colorText.toLowerCase();
+
+  // Mapeo de términos del cliente → palabras clave en el nombre del producto
+  const colorMap: Array<[string[], string[]]> = [
+    [['azul oscuro', 'oscuro'],          ['AZUL OSCURO']],
+    [['rojo', 'red'],                    ['ROJO']],
+    [['negro', 'negr', 'black'],         ['NEGRO']],
+    [['azul', 'blue'],                   ['AZUL']],
+    [['blanco marfil', 'marfil'],        ['BLANCO MARFIL', 'MARFIL']],
+    [['blanco', 'white'],                ['BLANCO']],
+    [['amarillo', 'yellow'],             ['AMARILLO']],
+    [['beige'],                          ['BEIGE']],
+    [['verde'],                          ['VERDE']],
+    [['gris', 'grey', 'gray'],           ['GRIS']],
+  ];
+
+  for (const [inputs, keywords] of colorMap) {
+    if (inputs.some(c => cLower.includes(c))) {
+      const match = products.find(p => keywords.some(kw => p.toUpperCase().includes(kw)));
+      if (match) return match;
+    }
+  }
+
+  // Búsqueda genérica por palabras del texto
+  const words = colorText.toUpperCase().split(/\s+/).filter(w => w.length >= 4);
+  for (const p of products) {
+    if (words.some(w => p.toUpperCase().includes(w))) return p;
+  }
+
+  return null;
+}
+
+/** Detecta si el texto menciona un color */
+const COLOR_NAMES = ['azul oscuro', 'rojo', 'negro', 'azul', 'blanco marfil', 'marfil', 'blanco', 'amarillo', 'beige', 'verde', 'gris'];
+function detectColorInText(textLower: string): string | null {
+  return COLOR_NAMES.find(c => textLower.includes(c)) ?? null;
+}
+
+// ─── Helper para guardar mensajes ────────────────────────────────────────────
+
+async function saveAndSend(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  from: string,
+  content: string,
+  type: 'text' | 'image' = 'text',
+  wamid?: string | null,
+) {
+  const now = new Date().toISOString();
+  await supabase.from('messages').insert({
+    id: `bot-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    conversation_id: from,
+    content,
+    role: 'assistant',
+    type,
+    whatsapp_id: wamid ?? undefined,
+    created_at: now,
+  });
+  if (type === 'text') {
+    await supabase.from('conversations').update({
+      last_message: content.slice(0, 100),
+      last_message_time: now,
+    }).eq('id', from);
   }
 }
 
-// ─── GET — Meta webhook verification challenge ─────────────────────────────
+// ─── GET — verificación Meta ──────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
-  const mode = params.get('hub.mode');
-  const token = params.get('hub.verify_token');
+  const mode      = params.get('hub.mode');
+  const token     = params.get('hub.verify_token');
   const challenge = params.get('hub.challenge');
 
   if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
     console.log('[Webhook] Meta verification OK');
     return new NextResponse(challenge, { status: 200 });
   }
-
-  console.warn('[Webhook] Verification failed — wrong token?');
   return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 }
 
-// ─── POST — Receive incoming WhatsApp messages ─────────────────────────────
+// ─── POST — Mensajes entrantes WhatsApp ───────────────────────────────────────
 export async function POST(req: NextRequest) {
-  // Always respond 200 fast; Meta retries if we take >20s
   let body: any;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ status: 'ok' });
-  }
+  try { body = await req.json(); } catch { return NextResponse.json({ status: 'ok' }); }
 
-  const entry = body?.entry?.[0];
-  const change = entry?.changes?.[0];
-  const value = change?.value;
+  const value = body?.entry?.[0]?.changes?.[0]?.value;
+  if (!value?.messages?.length) return NextResponse.json({ status: 'ok' });
 
-  if (!value?.messages?.length) {
-    return NextResponse.json({ status: 'ok' });
-  }
-
-  const supabase = createServerSupabaseClient();
+  const supabase      = createServerSupabaseClient();
+  const contactName   = value.contacts?.[0]?.profile?.name ?? 'Desconocido';
 
   for (const msg of value.messages) {
-    const from: string = msg.from;
-    const contactName: string = value.contacts?.[0]?.profile?.name ?? from;
-    const msgId: string = msg.id;
+    const from  = msg.from as string;
+    const msgId = msg.id  as string;
 
-    // ── Reacciones del cliente ──────────────────────────────────────────────
-    if (msg.type === 'reaction') {
-      const emoji: string = msg.reaction?.emoji ?? '👍';
-      const { data: existing } = await supabase
-        .from('conversations')
-        .select('unread_count')
-        .eq('id', from)
-        .maybeSingle();
-
-      if (existing) {
-        await supabase.from('conversations').update({
-          last_message: `Reaccionó: ${emoji}`,
-          last_message_time: new Date().toISOString(),
-          unread_count: (existing.unread_count ?? 0) + 1,
-        }).eq('id', from);
-      }
-      await supabase.from('messages').upsert({
-        id: msgId,
-        conversation_id: from,
-        content: emoji,
-        role: 'user',
-        type: 'reaction',
-        created_at: new Date().toISOString(),
-      }, { onConflict: 'id' });
-      continue; // skip bot for reactions
-    }
-
-    // ── Media entrante del cliente (imagen / audio / video / documento) ──────
-    if (msg.type === 'image' || msg.type === 'video' || msg.type === 'audio' || msg.type === 'document') {
-      const mediaData = msg[msg.type as 'image' | 'video' | 'audio' | 'document'] as { id?: string; caption?: string; mime_type?: string } | undefined;
-      const mediaId   = mediaData?.id;
-      const caption   = mediaData?.caption ?? '';
-      const metaMime  = mediaData?.mime_type ?? 'application/octet-stream';
-
-      const fallbacks: Record<string, string> = {
-        image: '📸 Imagen recibida',
-        video: '🎬 Video recibido',
-        audio: '🎵 Audio recibido',
-        document: '📎 Documento recibido',
-      };
-      const displayText = caption || fallbacks[msg.type] || '📎 Archivo';
-
-      // Fetch temporary Meta URL, then download bytes and re-upload to Supabase Storage
-      let permanentUrl: string | null = null;
-      if (mediaId && (msg.type === 'image' || msg.type === 'audio' || msg.type === 'video')) {
-        try {
-          const metaUrl = await getWhatsAppMediaUrl(mediaId);
-          if (metaUrl) {
-            const token = process.env.WHATSAPP_ACCESS_TOKEN!;
-            const dlRes = await fetch(metaUrl, { headers: { Authorization: `Bearer ${token}` } });
-            if (dlRes.ok) {
-              const dlBuffer = Buffer.from(await dlRes.arrayBuffer());
-              const mime = dlRes.headers.get('content-type') ?? metaMime;
-              const ext  = mime.split('/')[1]?.split(';')[0]?.replace('jpeg', 'jpg') ?? 'bin';
-              const key  = `${from}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
-              const { error: upErr } = await supabase.storage
-                .from('chat-media')
-                .upload(key, dlBuffer, { contentType: mime, upsert: false });
-              if (!upErr) {
-                const { data: urlData } = supabase.storage.from('chat-media').getPublicUrl(key);
-                permanentUrl = urlData.publicUrl;
-              }
-            }
-          }
-        } catch (e) {
-          console.warn('[Webhook] media re-upload failed:', e);
-        }
-      }
-
-      const { data: existing } = await supabase
-        .from('conversations')
-        .select('unread_count')
-        .eq('id', from)
-        .maybeSingle();
-
-      if (existing) {
-        await supabase.from('conversations').update({
-          contact_name: contactName,
-          last_message: displayText,
-          last_message_time: new Date().toISOString(),
-          unread_count: (existing.unread_count ?? 0) + 1,
-        }).eq('id', from);
-      } else {
-        await supabase.from('conversations').insert({
-          id: from,
-          contact_name: contactName,
-          last_message: displayText,
-          last_message_time: new Date().toISOString(),
-          unread_count: 1,
-          bot_enabled: true,
-        });
-      }
-
-      await supabase.from('messages').upsert({
-        id:              msgId,
-        conversation_id: from,
-        // Permanent Supabase URL → panel renders <img>/<audio> forever
-        content:         permanentUrl ?? displayText,
-        role:            'user',
-        type:            msg.type,
-        created_at:      new Date().toISOString(),
-      }, { onConflict: 'id' });
-      continue; // skip bot for media
-    }
-
-    // ── Texto ────────────────────────────────────────────────────────────────
-    if (msg.type !== 'text') continue;
-
-    const text: string = msg.text?.body ?? '';
-    if (!text.trim()) continue; // skip empty messages
-
-    // ── 1. Upsert conversation ──
-    const { data: existing } = await supabase
-      .from('conversations')
-      .select('unread_count, bot_enabled')
-      .eq('id', from)
-      .maybeSingle();
-
-    if (existing) {
-      const { error: updErr } = await supabase.from('conversations').update({
-        contact_name: contactName,
-        last_message: text,
-        last_message_time: new Date().toISOString(),
-        unread_count: (existing.unread_count ?? 0) + 1,
-      }).eq('id', from);
-      if (updErr) console.error('[Supabase] update conversation:', updErr.message);
-    } else {
-      const { error: insErr } = await supabase.from('conversations').insert({
-        id: from,
-        contact_name: contactName,
-        last_message: text,
-        last_message_time: new Date().toISOString(),
-        unread_count: 1,
-        bot_enabled: true,
-      });
-      if (insErr) console.error('[Supabase] insert conversation:', insErr.message);
-    }
-
-    // ── 2. Resolve reply context (quoted message) ──
-    let replyToContent: string | null = null;
-    if (msg.context?.id) {
-      // Look up the quoted message by its WhatsApp wamid (stored in whatsapp_id)
-      // or directly by id (for messages received from clients)
-      const { data: quotedMsg } = await supabase
-        .from('messages')
-        .select('content, type')
-        .or(`whatsapp_id.eq.${msg.context.id},id.eq.${msg.context.id}`)
-        .maybeSingle();
-
-      if (quotedMsg) {
-        // If it's an image with a URL → keep URL so we can show thumbnail
-        if ((quotedMsg.type === 'image' || quotedMsg.type === 'video') && quotedMsg.content.startsWith('http')) {
-          replyToContent = quotedMsg.content;
-        } else if (quotedMsg.type === 'image')    replyToContent = '🖼️ Foto';
-        else if (quotedMsg.type === 'audio')      replyToContent = '🎵 Audio';
-        else if (quotedMsg.type === 'video')      replyToContent = '🎬 Video';
-        else if (quotedMsg.type === 'document')   replyToContent = '📎 Documento';
-        else replyToContent = quotedMsg.content;
-      } else {
-        replyToContent = '💬'; // message not found in DB (e.g. older than history)
-      }
-    }
-
-    // ── 3. Store incoming message (idempotent) ──
-    const { error: msgErr } = await supabase.from('messages').upsert({
-      id: msgId,
-      conversation_id: from,
-      content: text,
-      role: 'user',
-      type: 'text',
-      reply_to: replyToContent,
-      created_at: new Date().toISOString(),
-    }, { onConflict: 'id' });
-    if (msgErr) console.error('[Supabase] upsert message:', msgErr.message);
-
-    // ── 3. Check if bot is active for this conversation ──
-    const botEnabled = existing ? (existing.bot_enabled ?? true) : true;
-    if (!botEnabled) continue;
-
-    // ── 3b. ABONO OFICINA / MUNICIPIO — auto-send audio when client asks for office pickup ──
-    const AUDIO_OFICINA_URL  = 'https://bjbjqmbuzpyjvcugbusx.supabase.co/storage/v1/object/public/chat-media/audios-bot/abono-oficina.ogg';
-    const AUDIO_MUNICIPIO_URL = 'https://bjbjqmbuzpyjvcugbusx.supabase.co/storage/v1/object/public/chat-media/audios-bot/abono-municipio.ogg';
-
-    const textLower = text.toLowerCase();
-    const isOficina = textLower.includes('oficina')
-      || textLower.includes('reclamar')
-      || textLower.includes('interrapidisimo')
-      || textLower.includes('interrapidísimo');
-    const isMunicipio = textLower.includes('no llega contra entrega')
-      || textLower.includes('no hay contra entrega')
-      || textLower.includes('zona rural');
-
-    if (isOficina || isMunicipio) {
-      const audioUrl = isOficina ? AUDIO_OFICINA_URL : AUDIO_MUNICIPIO_URL;
-      const audioLabel = isOficina ? '🎵 Audio abono oficina' : '🎵 Audio abono municipio';
-      const now2 = new Date().toISOString();
-
-      // Check if audio was already sent in this conversation
-      const { data: existingAudio } = await supabase
-        .from('messages')
-        .select('id')
-        .eq('conversation_id', from)
-        .eq('type', 'audio')
-        .eq('content', audioUrl)
-        .maybeSingle();
-
-      if (!existingAudio) {
-        // First time — send the audio
-        const audioWamid = await sendAudioByUrl(from, audioUrl);
-        if (audioWamid) {
-          await supabase.from('messages').insert({
-            id:              `bot-audio-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            conversation_id: from,
-            content:         audioUrl,
-            role:            'assistant',
-            type:            'audio',
-            whatsapp_id:     audioWamid,
-            created_at:      now2,
-          });
-          await supabase.from('conversations').update({
-            last_message:      audioLabel,
-            last_message_time: now2,
-          }).eq('id', from);
-        }
-      } else {
-        // Audio already sent — respond with personalized explanation text
-        const explicacion = `Te entiendo perfectamente 😊 Si dependiera de mí te lo enviamos sin abono, pero es una política del área de despacho — si el pedido pasa sin el abono ellos lo cancelan y no lo despachan. Los $5.000 son solo para que no sientas inseguridad; no ganaríamos nada quedándonos con eso y dañando nuestra reputación. Cualquier cosita me avisas. ¿Listo? 🙌`;
-        const expWamid = await sendTextMessage(from, explicacion);
-        if (expWamid) {
-          await supabase.from('messages').insert({
-            id:              `bot-exp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            conversation_id: from,
-            content:         explicacion,
-            role:            'assistant',
-            type:            'text',
-            whatsapp_id:     expWamid,
-            created_at:      now2,
-          });
-          await supabase.from('conversations').update({
-            last_message:      explicacion.slice(0, 80) + '…',
-            last_message_time: now2,
-          }).eq('id', from);
-        }
-      }
-      continue; // skip Claude for oficina triggers
-    }
-
-    // ── 3c. CONFIRMO detection — auto-confirm pedido from ConfirmaYa ──
-    const textClean = text.trim().toUpperCase();
-    const isConfirmo = textClean === 'CONFIRMO'
-      || textClean.startsWith('CONFIRMO ')
-      || textClean.startsWith('SI CONFIRMO')
-      || textClean === 'SI'
-      || textClean === 'SÍ'
-      || textClean === 'CONFIRMO ✅'
-      || textClean === '✅ CONFIRMO';
-
-    if (isConfirmo) {
-      // Find the most recent pending pedido for this phone
-      const tel10 = from.replace(/^57/, '').slice(-10);
-      const { data: pedido } = await supabase
+    // ── Imagen entrante — detección de abono ─────────────────────────────────
+    if (msg.type === 'image') {
+      const tel10Media = from.replace(/^57/, '').slice(-10);
+      const { data: pedidoMedia } = await supabase
         .from('clientes_funnelish')
-        .select('id, nombre, producto, talla, direccion, ciudad, departamento')
-        .eq('telefono', tel10)
+        .select('id, producto')
+        .eq('telefono', tel10Media)
         .eq('wa_enviado', true)
         .eq('confirmado', false)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      // ── Check for missing data before confirming ──────────────────────────
-      if (pedido) {
-        const missingBeforeConfirm: string[] = [];
-        if (!pedido.talla || pedido.talla === 'Por confirmar')
-          missingBeforeConfirm.push('talla del buzo (XS, S, M, L, XL, XXL, XXXL)');
-        if (!pedido.direccion || pedido.direccion === '—')
-          missingBeforeConfirm.push('dirección completa de envío');
-        if (!pedido.ciudad || pedido.ciudad === '—')
-          missingBeforeConfirm.push('ciudad de envío');
-        if (!pedido.departamento || pedido.departamento === '—')
-          missingBeforeConfirm.push('departamento');
-
-        if (missingBeforeConfirm.length > 0) {
-          // Block confirmation — re-ask for missing data
-          const reaskMsg = missingBeforeConfirm.length === 1
-            ? `Antes de confirmar necesito que me indiques tu ${missingBeforeConfirm[0]} 📋`
-            : `Antes de confirmar necesito que me indiques:\n${missingBeforeConfirm.map(f => `• Tu ${f}`).join('\n')}`;
-
-          const reaskWamid = await sendTextMessage(from, reaskMsg);
-          if (reaskWamid) {
-            const nowR = new Date().toISOString();
-            await supabase.from('messages').insert({
-              id:              `bot-reask-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-              conversation_id: from,
-              content:         reaskMsg,
-              role:            'assistant',
-              type:            'text',
-              whatsapp_id:     reaskWamid,
-              created_at:      nowR,
-            });
-            await supabase.from('conversations').update({
-              last_message:      reaskMsg.slice(0, 80),
-              last_message_time: nowR,
-            }).eq('id', from);
-          }
-          continue; // don't confirm yet
-        }
-
-        // All data complete — mark as confirmed
-        await supabase.from('clientes_funnelish').update({
-          confirmado:    true,
-          confirmado_at: new Date().toISOString(),
-          estado:        'confirmado',
-        }).eq('id', pedido.id);
-
-        // Update conversation label → VENTA REALIZADA
-        await supabase.from('conversations').update({
-          label: 'VENTA REALIZADA',
-        }).eq('id', from);
+      if (pedidoMedia) {
+        await supabase.from('conversations').update({ label: 'ABONO POR VERIFICAR' }).eq('id', from);
+        const ack = `✅ ¡Comprobante recibido! El equipo lo va a verificar ahora mismo.\n\n🚚 En cuanto confirmen el abono, despachamos tu *${pedidoMedia.producto}*. Te avisamos por aquí. Gracias por tu paciencia 😊`;
+        const ackWamid = await sendTextMessage(from, ack);
+        await saveAndSend(supabase, from, ack, 'text', ackWamid);
       }
-
-      // Send fixed confirmation reply (skip Claude)
-      const confirmReply = '✅ ¡Perfecto! Tu pedido ha sido *confirmado*. Lo despacharemos en las próximas 24 horas. ¡Gracias por tu compra! 🚚✨';
-      const confirmWamid = await sendTextMessage(from, confirmReply);
-      if (confirmWamid) {
-        const replyId = `bot-confirm-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-        await supabase.from('messages').insert({
-          id:              replyId,
-          conversation_id: from,
-          content:         confirmReply,
-          role:            'assistant',
-          type:            'text',
-          whatsapp_id:     confirmWamid,
-          created_at:      new Date().toISOString(),
-        });
-        await supabase.from('conversations').update({
-          last_message:      confirmReply,
-          last_message_time: new Date().toISOString(),
-        }).eq('id', from);
-      }
-      continue; // skip Claude for CONFIRMO
-    }
-
-    // ── 4. Build context from recent history ──
-    const { data: history } = await supabase
-      .from('messages')
-      .select('content, role')
-      .eq('conversation_id', from)
-      .order('created_at', { ascending: true })
-      .limit(20);
-
-    // Load system prompt from bot_config (set via Entrenamiento panel)
-    const { data: botCfg } = await supabase
-      .from('bot_config')
-      .select('value')
-      .eq('key', 'system_prompt')
-      .maybeSingle();
-    const activeSystemPrompt = botCfg?.value ?? undefined;
-
-    const chatHistory: ChatRequest['messages'] = (history ?? [])
-      .filter((m: any) => m.content?.trim()) // skip empty content
-      .map((m: any) => ({
-        role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
-        content: m.content,
-      }));
-
-    // Fallback: if history is empty (upsert race condition), use current message
-    if (chatHistory.length === 0) {
-      chatHistory.push({ role: 'user' as const, content: text });
-    }
-
-    // ── 5. Generate Claude response ──
-    let botReply: string;
-    try {
-      const resp = await chat({ messages: chatHistory, tenantId: 'klixmant', systemPrompt: activeSystemPrompt });
-      botReply = resp.message;
-    } catch (e) {
-      console.error('[Claude error]', e);
       continue;
     }
 
-    // ── 6. Send reply via WhatsApp ──
-    const botWamid = await sendTextMessage(from, botReply);
-    if (!botWamid) continue;
+    // Solo texto de aquí en adelante
+    if (msg.type !== 'text') continue;
 
-    // ── 7. Store bot reply ──
-    const replyId = `bot-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    await supabase.from('messages').insert({
-      id: replyId,
-      conversation_id: from,
-      content: botReply,
-      role: 'assistant',
-      type: 'text',
-      whatsapp_id: botWamid,
-      created_at: new Date().toISOString(),
-    });
+    const text: string = msg.text?.body ?? '';
+    if (!text.trim()) continue;
 
-    // ── 7b. Auto-send product photo if client requested one ──────────────────
-    // Detect photo request in client message OR bot offering to send photo
-    const photoRequestWords = ['foto', 'fotos', 'imagen', 'imágen', 'ver el buzo', 'ver buzo',
-      'tienes foto', 'como es', 'cómo es', 'me muestras', 'me puedes mostrar'];
-    const botOfferedPhoto = botReply.toLowerCase().includes('te comparto')
-      || botReply.toLowerCase().includes('te muestro')
-      || botReply.toLowerCase().includes('aquí tienes')
-      || botReply.toLowerCase().includes('acá tienes')
-      || botReply.toLowerCase().includes('te envío la foto')
-      || botReply.toLowerCase().includes('te envio la foto');
-    const clientAskedPhoto = photoRequestWords.some(w => textLower.includes(w));
+    // ── Upsert conversación ──────────────────────────────────────────────────
+    const { data: existing } = await supabase
+      .from('conversations').select('unread_count, bot_enabled').eq('id', from).maybeSingle();
 
-    if (clientAskedPhoto || botOfferedPhoto) {
-      // Search client's message first, then recent chat history for product name
-      const searchPool = [text, ...chatHistory.slice(-8).map(m => m.content)];
-      let photoUrl: string | null = null;
-      for (const t of searchPool) {
-        if (!t?.trim()) continue;
-        const url = getProductImageUrl(t);
-        if (url && url !== FALLBACK_IMAGE) { photoUrl = url; break; }
-      }
-      if (photoUrl) {
-        const nowImg = new Date().toISOString();
-        const imgWamid = await sendImageByUrl(from, photoUrl);
-        if (imgWamid) {
-          await supabase.from('messages').insert({
-            id:              `bot-img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            conversation_id: from,
-            content:         photoUrl,
-            role:            'assistant',
-            type:            'image',
-            whatsapp_id:     imgWamid,
-            created_at:      nowImg,
-          });
-        }
+    if (existing) {
+      await supabase.from('conversations').update({
+        contact_name: contactName,
+        last_message: text,
+        last_message_time: new Date().toISOString(),
+        unread_count: (existing.unread_count ?? 0) + 1,
+      }).eq('id', from);
+    } else {
+      await supabase.from('conversations').insert({
+        id: from, contact_name: contactName,
+        last_message: text, last_message_time: new Date().toISOString(),
+        unread_count: 1, bot_enabled: true,
+      });
+    }
+
+    // ── Resolver contexto de mensaje citado ──────────────────────────────────
+    let replyToContent: string | null = null;
+    if (msg.context?.id) {
+      const { data: quotedMsg } = await supabase.from('messages').select('content, type')
+        .or(`whatsapp_id.eq.${msg.context.id},id.eq.${msg.context.id}`).maybeSingle();
+      if (quotedMsg) {
+        if ((quotedMsg.type === 'image' || quotedMsg.type === 'video') && quotedMsg.content.startsWith('http'))
+          replyToContent = quotedMsg.content;
+        else if (quotedMsg.type === 'image')    replyToContent = '🖼️ Foto';
+        else if (quotedMsg.type === 'audio')    replyToContent = '🎵 Audio';
+        else if (quotedMsg.type === 'video')    replyToContent = '🎬 Video';
+        else if (quotedMsg.type === 'document') replyToContent = '📎 Documento';
+        else replyToContent = quotedMsg.content;
+      } else {
+        replyToContent = '💬';
       }
     }
 
-    // Update last message to bot reply
-    await supabase.from('conversations').update({
-      last_message: botReply,
-      last_message_time: new Date().toISOString(),
-    }).eq('id', from);
+    // ── Guardar mensaje entrante (idempotente) ───────────────────────────────
+    await supabase.from('messages').upsert({
+      id: msgId, conversation_id: from, content: text,
+      role: 'user', type: 'text', reply_to: replyToContent,
+      created_at: new Date().toISOString(),
+    }, { onConflict: 'id' });
+
+    // ── Verificar bot activo ─────────────────────────────────────────────────
+    const botEnabled = existing ? (existing.bot_enabled ?? true) : true;
+    if (!botEnabled) continue;
+
+    const textLower = text.toLowerCase();
+
+    // ── Audio automático cuando pide oficina o municipio sin cobertura ────────
+    const AUDIO_OFICINA   = 'https://bjbjqmbuzpyjvcugbusx.supabase.co/storage/v1/object/public/chat-media/audios-bot/abono-oficina.ogg';
+    const AUDIO_MUNICIPIO = 'https://bjbjqmbuzpyjvcugbusx.supabase.co/storage/v1/object/public/chat-media/audios-bot/abono-municipio.ogg';
+    const isOficina   = textLower.includes('interrapidisimo') || textLower.includes('interrapidísimo')
+                     || textLower.includes('reclamar en oficina') || textLower.includes('recoger en oficina');
+    const isMunicipio = textLower.includes('no llega contra entrega')
+                     || textLower.includes('no hay contra entrega')
+                     || textLower.includes('zona rural');
+
+    if (isOficina || isMunicipio) {
+      const audioUrl   = isOficina ? AUDIO_OFICINA : AUDIO_MUNICIPIO;
+      const audioLabel = isOficina ? '🎵 Audio abono oficina' : '🎵 Audio abono municipio';
+      const { data: existingAudio } = await supabase.from('messages').select('id')
+        .eq('conversation_id', from).eq('type', 'audio').eq('content', audioUrl).maybeSingle();
+      if (!existingAudio) {
+        const audioWamid = await sendAudioByUrl(from, audioUrl);
+        if (audioWamid) {
+          const nowA = new Date().toISOString();
+          await supabase.from('messages').insert({
+            id: `bot-audio-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            conversation_id: from, content: audioUrl,
+            role: 'assistant', type: 'audio', whatsapp_id: audioWamid, created_at: nowA,
+          });
+          await supabase.from('conversations').update({ last_message: audioLabel, last_message_time: nowA }).eq('id', from);
+        }
+      } else {
+        const exp = `Te entiendo perfectamente 😊 Si dependiera de mí te lo enviamos sin abono, pero es una política del área de despacho. Los $5.000 son para garantizar el despacho. ¿Listo? 🙌`;
+        const expWamid = await sendTextMessage(from, exp);
+        await saveAndSend(supabase, from, exp, 'text', expWamid);
+      }
+      continue;
+    }
+
+    // ── Detección CONFIRMO ───────────────────────────────────────────────────
+    const textClean = text.trim().toUpperCase();
+    const isConfirmo = ['CONFIRMO', '✅ CONFIRMO', 'CONFIRMO ✅', 'SI CONFIRMO', 'SÍ CONFIRMO']
+      .includes(textClean)
+      || textClean.startsWith('CONFIRMO ')
+      || textClean === 'SI'
+      || textClean === 'SÍ';
+
+    if (isConfirmo) {
+      const tel10 = from.replace(/^57/, '').slice(-10);
+      const { data: pedido } = await supabase
+        .from('clientes_funnelish')
+        .select('id, nombre, producto, talla, direccion, ciudad, departamento')
+        .eq('telefono', tel10).eq('wa_enviado', true).eq('confirmado', false)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+      if (pedido) {
+        const missing: string[] = [];
+        if (!pedido.talla || pedido.talla === 'Por confirmar')
+          missing.push('talla del buzo (XS, S, M, L, XL, XXL, XXXL)');
+        if (!isCompleteAddress(pedido.direccion))
+          missing.push('dirección completa de domicilio (ej: Calle 15 # 20-30 Barrio)');
+        if (!pedido.ciudad || pedido.ciudad === '—')
+          missing.push('ciudad');
+        if (!pedido.departamento || pedido.departamento === '—')
+          missing.push('departamento');
+
+        if (missing.length > 0) {
+          const reask = missing.length === 1
+            ? `Antes de confirmar necesito tu ${missing[0]}.`
+            : `Antes de confirmar necesito:\n${missing.map(f => `• ${f}`).join('\n')}`;
+          const wamid = await sendTextMessage(from, reask);
+          await saveAndSend(supabase, from, reask, 'text', wamid);
+          continue;
+        }
+
+        // Todo completo → confirmar
+        await supabase.from('clientes_funnelish').update({
+          confirmado: true, confirmado_at: new Date().toISOString(), estado: 'confirmado',
+        }).eq('id', pedido.id);
+        await supabase.from('conversations').update({ label: 'VENTA REALIZADA' }).eq('id', from);
+      }
+
+      const confirmReply = '✅ ¡Perfecto! Tu pedido ha sido *confirmado*. Lo despacharemos en las próximas 24 horas. ¡Gracias por tu compra! 🚚✨';
+      const wamid = await sendTextMessage(from, confirmReply);
+      await saveAndSend(supabase, from, confirmReply, 'text', wamid);
+      continue;
+    }
+
+    // ── Buscar pedido pendiente ──────────────────────────────────────────────
+    const tel10 = from.replace(/^57/, '').slice(-10);
+    const { data: pendingPedido } = await supabase
+      .from('clientes_funnelish')
+      .select('id, nombre, producto, talla, direccion, ciudad, departamento, valor, correo, telefono')
+      .eq('telefono', tel10).eq('wa_enviado', true).eq('confirmado', false)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+    // ── Sin pedido activo ────────────────────────────────────────────────────
+    if (!pendingPedido) {
+      const noPedidoMsg = `Hola 😊 No encontramos un pedido activo para este número. Si ya realizaste tu compra, en unos minutos recibirás los detalles. Para ver el catálogo o hacer un pedido, un asesor puede ayudarte.`;
+      const wamid = await sendTextMessage(from, noPedidoMsg);
+      await saveAndSend(supabase, from, noPedidoMsg, 'text', wamid);
+      continue;
+    }
+
+    // ── Solicitud de catálogo → redirigir a humano ───────────────────────────
+    const catalogWords = ['catalogo', 'catálogo', 'más productos', 'mas productos',
+      'otros productos', 'ver más', 'ver mas', 'qué más tienen', 'que mas tienen',
+      'qué tienen', 'que tienen', 'diseños disponibles', 'que diseños', 'qué diseños',
+      'ver todo', 'ver todos', 'más modelos', 'mas modelos'];
+    if (catalogWords.some(w => textLower.includes(w))) {
+      const handoff = `Para mostrarte todo el catálogo, te paso con un asesor que te puede ayudar 😊 Un momento por favor.`;
+      const wamid = await sendTextMessage(from, handoff);
+      await saveAndSend(supabase, from, handoff, 'text', wamid);
+      await supabase.from('conversations').update({ label: 'VER CATÁLOGO - HUMANO' }).eq('id', from);
+      continue;
+    }
+
+    // ── Auto-guardar talla ───────────────────────────────────────────────────
+    let currentTalla = pendingPedido.talla ?? '';
+    const tallaMatch = text.match(/\b(XS|S|M|L|XL|XXL|XXXL)\b/i);
+    const clientGaveTalla = !!tallaMatch && (!currentTalla || currentTalla === 'Por confirmar');
+    if (clientGaveTalla) {
+      currentTalla = tallaMatch![1].toUpperCase();
+      await supabase.from('clientes_funnelish').update({ talla: currentTalla }).eq('id', pendingPedido.id);
+    }
+
+    // ── Auto-guardar dirección (validación estricta) ──────────────────────────
+    let currentDireccion = pendingPedido.direccion ?? '';
+    const dirAlreadyComplete = isCompleteAddress(currentDireccion);
+    const textIsAddress      = isCompleteAddress(text);
+    const clientGaveDireccion = !dirAlreadyComplete && textIsAddress;
+    if (clientGaveDireccion) {
+      currentDireccion = text.trim();
+      await supabase.from('clientes_funnelish').update({ direccion: currentDireccion }).eq('id', pendingPedido.id);
+    }
+
+    // ── Cambio de color ──────────────────────────────────────────────────────
+    const colorChangeWords = [
+      'cambiar el color', 'cambio de color', 'otro color', 'en otro color',
+      'cambiarlo', 'cambien', 'pueden cambiar', 'me lo cambian',
+      'cambiar por', 'cambiar a', 'cambiar al',
+    ];
+    const colorChangeIntent = colorChangeWords.some(w => textLower.includes(w));
+    const mentionedColor    = detectColorInText(textLower);
+
+    // Detectar si el bot preguntó por el color en su último mensaje
+    const { data: lastBotMsg } = await supabase
+      .from('messages').select('content')
+      .eq('conversation_id', from).eq('role', 'assistant')
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    const lastBotAskedColor = !!(
+      lastBotMsg?.content?.toLowerCase().includes('qué color') ||
+      lastBotMsg?.content?.toLowerCase().includes('que color') ||
+      lastBotMsg?.content?.toLowerCase().includes('a qué color')
+    );
+
+    if (colorChangeIntent || (lastBotAskedColor && mentionedColor)) {
+      const family  = getProductFamily(pendingPedido.producto);
+
+      if (!family) {
+        // No se puede determinar la familia → humano
+        const msg = `Para cambiar el modelo, te paso con un asesor 😊 Un momento.`;
+        const wamid = await sendTextMessage(from, msg);
+        await saveAndSend(supabase, from, msg, 'text', wamid);
+        await supabase.from('conversations').update({ label: 'CAMBIO PRODUCTO - HUMANO' }).eq('id', from);
+        continue;
+      }
+
+      if (mentionedColor) {
+        const newProduct = findProductByColor(family, mentionedColor);
+        if (newProduct) {
+          // Actualizar producto en DB
+          await supabase.from('clientes_funnelish').update({ producto: newProduct }).eq('id', pendingPedido.id);
+          // Enviar foto
+          const imgUrl = getProductImageUrl(newProduct);
+          if (imgUrl && imgUrl !== FALLBACK_IMAGE) {
+            const imgWamid = await sendImageByUrl(from, imgUrl, newProduct);
+            await saveAndSend(supabase, from, imgUrl, 'image', imgWamid);
+          }
+          // Pedir CONFIRMO
+          const confirmMsg = `✅ Listo, cambié tu pedido a *${newProduct}*.\n\nRevisa la foto y responde *CONFIRMO* para que despachemos en las próximas 24 horas. 🚚`;
+          const wamid = await sendTextMessage(from, confirmMsg);
+          await saveAndSend(supabase, from, confirmMsg, 'text', wamid);
+        } else {
+          // Color no disponible en esta familia
+          const familyProds = getProductsInFamily(family);
+          const colorList = familyProds.join('\n• ');
+          const noColor = `Lo sentimos 😔 Ese color no está disponible para la línea *${familyDisplayName(family)}*.\n\nLos disponibles son:\n• ${colorList}\n\n¿Cuál prefieres?`;
+          const wamid = await sendTextMessage(from, noColor);
+          await saveAndSend(supabase, from, noColor, 'text', wamid);
+        }
+      } else {
+        // No mencionó color → preguntar
+        const familyProds = getProductsInFamily(family);
+        const ask = `¡Claro! 😊 ¿A qué color quieres cambiarlo?\n\nPara la línea *${familyDisplayName(family)}* tenemos:\n• ${familyProds.join('\n• ')}`;
+        const wamid = await sendTextMessage(from, ask);
+        await saveAndSend(supabase, from, ask, 'text', wamid);
+      }
+      continue;
+    }
+
+    // ── Estado actual de campos ──────────────────────────────────────────────
+    const stillMissingTalla = !currentTalla || currentTalla === 'Por confirmar';
+    const stillMissingDir   = !isCompleteAddress(currentDireccion);
+
+    // ── Respuesta fija si el cliente acaba de dar un dato ────────────────────
+    let fixedReply: string | null = null;
+
+    if (clientGaveTalla && clientGaveDireccion) {
+      fixedReply = stillMissingTalla || stillMissingDir
+        ? null // edge case — no debería pasar
+        : `✅ Perfecto, talla *${currentTalla}* y dirección anotadas.\n\nTodo está listo 🎉 Responde *CONFIRMO* para que despachemos tu *${pendingPedido.producto}* en las próximas 24 horas. 🚚`;
+    } else if (clientGaveTalla) {
+      fixedReply = stillMissingDir
+        ? `✅ Talla *${currentTalla}* confirmada.\n\n📍 Para completar el pedido necesito tu dirección de domicilio completa (ej: Calle 15 # 20-30, Barrio). ¿Cuál es?`
+        : `✅ Talla *${currentTalla}* confirmada. Todo listo 🎉\n\nResponde *CONFIRMO* para que despachemos tu *${pendingPedido.producto}*. 🚚`;
+    } else if (clientGaveDireccion) {
+      fixedReply = stillMissingTalla
+        ? `✅ Dirección anotada.\n\n📋 ¿Me confirmas tu talla del buzo? (XS, S, M, L, XL, XXL, XXXL)`
+        : `✅ Dirección anotada. Todo listo 🎉\n\nResponde *CONFIRMO* para que despachemos tu *${pendingPedido.producto}*. 🚚`;
+    }
+
+    if (fixedReply) {
+      const wamid = await sendTextMessage(from, fixedReply);
+      await saveAndSend(supabase, from, fixedReply, 'text', wamid);
+      continue;
+    }
+
+    // ── Claude como fallback (solo MODO CONFIRMACIÓN) ────────────────────────
+    const { data: shortHistory } = await supabase
+      .from('messages').select('content, role')
+      .eq('conversation_id', from).order('created_at', { ascending: false }).limit(6);
+
+    const missingList: string[] = [];
+    if (stillMissingTalla) missingList.push('talla del buzo (XS, S, M, L, XL, XXL, XXXL)');
+    if (stillMissingDir)   missingList.push('dirección completa de domicilio (ej: Calle 15 # 20-30)');
+
+    const sysPrompt =
+      `Eres Josué de Klixmant. Hablas con un cliente que ya tiene un pedido activo.\n` +
+      `Pedido: *${pendingPedido.producto}* — Valor: *${pendingPedido.valor}*\n` +
+      `${missingList.length > 0
+        ? `Aún falta: ${missingList.join(' y ')}. Pide SOLO eso, de forma amable y breve.`
+        : `Todos los datos están completos. Pídele que responda CONFIRMO para despachar.`
+      }\n` +
+      `PROHIBIDO: mencionar otros productos, catálogo, precios de otros artículos.\n` +
+      `Si el cliente pregunta por el envío o cuándo llega, responde brevemente y vuelve al tema.\n` +
+      `Si el cliente quiere cambiar de color, dile que puede decirte el color y lo cambias.\n` +
+      `NUNCA escribas URLs ni enlaces.\n`;
+
+    const chatHistory: ChatRequest['messages'] = [...(shortHistory ?? [])]
+      .reverse()
+      .filter((m: any) => m.content?.trim() && !m.content.startsWith('http'))
+      .map((m: any) => ({
+        role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+        content: m.content as string,
+      }));
+
+    if (!chatHistory.length || chatHistory[chatHistory.length - 1]?.role !== 'user') {
+      chatHistory.push({ role: 'user', content: text });
+    }
+
+    let botReply: string;
+    try {
+      const resp = await chat({ messages: chatHistory, tenantId: 'klixmant', systemPrompt: sysPrompt });
+      botReply = resp.message;
+    } catch { continue; }
+
+    const botWamid = await sendTextMessage(from, botReply);
+    if (!botWamid) continue;
+    await saveAndSend(supabase, from, botReply, 'text', botWamid);
   }
 
   return NextResponse.json({ status: 'ok' });

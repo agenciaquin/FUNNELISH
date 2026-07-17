@@ -96,6 +96,9 @@ const CATALOG: Record<string, string> = {
 ${catalogLines.join('\n')}
 };
 
+/** Lista de todos los nombres de producto disponibles en el catálogo */
+export const PRODUCT_NAMES: string[] = Object.keys(CATALOG);
+
 /**
  * Devuelve la URL pública de la imagen del producto.
  * 1. Coincidencia exacta (case-insensitive)
