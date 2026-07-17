@@ -56,85 +56,48 @@ function isDirOficina(addr: string | null | undefined): boolean {
     || (a.includes('oficina') && !isCompleteAddress(addr));
 }
 
-// ─── Helpers de catálogo para cambio de color ─────────────────────────────────
+// ─── Catálogo de colores desde la DB ─────────────────────────────────────────
 
-type ProductFamily = 'PORTUGAL' | 'ARGENTINA' | 'CO_FRANJA' | 'NEW_YORK' | 'RETRO' | 'BM_ELITE' | 'PROM' | '';
-
-function getProductFamily(productName: string): ProductFamily {
-  const n = productName.toUpperCase();
-  if (n.startsWith('PORTUGAL'))                           return 'PORTUGAL';
-  if (n.startsWith('ARGENTINA'))                          return 'ARGENTINA';
-  if (n.includes('CO FRANJA'))                            return 'CO_FRANJA';
-  if (n.includes('NEW YORK'))                             return 'NEW_YORK';
-  if (n.startsWith('RETRO'))                              return 'RETRO';
-  if (n.startsWith('BM'))                                 return 'BM_ELITE';
-  if (n.startsWith('PROM'))                               return 'PROM';
-  return '';
+interface ColorVariantDB {
+  color: string;
+  nombre_producto: string;
+  url_imagen: string | null;
 }
 
-function getProductsInFamily(family: ProductFamily): string[] {
-  return PRODUCT_NAMES.filter(name => {
-    const n = name.toUpperCase();
-    switch (family) {
-      case 'PORTUGAL':   return n.startsWith('PORTUGAL');
-      case 'ARGENTINA':  return n.startsWith('ARGENTINA');
-      case 'CO_FRANJA':  return n.includes('CO FRANJA');
-      case 'NEW_YORK':   return n.includes('NEW YORK');
-      case 'RETRO':      return n.startsWith('RETRO');
-      case 'BM_ELITE':   return n.startsWith('BM');
-      case 'PROM':       return n.startsWith('PROM');
-      default:           return false;
-    }
-  });
-}
+/**
+ * Busca en la tabla catalogos_bot el catálogo que corresponde al producto
+ * y, si se menciona un color, intenta encontrar la variante exacta.
+ */
+async function findColorVariantInDB(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  productoNombre: string,
+  colorMentioned: string | null,
+): Promise<{ familia: string; colores: ColorVariantDB[]; match: ColorVariantDB | null } | null> {
+  const { data: catalogos } = await supabase
+    .from('catalogos_bot')
+    .select('id, familia, patron, catalogo_colores(color, nombre_producto, url_imagen)')
+    .eq('activo', true);
+  if (!catalogos?.length) return null;
 
-function familyDisplayName(family: ProductFamily): string {
-  const map: Record<string, string> = {
-    PORTUGAL: 'Portugal', ARGENTINA: 'Argentina', CO_FRANJA: 'Colombia',
-    NEW_YORK: 'New York', RETRO: 'Retro', BM_ELITE: 'BM Élite', PROM: 'Prom',
-  };
-  return map[family] ?? family;
-}
+  const pUpper = productoNombre.toUpperCase();
+  const catalog = catalogos.find(c => pUpper.includes(c.patron.toUpperCase()));
+  if (!catalog) return null;
 
-/** Detecta el color mencionado en el texto y busca un producto de esa familia con ese color. */
-function findProductByColor(family: ProductFamily, colorText: string): string | null {
-  const products = getProductsInFamily(family);
-  if (!products.length) return null;
+  const colores: ColorVariantDB[] = catalog.catalogo_colores ?? [];
+  if (!colorMentioned) return { familia: catalog.familia, colores, match: null };
 
-  const cLower = colorText.toLowerCase();
+  const cLower = colorMentioned.toLowerCase();
+  const match = colores.find(c =>
+    cLower.includes(c.color.toLowerCase()) ||
+    c.color.toLowerCase().includes(cLower) ||
+    c.nombre_producto.toUpperCase().split(/\s+/).some(w => w.length >= 4 && cLower.includes(w.toLowerCase()))
+  ) ?? null;
 
-  // Mapeo de términos del cliente → palabras clave en el nombre del producto
-  const colorMap: Array<[string[], string[]]> = [
-    [['azul oscuro', 'oscuro'],          ['AZUL OSCURO']],
-    [['rojo', 'red'],                    ['ROJO']],
-    [['negro', 'negr', 'black'],         ['NEGRO']],
-    [['azul', 'blue'],                   ['AZUL']],
-    [['blanco marfil', 'marfil'],        ['BLANCO MARFIL', 'MARFIL']],
-    [['blanco', 'white'],                ['BLANCO']],
-    [['amarillo', 'yellow'],             ['AMARILLO']],
-    [['beige'],                          ['BEIGE']],
-    [['verde'],                          ['VERDE']],
-    [['gris', 'grey', 'gray'],           ['GRIS']],
-  ];
-
-  for (const [inputs, keywords] of colorMap) {
-    if (inputs.some(c => cLower.includes(c))) {
-      const match = products.find(p => keywords.some(kw => p.toUpperCase().includes(kw)));
-      if (match) return match;
-    }
-  }
-
-  // Búsqueda genérica por palabras del texto
-  const words = colorText.toUpperCase().split(/\s+/).filter(w => w.length >= 4);
-  for (const p of products) {
-    if (words.some(w => p.toUpperCase().includes(w))) return p;
-  }
-
-  return null;
+  return { familia: catalog.familia, colores, match };
 }
 
 /** Detecta si el texto menciona un color */
-const COLOR_NAMES = ['azul oscuro', 'rojo', 'negro', 'azul', 'blanco marfil', 'marfil', 'blanco', 'amarillo', 'beige', 'verde', 'gris'];
+const COLOR_NAMES = ['azul oscuro', 'rojo', 'negro', 'azul', 'blanco marfil', 'marfil', 'blanco', 'amarillo', 'beige', 'verde', 'gris', 'cocoa', 'azul navy', 'verde oscuro'];
 function detectColorInText(textLower: string): string | null {
   return COLOR_NAMES.find(c => textLower.includes(c)) ?? null;
 }
@@ -195,24 +158,19 @@ export async function POST(req: NextRequest) {
     const from  = msg.from as string;
     const msgId = msg.id  as string;
 
-    // ── Imagen entrante — detección de abono ─────────────────────────────────
+    // ── Imagen entrante — comprobante de abono ───────────────────────────────
     if (msg.type === 'image') {
-      const tel10Media = from.replace(/^57/, '').slice(-10);
-      const { data: pedidoMedia } = await supabase
-        .from('clientes_funnelish')
-        .select('id, producto')
-        .eq('telefono', tel10Media)
-        .eq('wa_enviado', true)
-        .eq('confirmado', false)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // Verificar que el bot esté activo para esta conversación
+      const { data: convImg } = await supabase
+        .from('conversations').select('bot_enabled').eq('id', from).maybeSingle();
+      const botActivo = convImg ? (convImg.bot_enabled ?? true) : true;
 
-      if (pedidoMedia) {
-        await supabase.from('conversations').update({ label: 'ABONO POR VERIFICAR' }).eq('id', from);
-        const ack = `✅ ¡Comprobante recibido! El equipo lo va a verificar ahora mismo.\n\n🚚 En cuanto confirmen el abono, despachamos tu *${pedidoMedia.producto}*. Te avisamos por aquí. Gracias por tu paciencia 😊`;
-        const ackWamid = await sendTextMessage(from, ack);
-        await saveAndSend(supabase, from, ack, 'text', ackWamid);
+      if (botActivo) {
+        await supabase.from('conversations')
+          .update({ label: 'ABONO POR VERIFICAR' }).eq('id', from);
+        const finalMsg = '¡Gracias por tu compra, cuando lo envie te estara llegando el número de guía desde nuestro chatbot, cuyo número asociado es 3142576239, para que puedas realizarle seguimiento a tu paquete.';
+        const ackWamid = await sendTextMessage(from, finalMsg);
+        if (ackWamid) await saveAndSend(supabase, from, finalMsg, 'text', ackWamid);
       }
       continue;
     }
@@ -407,10 +365,13 @@ export async function POST(req: NextRequest) {
     const colorChangeWords = [
       'cambiar el color', 'cambio de color', 'otro color', 'en otro color',
       'cambiarlo', 'cambien', 'pueden cambiar', 'me lo cambian',
-      'cambiar por', 'cambiar a', 'cambiar al',
+      'cambiar por', 'cambiar a', 'cambiar al', 'cambiar el buzo',
+      'me lo mandan en', 'lo quiero en', 'lo quiero de',
     ];
-    const colorChangeIntent = colorChangeWords.some(w => textLower.includes(w));
     const mentionedColor    = detectColorInText(textLower);
+    const colorChangeIntent = colorChangeWords.some(w => textLower.includes(w))
+      || (textLower.includes('cambiar') && !!mentionedColor) // "cambiar" + color
+      || (textLower.includes('lo quiero') && !!mentionedColor);
 
     // Detectar si el bot preguntó por el color en su último mensaje
     const { data: lastBotMsg } = await supabase
@@ -420,14 +381,17 @@ export async function POST(req: NextRequest) {
     const lastBotAskedColor = !!(
       lastBotMsg?.content?.toLowerCase().includes('qué color') ||
       lastBotMsg?.content?.toLowerCase().includes('que color') ||
-      lastBotMsg?.content?.toLowerCase().includes('a qué color')
+      lastBotMsg?.content?.toLowerCase().includes('a qué color') ||
+      lastBotMsg?.content?.toLowerCase().includes('colores disponibles') ||
+      lastBotMsg?.content?.toLowerCase().includes('tenemos:')
     );
 
     if (colorChangeIntent || (lastBotAskedColor && mentionedColor)) {
-      const family  = getProductFamily(pendingPedido.producto);
+      // Buscar el catálogo del producto en la DB
+      const catalogResult = await findColorVariantInDB(supabase, pendingPedido.producto, mentionedColor);
 
-      if (!family) {
-        // No se puede determinar la familia → humano
+      if (!catalogResult) {
+        // No hay catálogo definido para este producto → humano
         const msg = `Para cambiar el modelo, te paso con un asesor 😊 Un momento.`;
         const wamid = await sendTextMessage(from, msg);
         await saveAndSend(supabase, from, msg, 'text', wamid);
@@ -435,33 +399,31 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      if (mentionedColor) {
-        const newProduct = findProductByColor(family, mentionedColor);
-        if (newProduct) {
-          // Actualizar producto en DB
-          await supabase.from('clientes_funnelish').update({ producto: newProduct }).eq('id', pendingPedido.id);
-          // Enviar foto
-          const imgUrl = getProductImageUrl(newProduct);
-          if (imgUrl && imgUrl !== FALLBACK_IMAGE) {
-            const imgWamid = await sendImageByUrl(from, imgUrl, newProduct);
-            await saveAndSend(supabase, from, imgUrl, 'image', imgWamid);
-          }
-          // Pedir CONFIRMO
-          const confirmMsg = `✅ Listo, cambié tu pedido a *${newProduct}*.\n\nRevisa la foto y responde *CONFIRMO* para que despachemos en las próximas 24 horas. 🚚`;
-          const wamid = await sendTextMessage(from, confirmMsg);
-          await saveAndSend(supabase, from, confirmMsg, 'text', wamid);
-        } else {
-          // Color no disponible en esta familia
-          const familyProds = getProductsInFamily(family);
-          const colorList = familyProds.join('\n• ');
-          const noColor = `Lo sentimos 😔 Ese color no está disponible para la línea *${familyDisplayName(family)}*.\n\nLos disponibles son:\n• ${colorList}\n\n¿Cuál prefieres?`;
-          const wamid = await sendTextMessage(from, noColor);
-          await saveAndSend(supabase, from, noColor, 'text', wamid);
+      if (catalogResult.match) {
+        // Color encontrado en el catálogo → actualizar pedido + enviar foto
+        const newProduct = catalogResult.match.nombre_producto;
+        await supabase.from('clientes_funnelish').update({ producto: newProduct }).eq('id', pendingPedido.id);
+
+        const imgUrl = catalogResult.match.url_imagen || getProductImageUrl(newProduct);
+        if (imgUrl && imgUrl !== FALLBACK_IMAGE) {
+          const imgWamid = await sendImageByUrl(from, imgUrl, newProduct);
+          await saveAndSend(supabase, from, imgUrl, 'image', imgWamid);
         }
+        const confirmMsg = `✅ Listo, cambié tu pedido a *${newProduct}*.\n\nRevisa la foto y escribe *CONFIRMO* o "si está bien" para que despachemos en 24 horas. 🚚`;
+        const wamid = await sendTextMessage(from, confirmMsg);
+        await saveAndSend(supabase, from, confirmMsg, 'text', wamid);
+
+      } else if (mentionedColor && catalogResult.colores.length) {
+        // Mencionó un color pero no está en el catálogo → mostrar disponibles
+        const colorList = catalogResult.colores.map(c => c.color).join(', ');
+        const noColor = `Lo sentimos 😔 Ese color no está disponible para *${catalogResult.familia}*.\n\nColores disponibles: ${colorList}\n\n¿Cuál prefieres?`;
+        const wamid = await sendTextMessage(from, noColor);
+        await saveAndSend(supabase, from, noColor, 'text', wamid);
+
       } else {
-        // No mencionó color → preguntar
-        const familyProds = getProductsInFamily(family);
-        const ask = `¡Claro! 😊 ¿A qué color quieres cambiarlo?\n\nPara la línea *${familyDisplayName(family)}* tenemos:\n• ${familyProds.join('\n• ')}`;
+        // No mencionó color → preguntar cuál quiere
+        const colorList = catalogResult.colores.map(c => c.color).join(', ');
+        const ask = `¡Claro! 😊 ¿A qué color quieres cambiarlo?\n\nPara *${catalogResult.familia}* tenemos: ${colorList || 'consulta con un asesor'}`;
         const wamid = await sendTextMessage(from, ask);
         await saveAndSend(supabase, from, ask, 'text', wamid);
       }

@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { signOut } from 'next-auth/react';
 
-export type PanelSection = 'chat' | 'entrenamiento' | 'plantillas' | 'disparadores' | 'contactos' | 'etiquetas' | 'integraciones' | 'ajustes' | 'manual';
+export type PanelSection = 'chat' | 'entrenamiento' | 'plantillas' | 'disparadores' | 'contactos' | 'etiquetas' | 'catalogos' | 'integraciones' | 'ajustes' | 'manual';
 
 const NAV_MAIN: { key: PanelSection; label: string; icon: string }[] = [
   { key: 'chat',          label: 'Chat',          icon: '💬' },
@@ -12,6 +12,7 @@ const NAV_MAIN: { key: PanelSection; label: string; icon: string }[] = [
   { key: 'disparadores',  label: 'Disparadores',   icon: '⚡' },
   { key: 'contactos',     label: 'Contactos',      icon: '👥' },
   { key: 'etiquetas',     label: 'Etiquetas',      icon: '🏷️' },
+  { key: 'catalogos',     label: 'Catálogos',      icon: '📦' },
   { key: 'integraciones', label: 'Integraciones',  icon: '🔗' },
   { key: 'ajustes',       label: 'Ajustes',        icon: '⚙️' },
   { key: 'manual',        label: 'Manual',         icon: '📖' },

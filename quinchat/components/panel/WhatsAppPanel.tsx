@@ -17,6 +17,7 @@ const ContactosPanel     = dynamic(() => import('./ContactosPanel'),     { ssr: 
 const EtiquetasPanel     = dynamic(() => import('./EtiquetasPanel'),     { ssr: false });
 const IntegracionesPanel = dynamic(() => import('./IntegracionesPanel'), { ssr: false });
 const ManualPanel        = dynamic(() => import('./ManualPanel'),        { ssr: false });
+const CatalogosPanel     = dynamic(() => import('./CatalogosPanel'),     { ssr: false });
 
 interface Props {
   userName: string;
@@ -140,6 +141,7 @@ export default function WhatsAppPanel({ userName }: Props) {
       {activeSection === 'disparadores'  && <DisparadoresPanel />}
       {activeSection === 'contactos'     && <ContactosPanel />}
       {activeSection === 'etiquetas'     && <EtiquetasPanel />}
+      {activeSection === 'catalogos'     && <CatalogosPanel />}
       {activeSection === 'integraciones' && <IntegracionesPanel />}
       {activeSection === 'ajustes'       && <AjustesPanel />}
       {activeSection === 'manual'        && <ManualPanel />}
