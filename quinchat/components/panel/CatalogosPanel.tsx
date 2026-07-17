@@ -103,30 +103,31 @@ function ModalColor({
   onSave: (color: string, nombreProducto: string, urlImagen: string | null) => void;
   onClose: () => void;
 }) {
-  const [color,    setColor]    = useState(initial?.color            ?? '');
-  const [nombre,   setNombre]   = useState(initial?.nombre_producto  ?? '');
-  const [url,      setUrl]      = useState(initial?.url_imagen       ?? '');
-  const [searching, setSearching] = useState(false);
-  const [sugerencias, setSugerencias] = useState<string[]>([]);
+  const [color,     setColor]     = useState(initial?.color           ?? '');
+  const [nombre,    setNombre]    = useState(initial?.nombre_producto ?? '');
+  const [url,       setUrl]       = useState(initial?.url_imagen      ?? '');
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  // Auto-buscar imagen cuando cambia el nombre del producto
-  useEffect(() => {
-    if (!nombre.trim()) { setUrl(''); setSugerencias([]); return; }
-    const t = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const res = await fetch(`/api/catalogos/buscar-imagen?q=${encodeURIComponent(nombre)}`);
-        const data = await res.json();
-        if (data.url && !url) setUrl(data.url);
-        setSugerencias(data.sugerencias ?? []);
-      } finally { setSearching(false); }
-    }, 400);
-    return () => clearTimeout(t);
-  }, [nombre]);
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res  = await fetch('/api/catalogos/upload-imagen', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data.url) setUrl(data.url);
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
         <div className="px-6 py-4 border-b border-[#E8E8E8] flex items-center justify-between">
           <h3 className="text-base font-bold text-[#0D0D0D]">
             {initial ? 'Editar color' : 'Agregar color'}
@@ -135,79 +136,75 @@ function ModalColor({
         </div>
 
         <div className="px-6 py-5 flex flex-col gap-4">
-          {/* Vista previa de la foto */}
-          <div className="flex gap-4 items-start">
-            <div className="w-24 h-24 rounded-xl border border-[#E8E8E8] overflow-hidden bg-[#F5F5F5] flex items-center justify-center shrink-0">
-              {url ? (
-                <img src={url} alt={nombre} className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-2xl">📦</span>
-              )}
-            </div>
-            <div className="flex-1 flex flex-col gap-3">
-              <div>
-                <label className="text-xs font-semibold text-[#6B6B6B] uppercase tracking-wide block mb-1">
-                  Nombre del color *
-                </label>
-                <input
-                  className="w-full border border-[#E8E8E8] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A89D]/40"
-                  placeholder="Ej: Negro, Beige, Azul Navy…"
-                  value={color}
-                  onChange={e => setColor(e.target.value)}
-                />
+
+          {/* Foto */}
+          <div>
+            <label className="text-xs font-semibold text-[#6B6B6B] uppercase tracking-wide block mb-2">
+              Foto del producto
+            </label>
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+
+            {url ? (
+              <div className="relative w-full h-48 rounded-xl overflow-hidden border border-[#E8E8E8] bg-[#F5F5F5]">
+                <img src={url} alt={nombre || 'producto'} className="w-full h-full object-cover" />
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  className="absolute bottom-2 right-2 bg-white/90 text-xs font-semibold px-3 py-1.5 rounded-lg shadow border border-[#E8E8E8] hover:bg-white transition-all"
+                >
+                  Cambiar foto
+                </button>
               </div>
-            </div>
+            ) : (
+              <button
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+                className="w-full h-36 rounded-xl border-2 border-dashed border-[#E8E8E8] hover:border-[#00A89D] bg-[#F8F8F8] hover:bg-[#00A89D]/5 flex flex-col items-center justify-center gap-2 transition-all disabled:opacity-50"
+              >
+                {uploading ? (
+                  <>
+                    <span className="text-2xl">⏳</span>
+                    <span className="text-sm text-[#6B6B6B]">Subiendo foto...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-3xl">📷</span>
+                    <span className="text-sm font-semibold text-[#00A89D]">Subir foto</span>
+                    <span className="text-xs text-[#6B6B6B]">Haz clic para seleccionar desde tu computador</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+
+          {/* Nombre del color */}
+          <div>
+            <label className="text-xs font-semibold text-[#6B6B6B] uppercase tracking-wide block mb-1">
+              Nombre del color *
+            </label>
+            <input
+              className="w-full border border-[#E8E8E8] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A89D]/40"
+              placeholder="Ej: Negro, Beige, Azul Navy…"
+              value={color}
+              onChange={e => setColor(e.target.value)}
+            />
           </div>
 
           {/* Nombre del producto */}
           <div>
             <label className="text-xs font-semibold text-[#6B6B6B] uppercase tracking-wide block mb-1">
-              Nombre del producto (catálogo) *
-            </label>
-            <div className="relative">
-              <input
-                className="w-full border border-[#E8E8E8] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A89D]/40 pr-8"
-                placeholder="Ej: NEGRO NEW YORK"
-                value={nombre}
-                onChange={e => { setNombre(e.target.value.toUpperCase()); setUrl(''); }}
-              />
-              {searching && (
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#00A89D] animate-spin text-sm">⟳</span>
-              )}
-            </div>
-            <p className="text-[11px] text-[#6B6B6B] mt-1">
-              Debe coincidir exactamente con el nombre del archivo en la carpeta /img (sin extensión).
-            </p>
-
-            {/* Sugerencias de autocompletado */}
-            {sugerencias.length > 0 && (
-              <div className="mt-2 border border-[#E8E8E8] rounded-xl overflow-hidden">
-                {sugerencias.map(s => (
-                  <button
-                    key={s}
-                    onClick={() => { setNombre(s); }}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-[#F5F5F5] border-b border-[#E8E8E8] last:border-b-0 transition-colors text-[#0D0D0D]"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* URL de imagen */}
-          <div>
-            <label className="text-xs font-semibold text-[#6B6B6B] uppercase tracking-wide block mb-1">
-              URL de la foto
-              <span className="ml-1 font-normal text-[#00A89D]">(auto-detectada del catálogo)</span>
+              Nombre del producto *
             </label>
             <input
               className="w-full border border-[#E8E8E8] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A89D]/40"
-              placeholder="https://raw.githubusercontent.com/…"
-              value={url}
-              onChange={e => setUrl(e.target.value)}
+              placeholder="Ej: NEGRO NEW YORK"
+              value={nombre}
+              onChange={e => setNombre(e.target.value.toUpperCase())}
             />
+            <p className="text-[11px] text-[#6B6B6B] mt-1">
+              Nombre exacto del producto en Funnelish.
+            </p>
           </div>
+
         </div>
 
         <div className="px-6 py-4 border-t border-[#E8E8E8] flex justify-end gap-3">
@@ -215,8 +212,8 @@ function ModalColor({
             Cancelar
           </button>
           <button
-            onClick={() => color.trim() && nombre.trim() && onSave(color.trim(), nombre.trim(), url.trim() || null)}
-            disabled={!color.trim() || !nombre.trim()}
+            onClick={() => color.trim() && nombre.trim() && onSave(color.trim(), nombre.trim(), url || null)}
+            disabled={!color.trim() || !nombre.trim() || uploading}
             className="px-5 py-2 text-sm font-semibold bg-[#00A89D] text-white rounded-xl hover:bg-[#008F85] disabled:opacity-40 transition-all"
           >
             {initial ? 'Guardar cambios' : 'Agregar color'}
