@@ -191,10 +191,11 @@ export interface ConfirmacionParams {
  *   {{5}} departamento  {{6}} correo  {{7}} talla
  *   {{8}} producto  {{9}} valor
  */
+/** Returns the WhatsApp message ID (wamid) on success, null on failure */
 export async function sendConfirmacionTemplate(
   to: string,
   params: ConfirmacionParams,
-): Promise<boolean> {
+): Promise<string | null> {
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
 
@@ -252,13 +253,14 @@ export async function sendConfirmacionTemplate(
     if (!res.ok) {
       const err = await res.text();
       console.error('[WhatsApp] sendTemplate failed:', err);
-    } else {
-      console.log('[WhatsApp] Template sent OK to', to);
+      return null;
     }
-
-    return res.ok;
+    const data = await res.json();
+    const wamid = (data.messages?.[0]?.id as string) ?? null;
+    console.log('[WhatsApp] Template sent OK to', to, '| wamid:', wamid);
+    return wamid;
   } catch (e) {
     console.error('[WhatsApp] Network error (sendTemplate):', e);
-    return false;
+    return null;
   }
 }

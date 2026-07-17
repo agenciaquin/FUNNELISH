@@ -155,15 +155,17 @@ export async function POST(req: NextRequest) {
   const enWhitelist = TEST_WHITELIST.has(tel10);
   let sent = false;
   let templateSent = false;
+  let templateWamid: string | null = null;
 
   if (enWhitelist) {
     // Intentar template primero (funciona incluso sin ventana 24h)
-    sent = !!(await sendConfirmacionTemplate(waPhone, {
+    templateWamid = await sendConfirmacionTemplate(waPhone, {
       saludo:   firstName || nombre,
       nombre, telefono: tel10, direccion, ciudad, departamento,
       correo, talla, producto: productoNombre, valor, imageUrl,
-    }));
-    templateSent = sent;
+    });
+    templateSent = !!templateWamid;
+    sent = templateSent;
 
     // Si el template falla (ej: aún en revisión), caer al texto plano
     if (!sent) {
@@ -175,8 +177,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (sent) {
-    // Texto a guardar en QuinChat: si se envió template, usar el texto del template;
-    // si se cayó a texto plano, usar el mensaje antiguo.
+    // Texto a guardar en QuinChat
     const mensajeAlmacenado = templateSent
       ? buildMensajeTemplate({
           saludo: firstName || nombre,
@@ -185,48 +186,56 @@ export async function POST(req: NextRequest) {
         })
       : mensaje;
 
-    // Mark wa_enviado
-    await supabase
+    // ── 1. Mark wa_enviado ──────────────────────────────────────────────────
+    const { error: waErr } = await supabase
       .from('clientes_funnelish')
       .update({ wa_enviado: true, wa_enviado_at: now, estado: 'wa_enviado' })
       .eq('telefono', tel10)
       .eq('confirmado', false);
+    if (waErr) console.error('[Funnelish] update wa_enviado error:', waErr.message);
 
-    // Upsert conversation in QuinChat — auto-asignar etiqueta "PENDIENTE POR CONFIRMACIÓN"
-    await supabase.from('conversations').upsert({
+    // ── 2. Upsert conversation ──────────────────────────────────────────────
+    const { error: convErr } = await supabase.from('conversations').upsert({
       id:                waPhone,
       contact_name:      nombre,
-      last_message:      mensajeAlmacenado.slice(0, 80) + '…',
+      last_message:      mensajeAlmacenado.slice(0, 100),
       last_message_time: now,
       unread_count:      1,
       bot_enabled:       true,
       label:             'PENDIENTE POR CONFIRMACIÓN',
     }, { onConflict: 'id' });
+    if (convErr) console.error('[Funnelish] upsert conversation error:', convErr.message);
 
-    // Store product image (so panel renders the photo just like WhatsApp does)
+    // ── 3. Guardar foto del producto ────────────────────────────────────────
     if (imageUrl && imageUrl.startsWith('http')) {
-      await supabase.from('messages').insert({
-        id:              `funnelish-img-${referencia || Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      const { error: imgErr } = await supabase.from('messages').insert({
+        id:              `funnelish-img-${referencia || Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         conversation_id: waPhone,
         content:         imageUrl,
         role:            'assistant',
         type:            'image',
+        whatsapp_id:     null,
         created_at:      now,
       });
+      if (imgErr) console.error('[Funnelish] insert image error:', imgErr.message);
     }
 
-    // Store sent message
-    const msgId = `funnelish-${referencia || Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    await supabase.from('messages').insert({
+    // ── 4. Guardar mensaje de confirmación ─────────────────────────────────
+    const msgId = `funnelish-${referencia || Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const { error: msgErr } = await supabase.from('messages').insert({
       id:              msgId,
       conversation_id: waPhone,
       content:         mensajeAlmacenado,
       role:            'assistant',
       type:            'text',
+      whatsapp_id:     templateWamid,
       created_at:      now,
     });
+    if (msgErr) console.error('[Funnelish] insert template msg error:', msgErr.message);
 
-    // ── Auto-send audio if address mentions oficina/reclamo ──────────────────
+    console.log(`[Funnelish] Saved to DB → conv=${waPhone} img=${!!imageUrl} msg=${!msgErr}`);
+
+    // ── 5. Auto-send audio si la dirección es oficina/reclamo ──────────────
     const AUDIO_OFICINA_URL = 'https://bjbjqmbuzpyjvcugbusx.supabase.co/storage/v1/object/public/chat-media/audios-bot/abono-oficina.ogg';
     const dirLower = direccion.toLowerCase();
     const isOficinaDir = dirLower.includes('oficina')
@@ -237,8 +246,8 @@ export async function POST(req: NextRequest) {
     if (isOficinaDir) {
       const audioWamid = await sendAudioByUrl(waPhone, AUDIO_OFICINA_URL);
       if (audioWamid) {
-        await supabase.from('messages').insert({
-          id:              `funnelish-audio-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        const { error: audioErr } = await supabase.from('messages').insert({
+          id:              `funnelish-audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           conversation_id: waPhone,
           content:         AUDIO_OFICINA_URL,
           role:            'assistant',
@@ -246,10 +255,11 @@ export async function POST(req: NextRequest) {
           whatsapp_id:     audioWamid,
           created_at:      new Date().toISOString(),
         });
+        if (audioErr) console.error('[Funnelish] insert audio error:', audioErr.message);
       }
     }
 
-    // ── Ask for missing fields ────────────────────────────────────────────────
+    // ── 6. Preguntar datos faltantes ────────────────────────────────────────
     const missing: string[] = [];
     if (!direccion || direccion === '—') missing.push('dirección completa de envío');
     if (!ciudad    || ciudad    === '—') missing.push('ciudad de envío');
@@ -263,8 +273,8 @@ export async function POST(req: NextRequest) {
 
       const missingWamid = await sendTextMessage(waPhone, missingMsg);
       if (missingWamid) {
-        await supabase.from('messages').insert({
-          id:              `funnelish-missing-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        const { error: missErr } = await supabase.from('messages').insert({
+          id:              `funnelish-ask-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           conversation_id: waPhone,
           content:         missingMsg,
           role:            'assistant',
@@ -272,6 +282,7 @@ export async function POST(req: NextRequest) {
           whatsapp_id:     missingWamid,
           created_at:      new Date().toISOString(),
         });
+        if (missErr) console.error('[Funnelish] insert missing msg error:', missErr.message);
       }
     }
   }
