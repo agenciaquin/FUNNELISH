@@ -169,28 +169,50 @@ export async function POST(req: NextRequest) {
   })();
   const now = new Date().toISOString();
 
-  // ── Upsert in clientes_funnelish ──────────────────────────────────────────────
-  await supabase
-    .from('clientes_funnelish')
-    .upsert({
-      telefono:    tel10,
-      nombre,
-      producto:    productoNombre,
-      talla,
-      valor,
-      ciudad,
-      departamento,
-      direccion,
-      correo,
-      referencia,
-      estado:      'pendiente',
-      wa_enviado:  false,
-      confirmado:  false,
-      created_at:  now,
-      updated_at:  now,
-    }, { onConflict: 'referencia' })
-    .select('id')
-    .maybeSingle();
+  // ── Guardar pedido en clientes_funnelish ──────────────────────────────────────
+  // Usamos insert-or-update manual en lugar de upsert(onConflict:'referencia')
+  // porque si 'referencia' no tiene UNIQUE constraint en Supabase, el upsert falla silenciosamente.
+  const pedidoData = {
+    telefono:    tel10,
+    nombre,
+    producto:    productoNombre,
+    talla,
+    valor,
+    ciudad,
+    departamento,
+    direccion,
+    correo,
+    referencia,
+    estado:      'pendiente',
+    wa_enviado:  false,
+    confirmado:  false,
+    updated_at:  now,
+  };
+
+  // Intentar buscar por referencia primero (para actualizar si ya existe)
+  let pedidoGuardado = false;
+  if (referencia) {
+    const { data: existing, error: findErr } = await supabase
+      .from('clientes_funnelish').select('id').eq('referencia', referencia).maybeSingle();
+    if (findErr) console.error('[Funnelish] buscar referencia error:', findErr.message);
+
+    if (existing?.id) {
+      const { error: updErr } = await supabase
+        .from('clientes_funnelish').update(pedidoData).eq('id', existing.id);
+      if (updErr) console.error('[Funnelish] update existente error:', updErr.message);
+      else pedidoGuardado = true;
+    }
+  }
+
+  // Si no encontramos por referencia, insertar nuevo
+  if (!pedidoGuardado) {
+    const { error: insErr } = await supabase
+      .from('clientes_funnelish').insert({ ...pedidoData, created_at: now });
+    if (insErr) console.error('[Funnelish] insert nuevo error:', insErr.message);
+    else pedidoGuardado = true;
+  }
+
+  console.log(`[Funnelish] pedido guardado=${pedidoGuardado} tel=${tel10} ref=${referencia || 'sin-ref'}`);
 
   // ── Send WhatsApp (solo whitelist mientras el bot está en desarrollo) ──────────
   const enWhitelist = TEST_WHITELIST.has(tel10);
