@@ -231,6 +231,8 @@ export default function CatalogosPanel() {
   const [loading,    setLoading]    = useState(true);
   const [busqueda,   setBusqueda]   = useState('');
   const [expanded,   setExpanded]   = useState<Record<string, boolean>>({});
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   // Modales
   const [modalCat,   setModalCat]   = useState<null | 'new' | Catalogo>(null);
@@ -305,32 +307,35 @@ export default function CatalogosPanel() {
     load();
   };
 
-  const handleMoveColor = async (catId: string, colorId: string, dir: 'up' | 'down') => {
+  const handleDragStart = (id: string) => setDraggingId(id);
+  const handleDragEnd   = () => { setDraggingId(null); setDragOverId(null); };
+  const handleDragOver  = (e: React.DragEvent, id: string) => { e.preventDefault(); setDragOverId(id); };
+
+  const handleDrop = async (catId: string, dropId: string) => {
+    if (!draggingId || draggingId === dropId) { setDraggingId(null); setDragOverId(null); return; }
     const cat = catalogos.find(c => c.id === catId);
     if (!cat) return;
-    const sorted = [...cat.catalogo_colores].sort((a, b) => a.orden - b.orden);
-    const idx = sorted.findIndex(c => c.id === colorId);
-    const newIdx = dir === 'up' ? idx - 1 : idx + 1;
-    if (newIdx < 0 || newIdx >= sorted.length) return;
 
-    // Swap en estado local inmediato
-    const swapped = [...sorted];
-    [swapped[idx], swapped[newIdx]] = [swapped[newIdx], swapped[idx]];
-    setCatalogos(prev => prev.map(c =>
-      c.id === catId ? { ...c, catalogo_colores: swapped.map((cv, i) => ({ ...cv, orden: i })) } : c
+    const sorted   = [...cat.catalogo_colores].sort((a, b) => a.orden - b.orden);
+    const dragIdx  = sorted.findIndex(c => c.id === draggingId);
+    const dropIdx  = sorted.findIndex(c => c.id === dropId);
+    const reordered = [...sorted];
+    const [moved]   = reordered.splice(dragIdx, 1);
+    reordered.splice(dropIdx, 0, moved);
+    const updated   = reordered.map((cv, i) => ({ ...cv, orden: i }));
+
+    // Actualizar estado local inmediato
+    setCatalogos(prev => prev.map(c => c.id === catId ? { ...c, catalogo_colores: updated } : c));
+    setDraggingId(null);
+    setDragOverId(null);
+
+    // Persistir todos los órdenes
+    await Promise.all(updated.map(cv =>
+      fetch(`/api/catalogos/colores/${cv.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ color: cv.color, nombre_producto: cv.nombre_producto, url_imagen: cv.url_imagen, orden: cv.orden }),
+      })
     ));
-
-    // Persistir ambos
-    await Promise.all([
-      fetch(`/api/catalogos/colores/${swapped[idx].id}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ color: swapped[idx].color, nombre_producto: swapped[idx].nombre_producto, url_imagen: swapped[idx].url_imagen, orden: idx }),
-      }),
-      fetch(`/api/catalogos/colores/${swapped[newIdx].id}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ color: swapped[newIdx].color, nombre_producto: swapped[newIdx].nombre_producto, url_imagen: swapped[newIdx].url_imagen, orden: newIdx }),
-      }),
-    ]);
   };
 
   // ── Formulario inline ─────────────────────────────────────────────────────────
@@ -482,9 +487,31 @@ export default function CatalogosPanel() {
                 {isOpen && (
                   <div className="border-t border-[#E8E8E8] px-5 py-4 flex flex-col gap-2">
 
-                    {/* Colores existentes (ordenados) */}
-                    {[...cat.catalogo_colores].sort((a, b) => a.orden - b.orden).map((cv, idx, arr) => (
-                      <div key={cv.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-[#F8F8F8] transition-colors group">
+                    {/* Colores existentes — drag & drop para reordenar */}
+                    {[...cat.catalogo_colores].sort((a, b) => a.orden - b.orden).map((cv) => (
+                      <div
+                        key={cv.id}
+                        draggable
+                        onDragStart={() => handleDragStart(cv.id)}
+                        onDragEnd={handleDragEnd}
+                        onDragOver={(e) => handleDragOver(e, cv.id)}
+                        onDrop={() => handleDrop(cat.id, cv.id)}
+                        className={`flex items-center gap-3 p-2 rounded-xl transition-all group
+                          ${draggingId === cv.id ? 'opacity-30' : ''}
+                          ${dragOverId === cv.id && draggingId !== cv.id
+                            ? 'bg-[#00A89D]/10 border-2 border-dashed border-[#00A89D]'
+                            : 'hover:bg-[#F8F8F8] border-2 border-transparent'}
+                        `}
+                      >
+                        {/* Handle de arrastre */}
+                        <div
+                          className="cursor-grab active:cursor-grabbing shrink-0 flex flex-col gap-[3px] px-1 py-2 opacity-30 group-hover:opacity-80 transition-opacity"
+                          title="Arrastra para reordenar"
+                        >
+                          <span className="block w-4 h-[2px] bg-[#6B6B6B] rounded-full" />
+                          <span className="block w-4 h-[2px] bg-[#6B6B6B] rounded-full" />
+                          <span className="block w-4 h-[2px] bg-[#6B6B6B] rounded-full" />
+                        </div>
 
                         <div className="w-14 h-14 rounded-xl overflow-hidden bg-[#F5F5F5] border border-[#E8E8E8] shrink-0">
                           {cv.url_imagen ? (
@@ -511,23 +538,6 @@ export default function CatalogosPanel() {
                             title="Eliminar"
                           >🗑️</button>
                         </div>
-
-                        {/* Barra subir/bajar (derecha, siempre visible) */}
-                        <div className="flex flex-col shrink-0 border border-[#E8E8E8] rounded-lg overflow-hidden">
-                          <button
-                            onClick={() => handleMoveColor(cat.id, cv.id, 'up')}
-                            disabled={idx === 0}
-                            className="px-2 py-1 text-[10px] text-[#6B6B6B] hover:bg-[#00A89D] hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all leading-none border-b border-[#E8E8E8]"
-                            title="Subir"
-                          >▲</button>
-                          <button
-                            onClick={() => handleMoveColor(cat.id, cv.id, 'down')}
-                            disabled={idx === arr.length - 1}
-                            className="px-2 py-1 text-[10px] text-[#6B6B6B] hover:bg-[#00A89D] hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all leading-none"
-                            title="Bajar"
-                          >▼</button>
-                        </div>
-
                       </div>
                     ))}
 
