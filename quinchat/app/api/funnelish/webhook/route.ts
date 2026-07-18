@@ -123,9 +123,50 @@ export async function POST(req: NextRequest) {
   }
 
   const mensaje = buildMensaje({ nombre, telefono: tel10, direccion, ciudad, departamento, correo, talla, producto: productoNombre, valor });
-  const imageUrl = getProductImageUrl(productoNombre);
 
   const supabase = createServerSupabaseClient();
+
+  // Buscar imagen: primero en catálogo dinámico de Supabase, luego en catálogo estático
+  const imageUrl = await (async () => {
+    if (productoNombre) {
+      // 1. Coincidencia exacta en catalogo_colores (case-insensitive)
+      const { data: exactMatch } = await supabase
+        .from('catalogo_colores')
+        .select('url_imagen')
+        .ilike('nombre_producto', productoNombre)
+        .not('url_imagen', 'is', null)
+        .limit(1)
+        .maybeSingle();
+      if (exactMatch?.url_imagen) {
+        console.log(`[Funnelish] Imagen de Supabase para "${productoNombre}"`);
+        return exactMatch.url_imagen as string;
+      }
+
+      // 2. Coincidencia por palabras en nombre_producto de Supabase
+      const { data: allColors } = await supabase
+        .from('catalogo_colores')
+        .select('nombre_producto, url_imagen')
+        .not('url_imagen', 'is', null);
+      if (allColors && allColors.length > 0) {
+        const words = productoNombre.toUpperCase().split(/\s+/).filter(w => w.length >= 3);
+        let best: { url: string; score: number } | null = null;
+        for (const row of allColors) {
+          if (!row.nombre_producto || !row.url_imagen) continue;
+          const name = (row.nombre_producto as string).toUpperCase();
+          const score = words.filter(w => name.includes(w)).length;
+          if (score > 0 && (!best || score > best.score)) {
+            best = { url: row.url_imagen as string, score };
+          }
+        }
+        if (best) {
+          console.log(`[Funnelish] Imagen Supabase (fuzzy, score=${best.score}) para "${productoNombre}"`);
+          return best.url;
+        }
+      }
+    }
+    // 3. Fallback al catálogo estático
+    return getProductImageUrl(productoNombre);
+  })();
   const now = new Date().toISOString();
 
   // ── Upsert in clientes_funnelish ──────────────────────────────────────────────
