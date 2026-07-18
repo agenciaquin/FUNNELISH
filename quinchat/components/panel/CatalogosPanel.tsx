@@ -418,7 +418,7 @@ export default function CatalogosPanel() {
       </div>
 
       {/* Lista — SCROLL INTERNO */}
-      <div className="px-6 py-5 flex flex-col gap-4" style={{ flex: 1, overflowY: 'scroll', minHeight: 0 }}>
+      <div className="panel-scroll px-6 py-5 flex flex-col gap-4" style={{ flex: 1, overflowY: 'scroll', minHeight: 0 }}>
 
         {loading ? (
           <div className="flex items-center justify-center py-20">

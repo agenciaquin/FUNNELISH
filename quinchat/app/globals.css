@@ -4,16 +4,33 @@
 
 /* Scrollbar personalizado — Agencia Quin */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #EFEFEF;
+  background: #E8E8E8;
 }
 ::-webkit-scrollbar-thumb {
-  background: #BBBBBB;
-  border-radius: 3px;
+  background: #999999;
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
+  background: #00A89D;
+}
+
+/* Scrollbar siempre visible en paneles principales */
+.panel-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.panel-scroll::-webkit-scrollbar-track {
+  background: #EFEFEF;
+  border-radius: 4px;
+}
+.panel-scroll::-webkit-scrollbar-thumb {
+  background: #AAAAAA;
+  border-radius: 4px;
+  min-height: 40px;
+}
+.panel-scroll::-webkit-scrollbar-thumb:hover {
   background: #00A89D;
 }
 
