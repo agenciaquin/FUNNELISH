@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sendTextMessage, sendConfirmacionTemplate, sendAudioByUrl } from '@/lib/whatsapp';
 import { getProductImageUrl, FALLBACK_IMAGE } from '@/lib/product-catalog';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { isCompleteAddress, getAddressQuestion } from '@/lib/address';
+import { validateAddressLupap, getLupapMessage } from '@/lib/lupap';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -332,17 +334,30 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 6. Preguntar datos faltantes ────────────────────────────────────────
-    const missing: string[] = [];
-    if (!direccion || direccion === '—') missing.push('dirección completa de envío');
-    if (!ciudad    || ciudad    === '—') missing.push('ciudad de envío');
-    if (!departamento || departamento === '—') missing.push('departamento');
-    if (talla === 'Por confirmar') missing.push('talla del buzo (XS, S, M, L, XL, XXL, XXXL)');
+    // Dirección: primero verificar si es incompleta (tiene algo pero no es válida)
+    const dirIncompleta = (direccion && direccion !== '—') && !isCompleteAddress(direccion);
+    const dirFaltante   = !direccion || direccion === '—';
 
-    if (missing.length > 0) {
-      const missingMsg = missing.length === 1
-        ? `📋 ¿Me confirmas tu ${missing[0]}?`
-        : `📋 Para completar tu pedido necesito confirmar:\n${missing.map(f => `• Tu ${f}`).join('\n')}`;
+    const missingMsgs: string[] = [];
 
+    // Dirección incompleta → pregunta específica según lo que falta
+    if (dirFaltante) {
+      missingMsgs.push('📍 Para completar tu pedido necesito tu *dirección de envío completa*. Por ejemplo: *Calle 15 # 20-30 Barrio Los Pinos* o *Conjunto Arboleda, Casa 5*.');
+    } else if (dirIncompleta) {
+      const addrQ = getAddressQuestion(direccion);
+      if (addrQ) missingMsgs.push(addrQ);
+    } else if (direccion && direccion !== '—') {
+      // Dirección pasa validación local → verificar con Lupap (geocodificación real)
+      const lupapResult = await validateAddressLupap(direccion, ciudad ?? '');
+      const lupapMsg = getLupapMessage(lupapResult, direccion);
+      if (lupapMsg) missingMsgs.push(lupapMsg);
+    }
+
+    if (!ciudad    || ciudad    === '—') missingMsgs.push('📋 ¿Me confirmas tu *ciudad de envío*?');
+    if (!departamento || departamento === '—') missingMsgs.push('📋 ¿Me confirmas tu *departamento*?');
+    if (talla === 'Por confirmar') missingMsgs.push('📋 ¿Cuál es tu *talla* del buzo? (XS, S, M, L, XL, XXL, XXXL)');
+
+    for (const missingMsg of missingMsgs) {
       const missingWamid = await sendTextMessage(waPhone, missingMsg);
       if (missingWamid) {
         const { error: missErr } = await supabase.from('messages').insert({

@@ -4,35 +4,8 @@ import { sendTextMessage, sendAudioByUrl, sendImageByUrl } from '@/lib/whatsapp'
 import { PRODUCT_NAMES, FALLBACK_IMAGE, getProductImageUrl } from '@/lib/product-catalog';
 import { chat } from '@/lib/quinchat/claude';
 import type { ChatRequest } from '@/lib/quinchat/types';
-
-// ─── Helpers de dirección ─────────────────────────────────────────────────────
-
-/**
- * Valida si una cadena es una dirección de domicilio completa.
- * Reglas definidas por el equipo Klixmant.
- */
-function isCompleteAddress(addr: string | null | undefined): boolean {
-  if (!addr || addr.trim() === '' || addr === '—') return false;
-  const a = addr.toLowerCase().trim();
-  if (a.length < 5) return false;
-
-  // Calle / Carrera / Diagonal / Transversal / Avenida + número + # + número
-  if (/\b(calle|carrera|diagonal|transversal|avenida|cl\b|cra\b|cr\b|kr\b|diag\b|av\b|cll\b)\s*\d+\s*[#\-]\s*\d/.test(a)) return true;
-
-  // Manzana + Casa
-  if (/\b(manzana|mz\.?)\b.{0,40}\b(casa|cs\.?)\b/.test(a)) return true;
-
-  // Conjunto + Casa o Apartamento
-  if (/\b(conjunto|conj\.?)\b.{0,60}\b(casa|cs\.?|apartamento|apto\.?|apt\.?)\b/.test(a)) return true;
-
-  // Edificio + Apartamento
-  if (/\b(edificio|edif\.?)\b.{0,40}\b(apartamento|apto\.?|apt\.?)\b/.test(a)) return true;
-
-  // Vereda + Finca
-  if (/\b(vereda|vda\.?)\b.{0,40}\b(finca)\b/.test(a)) return true;
-
-  return false;
-}
+import { isCompleteAddress, isDirOficina, getAddressQuestion } from '@/lib/address';
+import { validateAddressLupap, getLupapMessage } from '@/lib/lupap';
 
 // ─── Frases de confirmación natural ──────────────────────────────────────────
 
@@ -47,14 +20,6 @@ const NATURAL_CONFIRM_PHRASES = [
   'así está bien', 'asi esta bien', 'de acuerdo', 'todo bien',
   'si perfecto', 'sí perfecto', 'perfecto así',
 ];
-
-/** True cuando la dirección es recogida en oficina/interrapidísimo (no domicilio). */
-function isDirOficina(addr: string | null | undefined): boolean {
-  if (!addr || addr.trim() === '' || addr === '—') return false;
-  const a = addr.toLowerCase();
-  return a.includes('interrapid') || a.includes('reclamo') || a.includes('reclamar')
-    || (a.includes('oficina') && !isCompleteAddress(addr));
-}
 
 // ─── Catálogo de colores desde la DB ─────────────────────────────────────────
 
@@ -98,6 +63,8 @@ async function findColorVariantInDB(
 
 /** Detecta si el texto menciona un color */
 const COLOR_NAMES = ['azul oscuro', 'rojo', 'negro', 'azul', 'blanco marfil', 'marfil', 'blanco', 'amarillo', 'beige', 'verde', 'gris', 'cocoa', 'azul navy', 'verde oscuro'];
+// Colores en uppercase para filtrar palabras de color de los nombres de producto
+const COLOR_NAMES_UPPER = new Set(COLOR_NAMES.map((c: string) => c.toUpperCase()));
 function detectColorInText(textLower: string): string | null {
   return COLOR_NAMES.find(c => textLower.includes(c)) ?? null;
 }
@@ -284,19 +251,27 @@ export async function POST(req: NextRequest) {
         const missing: string[] = [];
         if (!pedido.talla || pedido.talla === 'Por confirmar')
           missing.push('talla del buzo (XS, S, M, L, XL, XXL, XXXL)');
-        if (!isCompleteAddress(pedido.direccion))
-          missing.push('dirección completa de domicilio (ej: Calle 15 # 20-30 Barrio)');
+        const dirQ = getAddressQuestion(pedido.direccion);
+        if (dirQ) missing.push('dirección'); // marcador — se reemplaza abajo
         if (!pedido.ciudad || pedido.ciudad === '—')
           missing.push('ciudad');
         if (!pedido.departamento || pedido.departamento === '—')
           missing.push('departamento');
 
         if (missing.length > 0) {
-          const reask = missing.length === 1
-            ? `Antes de confirmar necesito tu ${missing[0]}.`
-            : `Antes de confirmar necesito:\n${missing.map(f => `• ${f}`).join('\n')}`;
-          const wamid = await sendTextMessage(from, reask);
-          await saveAndSend(supabase, from, reask, 'text', wamid);
+          // Si la dirección está incompleta y es el único dato faltante, pregunta específica
+          if (dirQ && missing.length === 1) {
+            const wamid = await sendTextMessage(from, dirQ);
+            await saveAndSend(supabase, from, dirQ, 'text', wamid);
+          } else {
+            const otherMissing = missing.filter(f => f !== 'dirección');
+            const reaskParts: string[] = [];
+            if (dirQ) reaskParts.push(dirQ);
+            if (otherMissing.length > 0) reaskParts.push(`Antes de confirmar también necesito: ${otherMissing.join(', ')}.`);
+            const reask = reaskParts.join('\n\n');
+            const wamid = await sendTextMessage(from, reask);
+            await saveAndSend(supabase, from, reask, 'text', wamid);
+          }
           continue;
         }
 
@@ -329,7 +304,7 @@ export async function POST(req: NextRequest) {
       const { data: confirmedPedido } = await supabase
         .from('clientes_funnelish')
         .select('id, nombre, producto, talla, valor, direccion, ciudad, departamento, correo, telefono')
-        .eq('telefono', tel10).eq('wa_enviado', true).eq('confirmado', true)
+        .eq('telefono', tel10).eq('confirmado', true)
         .order('created_at', { ascending: false }).limit(1).maybeSingle();
 
       if (confirmedPedido) {
@@ -348,23 +323,143 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        // ── 2. Detectar solicitud de foto y/o cambio de color ─────────────────
+        // ── 2. Detección de intenciones ───────────────────────────────────────
         const wantsFoto = textLower.includes('foto') || textLower.includes('imagen');
         const mentionedColorConf = detectColorInText(textLower);
 
+        // Leer último mensaje del bot para entender el contexto de la conversación
         const { data: lastBotMsgConf } = await supabase
           .from('messages').select('content')
           .eq('conversation_id', from).eq('role', 'assistant')
           .order('created_at', { ascending: false }).limit(1).maybeSingle();
-        const lastBotAskedColorConf = !!(
-          lastBotMsgConf?.content?.toLowerCase().includes('qué color') ||
-          lastBotMsgConf?.content?.toLowerCase().includes('que color') ||
-          lastBotMsgConf?.content?.toLowerCase().includes('colores disponibles') ||
-          lastBotMsgConf?.content?.toLowerCase().includes('tenemos:') ||
-          lastBotMsgConf?.content?.toLowerCase().includes('disponibles')
-        );
+        const lastBotContentConf = lastBotMsgConf?.content?.toLowerCase() ?? '';
 
-        // Un color mencionado que NO está ya en el nombre del producto actual = cambio de color
+        // El bot estaba en modo AGREGAR prenda (promo)
+        const lastBotAskedAddColor =
+          lastBotContentConf.includes('agregar') ||
+          lastBotContentConf.includes('color quieres agregar') ||
+          (lastBotContentConf.includes('promo') && lastBotContentConf.includes('color'));
+
+        // El bot estaba en modo CAMBIAR color del pedido
+        const lastBotAskedChangeColor =
+          !lastBotAskedAddColor && (
+            lastBotContentConf.includes('qué color quieres cambiarlo') ||
+            lastBotContentConf.includes('cuál prefieres') ||
+            (lastBotContentConf.includes('cambiar') && lastBotContentConf.includes('color'))
+          );
+
+        // ── Helpers ───────────────────────────────────────────────────────────
+
+        // Colores únicos de la misma familia (sin duplicados por nombre_producto)
+        const getColoresFamilia = async (productoRef: string) => {
+          const { data: allC } = await supabase
+            .from('catalogo_colores').select('color, nombre_producto, url_imagen')
+            .not('url_imagen', 'is', null);
+          const refWords = productoRef.toUpperCase().split(/\s+/);
+          const brandWords = refWords.filter((w: string) => w.length >= 3 && !COLOR_NAMES_UPPER.has(w));
+          const searchWords = brandWords.length > 0 ? brandWords : refWords.filter((w: string) => w.length >= 4);
+          const all = (allC ?? []).filter((c: any) =>
+            searchWords.some((w: string) => (c.nombre_producto as string).toUpperCase().includes(w))
+          );
+          // Deduplicar por nombre_producto
+          return [...new Map(all.map((c: any) => [c.nombre_producto, c])).values()];
+        };
+
+        const updateProductoConf = async (newProducto: string, newValor?: string) => {
+          if (confirmedPedido.id) {
+            const upd: any = { producto: newProducto };
+            if (newValor) upd.valor = newValor;
+            await supabase.from('clientes_funnelish').update(upd).eq('id', confirmedPedido.id);
+          }
+        };
+
+        const sendColorConfirm = async (newProducto: string, imgUrl: string | null | undefined) => {
+          const url = imgUrl && imgUrl !== FALLBACK_IMAGE ? imgUrl : getProductImageUrl(newProducto);
+          if (url && url !== FALLBACK_IMAGE) {
+            const imgWamid = await sendImageByUrl(from, url, newProducto);
+            await saveAndSend(supabase, from, url, 'image', imgWamid);
+          }
+          const msg = `✅ ¡Listo! Tu pedido fue actualizado a *${newProducto}*. Queda confirmado y lo despachamos en las próximas 24 horas. 🚚`;
+          const wamid = await sendTextMessage(from, msg);
+          await saveAndSend(supabase, from, msg, 'text', wamid);
+        };
+
+        const PROMO_PRICES_CONF: Record<number, string> = { 1: '$134.900', 2: '$229.900', 3: '$325.000' };
+
+        // ── 3. AGREGAR prenda a la promo ──────────────────────────────────────
+        // Frases que claramente significan "quiero otro buzo además del que ya tengo"
+        const wantsAddPromoConf = [
+          'quiero otro', 'quiero una más', 'quiero una mas', 'agrégame', 'agregame',
+          'quiero dos', 'quiero 2', 'me llevo los dos', 'llevar los dos',
+          'pack de dos', 'pack x2', 'promo de dos', 'promo x2',
+          'quiero también', 'quiero tambien', 'quiero la promo',
+          'para llevar los dos', 'no para cambiarlo', 'no quiero cambiarlo',
+          'quiero ambos', 'quiero las dos', 'quiero los dos', 'una adicional',
+          'uno adicional', 'quiero añadir', 'añadirme',
+        ].some(w => textLower.includes(w));
+
+        // También aplica si el bot preguntó por color a AGREGAR y el cliente respondió
+        const isAddingFromContext = lastBotAskedAddColor && !!mentionedColorConf;
+
+        if (wantsAddPromoConf || isAddingFromContext) {
+          const famColorsAdd = await getColoresFamilia(confirmedPedido.producto);
+
+          if (!mentionedColorConf) {
+            // Solo dijo "quiero otro" sin color → preguntar qué color quiere agregar
+            const colorList = famColorsAdd.map((c: any) => c.color).filter(Boolean).join(', ');
+            const promoMsg =
+              `¡Claro! 😊 Puedes aprovechar nuestras promos:\n` +
+              `• *2 prendas:* $229.900\n• *3 prendas:* $325.000\n\n` +
+              `¿Qué color quieres agregar?\nDisponibles: ${colorList || 'consulta con un asesor'}`;
+            const wamid = await sendTextMessage(from, promoMsg);
+            await saveAndSend(supabase, from, promoMsg, 'text', wamid);
+            continue;
+          }
+
+          // Tiene color → buscar en la familia
+          const matchAdd = famColorsAdd.find((c: any) =>
+            (c.color ?? '').toLowerCase().includes(mentionedColorConf) ||
+            mentionedColorConf.includes((c.color ?? '').toLowerCase()) ||
+            (c.nombre_producto as string).toUpperCase().includes(mentionedColorConf.toUpperCase())
+          );
+
+          if (matchAdd) {
+            // Contar cuántas prendas ya tiene (un "+" por cada prenda adicional)
+            const currentProd = confirmedPedido.producto;
+            const currentCount = currentProd.split('+').length;
+            const newCount = Math.min(currentCount + 1, 3);
+            const combinedProd = `${currentProd.trim()} + ${matchAdd.nombre_producto}`;
+            const promoValor = PROMO_PRICES_CONF[newCount] ?? '$325.000';
+
+            await updateProductoConf(combinedProd, promoValor);
+
+            // Enviar foto de la nueva prenda
+            if (matchAdd.url_imagen && matchAdd.url_imagen !== FALLBACK_IMAGE) {
+              const imgWamid = await sendImageByUrl(from, matchAdd.url_imagen, matchAdd.nombre_producto);
+              await saveAndSend(supabase, from, matchAdd.url_imagen, 'image', imgWamid);
+            }
+
+            const confirmMsg =
+              `✅ ¡Perfecto! Te agregamos *${matchAdd.nombre_producto}*.\n\n` +
+              `Tu pedido queda:\n*${combinedProd}*\n` +
+              `Valor total: *${promoValor}* 🎉\n\n` +
+              `Lo despachamos en las próximas 24 horas. 🚚`;
+            const wamid = await sendTextMessage(from, confirmMsg);
+            await saveAndSend(supabase, from, confirmMsg, 'text', wamid);
+            continue;
+          }
+
+          // Color no encontrado en la familia
+          const colorListAdd = famColorsAdd.map((c: any) => c.color).filter(Boolean).join(', ');
+          const noMatchMsg =
+            `Ese color no está disponible 😔\n` +
+            `Para agregar a tu promo puedes elegir: ${colorListAdd}\n\n¿Cuál prefieres?`;
+          const wamid = await sendTextMessage(from, noMatchMsg);
+          await saveAndSend(supabase, from, noMatchMsg, 'text', wamid);
+          continue;
+        }
+
+        // ── 4. CAMBIO de color del pedido actual ──────────────────────────────
         const currentProductUpper = confirmedPedido.producto.toUpperCase();
         const colorAlreadyInProduct = mentionedColorConf
           ? currentProductUpper.includes(mentionedColorConf.toUpperCase())
@@ -381,45 +476,14 @@ export async function POST(req: NextRequest) {
           colorChangeWordsConf.some(w => textLower.includes(w))
           || (textLower.includes('cambiar') && !!mentionedColorConf)
           || (textLower.includes('lo quiero') && !!mentionedColorConf)
-          || (lastBotAskedColorConf && !!mentionedColorConf)
-          // Foto + color diferente al actual = también es cambio de color
+          // Solo activa "cambio" si el bot estaba en contexto de CAMBIO — NO de agregar
+          || (lastBotAskedChangeColor && !!mentionedColorConf)
+          // Foto + color diferente al actual = cambio
           || (wantsFoto && !!mentionedColorConf && !colorAlreadyInProduct);
 
-        // ── Helper: colores de la misma familia desde catalogo_colores ────────
-        const getColoresFamilia = async (productoRef: string) => {
-          const { data: allC } = await supabase
-            .from('catalogo_colores').select('color, nombre_producto, url_imagen')
-            .not('url_imagen', 'is', null);
-          const prodWords = productoRef.toUpperCase().split(/\s+/).filter((w: string) => w.length >= 4);
-          return (allC ?? []).filter((c: any) =>
-            prodWords.some((w: string) => (c.nombre_producto as string).toUpperCase().includes(w))
-          );
-        };
-
-        // ── Helper: actualizar producto en DB ─────────────────────────────────
-        const updateProductoConf = async (newProducto: string) => {
-          if (confirmedPedido.id) {
-            await supabase.from('clientes_funnelish')
-              .update({ producto: newProducto }).eq('id', confirmedPedido.id);
-          }
-        };
-
-        // ── Helper: enviar foto + confirmación ────────────────────────────────
-        const sendColorConfirm = async (newProducto: string, imgUrl: string | null | undefined) => {
-          const url = imgUrl && imgUrl !== FALLBACK_IMAGE ? imgUrl : getProductImageUrl(newProducto);
-          if (url && url !== FALLBACK_IMAGE) {
-            const imgWamid = await sendImageByUrl(from, url, newProducto);
-            await saveAndSend(supabase, from, url, 'image', imgWamid);
-          }
-          const msg = `✅ ¡Listo! Tu pedido fue actualizado a *${newProducto}*. Queda confirmado y lo despachamos en las próximas 24 horas. 🚚`;
-          const wamid = await sendTextMessage(from, msg);
-          await saveAndSend(supabase, from, msg, 'text', wamid);
-        };
-
-        // ── 3. Foto del producto actual (sin cambio de color) ──────────────────
+        // ── 5. Foto del producto actual (sin cambio de color) ─────────────────
         if (wantsFoto && !colorChangeIntentConf) {
           const productoActual = confirmedPedido.producto;
-          // Buscar imagen en catalogo_colores
           let fotoUrl: string | null = null;
           const { data: exactF } = await supabase
             .from('catalogo_colores').select('url_imagen')
@@ -430,7 +494,6 @@ export async function POST(req: NextRequest) {
           } else {
             const famColors = await getColoresFamilia(productoActual);
             if (famColors.length > 0) {
-              // Intentar encontrar match por color actual en el nombre
               const colorActual = detectColorInText(productoActual.toLowerCase());
               if (colorActual) {
                 const matched = famColors.find((c: any) =>
@@ -457,9 +520,8 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        // ── 4. Cambio de color ────────────────────────────────────────────────
+        // ── 6. Ejecutar cambio de color ───────────────────────────────────────
         if (colorChangeIntentConf) {
-          // Intentar con catalogos_bot primero
           const catalogResult = await findColorVariantInDB(supabase, confirmedPedido.producto, mentionedColorConf);
 
           if (catalogResult?.match) {
@@ -469,7 +531,7 @@ export async function POST(req: NextRequest) {
           }
 
           if (catalogResult && mentionedColorConf && catalogResult.colores.length) {
-            const colorList = catalogResult.colores.map((c: any) => c.color).join(', ');
+            const colorList = [...new Set(catalogResult.colores.map((c: any) => c.color))].join(', ');
             const noColorMsg = `Ese color no está disponible 😔 Para *${catalogResult.familia}* tenemos:\n${colorList}\n\n¿Cuál prefieres?`;
             const wamid = await sendTextMessage(from, noColorMsg);
             await saveAndSend(supabase, from, noColorMsg, 'text', wamid);
@@ -477,14 +539,13 @@ export async function POST(req: NextRequest) {
           }
 
           if (catalogResult && !mentionedColorConf) {
-            const colorList = catalogResult.colores.map((c: any) => c.color).join(', ');
+            const colorList = [...new Set(catalogResult.colores.map((c: any) => c.color))].join(', ');
             const ask = `¡Claro! 😊 Para *${catalogResult.familia}* tenemos:\n${colorList}\n\n¿A cuál quieres cambiar?`;
             const wamid = await sendTextMessage(from, ask);
             await saveAndSend(supabase, from, ask, 'text', wamid);
             continue;
           }
 
-          // Sin catalogos_bot → buscar directo en catalogo_colores por familia
           const famColors = await getColoresFamilia(confirmedPedido.producto);
 
           if (famColors.length > 0) {
@@ -499,22 +560,19 @@ export async function POST(req: NextRequest) {
                 await sendColorConfirm(match.nombre_producto, match.url_imagen);
                 continue;
               }
-              // Color mencionado no existe en catálogo
-              const colorList = famColors.map((c: any) => c.color).join(', ');
+              const colorList = famColors.map((c: any) => c.color).filter(Boolean).join(', ');
               const noColorMsg = `Ese color no está disponible 😔 Tenemos: ${colorList}\n\n¿Cuál prefieres?`;
               const wamid = await sendTextMessage(from, noColorMsg);
               await saveAndSend(supabase, from, noColorMsg, 'text', wamid);
               continue;
             }
-            // Solo pregunta qué colores hay disponibles
-            const colorList = famColors.map((c: any) => c.color).join(', ');
-            const ask = `¡Claro! 😊 Tenemos disponibles:\n${colorList}\n\n¿A cuál color quieres cambiar?`;
+            const colorList = famColors.map((c: any) => c.color).filter(Boolean).join(', ');
+            const ask = `¡Claro! 😊 ¿A qué color quieres cambiarlo?\n\nTenemos disponibles: ${colorList}`;
             const wamid = await sendTextMessage(from, ask);
             await saveAndSend(supabase, from, ask, 'text', wamid);
             continue;
           }
 
-          // Sin colores en la DB → asesor
           const handoffColor = `Para cambiar el color de tu pedido te paso con un asesor 😊 Un momento.`;
           const wamid = await sendTextMessage(from, handoffColor);
           await saveAndSend(supabase, from, handoffColor, 'text', wamid);
@@ -525,7 +583,7 @@ export async function POST(req: NextRequest) {
         // ── 5. Claude para Q&A general post-confirmación ──────────────────────
         const { data: histConf } = await supabase
           .from('messages').select('content, role')
-          .eq('conversation_id', from).order('created_at', { ascending: false }).limit(6);
+          .eq('conversation_id', from).order('created_at', { ascending: false }).limit(14);
 
         const sysConf =
           `Eres Josué de Klixmant. El cliente ya confirmó su pedido: *${confirmedPedido.producto}* — Valor: *${confirmedPedido.valor}*.\n` +
@@ -556,10 +614,35 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // Genuinamente no hay pedido activo ni confirmado
-      const noPedidoMsg = `Hola 😊 No encontramos un pedido activo para este número. Si ya realizaste tu compra, en unos minutos recibirás los detalles. Para ver el catálogo o hacer un pedido, un asesor puede ayudarte.`;
-      const wamid = await sendTextMessage(from, noPedidoMsg);
-      await saveAndSend(supabase, from, noPedidoMsg, 'text', wamid);
+      // Sin pedido en DB — leer historial y responder con Claude basándose en la conversación
+      const { data: histNoPedido } = await supabase
+        .from('messages').select('content, role')
+        .eq('conversation_id', from).order('created_at', { ascending: false }).limit(14);
+
+      const sysNoPedido =
+        `Eres Josué de Klixmant. Atiendes clientes por WhatsApp.\n` +
+        `Este cliente no tiene un pedido activo en este momento.\n` +
+        `Responde de forma amable y natural, continuando el hilo de la conversación según el historial.\n` +
+        `Si el cliente pregunta por su pedido o cuándo llega: dile que en unos minutos recibirá la confirmación, o que puede escribirnos para ayudarle.\n` +
+        `Si el cliente pide ver catálogo u otros productos: dile que un asesor puede ayudarle.\n` +
+        `Sé breve, cálido y útil. NUNCA escribas URLs ni enlaces.\n`;
+
+      const histNoPedidoMsgs: ChatRequest['messages'] = [...(histNoPedido ?? [])]
+        .reverse()
+        .filter((m: any) => m.content?.trim() && !m.content.startsWith('http'))
+        .map((m: any) => ({
+          role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+          content: m.content as string,
+        }));
+      if (!histNoPedidoMsgs.length || histNoPedidoMsgs[histNoPedidoMsgs.length - 1]?.role !== 'user') {
+        histNoPedidoMsgs.push({ role: 'user', content: text });
+      }
+
+      try {
+        const resp = await chat({ messages: histNoPedidoMsgs, tenantId: 'klixmant', systemPrompt: sysNoPedido });
+        const wamid = await sendTextMessage(from, resp.message);
+        if (wamid) await saveAndSend(supabase, from, resp.message, 'text', wamid);
+      } catch { /* ignorar */ }
       continue;
     }
 
@@ -595,6 +678,128 @@ export async function POST(req: NextRequest) {
       await supabase.from('clientes_funnelish').update({ direccion: currentDireccion }).eq('id', pendingPedido.id);
     }
 
+    // ── Dirección parcial: cliente mandó algo que parece dirección pero incompleta ──
+    // Detectar si el texto tiene palabras típicas de dirección colombiana pero isCompleteAddress es false
+    const looksLikePartialAddress = !dirAlreadyComplete && !clientGaveDireccion && (
+      /\b(calle|carrera|diagonal|transversal|avenida|cl\b|cra\b|cr\b|kr\b|diag\b|av\b|cll\b|conjunto|conj|edificio|manzana|barrio|torre|vereda)\b/i.test(text)
+    );
+    if (looksLikePartialAddress) {
+      // Guardar la dirección parcial en DB para que getAddressQuestion la use
+      await supabase.from('clientes_funnelish').update({ direccion: text.trim() }).eq('id', pendingPedido.id);
+      currentDireccion = text.trim();
+      const partialQ = getAddressQuestion(currentDireccion) ?? '📍 Necesito la dirección completa. Por ejemplo: *Calle 15 # 20-30 Barrio Los Pinos*.';
+      const wamid = await sendTextMessage(from, partialQ);
+      await saveAndSend(supabase, from, partialQ, 'text', wamid);
+      continue;
+    }
+
+    // ── Helper: colores de la misma familia en catalogo_colores ─────────────
+    const getFamColores = async (productoRef: string) => {
+      const { data: allC } = await supabase
+        .from('catalogo_colores').select('color, nombre_producto, url_imagen')
+        .not('url_imagen', 'is', null);
+      const refWords = productoRef.toUpperCase().split(/\s+/);
+      const brandWords = refWords.filter((w: string) => w.length >= 3 && !COLOR_NAMES_UPPER.has(w));
+      const searchWords = brandWords.length > 0 ? brandWords : refWords.filter((w: string) => w.length >= 4);
+      return (allC ?? []).filter((c: any) =>
+        searchWords.some((w: string) => (c.nombre_producto as string).toUpperCase().includes(w))
+      );
+    };
+
+    // ── Multi-prenda (promos) ─────────────────────────────────────────────────
+    // 1 prenda: $134.900 | 2 prendas: $229.900 | 3 prendas: $325.000
+    const PROMO_PRICES: Record<number, string> = { 1: '$134.900', 2: '$229.900', 3: '$325.000' };
+    const allColorsInText = COLOR_NAMES.filter(c => textLower.includes(c));
+    const mentionsDos = ['quiero dos', 'comprar dos', '2 prendas', '2 buzos', 'dos prendas',
+      'dos buzos', 'los dos', 'las dos', 'quiero 2', 'pack x2', 'combo 2',
+      'quiero comprar dos', 'quiero otro', 'quiero otra', 'quiero añadir',
+      'añadir uno', 'añadir una', 'agregar uno', 'agregar una',
+      'uno más', 'una más', 'uno mas', 'una mas'].some(w => textLower.includes(w));
+    const mentionsTres = ['quiero tres', 'comprar tres', '3 prendas', '3 buzos', 'tres prendas',
+      'tres buzos', 'quiero 3', 'pack x3', 'combo 3', 'quiero comprar tres'].some(w => textLower.includes(w));
+    const isMultiPrenda = allColorsInText.length >= 2 || mentionsDos || mentionsTres;
+
+    if (isMultiPrenda) {
+      const famColoresMulti = await getFamColores(pendingPedido.producto);
+
+      if (famColoresMulti.length > 0) {
+        // Contar cuántas prendas quiere
+        const itemCount = Math.min(
+          mentionsTres || allColorsInText.length >= 3 ? 3
+            : mentionsDos || allColorsInText.length >= 2 ? 2 : 1,
+          3
+        );
+
+        // Buscar match en catálogo para cada color mencionado
+        const matchedItems: Array<{ nombre_producto: string; url_imagen: string | null }> = [];
+        for (const color of allColorsInText) {
+          const match = famColoresMulti.find((c: any) =>
+            (c.color ?? '').toLowerCase().includes(color) ||
+            color.includes((c.color ?? '').toLowerCase()) ||
+            (c.nombre_producto as string).toUpperCase().includes(color.toUpperCase())
+          );
+          if (match && !matchedItems.some(i => i.nombre_producto === match.nombre_producto)) {
+            matchedItems.push({ nombre_producto: match.nombre_producto, url_imagen: match.url_imagen });
+          }
+        }
+
+        // Si encontramos 2+ items del mismo catálogo → es multi-prenda
+        if (matchedItems.length >= 2 || (mentionsDos && matchedItems.length >= 1)) {
+          // Incluir producto actual si no está
+          const currentIn = matchedItems.some(
+            i => i.nombre_producto.toUpperCase() === (pendingPedido.producto ?? '').toUpperCase()
+          );
+          if (!currentIn && matchedItems.length < itemCount) {
+            matchedItems.unshift({ nombre_producto: pendingPedido.producto, url_imagen: null });
+          }
+
+          const finalItems = matchedItems.slice(0, Math.max(itemCount, matchedItems.length > 3 ? 3 : matchedItems.length));
+          const realCount = Math.min(finalItems.length, 3);
+          const combinedProduct = finalItems.map(i => i.nombre_producto).join(' + ');
+          const promoValue = PROMO_PRICES[realCount] ?? PROMO_PRICES[3];
+
+          // Actualizar pedido en DB con combo + precio promo
+          await supabase.from('clientes_funnelish')
+            .update({ producto: combinedProduct, valor: promoValue })
+            .eq('id', pendingPedido.id);
+
+          // Enviar foto de cada prenda
+          for (const item of finalItems) {
+            const imgUrl = item.url_imagen || getProductImageUrl(item.nombre_producto);
+            if (imgUrl && imgUrl !== FALLBACK_IMAGE) {
+              const imgWamid = await sendImageByUrl(from, imgUrl, item.nombre_producto);
+              await saveAndSend(supabase, from, imgUrl, 'image', imgWamid);
+            }
+          }
+
+          // Mensaje de promo
+          const itemLines = finalItems.map((item, i) => `${i + 1}. *${item.nombre_producto}*`).join('\n');
+          const promoMsg = realCount > 1
+            ? `🎉 ¡Promo activada! Tu pedido de ${realCount} prendas:\n${itemLines}\n\n💰 Valor total: *${promoValue}*\n\nRevisa las fotos y escribe *CONFIRMO* para que lo despachemos en 24h. 🚚`
+            : `✅ Listo. Tu pedido:\n*${combinedProduct}* — *${promoValue}*\n\nEscribe *CONFIRMO* para confirmar. 🚚`;
+          const wamid = await sendTextMessage(from, promoMsg);
+          await saveAndSend(supabase, from, promoMsg, 'text', wamid);
+          continue;
+        }
+
+        // "quiero otro" sin color → preguntar qué color + mostrar promo
+        if ((mentionsDos || mentionsTres) && allColorsInText.length === 0) {
+          const colorListPend = famColoresMulti.map((c: any) => c.color).filter(Boolean).join(', ');
+          const promoCount = mentionsTres ? 3 : 2;
+          const promoValorRef = PROMO_PRICES[promoCount];
+          const askColorMsg =
+            `¡Perfecto! 😊 Para la promo de ${promoCount} prendas: *${promoValorRef}*\n\n` +
+            `¿Qué color quieres agregar y en qué talla?\n` +
+            `Disponibles: ${colorListPend || 'consulta con un asesor'}`;
+          const wamid = await sendTextMessage(from, askColorMsg);
+          await saveAndSend(supabase, from, askColorMsg, 'text', wamid);
+          continue;
+        }
+        // Colores no coinciden con la familia → seguir flujo normal
+      }
+      // famColores vacío → puede ser otra marca → seguir flujo normal (Claude fallback)
+    }
+
     // ── Cambio de color ──────────────────────────────────────────────────────
     const colorChangeWords = [
       'cambiar el color', 'cambio de color', 'otro color', 'en otro color',
@@ -619,13 +824,79 @@ export async function POST(req: NextRequest) {
       lastBotMsg?.content?.toLowerCase().includes('colores disponibles') ||
       lastBotMsg?.content?.toLowerCase().includes('tenemos:')
     );
+    const lastBotAskedAddColorPending =
+      lastBotMsg?.content?.toLowerCase().includes('quieres agregar') ||
+      lastBotMsg?.content?.toLowerCase().includes('color quieres agregar');
+
+    if (lastBotAskedAddColorPending && mentionedColor) {
+      const famColPend = await getFamColores(pendingPedido.producto);
+      const matchPend = famColPend.find((c: any) =>
+        (c.color ?? '').toLowerCase().includes(mentionedColor) ||
+        (c.nombre_producto as string).toUpperCase().includes(mentionedColor.toUpperCase())
+      );
+      if (matchPend) {
+        const currentCount = (pendingPedido.producto ?? '').split('+').length;
+        const newCount = Math.min(currentCount + 1, 3);
+        const combinedProd = `${pendingPedido.producto.trim()} + ${matchPend.nombre_producto}`;
+        const promoValor = PROMO_PRICES[newCount] ?? '$325.000';
+        await supabase.from('clientes_funnelish').update({ producto: combinedProd, valor: promoValor }).eq('id', pendingPedido.id);
+        if (matchPend.url_imagen && matchPend.url_imagen !== FALLBACK_IMAGE) {
+          const imgWamid = await sendImageByUrl(from, matchPend.url_imagen, matchPend.nombre_producto);
+          await saveAndSend(supabase, from, matchPend.url_imagen, 'image', imgWamid);
+        }
+        const confirmMsg =
+          `✅ ¡Promo activada! Tu pedido:\n*${combinedProd}*\n\n` +
+          `💰 Valor: *${promoValor}*\n\nEscribe *CONFIRMO* para que lo despachemos en 24h. 🚚`;
+        const wamid = await sendTextMessage(from, confirmMsg);
+        await saveAndSend(supabase, from, confirmMsg, 'text', wamid);
+        continue;
+      }
+    }
 
     if (colorChangeIntent || (lastBotAskedColor && mentionedColor)) {
       // Buscar el catálogo del producto en la DB
       const catalogResult = await findColorVariantInDB(supabase, pendingPedido.producto, mentionedColor);
 
       if (!catalogResult) {
-        // No hay catálogo definido para este producto → humano
+        // Sin catalogos_bot — buscar directamente en catalogo_colores por palabras del producto
+        const famColors = await getFamColores(pendingPedido.producto);
+
+        if (famColors.length > 0) {
+          if (mentionedColor) {
+            const match = famColors.find((c: any) =>
+              (c.color ?? '').toLowerCase().includes(mentionedColor) ||
+              mentionedColor.includes((c.color ?? '').toLowerCase()) ||
+              (c.nombre_producto as string).toUpperCase().includes(mentionedColor.toUpperCase())
+            );
+            if (match) {
+              const newProduct = match.nombre_producto;
+              await supabase.from('clientes_funnelish').update({ producto: newProduct }).eq('id', pendingPedido.id);
+              const imgUrl = match.url_imagen || getProductImageUrl(newProduct);
+              if (imgUrl && imgUrl !== FALLBACK_IMAGE) {
+                const imgWamid = await sendImageByUrl(from, imgUrl, newProduct);
+                await saveAndSend(supabase, from, imgUrl, 'image', imgWamid);
+              }
+              const confirmMsg = `✅ Listo, cambié tu pedido a *${newProduct}*.\n\nRevisa la foto y escribe *CONFIRMO* o "si está bien" para que despachemos en 24 horas. 🚚`;
+              const wamid = await sendTextMessage(from, confirmMsg);
+              await saveAndSend(supabase, from, confirmMsg, 'text', wamid);
+              continue;
+            }
+            // Color mencionado no existe → mostrar disponibles
+            const colorList = famColors.map((c: any) => c.color).join(', ');
+            const noColorMsg = `Lo sentimos 😔 Ese color no está disponible.\n\nColores disponibles: ${colorList}\n\n¿Cuál prefieres?`;
+            const wamid = await sendTextMessage(from, noColorMsg);
+            await saveAndSend(supabase, from, noColorMsg, 'text', wamid);
+            continue;
+          }
+          // No mencionó color → listar disponibles
+          const colorList = famColors.map((c: any) => c.color).join(', ');
+          const ask = `¡Claro! 😊 ¿A qué color quieres cambiarlo?\n\nTenemos disponibles: ${colorList}`;
+          const wamid = await sendTextMessage(from, ask);
+          await saveAndSend(supabase, from, ask, 'text', wamid);
+          continue;
+        }
+
+        // No hay colores en DB para esta familia (puede ser otra marca) → asesor
         const msg = `Para cambiar el modelo, te paso con un asesor 😊 Un momento.`;
         const wamid = await sendTextMessage(from, msg);
         await saveAndSend(supabase, from, msg, 'text', wamid);
@@ -634,7 +905,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (catalogResult.match) {
-        // Color encontrado en el catálogo → actualizar pedido + enviar foto
+        // Color encontrado en catalogos_bot → actualizar pedido + enviar foto
         const newProduct = catalogResult.match.nombre_producto;
         await supabase.from('clientes_funnelish').update({ producto: newProduct }).eq('id', pendingPedido.id);
 
@@ -648,7 +919,7 @@ export async function POST(req: NextRequest) {
         await saveAndSend(supabase, from, confirmMsg, 'text', wamid);
 
       } else if (mentionedColor && catalogResult.colores.length) {
-        // Mencionó un color pero no está en el catálogo → mostrar disponibles
+        // Mencionó un color que no está → mostrar disponibles
         const colorList = catalogResult.colores.map(c => c.color).join(', ');
         const noColor = `Lo sentimos 😔 Ese color no está disponible para *${catalogResult.familia}*.\n\nColores disponibles: ${colorList}\n\n¿Cuál prefieres?`;
         const wamid = await sendTextMessage(from, noColor);
@@ -683,14 +954,26 @@ export async function POST(req: NextRequest) {
         // Dirección es oficina → recordar el abono en vez de pedir dirección
         fixedReply = `✅ Talla *${currentTalla}* anotada.\n\nRecuerda que para el despacho por la oficina de Interrapidísimo necesitas hacer el abono de $5.000. Cuando lo hayas hecho, envíame el comprobante por aquí 📷`;
       } else if (stillMissingDir) {
-        fixedReply = `✅ Talla *${currentTalla}* confirmada.\n\n📍 Para completar el pedido necesito tu dirección de domicilio completa (ej: Calle 15 # 20-30, Barrio). ¿Cuál es?`;
+        const addrQTalla = getAddressQuestion(currentDireccion) ?? '📍 Para completar el pedido necesito tu dirección de domicilio completa (ej: Calle 15 # 20-30, Barrio). ¿Cuál es?';
+        fixedReply = `✅ Talla *${currentTalla}* confirmada.\n\n${addrQTalla}`;
       } else {
         fixedReply = `✅ Talla *${currentTalla}* confirmada. Todo listo 🎉\n\nEscribe *CONFIRMO*, "si está bien" o dime que confirmas para que despachemos tu *${pendingPedido.producto}*. 🚚`;
       }
     } else if (clientGaveDireccion) {
-      fixedReply = stillMissingTalla
-        ? `✅ Dirección anotada.\n\n📋 ¿Me confirmas tu talla del buzo? (XS, S, M, L, XL, XXL, XXXL)`
-        : `✅ Dirección anotada. Todo listo 🎉\n\nEscribe *CONFIRMO*, "si está bien" o dime que confirmas para que despachemos tu *${pendingPedido.producto}*. 🚚`;
+      // Validar dirección con Lupap (geocodificación real)
+      const lupapCity = pendingPedido.ciudad ?? '';
+      const lupapVal  = await validateAddressLupap(currentDireccion, lupapCity);
+      const lupapMsg  = getLupapMessage(lupapVal, currentDireccion);
+
+      if (lupapMsg) {
+        // Lupap encontró un problema → enviar el mensaje específico (no confirmar la dirección)
+        fixedReply = lupapMsg;
+      } else {
+        // Dirección verificada → confirmar normalmente
+        fixedReply = stillMissingTalla
+          ? `✅ Dirección anotada.\n\n📋 ¿Me confirmas tu talla del buzo? (XS, S, M, L, XL, XXL, XXXL)`
+          : `✅ Dirección anotada. Todo listo 🎉\n\nEscribe *CONFIRMO*, "si está bien" o dime que confirmas para que despachemos tu *${pendingPedido.producto}*. 🚚`;
+      }
     }
 
     if (fixedReply) {
@@ -716,7 +999,7 @@ export async function POST(req: NextRequest) {
     // ── Claude como fallback (solo MODO CONFIRMACIÓN) ────────────────────────
     const { data: shortHistory } = await supabase
       .from('messages').select('content, role')
-      .eq('conversation_id', from).order('created_at', { ascending: false }).limit(6);
+      .eq('conversation_id', from).order('created_at', { ascending: false }).limit(14);
 
     const missingList: string[] = [];
     if (stillMissingTalla) missingList.push('talla del buzo (XS, S, M, L, XL, XXL, XXXL)');
@@ -732,6 +1015,8 @@ export async function POST(req: NextRequest) {
       `PROHIBIDO: mencionar otros productos, catálogo, precios de otros artículos.\n` +
       `Si el cliente pregunta por el envío o cuándo llega, responde brevemente y vuelve al tema.\n` +
       `Si el cliente quiere cambiar de color, dile que puede decirte el color y lo cambias.\n` +
+      `Si el cliente quiere agregar más prendas del MISMO catálogo: infórmale las promos: 2 prendas $229.900 — 3 prendas $325.000. Pídele que diga los colores que quiere.\n` +
+      `Si el cliente quiere productos de OTRO catálogo diferente al que está confirmando: dile que lo pasarás con el asesor encargado de ese catálogo.\n` +
       `NUNCA escribas URLs ni enlaces.\n`;
 
     const chatHistory: ChatRequest['messages'] = [...(shortHistory ?? [])]
