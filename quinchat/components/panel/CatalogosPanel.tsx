@@ -415,7 +415,7 @@ export default function CatalogosPanel() {
       </div>
 
       {/* Contenido */}
-      <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-4">
+      <div className="flex-1 overflow-y-scroll px-6 py-5 flex flex-col gap-4">
 
         {loading ? (
           <div className="flex items-center justify-center py-20">
