@@ -323,6 +323,46 @@ export async function POST(req: NextRequest) {
 
     // ── Sin pedido activo ────────────────────────────────────────────────────
     if (!pendingPedido) {
+      // ¿Hay un pedido ya confirmado? (cliente confirmó y luego sigue escribiendo)
+      const { data: confirmedPedido } = await supabase
+        .from('clientes_funnelish')
+        .select('nombre, producto, talla, valor, direccion, ciudad, departamento, correo, telefono')
+        .eq('telefono', tel10).eq('wa_enviado', true).eq('confirmado', true)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+      if (confirmedPedido) {
+        // Pedido ya confirmado — Claude responde en contexto post-confirmación
+        const { data: histConf } = await supabase
+          .from('messages').select('content, role')
+          .eq('conversation_id', from).order('created_at', { ascending: false }).limit(6);
+
+        const sysConf =
+          `Eres Josué de Klixmant. El cliente ya confirmó su pedido: *${confirmedPedido.producto}* — Valor: *${confirmedPedido.valor}*.\n` +
+          `El pedido está confirmado y será despachado en las próximas 24 horas.\n` +
+          `Si el cliente pregunta por el abono para Interrapidísimo u oficina: explica que son $5.000 de garantía requeridos por el área de despacho para garantizar el envío. Si insiste en que no puede, dile amablemente que lo pasarás con un asesor.\n` +
+          `Si el cliente pregunta cuándo llega o el número de guía: dile que recibirá el número de guía por este mismo chat una vez despachado.\n` +
+          `Sé amable, breve y tranquilizador. PROHIBIDO mencionar otros productos, catálogo ni precios de otros artículos.\n`;
+
+        const histMsgs: ChatRequest['messages'] = [...(histConf ?? [])]
+          .reverse()
+          .filter((m: any) => m.content?.trim() && !m.content.startsWith('http'))
+          .map((m: any) => ({
+            role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+            content: m.content as string,
+          }));
+        if (!histMsgs.length || histMsgs[histMsgs.length - 1]?.role !== 'user') {
+          histMsgs.push({ role: 'user', content: text });
+        }
+
+        try {
+          const resp = await chat({ messages: histMsgs, tenantId: 'klixmant', systemPrompt: sysConf });
+          const wamid = await sendTextMessage(from, resp.message);
+          if (wamid) await saveAndSend(supabase, from, resp.message, 'text', wamid);
+        } catch { /* ignorar error */ }
+        continue;
+      }
+
+      // Genuinamente no hay pedido activo ni confirmado
       const noPedidoMsg = `Hola 😊 No encontramos un pedido activo para este número. Si ya realizaste tu compra, en unos minutos recibirás los detalles. Para ver el catálogo o hacer un pedido, un asesor puede ayudarte.`;
       const wamid = await sendTextMessage(from, noPedidoMsg);
       await saveAndSend(supabase, from, noPedidoMsg, 'text', wamid);
