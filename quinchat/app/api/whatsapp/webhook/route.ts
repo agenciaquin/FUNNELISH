@@ -277,7 +277,7 @@ export async function POST(req: NextRequest) {
       const { data: pedido } = await supabase
         .from('clientes_funnelish')
         .select('id, nombre, producto, talla, direccion, ciudad, departamento')
-        .eq('telefono', tel10).eq('wa_enviado', true).eq('confirmado', false)
+        .eq('telefono', tel10).eq('confirmado', false)
         .order('created_at', { ascending: false }).limit(1).maybeSingle();
 
       if (pedido) {
@@ -314,11 +314,13 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Buscar pedido pendiente ──────────────────────────────────────────────
+    // Nota: NO filtramos por wa_enviado=true — puede llegar un mensaje del cliente
+    // antes de que el webhook de Funnelish termine de marcar wa_enviado (race condition).
     const tel10 = from.replace(/^57/, '').slice(-10);
     const { data: pendingPedido } = await supabase
       .from('clientes_funnelish')
       .select('id, nombre, producto, talla, direccion, ciudad, departamento, valor, correo, telefono')
-      .eq('telefono', tel10).eq('wa_enviado', true).eq('confirmado', false)
+      .eq('telefono', tel10).eq('confirmado', false)
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
 
     // ── Sin pedido activo ────────────────────────────────────────────────────
