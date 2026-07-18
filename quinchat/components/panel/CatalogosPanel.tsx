@@ -385,7 +385,10 @@ export default function CatalogosPanel() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="flex-1 bg-[#F8F8F8]" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+    <div className="flex-1 bg-[#F8F8F8]">
+
+      {/* Panel fixed: ocupa todo excepto el sidebar (190px) */}
+      <div style={{ position: 'fixed', top: 0, left: 190, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', backgroundColor: '#F8F8F8' }}>
 
       {/* Header */}
       <div className="bg-white border-b border-[#E8E8E8] px-6 py-4 flex items-center justify-between" style={{ flexShrink: 0 }}>
@@ -414,7 +417,7 @@ export default function CatalogosPanel() {
         />
       </div>
 
-      {/* Contenido — scroll interno siempre visible */}
+      {/* Lista — SCROLL INTERNO */}
       <div className="px-6 py-5 flex flex-col gap-4" style={{ flex: 1, overflowY: 'scroll', minHeight: 0 }}>
 
         {loading ? (
@@ -614,6 +617,7 @@ export default function CatalogosPanel() {
           })
         )}
       </div>
+      </div>{/* fin fixed panel */}
 
       {/* ── Modales ── */}
       {modalCat && (
