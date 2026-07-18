@@ -12,6 +12,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       color:           body.color,
       nombre_producto: body.nombre_producto,
       url_imagen:      body.url_imagen ?? null,
+      ...(body.orden !== undefined ? { orden: body.orden } : {}),
     })
     .eq('id', id)
     .select()
