@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendTextMessage, sendConfirmacionTemplate, sendAudioByUrl } from '@/lib/whatsapp';
-import { getProductImageUrl } from '@/lib/product-catalog';
+import { getProductImageUrl, FALLBACK_IMAGE } from '@/lib/product-catalog';
 import { createServerSupabaseClient } from '@/lib/supabase';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -157,19 +157,28 @@ export async function POST(req: NextRequest) {
   let templateSent = false;
   let templateWamid: string | null = null;
 
-  if (enWhitelist) {
-    // Intentar template primero (funciona incluso sin ventana 24h)
-    templateWamid = await sendConfirmacionTemplate(waPhone, {
-      saludo:   firstName || nombre,
-      nombre, telefono: tel10, direccion, ciudad, departamento,
-      correo, talla, producto: productoNombre, valor, imageUrl,
-    });
-    templateSent = !!templateWamid;
-    sent = templateSent;
+  // El template de Meta requiere imagen real en el header.
+  // Si el producto no está en el catálogo, imageUrl es FALLBACK_IMAGE (placeholder.png)
+  // que puede no existir → Meta acepta el envío (devuelve wamid) pero NO entrega el mensaje.
+  // Solución: solo usar template si hay imagen real del producto.
+  const hasRealImage = imageUrl && imageUrl.startsWith('http') && imageUrl !== FALLBACK_IMAGE;
 
-    // Si el template falla (ej: aún en revisión), caer al texto plano
+  if (enWhitelist) {
+    if (hasRealImage) {
+      // Intentar template primero (funciona incluso sin ventana 24h)
+      templateWamid = await sendConfirmacionTemplate(waPhone, {
+        saludo:   firstName || nombre,
+        nombre, telefono: tel10, direccion, ciudad, departamento,
+        correo, talla, producto: productoNombre, valor, imageUrl,
+      });
+      templateSent = !!templateWamid;
+      sent = templateSent;
+    } else {
+      console.warn(`[Funnelish] Producto "${productoNombre}" sin imagen en catálogo → usando texto plano`);
+    }
+
+    // Si el template falla o no hay imagen real → caer al texto plano
     if (!sent) {
-      console.warn('[Funnelish] Template failed, falling back to text message');
       sent = !!(await sendTextMessage(waPhone, mensaje));
     }
   } else {
