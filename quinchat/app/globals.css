@@ -4,14 +4,14 @@
 
 /* Scrollbar personalizado — Agencia Quin */
 ::-webkit-scrollbar {
-  width: 4px;
+  width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #F5F5F5;
+  background: #EFEFEF;
 }
 ::-webkit-scrollbar-thumb {
-  background: #CCCCCC;
-  border-radius: 2px;
+  background: #BBBBBB;
+  border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #00A89D;
@@ -19,5 +19,6 @@
 
 html, body {
   height: 100%;
+  overflow: hidden;
   background-color: #FAF9F6;
 }
