@@ -385,10 +385,13 @@ export default function CatalogosPanel() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-[#F8F8F8]">
+    <div className="panel-scroll flex-1 h-screen overflow-y-auto bg-[#F8F8F8]">
+
+      {/* Header + Buscador fijos arriba */}
+      <div className="sticky top-0 z-20">
 
       {/* Header */}
-      <div className="bg-white border-b border-[#E8E8E8] px-6 py-4 flex items-center justify-between" style={{ flexShrink: 0 }}>
+      <div className="bg-white border-b border-[#E8E8E8] px-6 py-4 flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-[#0D0D0D]">📦 Catálogos del Bot</h1>
           <p className="text-xs text-[#6B6B6B] mt-0.5">
@@ -405,7 +408,7 @@ export default function CatalogosPanel() {
       </div>
 
       {/* Buscador */}
-      <div className="px-6 py-3 bg-white border-b border-[#E8E8E8]" style={{ flexShrink: 0 }}>
+      <div className="px-6 py-3 bg-white border-b border-[#E8E8E8]">
         <input
           className="w-full max-w-sm border border-[#E8E8E8] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A89D]/40 bg-[#F8F8F8]"
           placeholder="🔍 Buscar catálogo…"
@@ -414,8 +417,10 @@ export default function CatalogosPanel() {
         />
       </div>
 
-      {/* Lista — SCROLL INTERNO */}
-      <div className="panel-scroll flex-1 min-h-0 overflow-y-auto px-6 py-5 flex flex-col gap-4">
+      </div>{/* fin header sticky */}
+
+      {/* Lista */}
+      <div className="px-6 py-5 flex flex-col gap-4">
 
         {loading ? (
           <div className="flex items-center justify-center py-20">

@@ -207,6 +207,54 @@ export async function POST(req: NextRequest) {
                      || textLower.includes('no hay contra entrega')
                      || textLower.includes('zona rural');
 
+    // Objeción al abono (el cliente no quiere / no puede pagarlo)
+    const abonoObjection = [
+      'no quiero abonar', 'no puedo abonar', 'no pienso abonar', 'no voy a abonar',
+      'no hare abono', 'no haré abono', 'no hago abono', 'no quiero hacer el abono',
+      'no quiero hacer abono', 'no me gusta el abono', 'por que el abono', 'por qué el abono',
+      'porque el abono', 'para que el abono', 'para qué el abono', 'por que debo abonar',
+      'por qué debo abonar', 'sin abono', 'es mucho abono', 'no estoy de acuerdo con el abono',
+      'el abono es una estafa', 'el abono es un robo', 'no confio en el abono', 'no confío en el abono',
+    ].some(w => textLower.includes(w));
+
+    // El cliente acepta y pide la cuenta / cómo abonar
+    const abonoAccountReq = [
+      'cuenta para el abono', 'cuenta para abonar', 'cuenta del abono', 'cuenta pal abono',
+      'regalame la cuenta', 'regálame la cuenta', 'pasame la cuenta', 'pásame la cuenta', 'pasa la cuenta',
+      'numero de cuenta', 'número de cuenta', 'a que cuenta', 'a qué cuenta',
+      'datos para abonar', 'datos del abono', 'datos para el abono',
+      'como abono', 'cómo abono', 'como hago el abono', 'cómo hago el abono',
+      'donde abono', 'dónde abono', 'a donde abono', 'a dónde abono', 'donde consigno',
+      'quiero abonar', 'voy a abonar', 'quiero hacer el abono', 'hacer el abono', 'realizar el abono',
+      'como pago el abono', 'cómo pago el abono',
+    ].some(w => textLower.includes(w));
+
+    // Objeción PRIMERO (ej: "no quiero abonar" contiene "quiero abonar")
+    if (abonoObjection) {
+      const MSG_ABONO_OBJECION =
+        `Te entiendo perfectamente 😊 Si dependiera de mí te lo enviaría sin abono, pero es una política del área de despacho: si paso el pedido sin abono, me lo cancelan y no lo despachan.\n\n` +
+        `El abono es de solo *$5.000* y se *descuenta del total* de tu pedido, así que no pierdes nada. Lo pedimos porque sin él, muchos pedidos enviados a oficina se devolvían cuando el cliente no pasaba a reclamar. No ganaríamos nada quedándote mal por $5.000 ni dañando la reputación de la empresa 🙏\n\n` +
+        `👉 Si prefieres, también podemos enviarlo *directo a tu dirección con pago contra entrega* (sin abono). ¿Cuál opción prefieres? 🚚`;
+      const wamid = await sendTextMessage(from, MSG_ABONO_OBJECION);
+      await saveAndSend(supabase, from, MSG_ABONO_OBJECION, 'text', wamid);
+      continue;
+    }
+
+    // Cliente acepta el abono y pide la cuenta → enviar cuentas + pedir comprobante
+    if (abonoAccountReq) {
+      const MSG_ABONO_CUENTA =
+        `¡Perfecto! 🙌 El abono es de solo *$5.000* y se descuenta del total de tu pedido — es decir, abonas $5.000 ahora y el resto lo pagas al recibir.\n\n` +
+        `Puedes hacer el abono a cualquiera de estas cuentas:\n` +
+        `📲 Nequi: *3505717342* — Jonatan Hurtado\n` +
+        `🏦 Bancolombia Ahorros: *303-000037-98* — Klixmant SAS\n` +
+        `📲 Daviplata: *0030538367*\n\n` +
+        `Cuando lo hagas, envíame el *comprobante* por aquí 📷 y dejamos tu pedido listo para despacho por la oficina de Interrapidísimo. 🚚`;
+      const wamid = await sendTextMessage(from, MSG_ABONO_CUENTA);
+      await saveAndSend(supabase, from, MSG_ABONO_CUENTA, 'text', wamid);
+      await supabase.from('conversations').update({ label: 'PENDIENTE DE ABONO' }).eq('id', from);
+      continue;
+    }
+
     if (isOficina || isMunicipio) {
       const audioUrl   = isOficina ? AUDIO_OFICINA : AUDIO_MUNICIPIO;
       const audioLabel = isOficina ? '🎵 Audio abono oficina' : '🎵 Audio abono municipio';
@@ -588,7 +636,8 @@ export async function POST(req: NextRequest) {
         const sysConf =
           `Eres Josué de Klixmant. El cliente ya confirmó su pedido: *${confirmedPedido.producto}* — Valor: *${confirmedPedido.valor}*.\n` +
           `El pedido está confirmado y será despachado en las próximas 24 horas.\n` +
-          `Si el cliente pregunta por el abono para Interrapidísimo u oficina: explica que son $5.000 de garantía requeridos por el área de despacho. Si insiste, dile que lo pasarás con un asesor.\n` +
+          `ENVÍOS: hay DOS opciones — (1) a DOMICILIO con pago contra entrega, sin abono; (2) RECOGIDA EN OFICINA de Interrapidísimo, que requiere un abono de $5.000 que se descuenta del total. NUNCA digas que no se puede reclamar en oficina: SÍ se puede, con el abono. Si el cliente objeta el abono, sé empático, explícale que es política del área de despacho y ofrécele la opción de domicilio contra entrega.\n` +
+          `Si el cliente pide la cuenta para abonar: dale Nequi 3505717342 (Jonatan Hurtado), Bancolombia 303-000037-98 (Klixmant SAS) o Daviplata 0030538367, y pídele el comprobante por este chat.\n` +
           `Si el cliente pregunta cuándo llega o el número de guía: dile que recibirá el número de guía por este chat una vez despachado.\n` +
           `Si el cliente quiere cambiar de color: pregúntale "¿A qué color quieres cambiarlo?" — NO digas que no puedes hacerlo.\n` +
           `Si el cliente pide la foto de su producto: responde "En un momento te la enviamos 📸" — NUNCA digas que no puedes enviar fotos.\n` +
@@ -625,6 +674,7 @@ export async function POST(req: NextRequest) {
         `Responde de forma amable y natural, continuando el hilo de la conversación según el historial.\n` +
         `Si el cliente pregunta por su pedido o cuándo llega: dile que en unos minutos recibirá la confirmación, o que puede escribirnos para ayudarle.\n` +
         `Si el cliente pide ver catálogo u otros productos: dile que un asesor puede ayudarle.\n` +
+        `ENVÍOS: hay dos opciones — a DOMICILIO con pago contra entrega (sin abono), o RECOGIDA EN OFICINA de Interrapidísimo con un abono de $5.000 que se descuenta del total. NUNCA digas que no se puede reclamar en oficina: sí se puede, con el abono.\n` +
         `Sé breve, cálido y útil. NUNCA escribas URLs ni enlaces.\n`;
 
       const histNoPedidoMsgs: ChatRequest['messages'] = [...(histNoPedido ?? [])]
@@ -1017,6 +1067,7 @@ export async function POST(req: NextRequest) {
       `Si el cliente quiere cambiar de color, dile que puede decirte el color y lo cambias.\n` +
       `Si el cliente quiere agregar más prendas del MISMO catálogo: infórmale las promos: 2 prendas $229.900 — 3 prendas $325.000. Pídele que diga los colores que quiere.\n` +
       `Si el cliente quiere productos de OTRO catálogo diferente al que está confirmando: dile que lo pasarás con el asesor encargado de ese catálogo.\n` +
+      `ENVÍOS: hay DOS opciones — (1) a DOMICILIO con pago contra entrega, sin abono; (2) RECOGIDA EN OFICINA de Interrapidísimo, que requiere un abono de $5.000 que se descuenta del total del pedido. NUNCA digas que no se puede reclamar en oficina: SÍ se puede, con el abono. Si el cliente objeta el abono, sé empático pero explícale que es política del área de despacho y ofrécele la opción de domicilio contra entrega.\n` +
       `NUNCA escribas URLs ni enlaces.\n`;
 
     const chatHistory: ChatRequest['messages'] = [...(shortHistory ?? [])]
