@@ -486,22 +486,6 @@ export default function CatalogosPanel() {
                     {[...cat.catalogo_colores].sort((a, b) => a.orden - b.orden).map((cv, idx, arr) => (
                       <div key={cv.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-[#F8F8F8] transition-colors group">
 
-                        {/* Botones subir/bajar */}
-                        <div className="flex flex-col gap-0.5 shrink-0">
-                          <button
-                            onClick={() => handleMoveColor(cat.id, cv.id, 'up')}
-                            disabled={idx === 0}
-                            className="w-6 h-6 flex items-center justify-center text-[#6B6B6B] hover:text-[#00A89D] hover:bg-[#00A89D]/10 rounded disabled:opacity-20 disabled:cursor-not-allowed text-xs transition-all"
-                            title="Subir"
-                          >▲</button>
-                          <button
-                            onClick={() => handleMoveColor(cat.id, cv.id, 'down')}
-                            disabled={idx === arr.length - 1}
-                            className="w-6 h-6 flex items-center justify-center text-[#6B6B6B] hover:text-[#00A89D] hover:bg-[#00A89D]/10 rounded disabled:opacity-20 disabled:cursor-not-allowed text-xs transition-all"
-                            title="Bajar"
-                          >▼</button>
-                        </div>
-
                         <div className="w-14 h-14 rounded-xl overflow-hidden bg-[#F5F5F5] border border-[#E8E8E8] shrink-0">
                           {cv.url_imagen ? (
                             <img src={cv.url_imagen} alt={cv.color} className="w-full h-full object-cover" />
@@ -513,6 +497,8 @@ export default function CatalogosPanel() {
                           <p className="text-sm font-semibold text-[#0D0D0D]">{cv.color}</p>
                           <p className="text-xs text-[#6B6B6B] truncate">{cv.nombre_producto}</p>
                         </div>
+
+                        {/* Editar / Eliminar (hover) */}
                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => setModalColor({ catalogoId: cat.id, item: cv })}
@@ -525,6 +511,23 @@ export default function CatalogosPanel() {
                             title="Eliminar"
                           >🗑️</button>
                         </div>
+
+                        {/* Barra subir/bajar (derecha, siempre visible) */}
+                        <div className="flex flex-col shrink-0 border border-[#E8E8E8] rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => handleMoveColor(cat.id, cv.id, 'up')}
+                            disabled={idx === 0}
+                            className="px-2 py-1 text-[10px] text-[#6B6B6B] hover:bg-[#00A89D] hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all leading-none border-b border-[#E8E8E8]"
+                            title="Subir"
+                          >▲</button>
+                          <button
+                            onClick={() => handleMoveColor(cat.id, cv.id, 'down')}
+                            disabled={idx === arr.length - 1}
+                            className="px-2 py-1 text-[10px] text-[#6B6B6B] hover:bg-[#00A89D] hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all leading-none"
+                            title="Bajar"
+                          >▼</button>
+                        </div>
+
                       </div>
                     ))}
 
