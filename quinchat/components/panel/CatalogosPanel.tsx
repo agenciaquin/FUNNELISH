@@ -385,7 +385,7 @@ export default function CatalogosPanel() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#F8F8F8]">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-[#F8F8F8]">
 
       {/* Header */}
       <div className="bg-white border-b border-[#E8E8E8] px-6 py-4 flex items-center justify-between shrink-0">
@@ -414,9 +414,8 @@ export default function CatalogosPanel() {
         />
       </div>
 
-      {/* Contenido — wrapper relativo para que absolute inset-0 funcione */}
-      <div className="flex-1 relative">
-      <div className="absolute inset-0 overflow-y-auto px-6 py-5 flex flex-col gap-4">
+      {/* Contenido */}
+      <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-4">
 
         {loading ? (
           <div className="flex items-center justify-center py-20">
@@ -615,7 +614,6 @@ export default function CatalogosPanel() {
           })
         )}
       </div>
-      </div>{/* fin absolute scroll */}
 
       {/* ── Modales ── */}
       {modalCat && (
