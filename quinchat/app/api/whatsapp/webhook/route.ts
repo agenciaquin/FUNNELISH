@@ -328,12 +328,201 @@ export async function POST(req: NextRequest) {
       // ¿Hay un pedido ya confirmado? (cliente confirmó y luego sigue escribiendo)
       const { data: confirmedPedido } = await supabase
         .from('clientes_funnelish')
-        .select('nombre, producto, talla, valor, direccion, ciudad, departamento, correo, telefono')
+        .select('id, nombre, producto, talla, valor, direccion, ciudad, departamento, correo, telefono')
         .eq('telefono', tel10).eq('wa_enviado', true).eq('confirmado', true)
         .order('created_at', { ascending: false }).limit(1).maybeSingle();
 
       if (confirmedPedido) {
-        // Pedido ya confirmado — Claude responde en contexto post-confirmación
+        // ── 1. Redirigir a asesor si pide catálogo de otro tipo de producto ──────
+        const wantsOtherProduct = [
+          'catálogo', 'catalogo', 'futbol', 'fútbol', 'pareja', 'equipos',
+          'otro modelo', 'otra referencia', 'ver más productos', 'ver mas productos',
+          'más referencias', 'mas referencias',
+        ].some(w => textLower.includes(w));
+
+        if (wantsOtherProduct) {
+          const handoff = `Para mostrarte otros productos te paso con un asesor 😊 Un momento.`;
+          const wamid = await sendTextMessage(from, handoff);
+          await saveAndSend(supabase, from, handoff, 'text', wamid);
+          await supabase.from('conversations').update({ label: 'VER CATÁLOGO - HUMANO' }).eq('id', from);
+          continue;
+        }
+
+        // ── 2. Detectar solicitud de foto y/o cambio de color ─────────────────
+        const wantsFoto = textLower.includes('foto') || textLower.includes('imagen');
+        const mentionedColorConf = detectColorInText(textLower);
+
+        const { data: lastBotMsgConf } = await supabase
+          .from('messages').select('content')
+          .eq('conversation_id', from).eq('role', 'assistant')
+          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        const lastBotAskedColorConf = !!(
+          lastBotMsgConf?.content?.toLowerCase().includes('qué color') ||
+          lastBotMsgConf?.content?.toLowerCase().includes('que color') ||
+          lastBotMsgConf?.content?.toLowerCase().includes('colores disponibles') ||
+          lastBotMsgConf?.content?.toLowerCase().includes('tenemos:') ||
+          lastBotMsgConf?.content?.toLowerCase().includes('disponibles')
+        );
+
+        // Un color mencionado que NO está ya en el nombre del producto actual = cambio de color
+        const currentProductUpper = confirmedPedido.producto.toUpperCase();
+        const colorAlreadyInProduct = mentionedColorConf
+          ? currentProductUpper.includes(mentionedColorConf.toUpperCase())
+          : false;
+
+        const colorChangeWordsConf = [
+          'cambiar el color', 'cambio de color', 'otro color', 'en otro color',
+          'cambiarlo', 'me lo cambian', 'cambiar por', 'cambiar a',
+          'me lo mandan en', 'lo quiero en', 'lo quiero de', 'quiero cambiarlo',
+          'quiero cambiar', 'quiero el negro', 'quiero el azul', 'quiero el rojo', 'quiero el blanco',
+        ];
+
+        const colorChangeIntentConf =
+          colorChangeWordsConf.some(w => textLower.includes(w))
+          || (textLower.includes('cambiar') && !!mentionedColorConf)
+          || (textLower.includes('lo quiero') && !!mentionedColorConf)
+          || (lastBotAskedColorConf && !!mentionedColorConf)
+          // Foto + color diferente al actual = también es cambio de color
+          || (wantsFoto && !!mentionedColorConf && !colorAlreadyInProduct);
+
+        // ── Helper: colores de la misma familia desde catalogo_colores ────────
+        const getColoresFamilia = async (productoRef: string) => {
+          const { data: allC } = await supabase
+            .from('catalogo_colores').select('color, nombre_producto, url_imagen')
+            .not('url_imagen', 'is', null);
+          const prodWords = productoRef.toUpperCase().split(/\s+/).filter((w: string) => w.length >= 4);
+          return (allC ?? []).filter((c: any) =>
+            prodWords.some((w: string) => (c.nombre_producto as string).toUpperCase().includes(w))
+          );
+        };
+
+        // ── Helper: actualizar producto en DB ─────────────────────────────────
+        const updateProductoConf = async (newProducto: string) => {
+          if (confirmedPedido.id) {
+            await supabase.from('clientes_funnelish')
+              .update({ producto: newProducto }).eq('id', confirmedPedido.id);
+          }
+        };
+
+        // ── Helper: enviar foto + confirmación ────────────────────────────────
+        const sendColorConfirm = async (newProducto: string, imgUrl: string | null | undefined) => {
+          const url = imgUrl && imgUrl !== FALLBACK_IMAGE ? imgUrl : getProductImageUrl(newProducto);
+          if (url && url !== FALLBACK_IMAGE) {
+            const imgWamid = await sendImageByUrl(from, url, newProducto);
+            await saveAndSend(supabase, from, url, 'image', imgWamid);
+          }
+          const msg = `✅ ¡Listo! Tu pedido fue actualizado a *${newProducto}*. Queda confirmado y lo despachamos en las próximas 24 horas. 🚚`;
+          const wamid = await sendTextMessage(from, msg);
+          await saveAndSend(supabase, from, msg, 'text', wamid);
+        };
+
+        // ── 3. Foto del producto actual (sin cambio de color) ──────────────────
+        if (wantsFoto && !colorChangeIntentConf) {
+          const productoActual = confirmedPedido.producto;
+          // Buscar imagen en catalogo_colores
+          let fotoUrl: string | null = null;
+          const { data: exactF } = await supabase
+            .from('catalogo_colores').select('url_imagen')
+            .ilike('nombre_producto', productoActual).not('url_imagen', 'is', null)
+            .limit(1).maybeSingle();
+          if (exactF?.url_imagen) {
+            fotoUrl = exactF.url_imagen as string;
+          } else {
+            const famColors = await getColoresFamilia(productoActual);
+            if (famColors.length > 0) {
+              // Intentar encontrar match por color actual en el nombre
+              const colorActual = detectColorInText(productoActual.toLowerCase());
+              if (colorActual) {
+                const matched = famColors.find((c: any) =>
+                  (c.nombre_producto as string).toUpperCase().includes(colorActual.toUpperCase())
+                );
+                if (matched?.url_imagen) fotoUrl = matched.url_imagen as string;
+              }
+              if (!fotoUrl && famColors[0]?.url_imagen) fotoUrl = famColors[0].url_imagen as string;
+            }
+          }
+          if (!fotoUrl) fotoUrl = getProductImageUrl(productoActual);
+
+          if (fotoUrl && fotoUrl !== FALLBACK_IMAGE) {
+            const imgWamid = await sendImageByUrl(from, fotoUrl, productoActual);
+            await saveAndSend(supabase, from, fotoUrl, 'image', imgWamid);
+            const fotoMsg = `📸 Aquí está la foto de tu *${productoActual}*. Tu pedido ya está confirmado y se despachará en las próximas 24 horas. 🚚`;
+            const wamid = await sendTextMessage(from, fotoMsg);
+            await saveAndSend(supabase, from, fotoMsg, 'text', wamid);
+          } else {
+            const noFotoMsg = `Tu pedido *${productoActual}* ya está confirmado y se despachará en las próximas 24 horas. 🚚 El número de guía te llegará por este chat.`;
+            const wamid = await sendTextMessage(from, noFotoMsg);
+            await saveAndSend(supabase, from, noFotoMsg, 'text', wamid);
+          }
+          continue;
+        }
+
+        // ── 4. Cambio de color ────────────────────────────────────────────────
+        if (colorChangeIntentConf) {
+          // Intentar con catalogos_bot primero
+          const catalogResult = await findColorVariantInDB(supabase, confirmedPedido.producto, mentionedColorConf);
+
+          if (catalogResult?.match) {
+            await updateProductoConf(catalogResult.match.nombre_producto);
+            await sendColorConfirm(catalogResult.match.nombre_producto, catalogResult.match.url_imagen);
+            continue;
+          }
+
+          if (catalogResult && mentionedColorConf && catalogResult.colores.length) {
+            const colorList = catalogResult.colores.map((c: any) => c.color).join(', ');
+            const noColorMsg = `Ese color no está disponible 😔 Para *${catalogResult.familia}* tenemos:\n${colorList}\n\n¿Cuál prefieres?`;
+            const wamid = await sendTextMessage(from, noColorMsg);
+            await saveAndSend(supabase, from, noColorMsg, 'text', wamid);
+            continue;
+          }
+
+          if (catalogResult && !mentionedColorConf) {
+            const colorList = catalogResult.colores.map((c: any) => c.color).join(', ');
+            const ask = `¡Claro! 😊 Para *${catalogResult.familia}* tenemos:\n${colorList}\n\n¿A cuál quieres cambiar?`;
+            const wamid = await sendTextMessage(from, ask);
+            await saveAndSend(supabase, from, ask, 'text', wamid);
+            continue;
+          }
+
+          // Sin catalogos_bot → buscar directo en catalogo_colores por familia
+          const famColors = await getColoresFamilia(confirmedPedido.producto);
+
+          if (famColors.length > 0) {
+            if (mentionedColorConf) {
+              const match = famColors.find((c: any) =>
+                (c.color ?? '').toLowerCase().includes(mentionedColorConf) ||
+                mentionedColorConf.includes((c.color ?? '').toLowerCase()) ||
+                (c.nombre_producto as string).toUpperCase().includes(mentionedColorConf.toUpperCase())
+              );
+              if (match) {
+                await updateProductoConf(match.nombre_producto);
+                await sendColorConfirm(match.nombre_producto, match.url_imagen);
+                continue;
+              }
+              // Color mencionado no existe en catálogo
+              const colorList = famColors.map((c: any) => c.color).join(', ');
+              const noColorMsg = `Ese color no está disponible 😔 Tenemos: ${colorList}\n\n¿Cuál prefieres?`;
+              const wamid = await sendTextMessage(from, noColorMsg);
+              await saveAndSend(supabase, from, noColorMsg, 'text', wamid);
+              continue;
+            }
+            // Solo pregunta qué colores hay disponibles
+            const colorList = famColors.map((c: any) => c.color).join(', ');
+            const ask = `¡Claro! 😊 Tenemos disponibles:\n${colorList}\n\n¿A cuál color quieres cambiar?`;
+            const wamid = await sendTextMessage(from, ask);
+            await saveAndSend(supabase, from, ask, 'text', wamid);
+            continue;
+          }
+
+          // Sin colores en la DB → asesor
+          const handoffColor = `Para cambiar el color de tu pedido te paso con un asesor 😊 Un momento.`;
+          const wamid = await sendTextMessage(from, handoffColor);
+          await saveAndSend(supabase, from, handoffColor, 'text', wamid);
+          await supabase.from('conversations').update({ label: 'CAMBIO COLOR - HUMANO' }).eq('id', from);
+          continue;
+        }
+
+        // ── 5. Claude para Q&A general post-confirmación ──────────────────────
         const { data: histConf } = await supabase
           .from('messages').select('content, role')
           .eq('conversation_id', from).order('created_at', { ascending: false }).limit(6);
@@ -341,9 +530,12 @@ export async function POST(req: NextRequest) {
         const sysConf =
           `Eres Josué de Klixmant. El cliente ya confirmó su pedido: *${confirmedPedido.producto}* — Valor: *${confirmedPedido.valor}*.\n` +
           `El pedido está confirmado y será despachado en las próximas 24 horas.\n` +
-          `Si el cliente pregunta por el abono para Interrapidísimo u oficina: explica que son $5.000 de garantía requeridos por el área de despacho para garantizar el envío. Si insiste en que no puede, dile amablemente que lo pasarás con un asesor.\n` +
-          `Si el cliente pregunta cuándo llega o el número de guía: dile que recibirá el número de guía por este mismo chat una vez despachado.\n` +
-          `Sé amable, breve y tranquilizador. PROHIBIDO mencionar otros productos, catálogo ni precios de otros artículos.\n`;
+          `Si el cliente pregunta por el abono para Interrapidísimo u oficina: explica que son $5.000 de garantía requeridos por el área de despacho. Si insiste, dile que lo pasarás con un asesor.\n` +
+          `Si el cliente pregunta cuándo llega o el número de guía: dile que recibirá el número de guía por este chat una vez despachado.\n` +
+          `Si el cliente quiere cambiar de color: pregúntale "¿A qué color quieres cambiarlo?" — NO digas que no puedes hacerlo.\n` +
+          `Si el cliente pide la foto de su producto: responde "En un momento te la enviamos 📸" — NUNCA digas que no puedes enviar fotos.\n` +
+          `Si el cliente quiere ver catálogo de otros productos completamente diferentes: dile que lo pasarás con un asesor.\n` +
+          `Sé amable, breve y tranquilizador.\n`;
 
         const histMsgs: ChatRequest['messages'] = [...(histConf ?? [])]
           .reverse()
