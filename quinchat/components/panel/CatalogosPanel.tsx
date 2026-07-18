@@ -233,7 +233,15 @@ export default function CatalogosPanel() {
 
   // Modales
   const [modalCat,   setModalCat]   = useState<null | 'new' | Catalogo>(null);
-  const [modalColor, setModalColor] = useState<null | { catalogoId: string; item?: ColorVariant }>(null);
+  const [modalColor, setModalColor] = useState<null | { catalogoId: string; item: ColorVariant }>(null);
+
+  // Formulario inline para agregar color
+  const [inlineAdd,      setInlineAdd]      = useState<string | null>(null); // catalogoId
+  const [inlineColor,    setInlineColor]    = useState('');
+  const [inlineNombre,   setInlineNombre]   = useState('');
+  const [inlineUrl,      setInlineUrl]      = useState('');
+  const [inlineUploading, setInlineUploading] = useState(false);
+  const inlineFileRef = useRef<HTMLInputElement>(null);
 
   // ── Cargar datos ─────────────────────────────────────────────────────────────
   const load = async () => {
@@ -254,13 +262,11 @@ export default function CatalogosPanel() {
   // ── Handlers de catálogo ─────────────────────────────────────────────────────
   const handleSaveCat = async (familia: string, patron: string) => {
     if (modalCat && typeof modalCat === 'object' && 'id' in modalCat) {
-      // Editar
       await fetch(`/api/catalogos/${modalCat.id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ familia, patron }),
       });
     } else {
-      // Crear
       const res = await fetch('/api/catalogos', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ familia, patron }),
@@ -268,6 +274,7 @@ export default function CatalogosPanel() {
       if (res.ok) {
         const nuevo: Catalogo = await res.json();
         setExpanded(prev => ({ ...prev, [nuevo.id]: true }));
+        openInline(nuevo.id);
       }
     }
     setModalCat(null);
@@ -280,22 +287,13 @@ export default function CatalogosPanel() {
     load();
   };
 
-  // ── Handlers de color ────────────────────────────────────────────────────────
+  // ── Handlers de color (modal editar) ─────────────────────────────────────────
   const handleSaveColor = async (color: string, nombreProducto: string, urlImagen: string | null) => {
     if (!modalColor) return;
-    if (modalColor.item) {
-      // Editar
-      await fetch(`/api/catalogos/colores/${modalColor.item.id}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ color, nombre_producto: nombreProducto, url_imagen: urlImagen }),
-      });
-    } else {
-      // Crear
-      await fetch(`/api/catalogos/${modalColor.catalogoId}/colores`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ color, nombre_producto: nombreProducto, url_imagen: urlImagen }),
-      });
-    }
+    await fetch(`/api/catalogos/colores/${modalColor.item.id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ color, nombre_producto: nombreProducto, url_imagen: urlImagen }),
+    });
     setModalColor(null);
     load();
   };
@@ -303,6 +301,51 @@ export default function CatalogosPanel() {
   const handleDeleteColor = async (id: string) => {
     if (!confirm('¿Eliminar este color?')) return;
     await fetch(`/api/catalogos/colores/${id}`, { method: 'DELETE' });
+    load();
+  };
+
+  // ── Formulario inline ─────────────────────────────────────────────────────────
+  const openInline = (catId: string) => {
+    setInlineAdd(catId);
+    setInlineColor('');
+    setInlineNombre('');
+    setInlineUrl('');
+    setExpanded(prev => ({ ...prev, [catId]: true }));
+  };
+
+  const closeInline = () => {
+    setInlineAdd(null);
+    setInlineColor('');
+    setInlineNombre('');
+    setInlineUrl('');
+  };
+
+  const handleInlineFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setInlineUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res  = await fetch('/api/catalogos/upload-imagen', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data.url) setInlineUrl(data.url);
+    } finally {
+      setInlineUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleInlineSave = async () => {
+    if (!inlineAdd || !inlineColor.trim() || !inlineNombre.trim()) return;
+    await fetch(`/api/catalogos/${inlineAdd}/colores`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ color: inlineColor.trim(), nombre_producto: inlineNombre.trim(), url_imagen: inlineUrl || null }),
+    });
+    // Limpiar para agregar otro
+    setInlineColor('');
+    setInlineNombre('');
+    setInlineUrl('');
     load();
   };
 
@@ -406,62 +449,105 @@ export default function CatalogosPanel() {
                   </div>
                 </div>
 
-                {/* Grid de colores */}
+                {/* Lista de colores + formulario inline */}
                 {isOpen && (
-                  <div className="border-t border-[#E8E8E8] px-5 py-4">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                  <div className="border-t border-[#E8E8E8] px-5 py-4 flex flex-col gap-2">
 
-                      {cat.catalogo_colores.map(color => (
-                        <div
-                          key={color.id}
-                          className="border border-[#E8E8E8] rounded-xl overflow-hidden bg-[#F8F8F8] group hover:border-[#00A89D]/40 hover:shadow-sm transition-all"
-                        >
-                          {/* Foto */}
-                          <div className="aspect-square overflow-hidden bg-white relative">
-                            {color.url_imagen ? (
-                              <img
-                                src={color.url_imagen}
-                                alt={color.color}
-                                className="w-full h-full object-cover"
-                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-2xl text-[#CCCCCC]">📦</div>
-                            )}
-                            {/* Acciones hover */}
-                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
-                              <button
-                                onClick={() => setModalColor({ catalogoId: cat.id, item: color })}
-                                className="w-8 h-8 bg-white rounded-full flex items-center justify-center text-sm shadow-md hover:scale-110 transition-transform"
-                                title="Editar"
-                              >✏️</button>
-                              <button
-                                onClick={() => handleDeleteColor(color.id)}
-                                className="w-8 h-8 bg-white rounded-full flex items-center justify-center text-sm shadow-md hover:scale-110 transition-transform"
-                                title="Eliminar"
-                              >🗑️</button>
-                            </div>
-                          </div>
-                          {/* Info */}
-                          <div className="px-2 py-2">
-                            <p className="text-xs font-semibold text-[#0D0D0D] truncate">{color.color}</p>
-                            <p className="text-[10px] text-[#6B6B6B] truncate mt-0.5" title={color.nombre_producto}>
-                              {color.nombre_producto}
-                            </p>
-                          </div>
+                    {/* Colores existentes */}
+                    {cat.catalogo_colores.map(cv => (
+                      <div key={cv.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-[#F8F8F8] transition-colors group">
+                        <div className="w-14 h-14 rounded-xl overflow-hidden bg-[#F5F5F5] border border-[#E8E8E8] shrink-0">
+                          {cv.url_imagen ? (
+                            <img src={cv.url_imagen} alt={cv.color} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-xl text-[#CCC]">📦</div>
+                          )}
                         </div>
-                      ))}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-[#0D0D0D]">{cv.color}</p>
+                          <p className="text-xs text-[#6B6B6B] truncate">{cv.nombre_producto}</p>
+                        </div>
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => setModalColor({ catalogoId: cat.id, item: cv })}
+                            className="p-1.5 hover:bg-white rounded-lg text-sm border border-transparent hover:border-[#E8E8E8]"
+                            title="Editar"
+                          >✏️</button>
+                          <button
+                            onClick={() => handleDeleteColor(cv.id)}
+                            className="p-1.5 hover:bg-red-50 rounded-lg text-sm border border-transparent hover:border-red-100"
+                            title="Eliminar"
+                          >🗑️</button>
+                        </div>
+                      </div>
+                    ))}
 
-                      {/* Botón agregar color */}
+                    {/* Formulario inline */}
+                    {inlineAdd === cat.id ? (
+                      <div className="mt-1 p-3 bg-[#F8FFFE] rounded-xl border border-[#00A89D]/20 flex items-start gap-3">
+                        <input ref={inlineFileRef} type="file" accept="image/*" className="hidden" onChange={handleInlineFile} />
+
+                        {/* Foto */}
+                        <div
+                          onClick={() => inlineFileRef.current?.click()}
+                          className="w-20 h-20 rounded-xl border-2 border-dashed border-[#00A89D]/40 hover:border-[#00A89D] bg-white flex flex-col items-center justify-center cursor-pointer shrink-0 overflow-hidden transition-colors"
+                        >
+                          {inlineUrl ? (
+                            <img src={inlineUrl} className="w-full h-full object-cover" alt="preview" />
+                          ) : inlineUploading ? (
+                            <span className="text-xl">⏳</span>
+                          ) : (
+                            <>
+                              <span className="text-xl">📷</span>
+                              <span className="text-[10px] text-[#00A89D] font-semibold mt-0.5">Subir foto</span>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Inputs */}
+                        <div className="flex-1 flex flex-col gap-2">
+                          <input
+                            autoFocus
+                            placeholder="Nombre del color (ej: Negro)"
+                            value={inlineColor}
+                            onChange={e => setInlineColor(e.target.value)}
+                            className="w-full border border-[#E8E8E8] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A89D]/40 bg-white"
+                          />
+                          <input
+                            placeholder="Nombre del producto en Funnelish (ej: NEGRO NEW YORK)"
+                            value={inlineNombre}
+                            onChange={e => setInlineNombre(e.target.value.toUpperCase())}
+                            className="w-full border border-[#E8E8E8] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A89D]/40 bg-white"
+                          />
+                        </div>
+
+                        {/* Botones */}
+                        <div className="flex flex-col gap-2 shrink-0">
+                          <button
+                            onClick={handleInlineSave}
+                            disabled={!inlineColor.trim() || !inlineNombre.trim() || inlineUploading}
+                            className="px-4 py-2 bg-[#00A89D] text-white text-xs font-semibold rounded-xl hover:bg-[#008F85] disabled:opacity-40 transition-all"
+                          >
+                            Guardar
+                          </button>
+                          <button
+                            onClick={closeInline}
+                            className="px-4 py-2 text-xs text-[#6B6B6B] rounded-xl border border-[#E8E8E8] hover:bg-[#F5F5F5] transition-all"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Botón agregar color */
                       <button
-                        onClick={() => { setExpanded(prev => ({ ...prev, [cat.id]: true })); setModalColor({ catalogoId: cat.id }); }}
-                        className="border-2 border-dashed border-[#E8E8E8] rounded-xl aspect-square flex flex-col items-center justify-center gap-2 text-[#6B6B6B] hover:border-[#00A89D] hover:text-[#00A89D] hover:bg-[#00A89D]/5 transition-all"
+                        onClick={() => openInline(cat.id)}
+                        className="mt-1 flex items-center gap-2 px-4 py-3 border-2 border-dashed border-[#E8E8E8] rounded-xl text-[#6B6B6B] hover:border-[#00A89D] hover:text-[#00A89D] hover:bg-[#00A89D]/5 transition-all w-full text-sm font-medium"
                       >
-                        <span className="text-2xl font-light">+</span>
-                        <span className="text-[11px] font-medium text-center px-2">Agregar color</span>
+                        <span className="text-lg font-light">+</span> Agregar variación de color
                       </button>
+                    )}
 
-                    </div>
                   </div>
                 )}
               </div>
@@ -487,6 +573,9 @@ export default function CatalogosPanel() {
           onClose={() => setModalColor(null)}
         />
       )}
+
+      {/* Input de archivo para inline */}
+      {/* (el ref inlineFileRef se renderiza dentro del mapa, aquí solo se declara) */}
     </div>
   );
 }
