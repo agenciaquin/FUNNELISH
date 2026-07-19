@@ -4,6 +4,30 @@
 // Este archivo es el fallback si la tabla está vacía.
 // =====================================================
 
+// =====================================================
+// Conocimiento de la empresa (FAQ). Se inyecta en los prompts del bot.
+// El bot NO debe copiarlo textual: úsalo como referencia y responde natural.
+// =====================================================
+export const EMPRESA_FAQ = `INFORMACIÓN DE LA EMPRESA (Klixmant) — úsala como referencia para responder dudas de forma natural y humana, SIN copiar textual:
+- Tallas: XS, S, M, L, XL, XXL y 3XL. Horma nacional estándar: el cliente puede pedir la misma talla que usa normalmente. Hay para dama y caballero (mismo modelo, solo cambia la horma para el ajuste).
+- Guía de tallas (medidas aproximadas en cm). Si piden la guía o preguntan por medidas, comparte los datos que apliquen (no hace falta listar todo):
+  DAMA — Contorno de pecho: XS 104, S 108, M 112, L 116, XL 124, XXL 132, 3XL 140. Contorno de cintura (rib): XS 76, S 80, M 84, L 88, XL 96, XXL 102, 3XL 110. Largo del buzo: XS 62, S 64, M 66, L 68, XL 70, XXL 72, 3XL 74. Largo de manga: XS 52, S 54, M 56, L 58, XL 60, XXL 62, 3XL 64.
+  CABALLERO — Contorno de pecho: XS 104, S 108, M 112, L 116, XL 124, XXL 132, 3XL 140. Contorno de cintura (rib): XS 78, S 82, M 86, L 90, XL 98, XXL 116, 3XL 124. Largo del buzo: XS 64, S 65, M 67, L 70, XL 73, XXL 75, 3XL 77. Largo de manga: XS 59, S 61, M 63, L 65, XL 67, XXL 69, 3XL 71.
+- Envío: GRATIS a todo Colombia, con pago CONTRA ENTREGA (paga al recibir). Debe haber alguien en la dirección durante el día.
+- Tiempo de entrega: entre 3 y 6 días hábiles según el municipio (puede llegar antes; se da ese rango para no incumplir).
+- Material: polialgodón perchado (algodón + poliéster); suave, durable, buena retención de color, con perchado interior que da sensación térmica.
+- Estampado: DTF (Direct to Film), de alta resistencia y colores vivos.
+- Garantía: 2 meses por defecto de fábrica y problemas de talla; si no le queda o sale defectuosa, se gestiona el cambio.
+- Marca: prendas exclusivas de Klixmant, diseñadas y fabricadas por ellos (marca propia, NO réplicas).
+- Ubicación: Bucaramanga, Diagonal 15 # 60-32, Barrio Ricaurte. Envíos a nivel nacional.
+- Precios al detal: 1 unidad $135.000, 2 unidades $230.000, 3 unidades $325.000, 4 unidades $410.000. Mayoristas desde 6 unidades: $105.000 c/u y la empresa cubre el 50% del envío.
+- Formas de pago: contra entrega; o pago anticipado por Llave 0030538367 (funciona con todos los bancos: Nequi, Daviplata, etc.) o a la cuenta de ahorros Bancolombia 303-000037-98 a nombre de Klixmant SAS. También aceptan Addi y Sistecrédito (piden número de cédula y celular para generar el link de pago).
+- Para programar el envío se necesita: nombre y apellido, celular, cédula (opcional), dirección completa con barrio y ciudad, y la talla.
+- Niños: se fabrica sobre pedido con un abono inicial de $30.000 (es producción personalizada).
+- Contra entrega SÍ está disponible en Medellín y en las ciudades principales.
+- Recogida en oficina de la transportadora (Interrapidísimo / "reclamo en oficina"): SÍ se puede, pero requiere un abono OBLIGATORIO de $5.000 que se descuenta del total del pedido. Etiqueta la conversación como "PENDIENTE DE ABONO". Si el cliente NO quiere abonar, ofrécele enviar a su domicilio con pago contra entrega (sin abono).
+- Recoger directamente en la empresa/local: sí es posible, PERO trabajan sobre pedido (las prendas no están listas de inmediato; se producen una vez confirmada la compra), así que el cliente no puede pasar sin aviso previo — primero se le confirma cuándo su pedido esté listo para entrega.`;
+
 export function getSystemPrompt(_tenantId?: string): string {
   return `Eres Josué, asistente virtual de Klixmant, empresa colombiana especializada en buzos de marcas de motos. Tu función principal es confirmar pedidos y resolver dudas de clientes de manera amable, clara y eficiente por WhatsApp.
 

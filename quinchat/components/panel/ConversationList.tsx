@@ -17,12 +17,14 @@ function formatTime(iso: string): string {
   return date.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit' });
 }
 
-const STATUS_TABS: { key: 'todos' | ConversationStatus; label: string }[] = [
-  { key: 'todos',      label: 'Todos'        },
-  { key: 'nuevo',      label: 'No leído'     },
-  { key: 'en_proceso', label: 'Confirmadas'  },
-  { key: 'resuelto',   label: 'Pendientes'   },
-  { key: 'cerrado',    label: 'Procesadas'   },
+// Pestañas horizontales: filtran por etiqueta / no leídos.
+const FILTER_TABS: { key: string; label: string; color: string; test: (c: Conversation) => boolean }[] = [
+  { key: 'todos',     label: 'Todos',              color: '#6B7280', test: () => true },
+  { key: 'noleido',   label: 'No leído',           color: '#00A89D', test: c => (c.unread_count ?? 0) > 0 },
+  { key: 'venta',     label: 'Venta realizada',    color: '#10B981', test: c => c.label === 'VENTA REALIZADA' },
+  { key: 'humano',    label: 'Humano',             color: '#8B5CF6', test: c => !!c.label && c.label.toUpperCase().includes('HUMANO') },
+  { key: 'abono',     label: 'Pendiente de abono', color: '#06B6D4', test: c => c.label === 'PENDIENTE DE ABONO' },
+  { key: 'procesado', label: 'Pedido procesado',   color: '#3B82F6', test: c => c.label === 'PEDIDO PROCESADO' },
 ];
 
 interface Props {
@@ -35,7 +37,7 @@ interface Props {
 
 export default function ConversationList({ conversations, selectedId, onSelect, onDelete, loading }: Props) {
   const [search, setSearch]               = useState('');
-  const [statusFilter, setStatusFilter]   = useState<'todos' | ConversationStatus>('todos');
+  const [tabKey, setTabKey]               = useState<string>('todos');
   const [labelFilter, setLabelFilter]     = useState<string | null>(null); // null=todos, ''=sin etiqueta, nombre=filtro
   const [soloNoLeidos, setSoloNoLeidos]   = useState(false);
   const [soloBotOff, setSoloBotOff]       = useState(false);
@@ -71,24 +73,20 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
     soloBotOff,
   ].filter(Boolean).length;
 
+  const activeTab = FILTER_TABS.find(t => t.key === tabKey) ?? FILTER_TABS[0];
+
   // ── Filter logic ──
   const filtered = conversations.filter(c => {
     const matchSearch = c.contact_name.toLowerCase().includes(search.toLowerCase()) || c.id.includes(search);
-    const matchStatus = statusFilter === 'todos' || (c.status ?? 'nuevo') === statusFilter;
+    const matchTab    = activeTab.test(c);
     const matchLabel =
       labelFilter === null ? true :
       labelFilter === ''   ? !c.label :
       c.label === labelFilter;
     const matchUnread = !soloNoLeidos || (c.unread_count ?? 0) > 0;
     const matchBot    = !soloBotOff   || c.bot_enabled === false;
-    return matchSearch && matchStatus && matchLabel && matchUnread && matchBot;
+    return matchSearch && matchTab && matchLabel && matchUnread && matchBot;
   });
-
-  const counts = conversations.reduce((acc, c) => {
-    const s = (c.status ?? 'nuevo') as ConversationStatus;
-    acc[s] = (acc[s] ?? 0) + 1;
-    return acc;
-  }, {} as Record<ConversationStatus, number>);
 
   async function handleDelete(id: string) {
     setDeleting(id);
@@ -105,7 +103,7 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
     setLabelFilter(null);
     setSoloNoLeidos(false);
     setSoloBotOff(false);
-    setStatusFilter('todos');
+    setTabKey('todos');
     setSearch('');
   }
 
@@ -240,24 +238,23 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
         </button>
       </div>
 
-      {/* ── Status filter tabs ── */}
+      {/* ── Filtros horizontales por etiqueta ── */}
       <div className="flex gap-1 px-3 py-2 border-b border-[#E8E8E8] overflow-x-auto scrollbar-none">
-        {STATUS_TABS.map(tab => {
-          const active = statusFilter === tab.key;
-          const cfg = tab.key !== 'todos' ? STATUS_CONFIG[tab.key] : null;
-          const count = tab.key !== 'todos' ? (counts[tab.key] ?? 0) : conversations.length;
+        {FILTER_TABS.map(tab => {
+          const active = tabKey === tab.key;
+          const count  = tab.key === 'todos' ? conversations.length : conversations.filter(tab.test).length;
           return (
             <button
               key={tab.key}
-              onClick={() => setStatusFilter(tab.key)}
+              onClick={() => setTabKey(tab.key)}
               className={`shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold transition-all border ${
                 active
-                  ? 'bg-[#00A89D]/10 text-[#00A89D] border-[#00A89D]/25'
+                  ? ''
                   : 'text-[#6B6B6B] border-transparent hover:text-[#0D0D0D] hover:bg-[#F5F5F5]'
               }`}
-              style={active && cfg ? { color: cfg.color, background: cfg.bg, borderColor: cfg.border } : undefined}
+              style={active ? { color: tab.color, background: tab.color + '18', borderColor: tab.color + '40' } : undefined}
             >
-              {cfg && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: cfg.color }} />}
+              {tab.key !== 'todos' && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: tab.color }} />}
               {tab.label}
               {count > 0 && <span className="text-[9px] opacity-60">{count}</span>}
             </button>
@@ -279,11 +276,11 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
             <span className="text-xs text-center px-4">
               {conversations.length === 0
                 ? 'Sin conversaciones aún'
-                : activeFilters > 0 || statusFilter !== 'todos' || search
+                : activeFilters > 0 || tabKey !== 'todos' || search
                 ? 'Sin resultados con este filtro'
                 : 'Sin resultados'}
             </span>
-            {(activeFilters > 0 || statusFilter !== 'todos') && (
+            {(activeFilters > 0 || tabKey !== 'todos') && (
               <button
                 onClick={clearAllFilters}
                 className="text-[10px] text-[#00A89D] font-semibold hover:underline"

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sendTextMessage, sendConfirmacionTemplate, sendAudioByUrl } from '@/lib/whatsapp';
+import { sendTextMessage, sendConfirmacionTemplate, sendAudioByUrl, sendImageByUrl } from '@/lib/whatsapp';
 import { getProductImageUrl, FALLBACK_IMAGE } from '@/lib/product-catalog';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { isCompleteAddress, getAddressQuestion } from '@/lib/address';
 import { validateAddressLupap, getLupapMessage } from '@/lib/lupap';
+import Jimp from 'jimp';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,143 @@ const TEST_WHITELIST = new Set([
   '3052923975',
 ]);
 
+// ── Packs (PACK X2) ─────────────────────────────────────────────────────────────
+// Funnelish envía las variantes concatenadas en variant_name, ej: "ROJO / NEGRO / HOMBRE - M".
+// Separamos colores de talla y armamos el producto combinado "ROJO TOYOTA + NEGRO TOYOTA".
+const COLORES_CONOCIDOS = [
+  'AZUL OSCURO', 'AZUL REY', 'AZUL NAVY', 'AZUL', 'ROJO', 'NEGRO',
+  'BLANCO MARFIL', 'MARFIL', 'BLANCO', 'AMARILLO', 'BEIGE', 'VERDE OSCURO', 'VERDE', 'GRIS', 'COCOA',
+];
+
+function parsePack(productoNombre: string, variantName: string): {
+  esPack: boolean; familia: string; colores: string[]; productos: string[]; productoFinal: string; tallaFinal: string;
+} {
+  const packMatch = productoNombre.toUpperCase().match(/PACK\s*X?\s*(\d)/);
+  const cantidad  = packMatch ? parseInt(packMatch[1], 10) : 0;
+  // Por ahora solo PACK X2 (2 colores + 1 talla). X3 se agrega luego.
+  if (cantidad !== 2) {
+    return { esPack: false, familia: '', colores: [], productos: [], productoFinal: productoNombre, tallaFinal: '' };
+  }
+  const familia = productoNombre.replace(/PACK\s*X?\s*\d/i, '').trim().toUpperCase(); // "TOYOTA"
+  const partes  = variantName.split('/').map(p => p.trim()).filter(Boolean);
+  const colores: string[] = [];
+  let talla = '';
+  for (const p of partes) {
+    const pUp    = p.toUpperCase();
+    const limpio = pUp.replace(/[^A-Z0-9]/g, '');
+    // Talla = contiene HOMBRE/DAMA, o es un token de talla puro. (NO usar "-" como señal.)
+    const esTalla = /\b(HOMBRE|DAMA)\b/.test(pUp) || /^(XS|S|M|L|XL|XXL|XXXL)$/.test(limpio);
+    if (esTalla) {
+      if (!talla) talla = p;
+    } else {
+      // Color: usar el nombre reconocido (limpia basura tipo "BEIGE -")
+      const color = COLORES_CONOCIDOS.find(c => pUp.includes(c));
+      colores.push(color ?? pUp.replace(/[^A-Z0-9 ]/g, '').trim());
+    }
+  }
+  const productos = colores.map(c => `${c} ${familia}`.trim());
+  return {
+    esPack:       productos.length >= 2,
+    familia,
+    colores,
+    productos,
+    productoFinal: productos.length ? productos.join(' + ') : productoNombre,
+    tallaFinal:    talla || 'Por confirmar',
+  };
+}
+
+// Busca la imagen de un COLOR dentro de una familia (estricto por color, evita repetir otro color).
+async function buscarImagenColor(supabase: any, color: string, familia: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('catalogo_colores').select('color, nombre_producto, url_imagen')
+    .not('url_imagen', 'is', null);
+  if (!data || !data.length) return null;
+  const colU     = color.toUpperCase();
+  const famWords = familia.toUpperCase().split(/\s+/).filter((w: string) => w.length >= 3);
+  // Candidatos: SOLO los del color pedido (por columna color o por nombre)
+  const cands = data.filter((r: any) => {
+    const cU = (r.color ?? '').toUpperCase();
+    const nU = (r.nombre_producto ?? '').toUpperCase();
+    return cU === colU || cU.includes(colU) || nU.includes(colU);
+  });
+  if (!cands.length) return null;
+  // Entre los del mismo color, el que más comparte con la familia
+  let best: { url: string; score: number } | null = null;
+  for (const r of cands) {
+    const nU    = (r.nombre_producto ?? '').toUpperCase();
+    const score = famWords.filter((w: string) => nU.includes(w)).length;
+    if (!best || score > best.score) best = { url: r.url_imagen as string, score };
+  }
+  return best?.url ?? null;
+}
+
+// Busca la URL de imagen de un producto: exacta → por palabras → catálogo estático.
+async function buscarImagenProducto(supabase: any, nombre: string): Promise<string> {
+  if (nombre) {
+    const { data: exactMatch } = await supabase
+      .from('catalogo_colores').select('url_imagen')
+      .ilike('nombre_producto', nombre).not('url_imagen', 'is', null)
+      .limit(1).maybeSingle();
+    if (exactMatch?.url_imagen) return exactMatch.url_imagen as string;
+
+    const { data: allColors } = await supabase
+      .from('catalogo_colores').select('nombre_producto, url_imagen')
+      .not('url_imagen', 'is', null);
+    if (allColors && allColors.length > 0) {
+      const words = nombre.toUpperCase().split(/\s+/).filter((w: string) => w.length >= 3);
+      let best: { url: string; score: number } | null = null;
+      for (const row of allColors) {
+        if (!row.nombre_producto || !row.url_imagen) continue;
+        const name  = (row.nombre_producto as string).toUpperCase();
+        const score = words.filter((w: string) => name.includes(w)).length;
+        if (score > 0 && (!best || score > best.score)) best = { url: row.url_imagen as string, score };
+      }
+      if (best) return best.url;
+    }
+  }
+  return getProductImageUrl(nombre);
+}
+
+// Une las fotos de un pack en una sola imagen (lado a lado) y la sube a Supabase Storage.
+// Cachea por combinación: si ya existe el collage de ese combo, lo reutiliza.
+// Devuelve la URL pública, o null si algo falla (para caer al envío por separado).
+async function generarCollagePack(supabase: any, productos: string[], imagenes: string[]): Promise<string | null> {
+  try {
+    const bucket   = 'chat-media';
+    const sanit    = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const fileName = `${productos.map(sanit).sort().join('__')}__v2.jpg`;
+    const path     = `packs/${fileName}`;
+    const supaUrl  = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
+    const publicUrl = `${supaUrl}/storage/v1/object/public/${bucket}/${path}`;
+
+    // Caché: ¿ya existe el collage de este combo?
+    const { data: existentes } = await supabase.storage.from(bucket).list('packs', { search: fileName });
+    if (existentes && existentes.some((f: any) => f.name === fileName)) return publicUrl;
+
+    // Componer las imágenes lado a lado, todas a la misma altura
+    const H    = 900;
+    const imgs = await Promise.all(imagenes.map((u: string) => Jimp.read(u)));
+    imgs.forEach((im: any) => im.resize(Jimp.AUTO, H));
+    const totalW = imgs.reduce((s: number, im: any) => s + im.getWidth(), 0);
+
+    const canvas = new Jimp(totalW, H, 0xffffffff);
+    let left = 0;
+    imgs.forEach((im: any) => { canvas.composite(im, left, 0); left += im.getWidth(); });
+
+    const buffer = await canvas.getBufferAsync(Jimp.MIME_JPEG);
+
+    const { error: upErr } = await supabase.storage.from(bucket)
+      .upload(path, buffer, { contentType: 'image/jpeg', upsert: true });
+    if (upErr) { console.error('[Collage] upload error:', upErr.message); return null; }
+
+    console.log(`[Collage] generado ${path}`);
+    return publicUrl;
+  } catch (e) {
+    console.error('[Collage] error:', e);
+    return null;
+  }
+}
+
 // ── POST — Receive Funnelish purchase webhook ──────────────────────────────────
 export async function POST(req: NextRequest) {
   let body: any;
@@ -109,9 +247,9 @@ export async function POST(req: NextRequest) {
   const correo       = String(body.optin_email      ?? 'Gerenciaquin7@gmail.com').trim() || 'Gerenciaquin7@gmail.com';
 
   const product        = Array.isArray(body.products) ? body.products[0] : null;
-  const productoNombre = product?.name     ? String(product.name).trim()         : '—';
+  let   productoNombre = product?.name     ? String(product.name).trim()         : '—';
   const variantName    = product?.variant_name ? String(product.variant_name).trim() : '';
-  const talla = (variantName && !variantName.toUpperCase().includes('SELECCIONA'))
+  let   talla = (variantName && !variantName.toUpperCase().includes('SELECCIONA'))
     ? variantName
     : 'Por confirmar';
   const montoRaw = product?.amount ?? 0;
@@ -124,51 +262,45 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: 'skipped', reason: 'no phone' });
   }
 
+  // ── PACK X2: separar colores y talla; armar producto combinado ────────────────
+  const pack = parsePack(productoNombre, variantName);
+  const packProductos = pack.esPack ? pack.productos : [];
+  if (pack.esPack) {
+    productoNombre = pack.productoFinal;   // ej: "ROJO TOYOTA + NEGRO TOYOTA"
+    talla          = pack.tallaFinal;      // ej: "HOMBRE - M"
+  }
+  const nombreImagenPrincipal = packProductos[0] ?? productoNombre;
+
   const mensaje = buildMensaje({ nombre, telefono: tel10, direccion, ciudad, departamento, correo, talla, producto: productoNombre, valor });
 
   const supabase = createServerSupabaseClient();
 
-  // Buscar imagen: primero en catálogo dinámico de Supabase, luego en catálogo estático
-  const imageUrl = await (async () => {
-    if (productoNombre) {
-      // 1. Coincidencia exacta en catalogo_colores (case-insensitive)
-      const { data: exactMatch } = await supabase
-        .from('catalogo_colores')
-        .select('url_imagen')
-        .ilike('nombre_producto', productoNombre)
-        .not('url_imagen', 'is', null)
-        .limit(1)
-        .maybeSingle();
-      if (exactMatch?.url_imagen) {
-        console.log(`[Funnelish] Imagen de Supabase para "${productoNombre}"`);
-        return exactMatch.url_imagen as string;
-      }
+  // Buscar imagen(es). Para packs, una foto POR COLOR (estricto) para no repetir color.
+  let imageUrl: string;
+  let segundaImagenUrl: string | null;
+  if (pack.esPack) {
+    imageUrl = (await buscarImagenColor(supabase, pack.colores[0], pack.familia))
+             ?? await buscarImagenProducto(supabase, packProductos[0]);
+    segundaImagenUrl = pack.colores[1]
+      ? ((await buscarImagenColor(supabase, pack.colores[1], pack.familia))
+         ?? await buscarImagenProducto(supabase, packProductos[1]))
+      : null;
+    // Si ambas fotos resultaron iguales (un color sin foto), no repetir
+    if (segundaImagenUrl && segundaImagenUrl === imageUrl) segundaImagenUrl = null;
+  } else {
+    imageUrl = await buscarImagenProducto(supabase, nombreImagenPrincipal);
+    segundaImagenUrl = null;
+  }
 
-      // 2. Coincidencia por palabras en nombre_producto de Supabase
-      const { data: allColors } = await supabase
-        .from('catalogo_colores')
-        .select('nombre_producto, url_imagen')
-        .not('url_imagen', 'is', null);
-      if (allColors && allColors.length > 0) {
-        const words = productoNombre.toUpperCase().split(/\s+/).filter(w => w.length >= 3);
-        let best: { url: string; score: number } | null = null;
-        for (const row of allColors) {
-          if (!row.nombre_producto || !row.url_imagen) continue;
-          const name = (row.nombre_producto as string).toUpperCase();
-          const score = words.filter(w => name.includes(w)).length;
-          if (score > 0 && (!best || score > best.score)) {
-            best = { url: row.url_imagen as string, score };
-          }
-        }
-        if (best) {
-          console.log(`[Funnelish] Imagen Supabase (fuzzy, score=${best.score}) para "${productoNombre}"`);
-          return best.url;
-        }
-      }
-    }
-    // 3. Fallback al catálogo estático
-    return getProductImageUrl(productoNombre);
-  })();
+  // Pack con 2 fotos reales y DISTINTAS → unirlas en un collage y enviar UNA sola imagen.
+  if (pack.esPack
+      && imageUrl && imageUrl.startsWith('http') && imageUrl !== FALLBACK_IMAGE
+      && segundaImagenUrl && segundaImagenUrl.startsWith('http') && segundaImagenUrl !== FALLBACK_IMAGE
+      && imageUrl !== segundaImagenUrl) {
+    const collage = await generarCollagePack(supabase, pack.productos, [imageUrl, segundaImagenUrl]);
+    if (collage) { imageUrl = collage; segundaImagenUrl = null; } // collage OK → no enviar 2da por separado
+  }
+
   const now = new Date().toISOString();
 
   // ── Guardar pedido en clientes_funnelish ──────────────────────────────────────
@@ -292,6 +424,21 @@ export async function POST(req: NextRequest) {
         created_at:      now,
       });
       if (imgErr) console.error('[Funnelish] insert image error:', imgErr.message);
+    }
+
+    // ── 3b. Segunda foto (packs X2) ─────────────────────────────────────────
+    if (enWhitelist && segundaImagenUrl && segundaImagenUrl.startsWith('http') && segundaImagenUrl !== FALLBACK_IMAGE) {
+      const img2Wamid = await sendImageByUrl(waPhone, segundaImagenUrl, productoNombre);
+      const { error: img2Err } = await supabase.from('messages').insert({
+        id:              `funnelish-img2-${referencia || Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        conversation_id: waPhone,
+        content:         segundaImagenUrl,
+        role:            'assistant',
+        type:            'image',
+        whatsapp_id:     img2Wamid,
+        created_at:      now,
+      });
+      if (img2Err) console.error('[Funnelish] insert segunda imagen error:', img2Err.message);
     }
 
     // ── 4. Guardar mensaje de confirmación ─────────────────────────────────

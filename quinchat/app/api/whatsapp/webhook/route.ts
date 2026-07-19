@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from '@/lib/supabase';
 import { sendTextMessage, sendAudioByUrl, sendImageByUrl } from '@/lib/whatsapp';
 import { PRODUCT_NAMES, FALLBACK_IMAGE, getProductImageUrl } from '@/lib/product-catalog';
 import { chat } from '@/lib/quinchat/claude';
+import { EMPRESA_FAQ } from '@/lib/quinchat/systemPrompt';
 import type { ChatRequest } from '@/lib/quinchat/types';
 import { isCompleteAddress, isDirOficina, getAddressQuestion } from '@/lib/address';
 import { validateAddressLupap, getLupapMessage } from '@/lib/lupap';
@@ -19,6 +20,9 @@ const NATURAL_CONFIRM_PHRASES = [
   'si eso es', 'sí eso es', 'si todo bien', 'sí todo bien',
   'así está bien', 'asi esta bien', 'de acuerdo', 'todo bien',
   'si perfecto', 'sí perfecto', 'perfecto así',
+  'correcto', 'está correcto', 'esta correcto', 'es correcto',
+  'procede', 'procédelo', 'procedelo', 'procesa', 'procésalo', 'procesalo',
+  'dale', 'dale pues', 'listo confirmo', 'sí procede', 'si procede',
 ];
 
 // ─── Catálogo de colores desde la DB ─────────────────────────────────────────
@@ -245,9 +249,8 @@ export async function POST(req: NextRequest) {
       const MSG_ABONO_CUENTA =
         `¡Perfecto! 🙌 El abono es de solo *$5.000* y se descuenta del total de tu pedido — es decir, abonas $5.000 ahora y el resto lo pagas al recibir.\n\n` +
         `Puedes hacer el abono a cualquiera de estas cuentas:\n` +
-        `📲 Nequi: *3505717342* — Jonatan Hurtado\n` +
-        `🏦 Bancolombia Ahorros: *303-000037-98* — Klixmant SAS\n` +
-        `📲 Daviplata: *0030538367*\n\n` +
+        `🔑 Llave: *0030538367* — funciona con todos los bancos (Nequi, Daviplata, etc.)\n` +
+        `🏦 Bancolombia Ahorros: *303-000037-98* — Klixmant SAS\n\n` +
         `Cuando lo hagas, envíame el *comprobante* por aquí 📷 y dejamos tu pedido listo para despacho por la oficina de Interrapidísimo. 🚚`;
       const wamid = await sendTextMessage(from, MSG_ABONO_CUENTA);
       await saveAndSend(supabase, from, MSG_ABONO_CUENTA, 'text', wamid);
@@ -276,6 +279,31 @@ export async function POST(req: NextRequest) {
         const expWamid = await sendTextMessage(from, exp);
         await saveAndSend(supabase, from, exp, 'text', expWamid);
       }
+      continue;
+    }
+
+    // ── Cancelación / programación del pedido (auto-etiqueta) ─────────────────
+    const cancelaPedido = ['cancela', 'cancelar', 'cancelo', 'anula', 'anular', 'anulen',
+      'no lo quiero', 'ya no lo quiero', 'no quiero el pedido', 'ya no quiero', 'no me interesa',
+      'no voy a comprar', 'no deseo el pedido', 'no lo voy a comprar'].some(w => textLower.includes(w));
+    const programaPedido = ['para después', 'para despues', 'más adelante', 'mas adelante',
+      'yo te aviso', 'yo aviso', 'yo le aviso', 'lo programo', 'programar el pedido', 'la próxima semana',
+      'la proxima semana', 'el otro mes', 'cuando pueda', 'luego confirmo', 'luego te confirmo',
+      'después confirmo', 'despues confirmo', 'después te confirmo', 'despues te confirmo',
+      'lo dejo para', 'lo dejamos para'].some(w => textLower.includes(w));
+
+    if (cancelaPedido) {
+      await supabase.from('conversations').update({ label: 'PEDIDO CANCELADO' }).eq('id', from);
+      const msg = `Entendido 😊 Cancelo tu pedido por ahora. Si más adelante quieres retomarlo, escríbeme y con gusto te ayudo. ¡Gracias!`;
+      const wamid = await sendTextMessage(from, msg);
+      await saveAndSend(supabase, from, msg, 'text', wamid);
+      continue;
+    }
+    if (programaPedido) {
+      await supabase.from('conversations').update({ label: 'PEDIDO PROGRAMADO' }).eq('id', from);
+      const msg = `¡Perfecto! 😊 Dejo tu pedido guardado y no te molesto más. Cuando estés listo/a, escríbeme *CONFIRMO* y lo despachamos de una. 🚚`;
+      const wamid = await sendTextMessage(from, msg);
+      await saveAndSend(supabase, from, msg, 'text', wamid);
       continue;
     }
 
@@ -367,7 +395,7 @@ export async function POST(req: NextRequest) {
           const handoff = `Para mostrarte otros productos te paso con un asesor 😊 Un momento.`;
           const wamid = await sendTextMessage(from, handoff);
           await saveAndSend(supabase, from, handoff, 'text', wamid);
-          await supabase.from('conversations').update({ label: 'VER CATÁLOGO - HUMANO' }).eq('id', from);
+          await supabase.from('conversations').update({ label: 'HUMANO' }).eq('id', from);
           continue;
         }
 
@@ -624,7 +652,7 @@ export async function POST(req: NextRequest) {
           const handoffColor = `Para cambiar el color de tu pedido te paso con un asesor 😊 Un momento.`;
           const wamid = await sendTextMessage(from, handoffColor);
           await saveAndSend(supabase, from, handoffColor, 'text', wamid);
-          await supabase.from('conversations').update({ label: 'CAMBIO COLOR - HUMANO' }).eq('id', from);
+          await supabase.from('conversations').update({ label: 'HUMANO' }).eq('id', from);
           continue;
         }
 
@@ -637,12 +665,13 @@ export async function POST(req: NextRequest) {
           `Eres Josué de Klixmant. El cliente ya confirmó su pedido: *${confirmedPedido.producto}* — Valor: *${confirmedPedido.valor}*.\n` +
           `El pedido está confirmado y será despachado en las próximas 24 horas.\n` +
           `ENVÍOS: hay DOS opciones — (1) a DOMICILIO con pago contra entrega, sin abono; (2) RECOGIDA EN OFICINA de Interrapidísimo, que requiere un abono de $5.000 que se descuenta del total. NUNCA digas que no se puede reclamar en oficina: SÍ se puede, con el abono. Si el cliente objeta el abono, sé empático, explícale que es política del área de despacho y ofrécele la opción de domicilio contra entrega.\n` +
-          `Si el cliente pide la cuenta para abonar: dale Nequi 3505717342 (Jonatan Hurtado), Bancolombia 303-000037-98 (Klixmant SAS) o Daviplata 0030538367, y pídele el comprobante por este chat.\n` +
+          `Si el cliente pide la cuenta para abonar: dale la Llave 0030538367 (funciona con Nequi, Daviplata y cualquier banco) o la cuenta de ahorros Bancolombia 303-000037-98 (Klixmant SAS), y pídele el comprobante por este chat.\n` +
           `Si el cliente pregunta cuándo llega o el número de guía: dile que recibirá el número de guía por este chat una vez despachado.\n` +
           `Si el cliente quiere cambiar de color: pregúntale "¿A qué color quieres cambiarlo?" — NO digas que no puedes hacerlo.\n` +
           `Si el cliente pide la foto de su producto: responde "En un momento te la enviamos 📸" — NUNCA digas que no puedes enviar fotos.\n` +
           `Si el cliente quiere ver catálogo de otros productos completamente diferentes: dile que lo pasarás con un asesor.\n` +
-          `Sé amable, breve y tranquilizador.\n`;
+          `Sé amable, breve y tranquilizador.\n\n` +
+          EMPRESA_FAQ;
 
         const histMsgs: ChatRequest['messages'] = [...(histConf ?? [])]
           .reverse()
@@ -675,7 +704,8 @@ export async function POST(req: NextRequest) {
         `Si el cliente pregunta por su pedido o cuándo llega: dile que en unos minutos recibirá la confirmación, o que puede escribirnos para ayudarle.\n` +
         `Si el cliente pide ver catálogo u otros productos: dile que un asesor puede ayudarle.\n` +
         `ENVÍOS: hay dos opciones — a DOMICILIO con pago contra entrega (sin abono), o RECOGIDA EN OFICINA de Interrapidísimo con un abono de $5.000 que se descuenta del total. NUNCA digas que no se puede reclamar en oficina: sí se puede, con el abono.\n` +
-        `Sé breve, cálido y útil. NUNCA escribas URLs ni enlaces.\n`;
+        `Sé breve, cálido y útil. NUNCA escribas URLs ni enlaces.\n\n` +
+        EMPRESA_FAQ;
 
       const histNoPedidoMsgs: ChatRequest['messages'] = [...(histNoPedido ?? [])]
         .reverse()
@@ -705,7 +735,7 @@ export async function POST(req: NextRequest) {
       const handoff = `Para mostrarte todo el catálogo, te paso con un asesor que te puede ayudar 😊 Un momento por favor.`;
       const wamid = await sendTextMessage(from, handoff);
       await saveAndSend(supabase, from, handoff, 'text', wamid);
-      await supabase.from('conversations').update({ label: 'VER CATÁLOGO - HUMANO' }).eq('id', from);
+      await supabase.from('conversations').update({ label: 'HUMANO' }).eq('id', from);
       continue;
     }
 
@@ -926,7 +956,7 @@ export async function POST(req: NextRequest) {
                 const imgWamid = await sendImageByUrl(from, imgUrl, newProduct);
                 await saveAndSend(supabase, from, imgUrl, 'image', imgWamid);
               }
-              const confirmMsg = `✅ Listo, cambié tu pedido a *${newProduct}*.\n\nRevisa la foto y escribe *CONFIRMO* o "si está bien" para que despachemos en 24 horas. 🚚`;
+              const confirmMsg = `✅ ¡Listo! Cambié tu pedido a *${newProduct}*.\n\nRevisa la foto y me confirmas si está todo correcto para procesar tu despacho 😊🚚`;
               const wamid = await sendTextMessage(from, confirmMsg);
               await saveAndSend(supabase, from, confirmMsg, 'text', wamid);
               continue;
@@ -950,7 +980,7 @@ export async function POST(req: NextRequest) {
         const msg = `Para cambiar el modelo, te paso con un asesor 😊 Un momento.`;
         const wamid = await sendTextMessage(from, msg);
         await saveAndSend(supabase, from, msg, 'text', wamid);
-        await supabase.from('conversations').update({ label: 'CAMBIO PRODUCTO - HUMANO' }).eq('id', from);
+        await supabase.from('conversations').update({ label: 'HUMANO' }).eq('id', from);
         continue;
       }
 
@@ -998,7 +1028,7 @@ export async function POST(req: NextRequest) {
     if (clientGaveTalla && clientGaveDireccion) {
       fixedReply = stillMissingTalla || stillMissingDir
         ? null // edge case — no debería pasar
-        : `✅ Perfecto, talla *${currentTalla}* y dirección anotadas.\n\nTodo está listo 🎉 Responde *CONFIRMO*, "si está bien" o dime que confirmas para que despachemos tu *${pendingPedido.producto}*. 🚚`;
+        : `✅ ¡Perfecto! Anoté tu talla *${currentTalla}* y tu dirección. Tu pedido: *${pendingPedido.producto}*.\n\n¿Me confirmas que está todo correcto para procesar tu despacho? 😊🚚`;
     } else if (clientGaveTalla) {
       if (isDirOficinaType) {
         // Dirección es oficina → recordar el abono en vez de pedir dirección
@@ -1007,7 +1037,7 @@ export async function POST(req: NextRequest) {
         const addrQTalla = getAddressQuestion(currentDireccion) ?? '📍 Para completar el pedido necesito tu dirección de domicilio completa (ej: Calle 15 # 20-30, Barrio). ¿Cuál es?';
         fixedReply = `✅ Talla *${currentTalla}* confirmada.\n\n${addrQTalla}`;
       } else {
-        fixedReply = `✅ Talla *${currentTalla}* confirmada. Todo listo 🎉\n\nEscribe *CONFIRMO*, "si está bien" o dime que confirmas para que despachemos tu *${pendingPedido.producto}*. 🚚`;
+        fixedReply = `✅ ¡Perfecto! Talla *${currentTalla}* anotada. Tu pedido: *${pendingPedido.producto}*.\n\n¿Me confirmas que está todo correcto para procesar tu despacho? 😊🚚`;
       }
     } else if (clientGaveDireccion) {
       // Validar dirección con Lupap (geocodificación real)
@@ -1022,7 +1052,7 @@ export async function POST(req: NextRequest) {
         // Dirección verificada → confirmar normalmente
         fixedReply = stillMissingTalla
           ? `✅ Dirección anotada.\n\n📋 ¿Me confirmas tu talla del buzo? (XS, S, M, L, XL, XXL, XXXL)`
-          : `✅ Dirección anotada. Todo listo 🎉\n\nEscribe *CONFIRMO*, "si está bien" o dime que confirmas para que despachemos tu *${pendingPedido.producto}*. 🚚`;
+          : `✅ ¡Dirección anotada! Ya tengo todo para tu pedido: *${pendingPedido.producto}*.\n\n¿Me confirmas que está todo correcto para procesar tu despacho? 😊🚚`;
       }
     }
 
@@ -1060,7 +1090,7 @@ export async function POST(req: NextRequest) {
       `Pedido: *${pendingPedido.producto}* — Valor: *${pendingPedido.valor}*\n` +
       `${missingList.length > 0
         ? `Aún falta: ${missingList.join(' y ')}. Pide SOLO eso, de forma amable y breve.`
-        : `Todos los datos están completos. Pídele que confirme el pedido (puede escribir CONFIRMO, "si está bien", "confirmado" o cualquier frase afirmativa).`
+        : `Todos los datos están completos. Pídele de forma natural y humana que confirme si todo está correcto para procesar su pedido. Evita sonar robótico (NO digas "escribe CONFIRMO"); con cualquier frase afirmativa del cliente basta.`
       }\n` +
       `PROHIBIDO: mencionar otros productos, catálogo, precios de otros artículos.\n` +
       `Si el cliente pregunta por el envío o cuándo llega, responde brevemente y vuelve al tema.\n` +
@@ -1068,7 +1098,8 @@ export async function POST(req: NextRequest) {
       `Si el cliente quiere agregar más prendas del MISMO catálogo: infórmale las promos: 2 prendas $229.900 — 3 prendas $325.000. Pídele que diga los colores que quiere.\n` +
       `Si el cliente quiere productos de OTRO catálogo diferente al que está confirmando: dile que lo pasarás con el asesor encargado de ese catálogo.\n` +
       `ENVÍOS: hay DOS opciones — (1) a DOMICILIO con pago contra entrega, sin abono; (2) RECOGIDA EN OFICINA de Interrapidísimo, que requiere un abono de $5.000 que se descuenta del total del pedido. NUNCA digas que no se puede reclamar en oficina: SÍ se puede, con el abono. Si el cliente objeta el abono, sé empático pero explícale que es política del área de despacho y ofrécele la opción de domicilio contra entrega.\n` +
-      `NUNCA escribas URLs ni enlaces.\n`;
+      `NUNCA escribas URLs ni enlaces.\n\n` +
+      EMPRESA_FAQ;
 
     const chatHistory: ChatRequest['messages'] = [...(shortHistory ?? [])]
       .reverse()

@@ -264,3 +264,48 @@ export async function sendConfirmacionTemplate(
     return null;
   }
 }
+
+/**
+ * Envía la plantilla de recordatorio de pedido pendiente (remarketing).
+ * Funciona fuera de la ventana de 24h. Debe estar aprobada en Meta.
+ * Plantilla: "recordatorio_pedido_klixmant" — 1 variable de body: {{1}} = nombre.
+ */
+export async function sendRecordatorioTemplate(to: string, nombre: string): Promise<string | null> {
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const token = process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!phoneNumberId || !token) {
+    console.error('[WhatsApp] Missing credentials for recordatorio template');
+    return null;
+  }
+  const payload = {
+    messaging_product: 'whatsapp',
+    to,
+    type: 'template',
+    template: {
+      name: 'recordatorio_pedido_klixmant',
+      language: { code: 'es' },
+      components: [
+        {
+          type: 'body',
+          parameters: [{ type: 'text', text: nombre || 'hola' }], // {{1}} nombre
+        },
+      ],
+    },
+  };
+  try {
+    const res = await fetch(`${WA_API_URL}/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      console.error('[WhatsApp] recordatorio template failed:', await res.text());
+      return null;
+    }
+    const data = await res.json();
+    return (data.messages?.[0]?.id as string) ?? null;
+  } catch (e) {
+    console.error('[WhatsApp] Network error (recordatorio):', e);
+    return null;
+  }
+}

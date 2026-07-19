@@ -44,6 +44,9 @@ const DEFAULT_COLORS: Record<string, string> = {
   'PEDIDO PROCESADO':           '#3b82f6',
   'PENDIENTE POR CONFIRMACIÓN': '#8b5cf6',
   'PENDIENTE DE ABONO':         '#06b6d4',
+  'PEDIDO PROGRAMADO':          '#14b8a6',
+  'PEDIDO CANCELADO':           '#ef4444',
+  'HUMANO':                     '#8b5cf6',
   'atendido por Whatsap':       '#f59e0b',
 };
 
