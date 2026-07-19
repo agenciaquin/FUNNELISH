@@ -25,6 +25,40 @@ const NATURAL_CONFIRM_PHRASES = [
   'dale', 'dale pues', 'listo confirmo', 'sí procede', 'si procede',
 ];
 
+// ─── TEMPORAL (registro de ventas del mes) ───────────────────────────────────
+// Reenvía cada venta confirmada a un número admin, con el mismo formato del pedido.
+// Para desactivarlo, borra esta función y sus 2 llamadas (enviarRegistroVenta).
+const ADMIN_VENTAS = '573167648391';
+async function enviarRegistroVenta(supabase: any, pedido: any, tel10: string, from: string) {
+  if (!pedido) return;
+  const registro =
+    `🟢 *VENTA CONFIRMADA*\n` +
+    `Nombre: ${pedido.nombre ?? '—'}\n` +
+    `Teléfono: ${pedido.telefono ?? tel10}\n` +
+    `Dirección: ${pedido.direccion ?? '—'}\n` +
+    `Ciudad: ${pedido.ciudad ?? '—'}\n` +
+    `Departamento: ${pedido.departamento ?? '—'}\n` +
+    `Correo: ${pedido.correo ?? '—'}\n` +
+    `Talla: ${pedido.talla ?? '—'}\n` +
+    `Producto: ${pedido.producto ?? '—'}\n` +
+    `Valor: ${pedido.valor ?? '—'}`;
+  try { await sendTextMessage(ADMIN_VENTAS, registro); } catch { /* no bloquear la confirmación */ }
+
+  // Reenviar la(s) foto(s) que se le enviaron al cliente (incluye el collage del pack)
+  try {
+    const { data: imgs } = await supabase
+      .from('messages').select('content')
+      .eq('conversation_id', from).eq('type', 'image')
+      .order('created_at', { ascending: false }).limit(4);
+    const urls = [...new Set((imgs ?? []).map((m: any) => m.content))]
+      .filter((u: any) => typeof u === 'string' && u.startsWith('http'))
+      .slice(0, 2) as string[];
+    for (const u of urls) {
+      try { await sendImageByUrl(ADMIN_VENTAS, u, pedido.producto ?? ''); } catch { /* ignorar */ }
+    }
+  } catch { /* ignorar */ }
+}
+
 // ─── Catálogo de colores desde la DB ─────────────────────────────────────────
 
 interface ColorVariantDB {
@@ -319,7 +353,7 @@ export async function POST(req: NextRequest) {
       const tel10 = from.replace(/^57/, '').slice(-10);
       const { data: pedido } = await supabase
         .from('clientes_funnelish')
-        .select('id, nombre, producto, talla, direccion, ciudad, departamento')
+        .select('id, nombre, producto, talla, direccion, ciudad, departamento, correo, valor, telefono')
         .eq('telefono', tel10).eq('confirmado', false)
         .order('created_at', { ascending: false }).limit(1).maybeSingle();
 
@@ -356,6 +390,7 @@ export async function POST(req: NextRequest) {
           confirmado: true, confirmado_at: new Date().toISOString(), estado: 'confirmado',
         }).eq('id', pedido.id);
         await supabase.from('conversations').update({ label: 'VENTA REALIZADA' }).eq('id', from);
+        await enviarRegistroVenta(supabase, pedido, tel10, from); // TEMPORAL: registro de ventas
       }
 
       const confirmReply = '¡Gracias por tu compra, cuando lo envie te estara llegando el número de guía desde nuestro chatbot, cuyo número asociado es 3142576239, para que puedas realizarle seguimiento a tu paquete.';
@@ -1070,6 +1105,7 @@ export async function POST(req: NextRequest) {
         confirmado: true, confirmado_at: new Date().toISOString(), estado: 'confirmado',
       }).eq('id', pendingPedido.id);
       await supabase.from('conversations').update({ label: 'VENTA REALIZADA' }).eq('id', from);
+      await enviarRegistroVenta(supabase, pendingPedido, tel10, from); // TEMPORAL: registro de ventas
       const finalMsg = '¡Gracias por tu compra, cuando lo envie te estara llegando el número de guía desde nuestro chatbot, cuyo número asociado es 3142576239, para que puedas realizarle seguimiento a tu paquete.';
       const wamid = await sendTextMessage(from, finalMsg);
       await saveAndSend(supabase, from, finalMsg, 'text', wamid);

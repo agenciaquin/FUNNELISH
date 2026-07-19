@@ -28,12 +28,12 @@ const COLOR_PRESETS = [
 
 const ETIQUETAS_INICIALES = [
   { nombre: 'PENDIENTE POR CONFIRMACIÓN', color: '#8B5CF6', descripcion: 'Pedido recibido, esperando que el cliente confirme sus datos' },
-  { nombre: 'VENTA REALIZADA',            color: '#10B981', descripcion: 'Cliente confirmó datos — pedido listo para despacho' },
-  { nombre: 'PEDIDO PROCESADO',           color: '#3B82F6', descripcion: 'Pedido ya fue enviado o está en preparación' },
-  { nombre: 'PENDIENTE DE ABONO',         color: '#06B6D4', descripcion: 'El cliente tiene un saldo pendiente de pago' },
+  { nombre: 'VENTA REALIZADA',            color: '#00847A', descripcion: 'Cliente confirmó datos — pedido listo para despacho' },
+  { nombre: 'PEDIDO PROCESADO',           color: '#15803D', descripcion: 'Pedido ya fue enviado o está en preparación' },
+  { nombre: 'PENDIENTE DE ABONO',         color: '#EAB308', descripcion: 'El cliente tiene un saldo pendiente de pago' },
   { nombre: 'PEDIDO PROGRAMADO',          color: '#14B8A6', descripcion: 'El cliente lo agendó para después / avisará cuando quiera confirmar' },
   { nombre: 'PEDIDO CANCELADO',           color: '#EF4444', descripcion: 'El cliente canceló o no quiere el pedido' },
-  { nombre: 'HUMANO',                     color: '#8B5CF6', descripcion: 'El bot transfirió la conversación a un agente humano' },
+  { nombre: 'HUMANO',                     color: '#6B7280', descripcion: 'El bot transfirió la conversación a un agente humano' },
   { nombre: 'ATENDIDO POR WHATSAPP',      color: '#F59E0B', descripcion: 'Conversación ya fue atendida por un agente' },
 ];
 

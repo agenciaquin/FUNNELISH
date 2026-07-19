@@ -40,13 +40,13 @@ const PREFIJO_PAIS: Record<string, string> = {
 const ESTADO_OPS = ['Sin agregar', 'Agregado', 'Bloqueado'];
 
 const DEFAULT_COLORS: Record<string, string> = {
-  'VENTA REALIZADA':            '#10b981',
-  'PEDIDO PROCESADO':           '#3b82f6',
+  'VENTA REALIZADA':            '#00847a',
+  'PEDIDO PROCESADO':           '#15803d',
   'PENDIENTE POR CONFIRMACIÓN': '#8b5cf6',
-  'PENDIENTE DE ABONO':         '#06b6d4',
+  'PENDIENTE DE ABONO':         '#eab308',
   'PEDIDO PROGRAMADO':          '#14b8a6',
   'PEDIDO CANCELADO':           '#ef4444',
-  'HUMANO':                     '#8b5cf6',
+  'HUMANO':                     '#6b7280',
   'atendido por Whatsap':       '#f59e0b',
 };
 

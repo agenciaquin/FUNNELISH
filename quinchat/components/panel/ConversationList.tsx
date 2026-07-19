@@ -19,13 +19,21 @@ function formatTime(iso: string): string {
 
 // Pestañas horizontales: filtran por etiqueta / no leídos.
 const FILTER_TABS: { key: string; label: string; color: string; test: (c: Conversation) => boolean }[] = [
-  { key: 'todos',     label: 'Todos',              color: '#6B7280', test: () => true },
-  { key: 'noleido',   label: 'No leído',           color: '#00A89D', test: c => (c.unread_count ?? 0) > 0 },
-  { key: 'venta',     label: 'Venta realizada',    color: '#10B981', test: c => c.label === 'VENTA REALIZADA' },
-  { key: 'humano',    label: 'Humano',             color: '#8B5CF6', test: c => !!c.label && c.label.toUpperCase().includes('HUMANO') },
-  { key: 'abono',     label: 'Pendiente de abono', color: '#06B6D4', test: c => c.label === 'PENDIENTE DE ABONO' },
-  { key: 'procesado', label: 'Pedido procesado',   color: '#3B82F6', test: c => c.label === 'PEDIDO PROCESADO' },
+  { key: 'todos',     label: 'Todos',              color: '#475569', test: () => true },
+  { key: 'noleido',   label: 'No leído',           color: '#38BDF8', test: c => (c.unread_count ?? 0) > 0 },
+  { key: 'venta',     label: 'Venta realizada',    color: '#00847A', test: c => c.label === 'VENTA REALIZADA' },
+  { key: 'humano',    label: 'Humano',             color: '#6B7280', test: c => !!c.label && c.label.toUpperCase().includes('HUMANO') },
+  { key: 'abono',     label: 'Pendiente de abono', color: '#EAB308', test: c => c.label === 'PENDIENTE DE ABONO' },
+  { key: 'procesado', label: 'Pedido procesado',   color: '#15803D', test: c => c.label === 'PEDIDO PROCESADO' },
 ];
+
+// Texto blanco o negro según qué tan claro sea el color de fondo (para que siempre se lea)
+function textOn(bg: string): string {
+  const c = bg.replace('#', '');
+  const r = parseInt(c.slice(0, 2), 16), g = parseInt(c.slice(2, 4), 16), b = parseInt(c.slice(4, 6), 16);
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  return lum > 165 ? '#0D0D0D' : '#FFFFFF';
+}
 
 interface Props {
   conversations: Conversation[];
@@ -247,16 +255,13 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
             <button
               key={tab.key}
               onClick={() => setTabKey(tab.key)}
-              className={`shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold transition-all border ${
-                active
-                  ? ''
-                  : 'text-[#6B6B6B] border-transparent hover:text-[#0D0D0D] hover:bg-[#F5F5F5]'
+              className={`shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-semibold transition-all duration-200 ${
+                active ? 'opacity-100 shadow-md scale-105' : 'opacity-60 hover:opacity-90'
               }`}
-              style={active ? { color: tab.color, background: tab.color + '18', borderColor: tab.color + '40' } : undefined}
+              style={{ background: tab.color, color: textOn(tab.color) }}
             >
-              {tab.key !== 'todos' && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: tab.color }} />}
               {tab.label}
-              {count > 0 && <span className="text-[9px] opacity-60">{count}</span>}
+              {count > 0 && <span className="text-[9px] font-bold" style={{ opacity: 0.8 }}>{count}</span>}
             </button>
           );
         })}
