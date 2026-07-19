@@ -9,11 +9,14 @@ export function isCompleteAddress(addr: string | null | undefined): boolean {
   const a = addr.toLowerCase().trim();
   if (a.length < 5) return false;
 
-  // Calle / Carrera / Diagonal / Transversal / Avenida + número + # + número
-  if (/\b(calle|carrera|diagonal|transversal|avenida|cl\b|cra\b|cr\b|kr\b|diag\b|av\b|cll\b)\s*\d+\s*[#\-]\s*\d/.test(a)) return true;
+  // Prefijos de vía + abreviaturas comunes en Colombia (kra, cra, cll, dg, tv, mz…)
+  const VIA = String.raw`(?:calle|carrera|diagonal|transversal|avenida|autopista|manzana|clle|cll|cl|carr|cra|cr|kra|krra|kr|diag|dg|av|ave|tv|trans|mz)\b`;
 
-  // Acepta formato sin # ni -: "Carrera 21 152 30" (3 números separados por espacio)
-  if (/\b(calle|carrera|diagonal|transversal|avenida|cl\b|cra\b|cr\b|kr\b|diag\b|av\b|cll\b)\s*\d+\s+\d+\s+\d+/.test(a)) return true;
+  // Vía + número (puede llevar letra, ej "44C") + # o - + número
+  if (new RegExp(String.raw`\b${VIA}\s*\d+\s*[a-z]?\s*[#\-]\s*\d`).test(a)) return true;
+
+  // Formato sin # ni -: "Carrera 21 152 30" (3 números separados por espacio)
+  if (new RegExp(String.raw`\b${VIA}\s*\d+\s*[a-z]?\s+\d+\s+\d+`).test(a)) return true;
 
   // Manzana + Casa
   if (/\b(manzana|mz\.?)\b.{0,40}\b(casa|cs\.?)\b/.test(a)) return true;

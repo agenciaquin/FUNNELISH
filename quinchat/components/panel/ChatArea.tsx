@@ -83,9 +83,10 @@ interface Props {
   messages: Message[];
   onMessageSent: (msg: Message) => void;
   onConversationsUpdate: () => void;
+  onBack?: () => void;
 }
 
-export default function ChatArea({ conversation, messages, onMessageSent, onConversationsUpdate }: Props) {
+export default function ChatArea({ conversation, messages, onMessageSent, onConversationsUpdate, onBack }: Props) {
   const [input, setInput]               = useState('');
   const [sending, setSending]           = useState(false);
   const [botEnabled, setBotEnabled]     = useState(true);
@@ -347,7 +348,7 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
   // ── Empty state ────────────────────────────────────────────────────────────
   if (!conversation) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-[#FAF9F6] text-[#6B6B6B] select-none">
+      <div className="hidden md:flex flex-1 flex-col items-center justify-center bg-[#FAF9F6] text-[#6B6B6B] select-none">
         <div className="text-5xl mb-3 opacity-20">💬</div>
         <p className="text-sm text-[#6B6B6B]">No se ha seleccionado ninguna conversación</p>
       </div>
@@ -363,6 +364,13 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-[#E8E8E8] bg-white shrink-0">
         <div className="flex items-center gap-3">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="md:hidden -ml-2 w-8 h-8 rounded-lg text-[#00A89D] flex items-center justify-center text-lg shrink-0 hover:bg-[#00A89D]/10"
+              aria-label="Volver"
+            >◀</button>
+          )}
           <div className="w-8 h-8 rounded-full bg-[#00A89D] flex items-center justify-center text-sm font-bold text-white">
             {initial}
           </div>

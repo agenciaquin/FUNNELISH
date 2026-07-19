@@ -42,21 +42,41 @@ async function enviarRegistroVenta(supabase: any, pedido: any, tel10: string, fr
     `Talla: ${pedido.talla ?? '—'}\n` +
     `Producto: ${pedido.producto ?? '—'}\n` +
     `Valor: ${pedido.valor ?? '—'}`;
-  try { await sendTextMessage(ADMIN_VENTAS, registro); } catch { /* no bloquear la confirmación */ }
-
-  // Reenviar la(s) foto(s) que se le enviaron al cliente (incluye el collage del pack)
+  // Buscar la(s) foto(s) que se le enviaron al cliente (incluye el collage del pack)
+  let urls: string[] = [];
   try {
     const { data: imgs } = await supabase
       .from('messages').select('content')
       .eq('conversation_id', from).eq('type', 'image')
       .order('created_at', { ascending: false }).limit(4);
-    const urls = [...new Set((imgs ?? []).map((m: any) => m.content))]
-      .filter((u: any) => typeof u === 'string' && u.startsWith('http'))
-      .slice(0, 2) as string[];
-    for (const u of urls) {
-      try { await sendImageByUrl(ADMIN_VENTAS, u, pedido.producto ?? ''); } catch { /* ignorar */ }
-    }
+    urls = ([...new Set((imgs ?? []).map((m: any) => m.content))]
+      .filter((u: any) => typeof u === 'string' && u.startsWith('http')) as string[]).slice(0, 2);
   } catch { /* ignorar */ }
+
+  if (urls.length > 0) {
+    // Foto + texto JUNTOS: el registro va como pie (caption) de la primera imagen
+    try { await sendImageByUrl(ADMIN_VENTAS, urls[0], registro); } catch { /* ignorar */ }
+    for (const u of urls.slice(1)) {
+      try { await sendImageByUrl(ADMIN_VENTAS, u, ''); } catch { /* ignorar */ }
+    }
+  } else {
+    try { await sendTextMessage(ADMIN_VENTAS, registro); } catch { /* ignorar */ }
+  }
+}
+
+// Marca la conversación como HUMANO y avisa al asesor (solo la primera vez, para no repetir).
+const ADMIN_HUMANO = '573143534918';
+async function marcarHumanoYNotificar(supabase: any, from: string) {
+  const { data: conv } = await supabase
+    .from('conversations').select('label, contact_name').eq('id', from).maybeSingle();
+  const yaEstaba = (conv?.label ?? '').toUpperCase().includes('HUMANO');
+  await supabase.from('conversations').update({ label: 'HUMANO' }).eq('id', from);
+  if (yaEstaba) return; // ya se avisó antes
+  const tel = from.replace(/^57/, '');
+  const cliente = conv?.contact_name && conv.contact_name !== 'Desconocido'
+    ? `${conv.contact_name} (${tel})` : tel;
+  const aviso = `🔔 El cliente ${cliente} necesita de tu asistencia para confirmar la compra.`;
+  try { await sendTextMessage(ADMIN_HUMANO, aviso); } catch { /* no bloquear */ }
 }
 
 // ─── Catálogo de colores desde la DB ─────────────────────────────────────────
@@ -180,10 +200,19 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    // Solo texto de aquí en adelante
-    if (msg.type !== 'text') continue;
-
-    const text: string = msg.text?.body ?? '';
+    // Extraer texto de: texto normal, botón de plantilla, o botón interactivo
+    let text = '';
+    if (msg.type === 'text') {
+      text = msg.text?.body ?? '';
+    } else if (msg.type === 'button') {
+      // Clic en botón de plantilla (ej: "CONFIRMO DATOS CORRECTOS")
+      text = msg.button?.text ?? msg.button?.payload ?? '';
+    } else if (msg.type === 'interactive') {
+      text = msg.interactive?.button_reply?.title ?? msg.interactive?.button_reply?.id
+          ?? msg.interactive?.list_reply?.title ?? msg.interactive?.list_reply?.id ?? '';
+    } else {
+      continue; // otros tipos (audio, etc.) no se procesan aquí
+    }
     if (!text.trim()) continue;
 
     // ── Upsert conversación ──────────────────────────────────────────────────
@@ -430,7 +459,7 @@ export async function POST(req: NextRequest) {
           const handoff = `Para mostrarte otros productos te paso con un asesor 😊 Un momento.`;
           const wamid = await sendTextMessage(from, handoff);
           await saveAndSend(supabase, from, handoff, 'text', wamid);
-          await supabase.from('conversations').update({ label: 'HUMANO' }).eq('id', from);
+          await marcarHumanoYNotificar(supabase, from);
           continue;
         }
 
@@ -687,7 +716,7 @@ export async function POST(req: NextRequest) {
           const handoffColor = `Para cambiar el color de tu pedido te paso con un asesor 😊 Un momento.`;
           const wamid = await sendTextMessage(from, handoffColor);
           await saveAndSend(supabase, from, handoffColor, 'text', wamid);
-          await supabase.from('conversations').update({ label: 'HUMANO' }).eq('id', from);
+          await marcarHumanoYNotificar(supabase, from);
           continue;
         }
 
@@ -770,7 +799,7 @@ export async function POST(req: NextRequest) {
       const handoff = `Para mostrarte todo el catálogo, te paso con un asesor que te puede ayudar 😊 Un momento por favor.`;
       const wamid = await sendTextMessage(from, handoff);
       await saveAndSend(supabase, from, handoff, 'text', wamid);
-      await supabase.from('conversations').update({ label: 'HUMANO' }).eq('id', from);
+      await marcarHumanoYNotificar(supabase, from);
       continue;
     }
 
@@ -1015,7 +1044,7 @@ export async function POST(req: NextRequest) {
         const msg = `Para cambiar el modelo, te paso con un asesor 😊 Un momento.`;
         const wamid = await sendTextMessage(from, msg);
         await saveAndSend(supabase, from, msg, 'text', wamid);
-        await supabase.from('conversations').update({ label: 'HUMANO' }).eq('id', from);
+        await marcarHumanoYNotificar(supabase, from);
         continue;
       }
 
@@ -1100,7 +1129,11 @@ export async function POST(req: NextRequest) {
     // ── Confirmación por lenguaje natural cuando todo está completo ──────────
     // Solo se activa cuando: hay pedido + talla ok + dirección domicilio ok (no oficina) + mensaje corto afirmativo
     const allDataReady = !stillMissingTalla && !stillMissingDir && !isDirOficinaType;
-    if (allDataReady && textLower.trim().length < 60 && NATURAL_CONFIRM_PHRASES.some(p => textLower.includes(p))) {
+    // Afirmación natural: corto + palabra afirmativa + SIN negación/corrección
+    const afirmativo = /\b(si|s[ií]|claro|correcto|correctos|exacto|exactamente|listo|dale|ok|okay|oka|perfecto|confirmo|confirmado|confirmar|acuerdo|as[ií]\s*es|eso\s*es|todo\s*bien|todo\s*correcto|est[aá]\s*bien|est[aá]\s*correcto)\b/i.test(textLower);
+    const niegaOCorrige = /\b(no|nop|nel|cambi|corrig|corrij|error|equivoc|mal|pero|falta|faltan|arregl|otro\s*color|otra\s*talla|otra\s*direccion)\b/i.test(textLower);
+    const esAfirmacion = afirmativo || NATURAL_CONFIRM_PHRASES.some(p => textLower.includes(p));
+    if (allDataReady && textLower.trim().length < 60 && esAfirmacion && !niegaOCorrige) {
       await supabase.from('clientes_funnelish').update({
         confirmado: true, confirmado_at: new Date().toISOString(), estado: 'confirmado',
       }).eq('id', pendingPedido.id);

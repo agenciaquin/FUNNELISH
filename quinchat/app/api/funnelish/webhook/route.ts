@@ -95,34 +95,30 @@ function parsePack(productoNombre: string, variantName: string): {
 } {
   const packMatch = productoNombre.toUpperCase().match(/PACK\s*X?\s*(\d)/);
   const cantidad  = packMatch ? parseInt(packMatch[1], 10) : 0;
-  // Por ahora solo PACK X2 (2 colores + 1 talla). X3 se agrega luego.
-  if (cantidad !== 2) {
-    return { esPack: false, familia: '', colores: [], productos: [], productoFinal: productoNombre, tallaFinal: '' };
-  }
-  const familia = productoNombre.replace(/PACK\s*X?\s*\d/i, '').trim().toUpperCase(); // "TOYOTA"
-  const partes  = variantName.split('/').map(p => p.trim()).filter(Boolean);
+  const familia   = productoNombre.replace(/PACK\s*X?\s*\d/i, '').trim().toUpperCase();
+  const partes    = variantName.split('/').map(p => p.trim()).filter(Boolean);
   const colores: string[] = [];
   let talla = '';
   for (const p of partes) {
     const pUp    = p.toUpperCase();
     const limpio = pUp.replace(/[^A-Z0-9]/g, '');
-    // Talla = contiene HOMBRE/DAMA, o es un token de talla puro. (NO usar "-" como señal.)
-    const esTalla = /\b(HOMBRE|DAMA)\b/.test(pUp) || /^(XS|S|M|L|XL|XXL|XXXL)$/.test(limpio);
+    // Talla = contiene HOMBRE/DAMA/CABALLERO, o es un token de talla puro.
+    const esTalla = /\b(HOMBRE|DAMA|CABALLERO)\b/.test(pUp) || /^(XS|S|M|L|XL|XXL|XXXL)$/.test(limpio);
     if (esTalla) {
       if (!talla) talla = p;
     } else {
-      // Color: usar el nombre reconocido (limpia basura tipo "BEIGE -")
+      // Solo tomar colores reconocidos (evita meter basura como color)
       const color = COLORES_CONOCIDOS.find(c => pUp.includes(c));
-      colores.push(color ?? pUp.replace(/[^A-Z0-9 ]/g, '').trim());
+      if (color) colores.push(color);
     }
   }
   const productos = colores.map(c => `${c} ${familia}`.trim());
   return {
-    esPack:       productos.length >= 2,
+    esPack:       cantidad === 2 && colores.length >= 2, // PACK X2 con 2 colores
     familia,
     colores,
     productos,
-    productoFinal: productos.length ? productos.join(' + ') : productoNombre,
+    productoFinal: colores.length >= 2 ? productos.join(' + ') : productoNombre,
     tallaFinal:    talla || 'Por confirmar',
   };
 }
@@ -268,6 +264,10 @@ export async function POST(req: NextRequest) {
   if (pack.esPack) {
     productoNombre = pack.productoFinal;   // ej: "ROJO TOYOTA + NEGRO TOYOTA"
     talla          = pack.tallaFinal;      // ej: "HOMBRE - M"
+  } else if (pack.colores.length === 1) {
+    // Producto individual con color en la variante (ej: "CABALLERO - XL / NEGRO MERCEDES BENZ")
+    talla          = pack.tallaFinal;                        // solo la talla: "CABALLERO - XL"
+    productoNombre = `${productoNombre} - ${pack.colores[0]}`; // mostrar el color: "... - NEGRO"
   }
   const nombreImagenPrincipal = packProductos[0] ?? productoNombre;
 
@@ -287,6 +287,11 @@ export async function POST(req: NextRequest) {
       : null;
     // Si ambas fotos resultaron iguales (un color sin foto), no repetir
     if (segundaImagenUrl && segundaImagenUrl === imageUrl) segundaImagenUrl = null;
+  } else if (pack.colores.length === 1) {
+    // Producto individual con color → buscar la foto de ESE color (no una al azar)
+    imageUrl = (await buscarImagenColor(supabase, pack.colores[0], pack.familia))
+             ?? await buscarImagenProducto(supabase, nombreImagenPrincipal);
+    segundaImagenUrl = null;
   } else {
     imageUrl = await buscarImagenProducto(supabase, nombreImagenPrincipal);
     segundaImagenUrl = null;
@@ -348,8 +353,11 @@ export async function POST(req: NextRequest) {
 
   console.log(`[Funnelish] pedido guardado=${pedidoGuardado} tel=${tel10} ref=${referencia || 'sin-ref'}`);
 
-  // ── Send WhatsApp (solo whitelist mientras el bot está en desarrollo) ──────────
-  const enWhitelist = TEST_WHITELIST.has(tel10);
+  // ── Send WhatsApp ──────────────────────────────────────────────────────────────
+  // 🚀 PRODUCCIÓN: el bot envía la confirmación a TODOS los clientes.
+  //    Para volver a modo prueba (solo la whitelist), pon MODO_PRODUCCION = false.
+  const MODO_PRODUCCION = true;
+  const enWhitelist = MODO_PRODUCCION || TEST_WHITELIST.has(tel10);
   let sent = false;
   let templateSent = false;
   let templateWamid: string | null = null;

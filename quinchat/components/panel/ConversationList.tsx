@@ -41,9 +41,10 @@ interface Props {
   onSelect: (id: string) => void;
   onDelete: (id: string) => Promise<void>;
   loading: boolean;
+  onMenuClick?: () => void;
 }
 
-export default function ConversationList({ conversations, selectedId, onSelect, onDelete, loading }: Props) {
+export default function ConversationList({ conversations, selectedId, onSelect, onDelete, loading, onMenuClick }: Props) {
   const [search, setSearch]               = useState('');
   const [tabKey, setTabKey]               = useState<string>('todos');
   const [labelFilter, setLabelFilter]     = useState<string | null>(null); // null=todos, ''=sin etiqueta, nombre=filtro
@@ -118,12 +119,21 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
   const activeLabelEtq = etiquetas.find(e => e.nombre === labelFilter);
 
   return (
-    <div className="w-[290px] flex flex-col bg-[#FAF9F6] border-r border-[#E8E8E8] shrink-0">
+    <div className={`${selectedId ? 'hidden md:flex' : 'flex'} w-full md:w-[290px] flex-col bg-[#FAF9F6] border-r border-[#E8E8E8] shrink-0`}>
 
       {/* ── Header ── */}
       <div className="px-4 pt-4 pb-3 border-b border-[#E8E8E8]">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-[#0D0D0D] text-sm font-semibold">Conversaciones</h2>
+          <div className="flex items-center gap-2">
+            {onMenuClick && (
+              <button
+                onClick={onMenuClick}
+                className="md:hidden w-8 h-8 -ml-1 rounded-lg bg-[#00A89D] text-white flex items-center justify-center shrink-0"
+                aria-label="Abrir menú"
+              >☰</button>
+            )}
+            <h2 className="text-[#0D0D0D] text-sm font-semibold">Conversaciones</h2>
+          </div>
           <div className="flex items-center gap-1.5">
             {activeFilters > 0 && (
               <button

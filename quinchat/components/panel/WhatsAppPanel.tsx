@@ -30,6 +30,7 @@ export default function WhatsAppPanel({ userName }: Props) {
   const [selectedId, setSelectedId]       = useState<string | null>(null);
   const [messages, setMessages]           = useState<Message[]>([]);
   const [loading, setLoading]             = useState(true);
+  const [mobileSidebar, setMobileSidebar] = useState(false); // menú lateral en móvil
 
   const supabase = createBrowserSupabaseClient();
 
@@ -110,11 +111,27 @@ export default function WhatsAppPanel({ userName }: Props) {
 
   return (
     <div className="flex h-screen bg-[#FAF9F6] overflow-hidden">
-      <Sidebar
-        userName={userName}
-        activeSection={activeSection}
-        onSectionChange={setActiveSection}
-      />
+
+      {/* Sidebar — escritorio fijo; móvil cajón deslizante */}
+      <div className={`fixed inset-y-0 left-0 z-50 transition-transform duration-300 md:static md:z-auto md:translate-x-0 md:shrink-0 ${mobileSidebar ? 'translate-x-0' : '-translate-x-full'}`}>
+        <Sidebar
+          userName={userName}
+          activeSection={activeSection}
+          onSectionChange={(s) => { setActiveSection(s); setMobileSidebar(false); }}
+        />
+      </div>
+      {/* Fondo oscuro al abrir el menú en móvil */}
+      {mobileSidebar && (
+        <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={() => setMobileSidebar(false)} />
+      )}
+      {/* Botón ☰ flotante en móvil para secciones que no son Chat */}
+      {activeSection !== 'chat' && (
+        <button
+          onClick={() => setMobileSidebar(true)}
+          className="md:hidden fixed top-2 left-2 z-30 w-9 h-9 rounded-lg bg-[#00A89D] text-white flex items-center justify-center shadow-lg"
+          aria-label="Abrir menú"
+        >☰</button>
+      )}
 
       {/* ── Chat section ── */}
       {activeSection === 'chat' && (
@@ -125,12 +142,14 @@ export default function WhatsAppPanel({ userName }: Props) {
             onSelect={selectConversation}
             onDelete={deleteConversation}
             loading={loading}
+            onMenuClick={() => setMobileSidebar(true)}
           />
           <ChatArea
             conversation={selectedConversation}
             messages={messages}
             onMessageSent={(msg) => setMessages(prev => [...prev, msg])}
             onConversationsUpdate={loadConversations}
+            onBack={() => { setSelectedId(null); setMessages([]); }}
           />
         </>
       )}
