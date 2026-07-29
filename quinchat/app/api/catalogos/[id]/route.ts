@@ -6,12 +6,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params;
   const body = await req.json();
   const supabase = createServerSupabaseClient();
-  const { data, error } = await supabase
-    .from('catalogos_bot')
-    .update({ familia: body.familia, patron: body.patron })
-    .eq('id', id)
-    .select('*, catalogo_colores(*)')
-    .single();
+  const campos: Record<string, unknown> = { familia: body.familia, patron: body.patron };
+  if (body.anuncios !== undefined) campos.anuncios = String(body.anuncios ?? '').trim() || null;
+
+  let { data, error } = await supabase
+    .from('catalogos_bot').update(campos).eq('id', id)
+    .select('*, catalogo_colores(*)').single();
+
+  // Si aún no existe la columna anuncios, se guarda sin ella
+  if (error && /column .*anuncios.* does not exist/i.test(error.message)) {
+    ({ data, error } = await supabase
+      .from('catalogos_bot').update({ familia: body.familia, patron: body.patron }).eq('id', id)
+      .select('*, catalogo_colores(*)').single());
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data);
 }

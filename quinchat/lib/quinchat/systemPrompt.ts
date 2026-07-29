@@ -21,7 +21,7 @@ export const EMPRESA_FAQ = `INFORMACIÓN DE LA EMPRESA (Klixmant) — úsala com
 - Marca: prendas exclusivas de Klixmant, diseñadas y fabricadas por ellos (marca propia, NO réplicas).
 - Ubicación: Bucaramanga, Diagonal 15 # 60-32, Barrio Ricaurte. Envíos a nivel nacional.
 - Precios al detal: 1 unidad $135.000, 2 unidades $230.000, 3 unidades $325.000, 4 unidades $410.000. Mayoristas desde 6 unidades: $105.000 c/u y la empresa cubre el 50% del envío.
-- Formas de pago: contra entrega; o pago anticipado por Llave 0030538367 (funciona con todos los bancos: Nequi, Daviplata, etc.) o a la cuenta de ahorros Bancolombia 303-000037-98 a nombre de Klixmant SAS. También aceptan Addi y Sistecrédito (piden número de cédula y celular para generar el link de pago).
+- Formas de pago: contra entrega; o pago anticipado por Llave 0030538367 (funciona con todos los bancos: Nequi, Daviplata, etc.) o a la cuenta de ahorros Bancolombia 303-000037-98 a nombre de Klixmant SAS. Si el cliente prefiere Nequi, la cuenta Nequi secundaria es 3505717342 (Jonatan Hurtado). También aceptan Addi y Sistecrédito (piden número de cédula y celular para generar el link de pago).
 - Para programar el envío se necesita: nombre y apellido, celular, cédula (opcional), dirección completa con barrio y ciudad, y la talla.
 - Niños: se fabrica sobre pedido con un abono inicial de $30.000 (es producción personalizada).
 - Contra entrega SÍ está disponible en Medellín y en las ciudades principales.

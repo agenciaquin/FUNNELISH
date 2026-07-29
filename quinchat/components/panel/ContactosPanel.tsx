@@ -41,13 +41,12 @@ const ESTADO_OPS = ['Sin agregar', 'Agregado', 'Bloqueado'];
 
 const DEFAULT_COLORS: Record<string, string> = {
   'VENTA REALIZADA':            '#00847a',
-  'PEDIDO PROCESADO':           '#15803d',
+  'ANULADO EN EFFI':            '#dc2626',
   'PENDIENTE POR CONFIRMACIÓN': '#8b5cf6',
   'PENDIENTE DE ABONO':         '#eab308',
   'PEDIDO PROGRAMADO':          '#14b8a6',
   'PEDIDO CANCELADO':           '#ef4444',
   'HUMANO':                     '#6b7280',
-  'atendido por Whatsap':       '#f59e0b',
 };
 
 function labelColor(name: string, etiquetasMap: Record<string, string>): string {

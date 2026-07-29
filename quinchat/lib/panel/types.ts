@@ -17,6 +17,68 @@ export interface Conversation {
   label: string | null;
   status: ConversationStatus;
   created_at: string;
+  fijado?: boolean;   // se muestra siempre arriba de la lista
+  linea?: string | null; // 'ventas' = bandeja Chat Ventas; null/'funnel' = Chat Funnel
+  interaccion_bot?: boolean; // true si el cliente respondió después de que el bot escribió
+}
+
+export interface Etiqueta { id: string; nombre: string; color: string; }
+
+/** Etiquetas del negocio: siempre disponibles (no dependen de la base de datos) */
+export const ETIQUETAS_FIJAS: Etiqueta[] = [
+  { id: 'pendconf',  nombre: 'PENDIENTE POR CONFIRMACIÓN', color: '#8B5CF6' },
+  { id: 'venta',     nombre: 'VENTA REALIZADA',            color: '#00847A' },
+  { id: 'humano',    nombre: 'HUMANO',                     color: '#6B7280' },
+  { id: 'abono',     nombre: 'PENDIENTE DE ABONO',         color: '#EAB308' },
+  { id: 'abonover',  nombre: 'ABONO POR VERIFICAR',        color: '#F59E0B' },
+  { id: 'procesado', nombre: 'ANULADO EN EFFI',            color: '#DC2626' },
+  { id: 'progr',     nombre: 'PEDIDO PROGRAMADO',          color: '#14B8A6' },
+  { id: 'cancel',    nombre: 'PEDIDO CANCELADO',           color: '#EF4444' },
+  { id: 'vendedor',  nombre: 'VENDEDOR',                   color: '#F59E0B' },
+  { id: 'revlili',   nombre: 'POR REVISAR LILIBETH',       color: '#EC4899' },
+];
+
+/**
+ * ESTADO del pedido: solo uno a la vez. Poner uno reemplaza al anterior.
+ */
+export const ESTADOS_CONV = [
+  'PENDIENTE POR CONFIRMACIÓN',
+  'VENTA REALIZADA',
+  'ABONO POR VERIFICAR',
+  'ANULADO EN EFFI',
+  'PEDIDO PROGRAMADO',
+  'PEDIDO CANCELADO',
+];
+
+/**
+ * ETIQUETAS ADICIONALES: se suman al estado sin reemplazarlo.
+ * Un chat puede estar en "VENTA REALIZADA" y además marcado como "HUMANO".
+ */
+export const TAGS_CONV = ['HUMANO', 'PENDIENTE DE ABONO'];
+
+export function parseLabels(label: string | null | undefined): string[] {
+  return (label ?? '').split('|').map(s => s.trim()).filter(Boolean);
+}
+
+export function joinLabels(arr: string[]): string {
+  return [...new Set(arr.map(s => s.trim()).filter(Boolean))].join(' | ');
+}
+
+/** Cambia el estado conservando las etiquetas adicionales que tuviera. */
+export function conEstado(labelActual: string | null | undefined, estado: string | null): string | null {
+  const tags = parseLabels(labelActual).filter(l => !ESTADOS_CONV.includes(l.toUpperCase()));
+  const nuevo = joinLabels(estado ? [estado, ...tags] : tags);
+  return nuevo || null;
+}
+
+/** Agrega o quita una etiqueta adicional sin tocar el estado. */
+export function conTag(labelActual: string | null | undefined, tag: string): string | null {
+  const actuales = parseLabels(labelActual);
+  const tiene = actuales.some(l => l.toUpperCase() === tag.toUpperCase());
+  const nuevos = tiene
+    ? actuales.filter(l => l.toUpperCase() !== tag.toUpperCase())
+    : [...actuales, tag];
+  return joinLabels(nuevos) || null;
 }
 
 export interface Message {
@@ -30,6 +92,9 @@ export interface Message {
   type: string; // 'text' | 'image' | 'audio' | 'video' | 'reaction' etc.
   created_at: string;
   media_url?: string;    // ephemeral object URL for outgoing media (in-session only)
+  caption?: string;      // pie de foto/video que acompaña el archivo (persistido en BD)
   whatsapp_id?: string;  // WhatsApp wamid — used to match reply context
   reply_to?: string;     // content/URL of the message being quoted (if any)
+  status?: string;       // estado de envío: sent | delivered | read | failed
+  error_envio?: string;  // motivo que dio Meta cuando falló
 }

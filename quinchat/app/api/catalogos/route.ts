@@ -20,12 +20,18 @@ export async function POST(req: NextRequest) {
   const patron  = String(body.patron  ?? familia).trim();
   if (!familia) return NextResponse.json({ error: 'familia requerida' }, { status: 400 });
 
+  const anuncios = String(body.anuncios ?? '').trim() || null;
   const supabase = createServerSupabaseClient();
-  const { data, error } = await supabase
-    .from('catalogos_bot')
-    .insert({ familia, patron })
-    .select('*, catalogo_colores(*)')
-    .single();
+
+  let { data, error } = await supabase
+    .from('catalogos_bot').insert({ familia, patron, anuncios })
+    .select('*, catalogo_colores(*)').single();
+
+  if (error && /column .*anuncios.* does not exist/i.test(error.message)) {
+    ({ data, error } = await supabase
+      .from('catalogos_bot').insert({ familia, patron })
+      .select('*, catalogo_colores(*)').single());
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data, { status: 201 });
 }

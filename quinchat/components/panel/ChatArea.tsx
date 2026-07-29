@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import type { Conversation, Message, ConversationStatus } from '@/lib/panel/types';
-import { STATUS_CONFIG } from '@/lib/panel/types';
+import { useState, useRef, useEffect, Fragment } from 'react';
+import type { Conversation, Message, Etiqueta } from '@/lib/panel/types';
+import { ETIQUETAS_FIJAS, ESTADOS_CONV, parseLabels, conEstado, conTag } from '@/lib/panel/types';
 import { createBrowserSupabaseClient } from '@/lib/supabase';
-
-interface Etiqueta { id: string; nombre: string; color: string; }
+import SelectorPlantillaWA from './SelectorPlantillaWA';
 
 // ─── Emoji data ───────────────────────────────────────────────────────────────
 const EMOJI_DATA: { icon: string; label: string; emojis: string[] }[] = [
@@ -74,8 +73,49 @@ function formatMsgTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 }
 
+/** ¿Dos fechas caen en el mismo día del calendario? */
+function mismoDia(a: string, b: string): boolean {
+  const x = new Date(a), y = new Date(b);
+  return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate();
+}
+
+/** Etiqueta del separador de día, tipo WhatsApp: Hoy / Ayer / Antier / fecha. */
+function etiquetaDia(iso: string): string {
+  const d = new Date(iso);
+  const hoy = new Date();
+  const ayer = new Date(hoy);    ayer.setDate(hoy.getDate() - 1);
+  const antier = new Date(hoy);  antier.setDate(hoy.getDate() - 2);
+  const igual = (p: Date, q: Date) =>
+    p.getFullYear() === q.getFullYear() && p.getMonth() === q.getMonth() && p.getDate() === q.getDate();
+  if (igual(d, hoy))    return 'Hoy';
+  if (igual(d, ayer))   return 'Ayer';
+  if (igual(d, antier)) return 'Antier';
+  const txt = d.toLocaleDateString('es-CO', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+  return txt.charAt(0).toUpperCase() + txt.slice(1);
+}
+
 function formatRecTime(s: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/** Palomitas de estado: ✓ enviado · ✓✓ entregado · ✓✓ azul leído · ⚠ falló */
+function Ticks({ status, error }: { status?: string; error?: string }) {
+  if (!status) return null;
+  if (status === 'failed') {
+    return (
+      <span className="ml-1 text-amber-200" title={error ? `No se pudo entregar — ${error}` : 'No se pudo entregar'}>
+        ⚠
+      </span>
+    );
+  }
+  const leido = status === 'read';
+  const doble = status === 'delivered' || leido;
+  const titulo = leido ? 'Leído' : status === 'delivered' ? 'Entregado' : 'Enviado';
+  return (
+    <span className={`ml-1 ${leido ? 'text-sky-300' : 'text-white/50'}`} title={titulo}>
+      {doble ? '✓✓' : '✓'}
+    </span>
+  );
 }
 
 interface Props {
@@ -86,15 +126,212 @@ interface Props {
   onBack?: () => void;
 }
 
+/**
+ * Texto que acompaña a una foto o video. Se guarda como "🖼️ Imagen: el texto",
+ * así que basta con quedarse con lo que va después de los dos puntos.
+ */
+function pieDeFoto(msg: Message): string {
+  if (msg.type !== 'image' && msg.type !== 'video') return '';
+  // Preferir la columna persistida en BD (sobrevive a recargas).
+  if (msg.caption && msg.caption.trim()) return msg.caption.trim();
+  const c = String(msg.content ?? '');
+  if (c.startsWith('http')) return '';
+  const i = c.indexOf(': ');
+  return i > 0 ? c.slice(i + 2).trim() : '';
+}
+
 export default function ChatArea({ conversation, messages, onMessageSent, onConversationsUpdate, onBack }: Props) {
   const [input, setInput]               = useState('');
   const [sending, setSending]           = useState(false);
   const [botEnabled, setBotEnabled]     = useState(true);
-  const [status, setStatus]             = useState<ConversationStatus>('nuevo');
-  const [statusOpen, setStatusOpen]     = useState(false);
-  const [etiquetas, setEtiquetas]       = useState<Etiqueta[]>([]);
+  const [botOpen, setBotOpen]           = useState(false);
+  const [plantillaOpen, setPlantillaOpen] = useState(false);
+
+  // Archivos en espera de confirmación antes de enviarse
+  const [preview, setPreview]       = useState<{ file: File; url: string; caption: string }[]>([]);
+  const [previewIdx, setPreviewIdx] = useState(0);
+  const previewLen = preview.length;
+  const previewRef = useRef<HTMLInputElement>(null);
+
+  // Menú de un mensaje (responder / copiar / eliminar) y mensaje citado
+  const [menuMsg, setMenuMsg]   = useState<Message | null>(null);
+  const [citando, setCitando]   = useState<Message | null>(null);
+  const [fotoAmpliada, setFotoAmpliada] = useState<string | null>(null);
+  const pulsacionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!menuMsg) return;
+    const cerrar = () => setMenuMsg(null);
+    document.addEventListener('click', cerrar);
+    return () => document.removeEventListener('click', cerrar);
+  }, [menuMsg]);
+
+  /** Texto legible de un mensaje, para copiarlo o citarlo. */
+  function textoDe(m: Message): string {
+    const pie = pieDeFoto(m);
+    if (pie) return pie;
+    const c = String(m.content ?? '');
+    if (c.startsWith('http')) {
+      return m.type === 'image' ? '📷 Foto' : m.type === 'video' ? '🎬 Video' : m.type === 'audio' ? '🎵 Audio' : '📎 Archivo';
+    }
+    return c;
+  }
+
+  /** Enlace del archivo de un mensaje, si lo tiene. */
+  function urlDe(m: Message): string | null {
+    if (m.media_url?.startsWith('http')) return m.media_url;
+    const c = String(m.content ?? '');
+    return c.startsWith('http') ? c : null;
+  }
+
+  /** Descarga una imagen por su URL. Siempre funciona. */
+  async function descargarImagen(url: string) {
+    if (!url) return;
+    try {
+      const resp = await fetch(url, { mode: 'cors', cache: 'no-store' });
+      const blob = await resp.blob();
+      const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+      const enlace = document.createElement('a');
+      enlace.href = URL.createObjectURL(blob);
+      enlace.download = `foto-${Date.now()}.${ext}`;
+      document.body.appendChild(enlace);
+      enlace.click();
+      enlace.remove();
+      setTimeout(() => URL.revokeObjectURL(enlace.href), 5000);
+    } catch {
+      window.open(url, '_blank');
+    }
+  }
+  async function descargarFoto(m: Message) {
+    setMenuMsg(null);
+    const url = urlDe(m);
+    if (url) await descargarImagen(url);
+  }
+
+  /** Copia una imagen al portapapeles por su URL (con respaldos). */
+  async function copiarImagen(url: string) {
+    if (!url) return;
+    const aPng = async (): Promise<Blob> => {
+      const resp = await fetch(url, { mode: 'cors', cache: 'no-store' });
+      if (!resp.ok) throw new Error(`no se pudo descargar (${resp.status})`);
+      const original = await resp.blob();
+      if (original.type === 'image/png') return original;
+      const bitmap = await createImageBitmap(original);
+      const lienzo = document.createElement('canvas');
+      lienzo.width = bitmap.width; lienzo.height = bitmap.height;
+      lienzo.getContext('2d')?.drawImage(bitmap, 0, 0);
+      return await new Promise<Blob>((ok, err) =>
+        lienzo.toBlob(b => (b ? ok(b) : err(new Error('no se pudo convertir'))), 'image/png'));
+    };
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': aPng() })]);
+    } catch {
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': await aPng() })]);
+      } catch {
+        await descargarImagen(url);
+        alert('Tu navegador no dejó copiar la imagen.\nLa descargué para que la puedas adjuntar.');
+      }
+    }
+  }
+
+  async function copiarMensaje(m: Message) {
+    setMenuMsg(null);
+    const url = urlDe(m);
+
+    // Si es una foto, se copia la imagen misma para poder pegarla en otro chat.
+    // Copiar el texto "📷 Foto" no le sirve a nadie.
+    if (m.type === 'image' && url) {
+      // Convierte la foto a PNG, que es el único formato del portapapeles
+      const aPng = async (): Promise<Blob> => {
+        const resp = await fetch(url, { mode: 'cors', cache: 'no-store' });
+        if (!resp.ok) throw new Error(`no se pudo descargar (${resp.status})`);
+        const original = await resp.blob();
+        if (original.type === 'image/png') return original;
+
+        const bitmap = await createImageBitmap(original);
+        const lienzo = document.createElement('canvas');
+        lienzo.width = bitmap.width;
+        lienzo.height = bitmap.height;
+        lienzo.getContext('2d')?.drawImage(bitmap, 0, 0);
+        return await new Promise<Blob>((ok, err) =>
+          lienzo.toBlob(b => (b ? ok(b) : err(new Error('no se pudo convertir'))), 'image/png'));
+      };
+
+      // Intento 1: promesa al portapapeles (conserva el permiso del clic)
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': aPng() })]);
+        return;
+      } catch (e1) {
+        // Intento 2: descargar primero y luego copiar
+        try {
+          const png = await aPng();
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+          return;
+        } catch (e2) {
+          // Si tampoco, se descarga la foto: así siempre puede reenviarla
+          const motivo = (e2 as Error)?.message || (e1 as Error)?.message || 'desconocido';
+          try {
+            const png = await aPng();
+            const enlace = document.createElement('a');
+            enlace.href = URL.createObjectURL(png);
+            enlace.download = `foto-${Date.now()}.png`;
+            document.body.appendChild(enlace);
+            enlace.click();
+            enlace.remove();
+            setTimeout(() => URL.revokeObjectURL(enlace.href), 5000);
+            alert(`Tu navegador no dejó copiar la imagen (${motivo}).\nLa descargué para que la puedas adjuntar.`);
+          } catch {
+            try {
+              await navigator.clipboard.writeText(url);
+              alert(`No se pudo copiar la imagen (${motivo}).\nSe copió el enlace de la foto.`);
+            } catch { alert(`No se pudo copiar la imagen: ${motivo}`); }
+          }
+          return;
+        }
+      }
+    }
+
+    // Audio, video o documento: se copia el enlace
+    if (url) {
+      try { await navigator.clipboard.writeText(url); } catch { alert('No se pudo copiar.'); }
+      return;
+    }
+
+    try { await navigator.clipboard.writeText(textoDe(m)); }
+    catch { alert('No se pudo copiar.'); }
+  }
+
+  async function eliminarMensaje(m: Message) {
+    if (!confirm('¿Quitar este mensaje del panel?\n\nSeguirá visible en el WhatsApp del cliente: WhatsApp no permite borrarlo de su teléfono desde aquí.')) return;
+    setMenuMsg(null);
+    await supabase.from('messages').delete().eq('id', m.id);
+    onConversationsUpdate();
+  }
+
+  /** Mantener pulsado en el celular abre el menú, como en WhatsApp. */
+  function iniciarPulsacion(m: Message) {
+    pulsacionRef.current = setTimeout(() => setMenuMsg(m), 450);
+  }
+  function cancelarPulsacion() {
+    if (pulsacionRef.current) clearTimeout(pulsacionRef.current);
+    pulsacionRef.current = null;
+  }
+  const [etiquetasDB, setEtiquetasDB]   = useState<Etiqueta[]>([]);
+  // Fijas del negocio + las personalizadas que existan en la BD (sin duplicar)
+  const etiquetas: Etiqueta[] = [
+    ...ETIQUETAS_FIJAS,
+    ...etiquetasDB.filter(e => !ETIQUETAS_FIJAS.some(f => f.nombre === e.nombre)),
+  ];
   const [labelOpen, setLabelOpen]       = useState(false);
   const [currentLabel, setCurrentLabel] = useState<string | null>(null);
+
+  // Revisión de la venta antes de registrarla a mano (corregir producto/talla/valor)
+  const [ventaModal, setVentaModal]       = useState(false);
+  const [ventaProducto, setVentaProducto] = useState('');
+  const [ventaTalla, setVentaTalla]       = useState('');
+  const [ventaValor, setVentaValor]       = useState('');
+  const [ventaGuardando, setVentaGuardando] = useState(false);
 
   // Media toolbar
   const [showEmoji, setShowEmoji]   = useState(false);
@@ -123,14 +360,13 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
 
   useEffect(() => {
     setBotEnabled(conversation?.bot_enabled ?? true);
-    setStatus((conversation?.status ?? 'nuevo') as ConversationStatus);
     setCurrentLabel(conversation?.label ?? null);
-    setStatusOpen(false);
+    setBotOpen(false);
     setLabelOpen(false);
-  }, [conversation?.id, conversation?.bot_enabled, conversation?.status, conversation?.label]);
+  }, [conversation?.id, conversation?.bot_enabled, conversation?.label]);
 
   useEffect(() => {
-    fetch('/api/etiquetas').then(r => r.json()).then(setEtiquetas).catch(() => {});
+    fetch('/api/etiquetas').then(r => r.json()).then(d => setEtiquetasDB(Array.isArray(d) ? d : [])).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -141,11 +377,11 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
   }, [labelOpen]);
 
   useEffect(() => {
-    if (!statusOpen) return;
-    const h = () => setStatusOpen(false);
+    if (!botOpen) return;
+    const h = () => setBotOpen(false);
     document.addEventListener('click', h);
     return () => document.removeEventListener('click', h);
-  }, [statusOpen]);
+  }, [botOpen]);
 
   useEffect(() => {
     if (!showAttach) return;
@@ -169,14 +405,21 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
   async function sendMessage() {
     if (!input.trim() || !conversation || sending) return;
     const text = input.trim();
+    const respondiendo = citando;
     setInput('');
+    setCitando(null);
     setSending(true);
 
     try {
       const res = await fetch('/api/whatsapp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: conversation.id, message: text }),
+        body: JSON.stringify({
+          to: conversation.id,
+          message: text,
+          responderA: respondiendo?.whatsapp_id ?? null,
+          citado: respondiendo ? textoDe(respondiendo).slice(0, 200) : null,
+        }),
       });
 
       if (res.ok) {
@@ -187,6 +430,7 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
           content: text,
           role: 'agent',
           type: 'text',
+          reply_to: respondiendo ? textoDe(respondiendo).slice(0, 200) : undefined,
           created_at: new Date().toISOString(),
         });
         onConversationsUpdate();
@@ -203,12 +447,118 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
   }
 
   // ── Send file/image ────────────────────────────────────────────────────────
-  async function sendFile(file: File) {
+  /**
+   * Pegar una imagen copiada (Ctrl+V) desde internet, otro chat o una captura.
+   * WhatsApp lo permite, así que aquí también.
+   */
+  function pegarDesdePortapapeles(e: React.ClipboardEvent) {
+    if (!conversation) return;
+    const items = Array.from(e.clipboardData?.items ?? []);
+    const archivos: File[] = [];
+
+    for (const item of items) {
+      if (item.kind !== 'file') continue;
+      const f = item.getAsFile();
+      if (!f) continue;
+      // Las capturas llegan sin nombre: se le pone uno para poder enviarlas
+      const nombre = f.name && f.name !== 'image.png'
+        ? f.name
+        : `pegado-${Date.now()}.${(f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`;
+      archivos.push(new File([f], nombre, { type: f.type }));
+    }
+
+    if (archivos.length === 0) return; // texto normal: pegado corriente
+    e.preventDefault();
+    abrirPrevisualizacion(archivos);
+  }
+
+  /** Prepara los archivos y abre la vista previa antes de enviarlos. */
+  function abrirPrevisualizacion(files: File[]) {
+    const nuevos = files.filter(Boolean).map(f => ({
+      file: f,
+      url: f.type.startsWith('image/') || f.type.startsWith('video/') ? URL.createObjectURL(f) : '',
+      caption: '',
+    }));
+    if (nuevos.length === 0) return;
+    setPreview(prev => [...prev, ...nuevos]);
+    setPreviewIdx(prev => (previewLen === 0 ? 0 : prev));
+    setShowAttach(false);
+  }
+
+  function cerrarPrevisualizacion() {
+    preview.forEach(p => { if (p.url) URL.revokeObjectURL(p.url); });
+    setPreview([]);
+    setPreviewIdx(0);
+  }
+
+  function quitarDePrevisualizacion(i: number) {
+    const p = preview[i];
+    if (p?.url) URL.revokeObjectURL(p.url);
+    const resto = preview.filter((_, j) => j !== i);
+    setPreview(resto);
+    setPreviewIdx(Math.max(0, Math.min(previewIdx, resto.length - 1)));
+  }
+
+  async function enviarPrevisualizacion() {
+    const lote = [...preview];
+    setPreview([]);
+    setPreviewIdx(0);
+    for (const p of lote) {
+      await sendFile(p.file, p.caption);
+      if (p.url) URL.revokeObjectURL(p.url);
+    }
+  }
+
+  async function sendFile(file: File, caption?: string) {
     if (!conversation || !file) return;
     setSending(true);
 
     const t = file.type;
     const waType = t.startsWith('image/') ? 'image' : t.startsWith('video/') ? 'video' : t.startsWith('audio/') ? 'audio' : 'document';
+
+    // ── Videos y archivos grandes (>4MB): subir DIRECTO a Supabase y enviar por
+    //    URL, para saltarnos el tope de 4.5MB del servidor. ────────────────────
+    const usarDirecto = (waType === 'video' || waType === 'image' || waType === 'audio') && file.size > 4 * 1024 * 1024;
+    if (usarDirecto) {
+      try {
+        const ext = (file.name.split('.').pop() || (waType === 'video' ? 'mp4' : 'jpg')).toLowerCase();
+        const r1 = await fetch('/api/funnels/upload-url', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug: 'chat', ext }),
+        });
+        const up = await r1.json();
+        if (!up?.token || !up?.path) throw new Error('no se pudo firmar la subida');
+        const { error: upErr } = await supabase.storage.from('chat-media')
+          .uploadToSignedUrl(up.path, up.token, file, { contentType: file.type || undefined });
+        if (upErr) throw upErr;
+        const r2 = await fetch('/api/whatsapp/send-media-url', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: conversation.id, url: up.publicUrl, type: waType, caption: caption?.trim() || undefined }),
+        });
+        if (r2.ok) {
+          const data = await r2.json();
+          const pie = caption?.trim() ? `: ${caption.trim()}` : '';
+          const content = waType === 'image' ? `🖼️ Imagen${pie}` : waType === 'video' ? `🎬 Video${pie}` : '🎵 Audio';
+          onMessageSent({
+            id: data.id ?? `agent-url-${Date.now()}`,
+            conversation_id: conversation.id, content, role: 'agent', type: waType,
+            caption: caption?.trim() || undefined,
+            media_url: data.media_url ?? up.publicUrl, created_at: new Date().toISOString(),
+          });
+          onConversationsUpdate();
+        } else {
+          alert('No se pudo enviar. WhatsApp solo acepta video mp4 (H.264) de hasta 16 MB.');
+        }
+      } catch (e) {
+        console.error('[ChatArea] subida directa falló:', e);
+        alert('No se pudo enviar el archivo.');
+      } finally {
+        setSending(false);
+        if (fileInputRef.current)  fileInputRef.current.value = '';
+        if (imageInputRef.current) imageInputRef.current.value = '';
+      }
+      return;
+    }
 
     // Create preview URL for immediate display in the panel (in-session only)
     const mediaUrl = (waType === 'image' || waType === 'audio' || waType === 'video')
@@ -218,18 +568,21 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
     const fd = new FormData();
     fd.append('to', conversation.id);
     fd.append('file', file);
+    if (caption?.trim()) fd.append('caption', caption.trim());
 
     try {
       const res = await fetch('/api/whatsapp/send-media', { method: 'POST', body: fd });
       if (res.ok) {
         const data = await res.json();
-        const content = waType === 'image' ? '🖼️ Imagen' : waType === 'video' ? '🎬 Video' : waType === 'audio' ? '🎵 Audio' : `📎 ${file.name}`;
+        const pie = caption?.trim() ? `: ${caption.trim()}` : '';
+        const content = waType === 'image' ? `🖼️ Imagen${pie}` : waType === 'video' ? `🎬 Video${pie}` : waType === 'audio' ? '🎵 Audio' : `📎 ${file.name}`;
         // Prefer permanent Supabase URL returned by API; fall back to ephemeral object URL
         const finalMediaUrl = (data.media_url as string | undefined) ?? mediaUrl;
         onMessageSent({
           id: data.id ?? `agent-media-${Date.now()}`,
           conversation_id: conversation.id,
           content,
+          caption: caption?.trim() || undefined,
           role: 'agent',
           type: waType,
           media_url: finalMediaUrl,
@@ -321,28 +674,99 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
     }, 0);
   }
 
-  // ── Bot / Status / Label ───────────────────────────────────────────────────
-  async function toggleBot() {
+  // ── Bot / Label ────────────────────────────────────────────────────────────
+  async function setBot(encendido: boolean) {
     if (!conversation) return;
-    const newVal = !botEnabled;
-    setBotEnabled(newVal);
-    await supabase.from('conversations').update({ bot_enabled: newVal }).eq('id', conversation.id);
-  }
-
-  async function changeStatus(newStatus: ConversationStatus) {
-    if (!conversation) return;
-    setStatus(newStatus);
-    setStatusOpen(false);
-    await supabase.from('conversations').update({ status: newStatus }).eq('id', conversation.id);
+    setBotEnabled(encendido);
+    setBotOpen(false);
+    await supabase.from('conversations').update({ bot_enabled: encendido }).eq('id', conversation.id);
     onConversationsUpdate();
   }
 
-  async function changeLabel(nombre: string | null) {
+  // Guarda el nuevo texto de etiquetas (una o varias, separadas por |) y avisa.
+  async function guardarEtiquetas(nuevo: string | null, cambios: Record<string, unknown> = {}) {
     if (!conversation) return;
-    setCurrentLabel(nombre);
-    setLabelOpen(false);
-    await supabase.from('conversations').update({ label: nombre }).eq('id', conversation.id);
+    setCurrentLabel(nuevo);
+    await supabase.from('conversations').update({ label: nuevo, ...cambios }).eq('id', conversation.id);
     onConversationsUpdate();
+  }
+
+  // ── Estado del pedido: uno solo. Reemplaza al anterior sin tocar las
+  //    etiquetas adicionales. ──────────────────────────────────────────────────
+  async function cambiarEstado(nombre: string | null) {
+    if (!conversation) return;
+    const nuevo = conEstado(currentLabel, nombre);
+    // Al marcar la venta, se anota la hora para que el bot se apague solo a los 30 min.
+    const esVenta = !!nombre && nombre.toUpperCase().includes('VENTA REALIZADA');
+    await guardarEtiquetas(nuevo, esVenta ? { vendido_at: new Date().toISOString() } : {});
+
+    // Marcar VENTA REALIZADA a mano: abrir revisión para corregir el pedido antes
+    // de registrarlo (por si el asesor lo ajustó por chat y la base quedó vieja).
+    if (nombre && nombre.toUpperCase().includes('VENTA REALIZADA')) {
+      try {
+        const tel10 = String(conversation.id).replace(/^57/, '').slice(-10);
+        const { data: ped } = await supabase
+          .from('clientes_funnelish')
+          .select('producto, talla, valor, confirmado')
+          .eq('telefono', tel10)
+          .not('estado', 'in', '("cancelado","duplicado")')
+          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        // Si ya estaba confirmado, no se vuelve a registrar (idempotente).
+        if (ped && ped.confirmado) {
+          // ya se envió antes: no duplicar
+        } else if (ped) {
+          // Pedido del funnel: se abre con sus datos para revisar y confirmar.
+          setVentaProducto(String(ped.producto ?? ''));
+          setVentaTalla(String(ped.talla ?? ''));
+          setVentaValor(String(ped.valor ?? ''));
+          setVentaModal(true);
+        } else {
+          // Chat de WhatsApp puro (sin pedido del funnel): se abre en blanco para
+          // que el asesor ponga producto/talla/valor. El resto lo arma la IA del chat.
+          setVentaProducto('');
+          setVentaTalla('');
+          setVentaValor('');
+          setVentaModal(true);
+        }
+      } catch (e) {
+        console.error('[Panel] no se pudo abrir la revisión de venta:', e);
+      }
+    }
+  }
+
+  // Registra la venta manual con los datos revisados (corregidos si hizo falta).
+  async function confirmarVentaManual() {
+    if (!conversation) return;
+    setVentaGuardando(true);
+    try {
+      await fetch('/api/ventas/registrar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversationId: conversation.id,
+          producto: ventaProducto,
+          talla: ventaTalla,
+          valor: ventaValor,
+        }),
+      });
+      setVentaModal(false);
+    } catch (e) {
+      console.error('[Panel] no se pudo registrar la venta manual:', e);
+    } finally {
+      setVentaGuardando(false);
+    }
+  }
+
+  // ── Etiquetas adicionales: se suman o se quitan sin borrar el estado. ─────────
+  async function alternarEtiqueta(nombre: string) {
+    if (!conversation) return;
+    const nuevo = conTag(currentLabel, nombre);
+    // Poner HUMANO apaga el bot (responde una persona)
+    const activandoHumano =
+      nombre.toUpperCase().includes('HUMANO') &&
+      parseLabels(nuevo).some(l => l.toUpperCase() === 'HUMANO');
+    await guardarEtiquetas(nuevo, activandoHumano ? { bot_enabled: false } : {});
+    if (activandoHumano) setBotEnabled(false);
   }
 
   // ── Empty state ────────────────────────────────────────────────────────────
@@ -355,11 +779,10 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
     );
   }
 
-  const initial   = conversation.contact_name.charAt(0).toUpperCase() || '?';
-  const statusCfg = STATUS_CONFIG[status];
+  const initial = conversation.contact_name.charAt(0).toUpperCase() || '?';
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[#FAF9F6]">
+    <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full bg-[#FAF9F6]">
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-[#E8E8E8] bg-white shrink-0">
@@ -381,91 +804,133 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Status selector */}
+          {/* Estado del bot — prendido / apagado */}
           <div className="relative" onClick={e => e.stopPropagation()}>
             <button
-              onClick={() => setStatusOpen(prev => !prev)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all"
-              style={{ color: statusCfg.color, background: statusCfg.bg, borderColor: statusCfg.border }}
+              onClick={() => setBotOpen(prev => !prev)}
+              title={botEnabled ? 'El bot responde automáticamente' : 'El bot está apagado — responde una persona'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                botEnabled
+                  ? 'bg-[#00A89D]/10 text-[#00A89D] border-[#00A89D]/25 hover:bg-[#00A89D]/20'
+                  : 'bg-[#FEE2E2] text-[#DC2626] border-[#FCA5A5] hover:bg-[#FECACA]'
+              }`}
             >
-              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: statusCfg.color }} />
-              {statusCfg.label}
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${botEnabled ? 'bg-[#00A89D] animate-pulse' : 'bg-[#DC2626]'}`} />
+              🤖 {botEnabled ? 'Prendido' : 'Apagado'}
               <span className="text-[10px] opacity-60">▾</span>
             </button>
-            {statusOpen && (
-              <div className="absolute right-0 top-full mt-1 bg-white border border-[#E8E8E8] rounded-xl shadow-lg z-20 overflow-hidden min-w-[150px]">
-                {(Object.keys(STATUS_CONFIG) as ConversationStatus[]).map(s => {
-                  const cfg = STATUS_CONFIG[s];
-                  return (
-                    <button key={s} onClick={() => changeStatus(s)}
-                      className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-medium transition-all hover:bg-[#F5F5F5] ${status === s ? 'bg-[#F5F5F5]' : ''}`}
-                      style={{ color: cfg.color }}
-                    >
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: cfg.color }} />
-                      {cfg.label}
-                      {status === s && <span className="ml-auto text-[10px] opacity-60">✓</span>}
+            {botOpen && (
+              <div className="absolute right-0 top-full mt-1 bg-white border border-[#E8E8E8] rounded-xl shadow-lg z-20 overflow-hidden min-w-[190px]">
+                <button
+                  onClick={() => setBot(true)}
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-medium text-[#00A89D] hover:bg-[#F5F5F5] transition-all ${botEnabled ? 'bg-[#F5F5F5]' : ''}`}
+                >
+                  <span className="w-2 h-2 rounded-full shrink-0 bg-[#00A89D]" />
+                  Prender bot
+                  {botEnabled && <span className="ml-auto text-[10px] opacity-60">✓</span>}
+                </button>
+                <button
+                  onClick={() => setBot(false)}
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-medium text-[#DC2626] hover:bg-[#F5F5F5] transition-all ${!botEnabled ? 'bg-[#F5F5F5]' : ''}`}
+                >
+                  <span className="w-2 h-2 rounded-full shrink-0 bg-[#DC2626]" />
+                  Apagar bot
+                  {!botEnabled && <span className="ml-auto text-[10px] opacity-60">✓</span>}
+                </button>
+                <p className="px-3 py-2 text-[10px] leading-snug text-[#6B6B6B] border-t border-[#F5F5F5]">
+                  Apagado, el bot no responde: contesta una persona desde este chat.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Selector de etiquetas: estado (uno) + adicionales (varias) */}
+          {(() => {
+            const puestas   = parseLabels(currentLabel);
+            const esEstado  = (n: string) => ESTADOS_CONV.includes(n.toUpperCase());
+            const estadoAct = puestas.find(esEstado) ?? null;
+            const tienesTag = (n: string) => puestas.some(l => l.toUpperCase() === n.toUpperCase());
+            const colorDe   = (n: string) => etiquetas.find(e => e.nombre === n)?.color ?? '#6B6B6B';
+            // Estados en el orden del negocio; el resto son etiquetas adicionales
+            const estados     = ESTADOS_CONV.map(n => etiquetas.find(e => e.nombre === n)).filter(Boolean) as Etiqueta[];
+            const adicionales = etiquetas.filter(e => !esEstado(e.nombre));
+            const tagsExtra   = puestas.filter(l => !esEstado(l)); // para el conteo del botón
+
+            return (
+              <div className="relative" onClick={e => e.stopPropagation()}>
+                <button
+                  onClick={() => setLabelOpen(prev => !prev)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all"
+                  style={
+                    estadoAct
+                      ? { color: colorDe(estadoAct), background: colorDe(estadoAct) + '18', borderColor: colorDe(estadoAct) + '40' }
+                      : { color: '#6B6B6B', background: '#F5F5F5', borderColor: '#E8E8E8' }
+                  }
+                >
+                  🏷️ {estadoAct
+                    ? estadoAct.split(' ').slice(0, 2).join(' ') + (estadoAct.split(' ').length > 2 ? '…' : '')
+                    : 'Etiqueta'}
+                  {tagsExtra.length > 0 && (
+                    <span className="ml-0.5 px-1.5 py-px rounded-full bg-black/10 text-[9px] font-bold">
+                      +{tagsExtra.length}
+                    </span>
+                  )}
+                  <span className="text-[10px] opacity-60">▾</span>
+                </button>
+
+                {labelOpen && (
+                  <div className="absolute right-0 top-full mt-1 bg-white border border-[#E8E8E8] rounded-xl shadow-xl z-20 overflow-hidden min-w-[240px] max-h-[70vh] overflow-y-auto">
+
+                    {/* ── Estado del pedido (uno solo) ── */}
+                    <p className="px-3 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A]">
+                      Estado del pedido
+                    </p>
+                    <button onClick={() => cambiarEstado(null)}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#6B6B6B] hover:bg-[#F5F5F5]">
+                      <span className="w-2 h-2 rounded-full bg-[#E8E8E8] shrink-0" />
+                      Sin estado
+                      {!estadoAct && <span className="ml-auto text-[10px] opacity-60">✓</span>}
                     </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                    {estados.map(etq => (
+                      <button key={etq.id} onClick={() => cambiarEstado(etq.nombre)}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium hover:bg-[#F5F5F5] ${estadoAct === etq.nombre ? 'bg-[#F5F5F5]' : ''}`}
+                        style={{ color: etq.color }}
+                      >
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: etq.color }} />
+                        {etq.nombre}
+                        {estadoAct === etq.nombre && <span className="ml-auto text-[10px] opacity-60">✓</span>}
+                      </button>
+                    ))}
 
-          {/* Label selector */}
-          <div className="relative" onClick={e => e.stopPropagation()}>
-            <button
-              onClick={() => setLabelOpen(prev => !prev)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all"
-              style={
-                currentLabel && etiquetas.find(e => e.nombre === currentLabel)
-                  ? {
-                      color: etiquetas.find(e => e.nombre === currentLabel)!.color,
-                      background: etiquetas.find(e => e.nombre === currentLabel)!.color + '18',
-                      borderColor: etiquetas.find(e => e.nombre === currentLabel)!.color + '40',
-                    }
-                  : { color: '#6B6B6B', background: '#F5F5F5', borderColor: '#E8E8E8' }
-              }
-            >
-              🏷️ {currentLabel
-                ? currentLabel.split(' ').slice(0, 2).join(' ') + (currentLabel.split(' ').length > 2 ? '…' : '')
-                : 'Etiqueta'}
-              <span className="text-[10px] opacity-60">▾</span>
-            </button>
-            {labelOpen && (
-              <div className="absolute right-0 top-full mt-1 bg-white border border-[#E8E8E8] rounded-xl shadow-lg z-20 overflow-hidden min-w-[210px]">
-                {currentLabel && (
-                  <button onClick={() => changeLabel(null)}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-[#6B6B6B] hover:bg-[#F5F5F5] border-b border-[#F5F5F5]">
-                    <span className="w-2 h-2 rounded-full bg-[#E8E8E8] shrink-0" />
-                    Sin etiqueta
-                  </button>
+                    {/* ── Etiquetas adicionales (varias) ── */}
+                    <p className="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] border-t border-[#F0F0F0] mt-1">
+                      Etiquetas adicionales
+                    </p>
+                    {adicionales.map(etq => {
+                      const activa = tienesTag(etq.nombre);
+                      return (
+                        <button key={etq.id} onClick={() => alternarEtiqueta(etq.nombre)}
+                          className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium hover:bg-[#F5F5F5] ${activa ? 'bg-[#F5F5F5]' : ''}`}
+                          style={{ color: etq.color }}
+                        >
+                          <span
+                            className="w-4 h-4 rounded border shrink-0 flex items-center justify-center text-[10px]"
+                            style={{ borderColor: etq.color, background: activa ? etq.color : 'transparent', color: '#fff' }}
+                          >{activa ? '✓' : ''}</span>
+                          {etq.nombre}
+                        </button>
+                      );
+                    })}
+                    <p className="px-3 py-2 text-[10px] leading-snug text-[#9A9A9A] border-t border-[#F0F0F0]">
+                      El estado es uno solo. Las adicionales se suman encima sin borrarlo
+                      (ej. VENTA REALIZADA + CORREGIR DIRECCIÓN).
+                    </p>
+                  </div>
                 )}
-                {etiquetas.map(etq => (
-                  <button key={etq.id} onClick={() => changeLabel(etq.nombre)}
-                    className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-medium hover:bg-[#F5F5F5] transition-all ${currentLabel === etq.nombre ? 'bg-[#F5F5F5]' : ''}`}
-                    style={{ color: etq.color }}
-                  >
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: etq.color }} />
-                    {etq.nombre}
-                    {currentLabel === etq.nombre && <span className="ml-auto text-[10px] opacity-60">✓</span>}
-                  </button>
-                ))}
               </div>
-            )}
-          </div>
+            );
+          })()}
 
-          {/* Bot toggle */}
-          <button
-            onClick={toggleBot}
-            title={botEnabled ? 'Bot activo — click para pausar' : 'Bot pausado — click para activar'}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-              botEnabled
-                ? 'bg-[#00A89D]/10 text-[#00A89D] border-[#00A89D]/25 hover:bg-[#00A89D]/20'
-                : 'bg-[#F5F5F5] text-[#6B6B6B] border-[#E8E8E8] hover:text-[#0D0D0D]'
-            }`}
-          >
-            🤖 Bot {botEnabled ? 'ON' : 'OFF'}
-          </button>
         </div>
       </div>
 
@@ -477,18 +942,32 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
           </div>
         )}
 
-        {messages.map(msg => {
+        {messages.map((msg, idx) => {
           const isOutgoing = msg.role === 'assistant' || msg.role === 'agent';
+
+          // ── Separador de día (Hoy / Ayer / Antier / fecha), como en WhatsApp ──
+          const prev = idx > 0 ? messages[idx - 1] : null;
+          const mostrarFecha = !prev || !mismoDia(prev.created_at, msg.created_at);
+          const divisorFecha = mostrarFecha ? (
+            <div className="flex justify-center my-3">
+              <span className="px-3 py-1 rounded-full bg-white/90 border border-[#E8E8E8] text-[10px] font-semibold text-[#6B6B6B] shadow-sm">
+                {etiquetaDia(msg.created_at)}
+              </span>
+            </div>
+          ) : null;
 
           // ── Reacción del cliente ──
           if (msg.type === 'reaction') {
             return (
-              <div key={msg.id} className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
-                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E8E8E8] rounded-full shadow-sm">
-                  <span className="text-base">{msg.content}</span>
-                  <span className="text-[9px] text-[#6B6B6B]">{formatMsgTime(msg.created_at)}</span>
+              <Fragment key={msg.id}>
+                {divisorFecha}
+                <div className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E8E8E8] rounded-full shadow-sm">
+                    <span className="text-base">{msg.content}</span>
+                    <span className="text-[9px] text-[#6B6B6B]">{formatMsgTime(msg.created_at)}</span>
+                  </div>
                 </div>
-              </div>
+              </Fragment>
             );
           }
 
@@ -501,16 +980,61 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
               : null);
 
           return (
-            <div key={msg.id} className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
+            <Fragment key={msg.id}>
+            {divisorFecha}
+            <div className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} group`}>
+              {/* Menú del mensaje */}
+              {menuMsg?.id === msg.id && (
+                <div
+                  onClick={e => e.stopPropagation()}
+                  className={`absolute z-30 mt-8 bg-white border border-[#E8E8E8] rounded-xl shadow-xl overflow-hidden min-w-[170px] ${isOutgoing ? 'right-8' : 'left-8'}`}
+                >
+                  <button
+                    onClick={() => { setCitando(msg); setMenuMsg(null); textareaRef.current?.focus(); }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs text-[#0D0D0D] hover:bg-[#F5F5F5] text-left"
+                  >↩ Responder</button>
+                  <button
+                    onClick={() => copiarMensaje(msg)}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs text-[#0D0D0D] hover:bg-[#F5F5F5] text-left"
+                  >📋 Copiar</button>
+                  {msg.type === 'image' && (
+                    <button
+                      onClick={() => descargarFoto(msg)}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs text-[#0D0D0D] hover:bg-[#F5F5F5] text-left"
+                    >⬇ Descargar foto</button>
+                  )}
+                  <button
+                    onClick={() => eliminarMensaje(msg)}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs text-[#DC2626] hover:bg-[#FEE2E2] text-left border-t border-[#F5F5F5]"
+                  >🗑 Eliminar del panel</button>
+                </div>
+              )}
+
               <div
-                className={`max-w-[68%] rounded-2xl text-sm leading-snug relative shadow-sm overflow-hidden ${
-                  msg.type === 'image' && mediaSrc ? 'p-1' : 'px-3.5 py-2.5'
+                onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setMenuMsg(msg); }}
+                onTouchStart={() => iniciarPulsacion(msg)}
+                onTouchEnd={cancelarPulsacion}
+                onTouchMove={cancelarPulsacion}
+                className={`rounded-2xl text-sm leading-snug relative shadow-sm cursor-default ${
+                  msg.type === 'audio' && mediaSrc
+                    ? 'w-[270px] max-w-[85%] overflow-visible px-2 py-2'   // audio: ancho cómodo y sin recortar
+                    : msg.type === 'image' && mediaSrc
+                      ? 'max-w-[68%] p-1 overflow-hidden'
+                      : 'max-w-[68%] px-3.5 py-2.5 overflow-hidden'
                 } ${
                   isOutgoing
                     ? 'bg-[#00A89D] text-white rounded-br-sm'
                     : 'bg-white text-[#0D0D0D] border border-[#E8E8E8] rounded-bl-sm'
                 }`}
               >
+                {/* Flechita para abrir el menú (aparece al pasar el mouse) */}
+                <button
+                  onClick={e => { e.stopPropagation(); setMenuMsg(menuMsg?.id === msg.id ? null : msg); }}
+                  className={`absolute top-1 right-1 z-20 w-5 h-5 rounded-full items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex ${
+                    isOutgoing ? 'bg-black/20 text-white' : 'bg-[#F0F0F0] text-[#6B6B6B]'
+                  }`}
+                  aria-label="Opciones del mensaje"
+                >▾</button>
                 {msg.role === 'agent' && msg.type !== 'image' && (
                   <span className="text-[9px] text-white/60 font-semibold uppercase tracking-wide block mb-0.5">Agente</span>
                 )}
@@ -541,17 +1065,32 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
                     <img
                       src={mediaSrc}
                       alt="Imagen"
-                      className="rounded-xl max-w-full max-h-52 object-cover block"
+                      loading="lazy"
+                      decoding="async"
+                      onClick={() => setFotoAmpliada(mediaSrc)}
+                      className="rounded-xl max-w-full max-h-52 object-cover block cursor-zoom-in"
                     />
-                    <div className={`text-[9px] absolute bottom-1 right-1.5 px-1 rounded ${isOutgoing ? 'text-white/70 bg-black/20' : 'text-[#6B6B6B] bg-white/80'}`}>
+                    {/* Pie de foto: el texto que acompaña la imagen */}
+                    {pieDeFoto(msg) && (
+                      <p className={`text-[12px] whitespace-pre-wrap break-words px-2 pt-1.5 pb-0.5 ${isOutgoing ? 'text-white' : 'text-[#0D0D0D]'}`}>
+                        {pieDeFoto(msg)}
+                      </p>
+                    )}
+                    <div className={
+                      pieDeFoto(msg)
+                        ? `text-[9px] text-right px-2 pb-1 ${isOutgoing ? 'text-white/50' : 'text-[#6B6B6B]'}`
+                        : `text-[9px] absolute bottom-1 right-1.5 px-1 rounded ${isOutgoing ? 'text-white/70 bg-black/20' : 'text-[#6B6B6B] bg-white/80'}`
+                    }>
                       {formatMsgTime(msg.created_at)}
+                      {isOutgoing && <Ticks status={msg.status} error={msg.error_envio} />}
                     </div>
                   </div>
                 ) : msg.type === 'audio' && mediaSrc ? (
                   <>
-                    <audio controls src={mediaSrc} className="w-full max-w-[220px] h-8" />
+                    <audio controls preload="metadata" src={mediaSrc} className="w-full min-w-[220px] block" />
                     <div className={`text-[9px] mt-1 text-right ${isOutgoing ? 'text-white/40' : 'text-[#6B6B6B]'}`}>
                       {formatMsgTime(msg.created_at)}
+                      {isOutgoing && <Ticks status={msg.status} error={msg.error_envio} />}
                     </div>
                   </>
                 ) : msg.type === 'video' && mediaSrc ? (
@@ -559,6 +1098,7 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
                     <video controls src={mediaSrc} className="rounded-lg max-w-full max-h-48 block mb-1" />
                     <div className={`text-[9px] text-right ${isOutgoing ? 'text-white/40' : 'text-[#6B6B6B]'}`}>
                       {formatMsgTime(msg.created_at)}
+                      {isOutgoing && <Ticks status={msg.status} error={msg.error_envio} />}
                     </div>
                   </>
                 ) : (
@@ -566,11 +1106,20 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
                     <span className="whitespace-pre-wrap break-words">{msg.content}</span>
                     <div className={`text-[9px] mt-1.5 text-right ${isOutgoing ? 'text-white/40' : 'text-[#6B6B6B]'}`}>
                       {formatMsgTime(msg.created_at)}
+                      {isOutgoing && <Ticks status={msg.status} error={msg.error_envio} />}
                     </div>
                   </>
                 )}
+
+                {/* Si Meta rechazó el envío, se muestra el motivo a la vista */}
+                {isOutgoing && msg.status === 'failed' && (
+                  <div className="mt-1.5 rounded-lg bg-[#FEE2E2] text-[#991B1B] text-[10px] px-2 py-1 leading-snug">
+                    ⚠️ No se entregó{msg.error_envio ? `: ${msg.error_envio}` : ' (motivo no informado)'}
+                  </div>
+                )}
               </div>
             </div>
+            </Fragment>
           );
         })}
         <div ref={bottomRef} />
@@ -581,6 +1130,23 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
         {!botEnabled && !recording && (
           <div className="mb-2 text-[10px] text-[#00A89D]/80 text-center font-medium">
             Bot pausado — respondiendo manualmente
+          </div>
+        )}
+
+        {/* Mensaje al que se está respondiendo */}
+        {citando && (
+          <div className="mb-2 flex items-start gap-2 bg-[#F5F5F5] border-l-[3px] border-[#00A89D] rounded-lg px-3 py-2">
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-semibold text-[#00A89D] mb-0.5">
+                Respondiendo a {citando.role === 'user' ? (conversation.contact_name || 'el cliente') : 'ti'}
+              </p>
+              <p className="text-[11px] text-[#6B6B6B] line-clamp-2 break-words">{textoDe(citando)}</p>
+            </div>
+            <button
+              onClick={() => setCitando(null)}
+              className="text-[#6B6B6B] hover:text-[#0D0D0D] shrink-0 w-6 h-6 rounded"
+              aria-label="Cancelar respuesta"
+            >✕</button>
           </div>
         )}
 
@@ -663,15 +1229,24 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
               ref={imageInputRef}
               type="file"
               accept="image/*,video/*"
+              multiple
               className="hidden"
-              onChange={e => { const f = e.target.files?.[0]; if (f) sendFile(f); }}
+              onChange={e => { const fs = Array.from(e.target.files ?? []); if (fs.length) abrirPrevisualizacion(fs); e.target.value = ''; }}
+            />
+            <input
+              ref={previewRef}
+              type="file"
+              accept="image/*,video/*"
+              multiple
+              className="hidden"
+              onChange={e => { const fs = Array.from(e.target.files ?? []); if (fs.length) abrirPrevisualizacion(fs); e.target.value = ''; }}
             />
             <input
               ref={fileInputRef}
               type="file"
               accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar"
               className="hidden"
-              onChange={e => { const f = e.target.files?.[0]; if (f) sendFile(f); }}
+              onChange={e => { const f = e.target.files?.[0]; if (f) abrirPrevisualizacion([f]); e.target.value = ''; }}
             />
             <input
               ref={audioInputRef}
@@ -692,6 +1267,15 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
               }`}
             >
               +
+            </button>
+
+            {/* 📋 Plantilla de WhatsApp (sirve pasadas las 24 h) */}
+            <button
+              onClick={() => setPlantillaOpen(true)}
+              title="Enviar plantilla de WhatsApp — funciona pasadas las 24 horas"
+              className="w-9 h-9 flex items-center justify-center rounded-xl border text-base transition-all shrink-0 bg-[#F5F5F5] border-[#E8E8E8] text-[#6B6B6B] hover:border-[#00A89D]/40 hover:text-[#00A89D]"
+            >
+              📋
             </button>
 
             {/* 😊 Emoji */}
@@ -718,6 +1302,7 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
                   sendMessage();
                 }
               }}
+              onPaste={pegarDesdePortapapeles}
               placeholder="Escribe un mensaje... (Enter para enviar)"
               rows={1}
               className="flex-1 bg-[#FAF9F6] border border-[#E8E8E8] rounded-xl px-4 py-2.5 text-sm text-[#0D0D0D] placeholder-[#6B6B6B]/60 focus:outline-none focus:border-[#00A89D] resize-none transition-colors leading-relaxed"
@@ -747,6 +1332,196 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
           </div>
         )}
       </div>
+
+      {/* Imagen ampliada: clic para abrir, botones de copiar/descargar, clic derecho nativo */}
+      {fotoAmpliada && (
+        <div
+          className="fixed inset-0 z-[70] bg-black/90 flex flex-col"
+          onClick={() => setFotoAmpliada(null)}
+        >
+          <div className="flex items-center justify-end gap-2 px-4 py-3 shrink-0" onClick={e => e.stopPropagation()}>
+            <button
+              onClick={() => copiarImagen(fotoAmpliada)}
+              className="px-3 py-1.5 rounded-lg bg-white/15 text-white text-sm hover:bg-white/25"
+            >📋 Copiar</button>
+            <button
+              onClick={() => descargarImagen(fotoAmpliada)}
+              className="px-3 py-1.5 rounded-lg bg-white/15 text-white text-sm hover:bg-white/25"
+            >⬇ Descargar</button>
+            <button
+              onClick={() => setFotoAmpliada(null)}
+              className="w-9 h-9 rounded-full text-white/80 hover:bg-white/15 flex items-center justify-center text-xl"
+              aria-label="Cerrar"
+            >✕</button>
+          </div>
+          <div className="flex-1 flex items-center justify-center p-4 overflow-auto" onClick={e => e.stopPropagation()}>
+            {/* Clic derecho del navegador funciona: "Copiar imagen" / "Guardar imagen como" */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={fotoAmpliada} alt="" className="max-h-full max-w-full object-contain rounded-lg select-none" />
+          </div>
+          <p className="text-center text-white/50 text-xs pb-3">Clic derecho para copiar o guardar · toca fuera para cerrar</p>
+        </div>
+      )}
+
+      {/* Vista previa antes de enviar */}
+      {previewLen > 0 && (() => {
+        const actual = preview[previewIdx] ?? preview[0];
+        const esImagen = actual.file.type.startsWith('image/');
+        const esVideo  = actual.file.type.startsWith('video/');
+        return (
+          <div className="fixed inset-0 z-50 bg-[#0D0D0D]/95 flex flex-col">
+            {/* Barra superior */}
+            <div className="flex items-center justify-between px-4 py-3 shrink-0">
+              <button
+                onClick={cerrarPrevisualizacion}
+                className="w-9 h-9 rounded-full text-white/80 hover:bg-white/10 flex items-center justify-center text-xl"
+                aria-label="Cancelar"
+              >✕</button>
+              <span className="text-white/60 text-xs">
+                {previewLen > 1 ? `${previewIdx + 1} de ${previewLen}` : actual.file.name}
+              </span>
+              <button
+                onClick={() => quitarDePrevisualizacion(previewIdx)}
+                className="w-9 h-9 rounded-full text-white/80 hover:bg-white/10 flex items-center justify-center"
+                title="Quitar este archivo"
+              >🗑</button>
+            </div>
+
+            {/* Vista del archivo */}
+            <div className="flex-1 flex items-center justify-center px-4 min-h-0">
+              {esImagen ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={actual.url} alt="" className="max-h-full max-w-full object-contain rounded-lg" />
+              ) : esVideo ? (
+                <video src={actual.url} controls className="max-h-full max-w-full rounded-lg" />
+              ) : (
+                <div className="text-center text-white/80">
+                  <div className="text-6xl mb-3">📎</div>
+                  <p className="text-sm">{actual.file.name}</p>
+                  <p className="text-xs text-white/50 mt-1">{Math.round(actual.file.size / 1024)} KB</p>
+                </div>
+              )}
+            </div>
+
+            {/* Pie de foto */}
+            <div className="px-4 py-3 shrink-0">
+              <div className="max-w-2xl mx-auto flex items-center gap-2 bg-white rounded-2xl px-4 py-2.5">
+                <input
+                  value={actual.caption}
+                  onChange={e => setPreview(prev => prev.map((p, i) => i === previewIdx ? { ...p, caption: e.target.value } : p))}
+                  onKeyDown={e => { if (e.key === 'Enter') enviarPrevisualizacion(); }}
+                  placeholder="Escribe un mensaje"
+                  className="flex-1 text-sm outline-none bg-transparent"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {/* Miniaturas + enviar */}
+            <div className="px-4 pb-5 shrink-0">
+              <div className="max-w-2xl mx-auto flex items-center gap-3">
+                <div className="flex-1 flex items-center gap-2 overflow-x-auto">
+                  {preview.map((p, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setPreviewIdx(i)}
+                      className={`w-14 h-14 rounded-lg overflow-hidden shrink-0 border-2 transition-all ${
+                        i === previewIdx ? 'border-[#00A89D]' : 'border-transparent opacity-60 hover:opacity-100'
+                      }`}
+                    >
+                      {p.url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={p.url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full bg-white/10 flex items-center justify-center text-lg">📎</div>
+                      )}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => previewRef.current?.click()}
+                    className="w-14 h-14 rounded-lg shrink-0 border-2 border-dashed border-white/30 text-white/60 hover:border-[#00A89D] hover:text-[#00A89D] flex items-center justify-center text-xl"
+                    title="Agregar otra"
+                  >+</button>
+                </div>
+
+                <button
+                  onClick={enviarPrevisualizacion}
+                  disabled={sending}
+                  className="w-14 h-14 rounded-full bg-[#00A89D] text-white flex items-center justify-center text-xl shadow-lg hover:bg-[#00847A] disabled:opacity-50 shrink-0 transition-colors"
+                  title="Enviar"
+                >{sending ? '…' : '➤'}</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {plantillaOpen && (
+        <SelectorPlantillaWA
+          telefono={conversation.id}
+          nombreContacto={conversation.contact_name}
+          onCerrar={() => setPlantillaOpen(false)}
+          onEnviada={onConversationsUpdate}
+        />
+      )}
+
+      {/* Revisión de la venta antes de registrarla a mano */}
+      {ventaModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#E8E8E8] flex items-center justify-between">
+              <h3 className="text-base font-bold text-[#0D0D0D]">✅ Confirmar venta</h3>
+              <button onClick={() => setVentaModal(false)} className="text-[#6B6B6B] hover:text-[#0D0D0D] text-xl leading-none">×</button>
+            </div>
+            <div className="px-5 py-4 flex flex-col gap-3">
+              <p className="text-[12px] text-[#6B6B6B]">
+                Revisa que el pedido esté como quedó con el cliente. Si lo cambiaste por chat,
+                corrígelo aquí antes de registrar (así el registro y las estadísticas quedan bien).
+              </p>
+              <div>
+                <label className="text-[11px] font-semibold text-[#6B6B6B] uppercase tracking-wide block mb-1">Producto</label>
+                <input
+                  className="w-full border border-[#E8E8E8] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A89D]/40"
+                  value={ventaProducto}
+                  onChange={e => setVentaProducto(e.target.value)}
+                  placeholder="Ej: NEGRO ESPAÑA"
+                />
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="text-[11px] font-semibold text-[#6B6B6B] uppercase tracking-wide block mb-1">Talla</label>
+                  <input
+                    className="w-full border border-[#E8E8E8] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A89D]/40"
+                    value={ventaTalla}
+                    onChange={e => setVentaTalla(e.target.value)}
+                    placeholder="Ej: L"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-[11px] font-semibold text-[#6B6B6B] uppercase tracking-wide block mb-1">Valor</label>
+                  <input
+                    className="w-full border border-[#E8E8E8] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A89D]/40"
+                    value={ventaValor}
+                    onChange={e => setVentaValor(e.target.value)}
+                    placeholder="Ej: $129.900"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-[#E8E8E8] flex justify-end gap-3">
+              <button
+                onClick={() => setVentaModal(false)}
+                className="px-4 py-2 text-sm text-[#6B6B6B] hover:text-[#0D0D0D] rounded-xl border border-[#E8E8E8] hover:bg-[#F5F5F5]"
+              >Cancelar</button>
+              <button
+                onClick={confirmarVentaManual}
+                disabled={ventaGuardando || !ventaProducto.trim()}
+                className="px-5 py-2 text-sm font-semibold bg-[#00A89D] text-white rounded-xl hover:bg-[#008F85] disabled:opacity-40"
+              >{ventaGuardando ? 'Registrando…' : 'Registrar venta'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

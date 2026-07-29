@@ -10,7 +10,8 @@ export function isCompleteAddress(addr: string | null | undefined): boolean {
   if (a.length < 5) return false;
 
   // Prefijos de vía + abreviaturas comunes en Colombia (kra, cra, cll, dg, tv, mz…)
-  const VIA = String.raw`(?:calle|carrera|diagonal|transversal|avenida|autopista|manzana|clle|cll|cl|carr|cra|cr|kra|krra|kr|diag|dg|av|ave|tv|trans|mz)\b`;
+  // Sin \b final: la vía puede ir pegada al número ("Calle27A", "Cra44C")
+  const VIA = String.raw`(?:calle|carrera|diagonal|transversal|avenida|autopista|manzana|clle|cll|cl|carr|cra|cr|kra|krra|kr|diag|dg|av|ave|tv|trans|mz)`;
 
   // Vía + número (puede llevar letra, ej "44C") + # o - + número
   if (new RegExp(String.raw`\b${VIA}\s*\d+\s*[a-z]?\s*[#\-]\s*\d`).test(a)) return true;
@@ -30,6 +31,14 @@ export function isCompleteAddress(addr: string | null | undefined): boolean {
   // Vereda + Finca
   if (/\b(vereda|vda\.?)\b.{0,40}\b(finca)\b/.test(a)) return true;
 
+  // Regla permisiva: vía + al menos 2 números → se considera completa.
+  // Cubre "Calle 3B 11 - 5 sur", "Cra 44C 31 42", "Diag 5 10 20", etc.
+  const numeros = (a.match(/\d+/g) ?? []).length;
+  if (numeros >= 2 && new RegExp(String.raw`\b${VIA}\s*\d`).test(a)) return true;
+
+  // También: manzana/conjunto/edificio/torre/apto + casa/número con 2 números
+  if (numeros >= 2 && /\b(manzana|mz|conjunto|conj|edificio|edif|torre|apartamento|apto|apt|casa|lote|urbanizaci|barrio)\b/.test(a)) return true;
+
   return false;
 }
 
@@ -48,85 +57,20 @@ export function isDirOficina(addr: string | null | undefined): boolean {
 export function getAddressQuestion(addr: string | null | undefined): string | null {
   if (isCompleteAddress(addr)) return null;
 
-  if (!addr || addr.trim() === '' || addr === '—') {
-    return '📍 Para completar tu pedido necesito tu *dirección de envío completa*. Por ejemplo: *Calle 15 # 20-30 Barrio Los Pinos* o *Conjunto Arboleda, Casa 5*.';
+  // RECOGIDA EN OFICINA: la dirección dice "Interrapidísimo/oficina/reclamar". No se
+  // pide casa/torre; se le explica el ABONO de la oficina.
+  if (isDirOficina(addr)) {
+    return '📍 Veo que quieres *recoger en la oficina de Interrapidísimo* 😊\n\n'
+      + 'Para el despacho a oficina se hace un *abono de $5.000* que se *descuenta del total* de tu pedido. '
+      + 'Cuando lo hagas, me envías el *comprobante* por aquí 📷 y dejamos tu pedido listo para despacho. 🚚\n\n'
+      + '¿Te paso los datos para el abono?';
   }
 
-  const a = addr.toLowerCase().trim();
-
-  // Calle sin número completo (solo "Calle 45")
-  const calleMatch = a.match(/\b(calle|cl\.?|cll\.?)\s*(\d+)/);
-  if (calleMatch && !/[#\-]\s*\d/.test(a)) {
-    return `📍 ¿Podrías indicarme el número completo? Por ejemplo: *${calleMatch[1].charAt(0).toUpperCase() + calleMatch[1].slice(1)} ${calleMatch[2]} # 23-18*.`;
+  // Sin dirección → pedir la dirección completa
+  if (!addr || addr.trim() === '' || addr === '—' || addr.trim().length < 5) {
+    return '📍 Para completar tu pedido necesito tu *dirección de envío completa*. Por ejemplo: *Calle 15 # 20-30, Barrio Los Pinos*.';
   }
 
-  // Carrera sin número completo
-  const craMatch = a.match(/\b(carrera|cra\.?|cr\.?|kr\.?)\s*(\d+)/);
-  if (craMatch && !/[#\-]\s*\d/.test(a)) {
-    return `📍 ¿Podrías indicarme el número completo? Por ejemplo: *Carrera ${craMatch[2]} # 15-42*.`;
-  }
-
-  // Avenida sin número completo
-  const avMatch = a.match(/\b(avenida|av\.?)\s*(\d+)/);
-  if (avMatch && !/[#\-]\s*\d/.test(a)) {
-    return `📍 ¿Podrías indicarme el número de la dirección en la avenida? Por ejemplo: *Avenida ${avMatch[2]} # 23-15*.`;
-  }
-
-  // Diagonal sin número completo
-  const diagMatch = a.match(/\b(diagonal|diag\.?)\s*(\d+)/);
-  if (diagMatch && !/[#\-]\s*\d/.test(a)) {
-    return `📍 ¿Podrías indicarme el número completo? Por ejemplo: *Diagonal ${diagMatch[2]} # 12-30*.`;
-  }
-
-  // Transversal sin número completo
-  const transMatch = a.match(/\b(transversal)\s*(\d+)/);
-  if (transMatch && !/[#\-]\s*\d/.test(a)) {
-    return `📍 ¿Podrías indicarme el número completo? Por ejemplo: *Transversal ${transMatch[2]} # 45-20*.`;
-  }
-
-  // Solo conjunto sin casa/apto
-  if (/\b(conjunto|conj\.?)\b/.test(a) && !/\b(casa|apartamento|apto\.?|apt\.?)\b/.test(a)) {
-    return `📍 ¿Cuál es el número de *casa o apartamento* dentro del conjunto?`;
-  }
-
-  // Solo edificio sin apto
-  if (/\b(edificio|edif\.?)\b/.test(a) && !/\b(apartamento|apto\.?|apt\.?)\b/.test(a)) {
-    return `📍 ¿Qué apartamento o piso corresponde en el edificio?`;
-  }
-
-  // Solo torre sin apto
-  if (/\btorre\b/.test(a) && !/\b(apartamento|apto\.?|apt\.?|casa)\b/.test(a)) {
-    return `📍 ¿Cuál es el número del apartamento en la torre?`;
-  }
-
-  // Solo apartamento sin edificio/conjunto/calle
-  if (/\b(apartamento|apto\.?|apt\.?)\b/.test(a) &&
-      !/\b(edificio|conjunto|calle|carrera|avenida|diagonal|transversal)\b/.test(a)) {
-    return `📍 ¿En qué edificio o conjunto se encuentra el apartamento?`;
-  }
-
-  // Solo casa sin conjunto/manzana/calle
-  if (/\bcasa\b/.test(a) &&
-      !/\b(conjunto|manzana|mz\.?|calle|carrera|avenida|diagonal|transversal)\b/.test(a)) {
-    return `📍 ¿En qué conjunto, manzana o dirección está ubicada la casa?`;
-  }
-
-  // Solo manzana sin casa
-  if (/\b(manzana|mz\.?)\b/.test(a) && !/\b(casa|cs\.?)\b/.test(a)) {
-    return `📍 ¿Cuál es el número de la *casa* en esa manzana?`;
-  }
-
-  // Solo barrio sin vía
-  if (/\bbarrio\b/.test(a) &&
-      !/\b(calle|carrera|avenida|diagonal|transversal|conjunto|edificio)\b/.test(a)) {
-    return `📍 ¿Cuál es la dirección exacta (calle, carrera, etc.) en ese barrio?`;
-  }
-
-  // Solo lote
-  if (/\blote\b/.test(a)) {
-    return `📍 ¿En qué urbanización o dirección está ubicado el lote?`;
-  }
-
-  // Genérico
-  return `📍 Necesito tu dirección completa para el envío. Por ejemplo: *Calle 15 # 20-30 Barrio Los Pinos* o *Conjunto Arboleda, Casa 5*.`;
+  // Tiene una dirección pero puede faltar detalle → confirmación suave (sin insistir de más)
+  return '📍 ¿Me confirmas si tu dirección está correcta y completa? Si le falta *torre, apartamento, número de casa o barrio*, por favor agrégalo para que el envío llegue sin problema. 😊';
 }

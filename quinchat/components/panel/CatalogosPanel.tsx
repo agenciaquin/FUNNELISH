@@ -16,6 +16,7 @@ interface Catalogo {
   id: string;
   familia: string;
   patron: string;
+  anuncios?: string | null;
   catalogo_colores: ColorVariant[];
 }
 
@@ -26,14 +27,29 @@ function ModalCatalogo({
   onClose,
 }: {
   initial?: Catalogo;
-  onSave: (familia: string, patron: string) => void;
+  onSave: (familia: string, patron: string, anuncios: string) => void;
   onClose: () => void;
 }) {
   const [familia, setFamilia] = useState(initial?.familia ?? '');
   const [patron,  setPatron]  = useState(initial?.patron  ?? '');
+  const [ids, setIds] = useState<string[]>(
+    String(initial?.anuncios ?? '').split(/[,\n]+/).map(s => s.trim()).filter(Boolean),
+  );
 
   // Auto-fill patron cuando cambia familia (solo si aún no fue editado)
   const patronEdited = useRef(!!initial?.patron);
+
+  // Detectar IDs repetidos: cuántas veces aparece cada ID (ya recortado).
+  const conteoIds = new Map<string, number>();
+  for (const raw of ids) {
+    const v = raw.trim();
+    if (v) conteoIds.set(v, (conteoIds.get(v) ?? 0) + 1);
+  }
+  const esRepetido = (i: number) => {
+    const v = ids[i].trim();
+    return !!v && (conteoIds.get(v) ?? 0) > 1;
+  };
+  const hayRepetidos = [...conteoIds.values()].some(n => n > 1);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -74,13 +90,78 @@ function ModalCatalogo({
               El bot busca este texto en el nombre del pedido. Ej: si el pedido dice <strong>BEIGE NEW YORK</strong>, el patrón es <strong>NEW YORK</strong>.
             </p>
           </div>
+
+          {/* IDs de anuncios (una lista: agregar / quitar) */}
+          <div>
+            <label className="text-xs font-semibold text-[#6B6B6B] uppercase tracking-wide block mb-1">
+              🎯 IDs de anuncios de este producto
+            </label>
+            <div className="space-y-2">
+              {ids.map((id, i) => {
+                const repetido = esRepetido(i);
+                return (
+                <div key={i} className="flex items-start gap-2">
+                  <div className="flex-1">
+                    <input
+                      className={`w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                        repetido
+                          ? 'border-[#DC2626] bg-[#FEF2F2] focus:ring-[#DC2626]/40'
+                          : 'border-[#E8E8E8] focus:ring-[#00A89D]/40'
+                      }`}
+                      placeholder="Ej: 120210000001"
+                      value={id}
+                      onChange={e => setIds(prev => prev.map((x, j) => (j === i ? e.target.value : x)))}
+                    />
+                    {repetido && (
+                      <p className="text-[11px] text-[#DC2626] font-semibold mt-1">⚠️ ID repetido — este anuncio ya está en la lista</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setIds(prev => prev.filter((_, j) => j !== i))}
+                    className="w-9 h-9 rounded-lg text-[#DC2626] hover:bg-[#FEE2E2] shrink-0 mt-0.5"
+                    title="Eliminar este ID"
+                  >✕</button>
+                </div>
+                );
+              })}
+            </div>
+            {hayRepetidos && (
+              <div className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-[#FEF2F2] border border-[#FCA5A5] px-3 py-2">
+                <span className="text-[11px] text-[#B91C1C] font-semibold">
+                  ⚠️ Hay IDs repetidos marcados en rojo. Quítalos para que no cuenten doble.
+                </span>
+                <button
+                  onClick={() => setIds(prev => {
+                    const vistos = new Set<string>();
+                    const limpio: string[] = [];
+                    for (const raw of prev) {
+                      const v = raw.trim();
+                      if (!v) { limpio.push(raw); continue; }
+                      if (vistos.has(v)) continue; // descarta el repetido
+                      vistos.add(v); limpio.push(raw);
+                    }
+                    return limpio;
+                  })}
+                  className="text-[11px] font-bold text-[#00847A] hover:underline shrink-0"
+                >Quitar repetidos</button>
+              </div>
+            )}
+            <button
+              onClick={() => setIds(prev => [...prev, ''])}
+              className="mt-2 text-xs text-[#00A89D] font-semibold hover:underline"
+            >+ Agregar ID de anuncio</button>
+            <p className="text-[11px] text-[#6B6B6B] mt-2">
+              Cuando alguien llegue por uno de estos anuncios, el bot de ventas sabrá que quiere
+              <strong> {familia || 'este producto'}</strong> y le hablará de él directo.
+            </p>
+          </div>
         </div>
         <div className="px-6 py-4 border-t border-[#E8E8E8] flex justify-end gap-3">
           <button onClick={onClose} className="px-4 py-2 text-sm text-[#6B6B6B] hover:text-[#0D0D0D] rounded-xl border border-[#E8E8E8] hover:bg-[#F5F5F5] transition-all">
             Cancelar
           </button>
           <button
-            onClick={() => familia.trim() && patron.trim() && onSave(familia.trim().toUpperCase(), patron.trim().toUpperCase())}
+            onClick={() => familia.trim() && patron.trim() && onSave(familia.trim().toUpperCase(), patron.trim().toUpperCase(), [...new Set(ids.map(s => s.trim()).filter(Boolean))].join(', '))}
             disabled={!familia.trim() || !patron.trim()}
             className="px-5 py-2 text-sm font-semibold bg-[#00A89D] text-white rounded-xl hover:bg-[#008F85] disabled:opacity-40 transition-all"
           >
@@ -246,6 +327,41 @@ export default function CatalogosPanel() {
   const [inlineUploading, setInlineUploading] = useState(false);
   const inlineFileRef = useRef<HTMLInputElement>(null);
 
+  // Re-estampar marca de agua en todas las fotos que aún no la tienen
+  const [marcando, setMarcando] = useState(false);
+  const [marcaAviso, setMarcaAviso] = useState<string | null>(null);
+  const reestamparTodas = async () => {
+    if (marcando) return;
+    setMarcando(true);
+    setMarcaAviso('Marcando fotos…');
+    try {
+      let total = 0;
+      let fallos = 0;
+      let errMsg: string | null = null;
+      for (let i = 0; i < 80; i++) { // hasta 80 lotes
+        const res  = await fetch('/api/catalogos/re-estampar', { method: 'POST' });
+        const data = await res.json();
+        total += data.procesadas ?? 0;
+        fallos = data.fallos ?? 0;
+        if (data.error) errMsg = data.error;
+        setMarcaAviso(`Marcando fotos… (${total} listas, faltan ${data.restantes ?? 0})`);
+        if (!data.restantes) break;
+        if (!(data.procesadas > 0)) break; // sin avance → parar
+      }
+      if (total === 0 && fallos > 0) {
+        setMarcaAviso(`❌ No se pudieron marcar. Motivo: ${errMsg ?? 'desconocido'}`);
+      } else {
+        setMarcaAviso(`✅ Listo, marqué ${total} foto${total === 1 ? '' : 's'}.`);
+      }
+      await load();
+    } catch {
+      setMarcaAviso('❌ Hubo un problema. Intenta de nuevo.');
+    } finally {
+      setMarcando(false);
+      setTimeout(() => setMarcaAviso(null), 6000);
+    }
+  };
+
   // ── Cargar datos ─────────────────────────────────────────────────────────────
   const load = async () => {
     setLoading(true);
@@ -263,16 +379,16 @@ export default function CatalogosPanel() {
   );
 
   // ── Handlers de catálogo ─────────────────────────────────────────────────────
-  const handleSaveCat = async (familia: string, patron: string) => {
+  const handleSaveCat = async (familia: string, patron: string, anuncios: string) => {
     if (modalCat && typeof modalCat === 'object' && 'id' in modalCat) {
       await fetch(`/api/catalogos/${modalCat.id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ familia, patron }),
+        body: JSON.stringify({ familia, patron, anuncios }),
       });
     } else {
       const res = await fetch('/api/catalogos', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ familia, patron }),
+        body: JSON.stringify({ familia, patron, anuncios }),
       });
       if (res.ok) {
         const nuevo: Catalogo = await res.json();
@@ -399,13 +515,28 @@ export default function CatalogosPanel() {
             {catalogos.reduce((s, c) => s + c.catalogo_colores.length, 0)} variaciones de color
           </p>
         </div>
-        <button
-          onClick={() => setModalCat('new')}
-          className="flex items-center gap-2 px-4 py-2.5 bg-[#00A89D] text-white text-sm font-semibold rounded-xl hover:bg-[#008F85] transition-all shadow-sm"
-        >
-          <span className="text-base">+</span> Nuevo Catálogo
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={reestamparTodas}
+            disabled={marcando}
+            title="Estampa el nombre del producto en todas las fotos que aún no lo tienen"
+            className="flex items-center gap-2 px-4 py-2.5 border border-[#00A89D]/40 text-[#00847A] text-sm font-semibold rounded-xl hover:bg-[#00A89D]/10 transition-all disabled:opacity-50"
+          >
+            🏷️ {marcando ? 'Marcando…' : 'Marcar fotos'}
+          </button>
+          <button
+            onClick={() => setModalCat('new')}
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#00A89D] text-white text-sm font-semibold rounded-xl hover:bg-[#008F85] transition-all shadow-sm"
+          >
+            <span className="text-base">+</span> Nuevo Catálogo
+          </button>
+        </div>
       </div>
+      {marcaAviso && (
+        <div className="px-6 py-2 bg-[#00A89D]/8 border-b border-[#00A89D]/20 text-xs text-[#00847A] font-medium">
+          {marcaAviso}
+        </div>
+      )}
 
       {/* Buscador */}
       <div className="px-6 py-3 bg-white border-b border-[#E8E8E8]">

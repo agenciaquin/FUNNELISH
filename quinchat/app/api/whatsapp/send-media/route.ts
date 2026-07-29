@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { uploadWhatsAppMedia, sendMediaMessage } from '@/lib/whatsapp';
+import { uploadWhatsAppMedia, sendMediaMessage, sendTextMessage } from '@/lib/whatsapp';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { entrarLinea } from '@/lib/whatsapp-contexto';
 
 /**
  * POST /api/whatsapp/send-media
@@ -41,6 +42,18 @@ export async function POST(req: NextRequest) {
 
   const supabase = createServerSupabaseClient();
 
+  // Fijar la línea (funnel/ventas) de la conversación para subir y enviar el
+  // media por el número correcto (si no, sale por el funnel y falla 131047).
+  try {
+    const { data: conv } = await supabase
+      .from('conversations').select('linea').eq('id', to).maybeSingle();
+    const esVentas = String((conv as any)?.linea ?? '').toLowerCase() === 'ventas';
+    const phoneId = esVentas
+      ? process.env.WHATSAPP_PHONE_NUMBER_ID_VENTAS
+      : process.env.WHATSAPP_PHONE_NUMBER_ID;
+    entrarLinea({ phoneId: phoneId ?? '', tipo: esVentas ? 'ventas' : 'funnel' });
+  } catch { /* si falla, sale por la línea por defecto */ }
+
   // 1. Upload to Supabase Storage (permanent URL for panel display)
   let permanentUrl: string | null = null;
   if (waType === 'image' || waType === 'audio' || waType === 'video') {
@@ -57,14 +70,43 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // 1b. VIDEO grande: WhatsApp NO permite videos de más de 16 MB. Si pesa más,
+  // se le envía al cliente un ENLACE al video (alojado en storage) para que lo
+  // vea igual, en vez de fallar el envío.
+  const LIMITE_VIDEO = 16 * 1024 * 1024;
+  if (waType === 'video' && buffer.length > LIMITE_VIDEO) {
+    if (!permanentUrl) {
+      return NextResponse.json({
+        error: `El video pesa ${(buffer.length / 1048576).toFixed(1)} MB y no se pudo alojar. Envía uno más corto (menos de 16 MB).`,
+      }, { status: 400 });
+    }
+    const dest = String(to).split('@')[0];
+    const texto = `🎬 Aquí puedes ver el video del producto 👇\n${permanentUrl}${caption?.trim() ? `\n\n${caption.trim()}` : ''}`;
+    const wamidLink = await sendTextMessage(dest, texto);
+    if (!wamidLink) return NextResponse.json({ error: 'No se pudo enviar el enlace del video' }, { status: 500 });
+
+    const msgIdV = `agent-media-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    await supabase.from('messages').insert({
+      id: msgIdV, conversation_id: to, content: permanentUrl,
+      caption: caption?.trim() || null, role: 'agent', type: 'video',
+      whatsapp_id: wamidLink, created_at: new Date().toISOString(),
+    });
+    await supabase.from('conversations').update({
+      last_message: `🎬 Video${caption?.trim() ? `: ${caption.trim()}` : ''}`,
+      last_message_time: new Date().toISOString(),
+    }).eq('id', to);
+    return NextResponse.json({ success: true, id: msgIdV, type: 'video', media_url: permanentUrl, sentAsLink: true });
+  }
+
   // 2. Upload to WhatsApp (Meta)
   const mediaId = await uploadWhatsAppMedia(buffer, mimeType, filename);
   if (!mediaId) {
     return NextResponse.json({ error: 'Media upload to WhatsApp failed' }, { status: 500 });
   }
 
-  // 3. Send via WhatsApp
-  const wamid = await sendMediaMessage(to, mediaId, waType, {
+  // 3. Send via WhatsApp (el id puede ser sintético; el número real va antes de "@")
+  const destinatario = String(to).split('@')[0];
+  const wamid = await sendMediaMessage(destinatario, mediaId, waType, {
     caption:  caption ?? undefined,
     filename: waType === 'document' ? filename : undefined,
   });
@@ -93,6 +135,7 @@ export async function POST(req: NextRequest) {
     id:              msgId,
     conversation_id: to,
     content:         dbContent,
+    caption:         (waType === 'image' || waType === 'video') ? (caption?.trim() || null) : null,
     role:            'agent',
     type:            waType,
     whatsapp_id:     wamid,

@@ -12,7 +12,7 @@ import { sendRecordatorioTemplate } from '@/lib/whatsapp';
 //  - Tras el 2do recordatorio sin respuesta → etiqueta HUMANO (revisión humana).
 
 const HORAS = (h: number) => h * 3_600_000;
-const SKIP_LABELS = ['PEDIDO CANCELADO', 'PEDIDO PROGRAMADO', 'VENTA REALIZADA', 'PEDIDO PROCESADO'];
+const SKIP_LABELS = ['PEDIDO CANCELADO', 'PEDIDO PROGRAMADO', 'VENTA REALIZADA', 'ANULADO EN EFFI'];
 
 function autorizado(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -29,7 +29,7 @@ async function guardarMensajeBot(supabase: any, waPhone: string, texto: string, 
     conversation_id: waPhone, content: texto, role: 'assistant', type: 'text',
     whatsapp_id: wamid, created_at: now,
   });
-  await supabase.from('conversations').update({ last_message: texto.slice(0, 100), last_message_time: now }).eq('id', waPhone);
+  await supabase.from('conversations').update({ last_message: texto.slice(0, 100), last_message_time: now, unread_count: 0 }).eq('id', waPhone);
 }
 
 export async function GET(req: NextRequest) {
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
       const wamid = await sendRecordatorioTemplate(waPhone, String(p.nombre || '').split(' ')[0] || 'hola');
       if (wamid) {
         await supabase.from('clientes_funnelish').update({ remarketing_1_at: now.toISOString() }).eq('id', p.id);
-        await guardarMensajeBot(supabase, waPhone, `🔔 Recordatorio: tu pedido de *${p.producto}* sigue pendiente por confirmar.`, wamid);
+        await guardarMensajeBot(supabase, waPhone, `😊 ¡Hola! ¿Me confirmas si todos los datos están correctos para despacharte tu pedido de *${p.producto}*? 🚚`, wamid);
         enviados1++;
       }
       continue;
@@ -89,15 +89,19 @@ export async function GET(req: NextRequest) {
       const wamid = await sendRecordatorioTemplate(waPhone, String(p.nombre || '').split(' ')[0] || 'hola');
       if (wamid) {
         await supabase.from('clientes_funnelish').update({ remarketing_2_at: now.toISOString() }).eq('id', p.id);
-        await guardarMensajeBot(supabase, waPhone, `🔔 Segundo recordatorio: tu pedido de *${p.producto}* sigue pendiente por confirmar.`, wamid);
+        await guardarMensajeBot(supabase, waPhone, `😊 ¿Me confirmas si todos los datos están correctos para despacharte tu pedido de *${p.producto}*? 🚚`, wamid);
         enviados2++;
       }
       continue;
     }
 
-    // Tras el 2do recordatorio, >=20h sin respuesta → a revisión humana
+    // Tras el 2do recordatorio, >=20h sin respuesta → a revisión humana (agrega HUMANO sin quitar el estado)
     if (rm2 && ahora - rm2 >= HORAS(20)) {
-      await supabase.from('conversations').update({ label: 'HUMANO' }).eq('id', waPhone);
+      const labs: string[] = label ? String(label).split('|').map((s: string) => s.trim()).filter(Boolean) : [];
+      if (!labs.map((l: string) => l.toUpperCase()).includes('HUMANO')) {
+        await supabase.from('conversations')
+          .update({ label: [...new Set([...labs, 'HUMANO'])].join(' | ') }).eq('id', waPhone);
+      }
       escalados++;
       continue;
     }
