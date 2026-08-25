@@ -70,6 +70,21 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+// Mapa ID de anuncio → nombre del anuncio en Meta, cacheado 10 min (para no
+// llamar a Meta en cada carga de Pedidos). Sirve para mostrar el NOMBRE de la
+// campaña en vez del ID crudo.
+let _cacheNombres: { at: number; map: Map<string, string> } | null = null;
+export async function nombresDeAnuncioMeta(): Promise<Map<string, string>> {
+  if (_cacheNombres && Date.now() - _cacheNombres.at < 10 * 60_000) return _cacheNombres.map;
+  const map = new Map<string, string>();
+  try {
+    const r = await gastoPorAnuncioMeta(); // histórico completo
+    for (const [id, g] of r.porAnuncio) if (g.nombre) map.set(id, g.nombre);
+  } catch { /* si falla, se queda con IDs */ }
+  _cacheNombres = { at: Date.now(), map };
+  return map;
+}
+
 /** Normaliza el id de cuenta a la forma "act_XXXXXXXX". */
 function normalizarCuenta(id: string): string {
   const limpio = String(id ?? '').trim();

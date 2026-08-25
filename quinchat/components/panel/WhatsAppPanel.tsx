@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Sidebar, { type PanelSection } from './Sidebar';
+import { confirmarSalida, haySinGuardar } from '@/lib/panel/cambios';
 import ConversationList from './ConversationList';
 import ChatArea from './ChatArea';
+import MonederoFlotante from './MonederoFlotante';
 import { createBrowserSupabaseClient } from '@/lib/supabase';
 import type { Conversation, Message } from '@/lib/panel/types';
 
@@ -25,6 +27,7 @@ const EmbudosPanel       = dynamic(() => import('./EmbudosPanel'),        { ssr:
 const PedidosPanel       = dynamic(() => import('./PedidosPanel'),        { ssr: false });
 const SeguimientoPanel   = dynamic(() => import('./SeguimientoPanel'),    { ssr: false });
 const VentasPanel        = dynamic(() => import('./VentasPanel'),         { ssr: false });
+const MetasPanel         = dynamic(() => import('./MetasPanel'),          { ssr: false });
 const VendedoresPanel    = dynamic(() => import('./VendedoresPanel'),     { ssr: false });
 const ObjecionesPanel    = dynamic(() => import('./ObjecionesPanel'),     { ssr: false });
 
@@ -34,6 +37,33 @@ interface Props {
 
 export default function WhatsAppPanel({ userName }: Props) {
   const [activeSection, setActiveSection] = useState<PanelSection>('chat');
+
+  // Al refrescar, vuelve a la MISMA sección donde estabas (no al inicio).
+  useEffect(() => {
+    try {
+      const guardada = localStorage.getItem('quin_panel_seccion') as PanelSection | null;
+      if (guardada) setActiveSection(guardada);
+    } catch { /* ignorar */ }
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem('quin_panel_seccion', activeSection); } catch { /* ignorar */ }
+  }, [activeSection]);
+
+  // Cambiar de sección pregunta si hay cambios sin guardar (ej. editando un embudo).
+  const cambiarSeccion = useCallback((s: PanelSection) => {
+    if (!confirmarSalida()) return false;
+    setActiveSection(s);
+    return true;
+  }, []);
+
+  // Refrescar / cerrar la pestaña con cambios sin guardar → el navegador avisa.
+  useEffect(() => {
+    const h = (e: BeforeUnloadEvent) => {
+      if (haySinGuardar()) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', h);
+    return () => window.removeEventListener('beforeunload', h);
+  }, []);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId]       = useState<string | null>(null);
@@ -278,13 +308,15 @@ export default function WhatsAppPanel({ userName }: Props) {
     // cambia el zoom o el tamaño de la ventana (con 100vh se quedaba desfasado).
     <div data-medida={medida} className="panel-app flex h-full min-h-0 bg-[#FAF9F6] overflow-hidden">
 
+      {/* Monedero flotante de metas — visible en todas las secciones */}
+      <MonederoFlotante onAbrir={() => cambiarSeccion('metas')} />
 
       {/* Sidebar — escritorio fijo; móvil cajón deslizante */}
       <div className={`fixed inset-y-0 left-0 z-50 transition-transform duration-300 md:static md:z-auto md:translate-x-0 md:shrink-0 md:h-full ${mobileSidebar ? 'translate-x-0' : '-translate-x-full'}`}>
         <Sidebar
           userName={userName}
           activeSection={activeSection}
-          onSectionChange={(s) => { setActiveSection(s); setMobileSidebar(false); }}
+          onSectionChange={(s) => { if (cambiarSeccion(s)) setMobileSidebar(false); }}
         />
       </div>
       {/* Fondo oscuro al abrir el menú en móvil */}
@@ -325,6 +357,7 @@ export default function WhatsAppPanel({ userName }: Props) {
       )}
 
       {/* ── Other sections ── */}
+      {activeSection === 'metas'         && <MetasPanel />}
       {activeSection === 'estadisticas'  && <EstadisticasPanel />}
       {activeSection === 'memoria'       && <MemoriaPanel />}
       {activeSection === 'faq'           && <FaqPanel />}

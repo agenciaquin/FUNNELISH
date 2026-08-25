@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
+import type { LayoutEmbudo } from '@/lib/bloques';
 
 /**
  * Embudos de venta propios.
@@ -59,6 +60,7 @@ export interface VarianteFunnel {
   selectores?: SelectorVariante[]; // hasta 6 elecciones
   esPack?: boolean;
   armarPack?: ArmarPackConfig; // si existe → constructor "arma tu pack" (escudería+color+talla por buzo)
+  estilo?: string;             // 'polos' → editor y checkout de VARIABLES POLOS (a prueba de renombrado)
 }
 
 export interface Funnel {
@@ -88,6 +90,7 @@ export interface Funnel {
   color: string | null;      // color de acento (botón, precio, títulos). null = verde
   anuncios: string | null;   // IDs de anuncios (Meta/TikTok) que llevan a este producto
   miniatura_url: string | null; // miniatura flotante opcional (foto o video)
+  layout: LayoutEmbudo | null;  // diseño por bloques; null = orden por defecto
   creado_at: string;
 }
 
@@ -95,6 +98,20 @@ export interface Funnel {
 export function esVideo(url: string | null | undefined): boolean {
   if (!url) return false;
   return /\.(mp4|webm|mov|m4v|ogg|ogv)(\?|$)/i.test(url);
+}
+
+/**
+ * Devuelve una versión LIVIANA (redimensionada + comprimida) de una foto de
+ * NUESTRO storage de Supabase, para gastar mucho menos ancho de banda. Usa el
+ * transformador de imágenes de Supabase (redimensiona y comprime al vuelo y
+ * cachea el resultado). Videos y URLs externas se devuelven sin tocar.
+ */
+export function imgOptim(url: string | null | undefined, _ancho = 800, _calidad = 62): string {
+  // DESACTIVADO: la transformación de Supabase (render/image) estaba RECORTANDO
+  // las fotos anchas (collages), cortándolas en la galería, banner y miniaturas.
+  // Servimos la imagen ORIGINAL completa. El ahorro de datos real estaba en los
+  // VIDEOS (que se comprimen aparte), no en estas fotos.
+  return String(url ?? '');
 }
 
 /** Color de acento del embudo. Si no tiene, se usa el verde de siempre. */
@@ -121,6 +138,7 @@ export async function obtenerFunnel(slug: string): Promise<Funnel | null> {
       frases:          parseLista(data.frases),
       tallas:          parseLista(data.tallas),
       variantes:       parseJSON<VarianteFunnel[]>(data.variantes, []),
+      layout:          parseJSON<LayoutEmbudo | null>(data.layout, null),
     } as Funnel;
   } catch (e) {
     console.error('[Funnels] error leyendo el embudo:', e);

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { esVideo } from '@/lib/funnels';
+import type { LayoutEmbudo } from '@/lib/bloques';
 
 const pesos = (n: number) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
 
@@ -40,8 +41,10 @@ const opImg   = (o: string | Opcion) => (typeof o === 'string' ? undefined : o.i
  * Marco de celular que muestra cómo se verá la página con los datos que se
  * están editando. Dos pestañas: la página de Inicio y la de Checkout.
  */
-export default function VistaPreviaEmbudo({ d }: { d: Draft }) {
+export default function VistaPreviaEmbudo({ d, layout }: { d: Draft; layout?: LayoutEmbudo | null }) {
   const [modo, setModo] = useState<'inicio' | 'checkout'>('inicio');
+  // Si el diseño trae el bloque Checkout, es UNA sola pantalla: inicio + formulario.
+  const unaPantalla = !!layout?.bloques?.some(b => b.tipo === 'checkout' && b.visible !== false);
   const frases = (d.frases?.length ? d.frases : [d.titulo]).filter(Boolean);
   const [fraseIdx, setFraseIdx] = useState(0);
   const [imgIdx, setImgIdx]     = useState(0);
@@ -64,11 +67,17 @@ export default function VistaPreviaEmbudo({ d }: { d: Draft }) {
 
   return (
     <div className="mx-auto w-full max-w-[340px]">
-      {/* Selector de pantalla */}
-      <div className="flex gap-1 mb-2 p-1 bg-[#F0F0F0] rounded-xl">
-        <button onClick={() => setModo('inicio')}   className={tab(modo === 'inicio')}>🏠 Inicio</button>
-        <button onClick={() => setModo('checkout')} className={tab(modo === 'checkout')}>🛒 Checkout</button>
-      </div>
+      {/* Selector de pantalla (solo si son dos páginas separadas) */}
+      {unaPantalla ? (
+        <div className="mb-2 p-1.5 bg-[#00A89D]/10 rounded-xl text-center text-[11px] font-semibold text-[#00847A]">
+          🧾 Una sola pantalla · el cliente baja hasta el formulario
+        </div>
+      ) : (
+        <div className="flex gap-1 mb-2 p-1 bg-[#F0F0F0] rounded-xl">
+          <button onClick={() => setModo('inicio')}   className={tab(modo === 'inicio')}>🏠 Inicio</button>
+          <button onClick={() => setModo('checkout')} className={tab(modo === 'checkout')}>🛒 Checkout</button>
+        </div>
+      )}
 
       {/* Marco de celular */}
       <div className="rounded-[2rem] border-[6px] border-[#111] bg-[#111] shadow-2xl overflow-hidden">
@@ -77,7 +86,7 @@ export default function VistaPreviaEmbudo({ d }: { d: Draft }) {
         </div>
 
         <div className="relative bg-white max-h-[68vh] overflow-y-auto text-[#0D0D0D]">
-          {modo === 'inicio' && d.miniatura_url && (
+          {(modo === 'inicio' || unaPantalla) && d.miniatura_url && (
             <div className="absolute top-16 right-2 z-20 w-20 rounded-lg overflow-hidden border-2 border-white shadow-xl bg-black">
               {esVideo(d.miniatura_url)
                 // eslint-disable-next-line jsx-a11y/media-has-caption
@@ -86,7 +95,7 @@ export default function VistaPreviaEmbudo({ d }: { d: Draft }) {
                 : <img src={d.miniatura_url} alt="" className="w-full h-20 object-cover" />}
             </div>
           )}
-          {modo === 'inicio' ? (
+          {(modo === 'inicio' || unaPantalla) && (
             /* ─────────────── PÁGINA DE INICIO ─────────────── */
             <>
               {d.imagen_clientes && (esVideo(d.imagen_clientes)
@@ -108,9 +117,9 @@ export default function VistaPreviaEmbudo({ d }: { d: Draft }) {
                   <div className="relative">
                     {esVideo(principal)
                       // eslint-disable-next-line jsx-a11y/media-has-caption
-                      ? <video src={principal} muted loop playsInline autoPlay className="w-full aspect-square object-cover bg-black" />
+                      ? <video src={principal} muted loop playsInline autoPlay className="w-full h-auto bg-black" />
                       // eslint-disable-next-line @next/next/no-img-element
-                      : <img src={principal} alt="" className="w-full aspect-square object-cover" />}
+                      : <img src={principal} alt="" className="w-full h-auto" />}
                     {d.imagenes.length > 1 && (
                       <>
                         <button onClick={() => setImgIdx(i => (i - 1 + d.imagenes.length) % d.imagenes.length)}
@@ -191,8 +200,16 @@ export default function VistaPreviaEmbudo({ d }: { d: Draft }) {
                 </div>
               </div>
             </>
-          ) : (
-            /* ─────────────── PÁGINA DE CHECKOUT ─────────────── */
+          )}
+
+          {/* En una sola pantalla, el formulario va justo debajo del inicio */}
+          {unaPantalla && (
+            <div className="text-center text-[10px] font-extrabold text-[#00847A] bg-[#00A89D]/10 py-1.5">
+              👇 EL BOTÓN "COMPRAR" BAJA HASTA AQUÍ 👇
+            </div>
+          )}
+          {(modo === 'checkout' || unaPantalla) && (
+            /* ─────────────── CHECKOUT ─────────────── */
             <CheckoutPreview d={d} />
           )}
         </div>

@@ -1,0 +1,84 @@
+// =====================================================
+// QUINCHAT COMERCIAL — NextAuth MULTI-TENANT
+// El login valida contra la tabla `usuarios` y guarda el tenant_id
+// (la empresa) en la sesión. Así cada request sabe de qué cliente es.
+// =====================================================
+
+import type { NextAuthOptions } from 'next-auth';
+import CredentialsProvider from 'next-auth/providers/credentials';
+import { createServerSupabaseClient } from '@/lib/supabase';
+import { verifyPassword, hashPassword } from '@/lib/password';
+
+export const authOptions: NextAuthOptions = {
+  providers: [
+    CredentialsProvider({
+      name: 'Credentials',
+      credentials: {
+        email:    { label: 'Correo',     type: 'email'    },
+        password: { label: 'Contraseña', type: 'password' },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) return null;
+        const email = credentials.email.toLowerCase().trim();
+
+        try {
+          const supabase = createServerSupabaseClient();
+          const { data: user, error } = await supabase
+            .from('usuarios')
+            .select('id, email, password, nombre, rol, tenant_id')
+            .eq('email', email)
+            .maybeSingle();
+
+          if (error) { console.error('[AUTH] error DB:', error.message); return null; }
+          if (!user) return null;
+          // Contraseña: verifica el hash (o texto plano legado) y, si aún estaba
+          // en texto plano, la re-cifra al vuelo tras un login exitoso.
+          const chk = verifyPassword(credentials.password, (user as any).password);
+          if (!chk.ok) return null;
+          if (chk.legacy) {
+            try { await supabase.from('usuarios').update({ password: hashPassword(credentials.password) }).eq('id', (user as any).id); } catch { /* migración best-effort */ }
+          }
+
+          return {
+            id: String((user as any).id),
+            name: (user as any).nombre || (user as any).email,
+            email: (user as any).email,
+            tenantId: String((user as any).tenant_id),
+            rol: (user as any).rol,
+          } as any;
+        } catch (e) {
+          console.error('[AUTH] error consultando usuario:', e);
+          return null;
+        }
+      },
+    }),
+  ],
+  pages: {
+    signIn: '/login',
+  },
+  session: {
+    strategy: 'jwt',
+    maxAge: 30 * 24 * 60 * 60, // 30 días
+  },
+  secret: process.env.NEXTAUTH_SECRET,
+  callbacks: {
+    async jwt({ token, user }) {
+      if (user) {
+        token.name = user.name;
+        token.email = user.email;
+        (token as any).tenantId = (user as any).tenantId;
+        (token as any).rol = (user as any).rol;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (token?.name) {
+        session.user = { name: token.name as string, email: token.email as string } as any;
+      }
+      // Se expone el tenant en la sesión para poder filtrar por empresa
+      (session as any).tenantId = (token as any).tenantId ?? null;
+      (session as any).rol = (token as any).rol ?? null;
+      return session;
+    },
+  },
+};

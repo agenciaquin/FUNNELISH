@@ -145,6 +145,11 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
   const [sending, setSending]           = useState(false);
   const [botEnabled, setBotEnabled]     = useState(true);
   const [botOpen, setBotOpen]           = useState(false);
+  // Notas internas del asesor sobre este chat
+  const [notasOpen, setNotasOpen]       = useState(false);
+  const [notasText, setNotasText]       = useState('');
+  const [notasGuardando, setNotasGuardando] = useState(false);
+  const [notasGuardado, setNotasGuardado]   = useState(false);
   const [plantillaOpen, setPlantillaOpen] = useState(false);
 
   // Archivos en espera de confirmación antes de enviarse
@@ -323,6 +328,12 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
     ...ETIQUETAS_FIJAS,
     ...etiquetasDB.filter(e => !ETIQUETAS_FIJAS.some(f => f.nombre === e.nombre)),
   ];
+  // Estados = los fijos del negocio + los que el usuario creó marcados como "estado".
+  const estadosTodos: string[] = [
+    ...ESTADOS_CONV,
+    ...etiquetasDB.filter(e => e.tipo === 'estado').map(e => e.nombre)
+      .filter(n => !ESTADOS_CONV.includes(n.toUpperCase())),
+  ];
   const [labelOpen, setLabelOpen]       = useState(false);
   const [currentLabel, setCurrentLabel] = useState<string | null>(null);
 
@@ -363,7 +374,22 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
     setCurrentLabel(conversation?.label ?? null);
     setBotOpen(false);
     setLabelOpen(false);
-  }, [conversation?.id, conversation?.bot_enabled, conversation?.label]);
+    setNotasOpen(false);
+    setNotasText(conversation?.notas ?? '');
+    setNotasGuardado(false);
+  }, [conversation?.id, conversation?.bot_enabled, conversation?.label, conversation?.notas]);
+
+  // Guarda las notas internas de este chat (no las ve el cliente).
+  async function guardarNotas() {
+    if (!conversation) return;
+    setNotasGuardando(true);
+    try {
+      await supabase.from('conversations').update({ notas: notasText }).eq('id', conversation.id);
+      setNotasGuardado(true);
+      setTimeout(() => setNotasGuardado(false), 2000);
+      onConversationsUpdate?.();
+    } finally { setNotasGuardando(false); }
+  }
 
   useEffect(() => {
     fetch('/api/etiquetas').then(r => r.json()).then(d => setEtiquetasDB(Array.isArray(d) ? d : [])).catch(() => {});
@@ -527,10 +553,18 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
           body: JSON.stringify({ slug: 'chat', ext }),
         });
         const up = await r1.json();
-        if (!up?.token || !up?.path) throw new Error('no se pudo firmar la subida');
-        const { error: upErr } = await supabase.storage.from('chat-media')
-          .uploadToSignedUrl(up.path, up.token, file, { contentType: file.type || undefined });
-        if (upErr) throw upErr;
+        if (up?.mode === 'r2') {
+          if (!up?.uploadUrl) throw new Error('no se pudo firmar la subida');
+          const put = await fetch(up.uploadUrl, {
+            method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          });
+          if (!put.ok) throw new Error('no se pudo subir (R2)');
+        } else {
+          if (!up?.token || !up?.path) throw new Error('no se pudo firmar la subida');
+          const { error: upErr } = await supabase.storage.from('chat-media')
+            .uploadToSignedUrl(up.path, up.token, file, { contentType: file.type || undefined });
+          if (upErr) throw upErr;
+        }
         const r2 = await fetch('/api/whatsapp/send-media-url', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ to: conversation.id, url: up.publicUrl, type: waType, caption: caption?.trim() || undefined }),
@@ -695,7 +729,7 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
   //    etiquetas adicionales. ──────────────────────────────────────────────────
   async function cambiarEstado(nombre: string | null) {
     if (!conversation) return;
-    const nuevo = conEstado(currentLabel, nombre);
+    const nuevo = conEstado(currentLabel, nombre, estadosTodos);
     // Al marcar la venta, se anota la hora para que el bot se apague solo a los 30 min.
     const esVenta = !!nombre && nombre.toUpperCase().includes('VENTA REALIZADA');
     await guardarEtiquetas(nuevo, esVenta ? { vendido_at: new Date().toISOString() } : {});
@@ -804,6 +838,42 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Notas internas del asesor sobre este chat (no las ve el cliente) */}
+          <div className="relative" onClick={e => e.stopPropagation()}>
+            <button
+              onClick={() => setNotasOpen(prev => !prev)}
+              title="Notas privadas de este chat"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                (notasText.trim())
+                  ? 'bg-[#FEF3C7] text-[#92400E] border-[#FCD34D] hover:bg-[#FDE68A]'
+                  : 'bg-[#F5F5F5] text-[#6B6B6B] border-[#E8E8E8] hover:bg-[#EEE]'
+              }`}
+            >
+              📝 Notas{notasText.trim() && <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B]" />}
+            </button>
+            {notasOpen && (
+              <div className="absolute right-0 top-full mt-1 bg-white border border-[#E8E8E8] rounded-xl shadow-lg z-30 overflow-hidden w-[280px] p-3">
+                <p className="text-[11px] font-bold text-[#0D0D0D] mb-1">Notas de este chat 🔒</p>
+                <p className="text-[10px] text-[#9A9A9A] mb-2">Privadas — solo tú las ves. Ej: "llamó, escribirle mañana".</p>
+                <textarea
+                  value={notasText}
+                  onChange={e => { setNotasText(e.target.value); setNotasGuardado(false); }}
+                  rows={5}
+                  placeholder="Escribe una nota sobre este cliente…"
+                  className="w-full px-2.5 py-2 rounded-lg border border-[#E0E0E0] text-[13px] focus:outline-none focus:border-[#00A89D] resize-y"
+                />
+                <div className="flex items-center justify-between mt-2">
+                  <span className="text-[11px] text-[#16A34A] font-semibold">{notasGuardado ? '✅ Guardado' : ''}</span>
+                  <button
+                    onClick={guardarNotas}
+                    disabled={notasGuardando}
+                    className="px-3 py-1.5 rounded-lg bg-[#00A89D] text-white text-xs font-semibold hover:bg-[#00847A] disabled:opacity-60"
+                  >{notasGuardando ? 'Guardando…' : 'Guardar nota'}</button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Estado del bot — prendido / apagado */}
           <div className="relative" onClick={e => e.stopPropagation()}>
             <button
@@ -847,12 +917,13 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
           {/* Selector de etiquetas: estado (uno) + adicionales (varias) */}
           {(() => {
             const puestas   = parseLabels(currentLabel);
-            const esEstado  = (n: string) => ESTADOS_CONV.includes(n.toUpperCase());
+            const estUp     = new Set(estadosTodos.map(e => e.toUpperCase()));
+            const esEstado  = (n: string) => estUp.has(n.toUpperCase());
             const estadoAct = puestas.find(esEstado) ?? null;
             const tienesTag = (n: string) => puestas.some(l => l.toUpperCase() === n.toUpperCase());
             const colorDe   = (n: string) => etiquetas.find(e => e.nombre === n)?.color ?? '#6B6B6B';
-            // Estados en el orden del negocio; el resto son etiquetas adicionales
-            const estados     = ESTADOS_CONV.map(n => etiquetas.find(e => e.nombre === n)).filter(Boolean) as Etiqueta[];
+            // Estados (fijos + los creados como "estado"); el resto son adicionales
+            const estados     = etiquetas.filter(e => esEstado(e.nombre));
             const adicionales = etiquetas.filter(e => !esEstado(e.nombre));
             const tagsExtra   = puestas.filter(l => !esEstado(l)); // para el conteo del botón
 

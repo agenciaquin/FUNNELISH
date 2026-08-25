@@ -225,7 +225,7 @@ const WA_IMAGE_LIMIT = 5_242_880;
  */
 async function comprimirYSubirImagen(imageUrl: string): Promise<string | null> {
   try {
-    const resp = await fetch(imageUrl);
+    const resp = await fetch(urlSegura(imageUrl));
     if (!resp.ok) return null;
     const original = Buffer.from(await resp.arrayBuffer());
 
@@ -257,11 +257,76 @@ async function comprimirYSubirImagen(imageUrl: string): Promise<string | null> {
   }
 }
 
-// ── Send image by public URL (no media_id required) ──────────────────────────
+/**
+ * Normaliza una URL para que Meta pueda descargarla. Muchas fotos del catálogo
+ * tienen espacios o tildes en el nombre del archivo; el navegador los codifica
+ * solo, pero el descargador de Meta manda la URL "en crudo" y el servidor le
+ * responde 400. Aquí re-codificamos cada tramo del path de forma consistente
+ * (sin doble-codificar lo que ya venía bien).
+ */
+function urlSegura(u: string): string {
+  try {
+    const url = new URL(u);
+    url.pathname = url.pathname.split('/').map(seg => {
+      try { return encodeURIComponent(decodeURIComponent(seg)); }
+      catch { return encodeURIComponent(seg); }
+    }).join('/');
+    return url.toString();
+  } catch { return u; }
+}
+
+/**
+ * Descarga la imagen desde su URL (lado servidor) y la SUBE a WhatsApp para
+ * obtener un media_id. Es mucho más confiable que mandar el link: evita los
+ * errores 131053/131103 ("Downloading media from weblink failed"), porque Meta
+ * ya no tiene que descargar nada. Comprime solo si la foto pesa demasiado.
+ */
+async function subirImagenDesdeUrl(imageUrl: string): Promise<string | null> {
+  // Hasta 2 intentos: cubre tropiezos transitorios de red al bajar/subir.
+  for (let intento = 0; intento < 2; intento++) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 15000);
+      const resp = await fetch(imageUrl, { signal: ctrl.signal });
+      clearTimeout(t);
+      if (!resp.ok) {
+        // 5xx = tropiezo temporal → reintentar; 4xx = archivo no existe → rendirse.
+        if (resp.status >= 500 && intento === 0) { await new Promise(r => setTimeout(r, 700)); continue; }
+        return null;
+      }
+      let ct = (resp.headers.get('content-type') || 'image/jpeg').split(';')[0];
+      if (!/^image\//i.test(ct)) ct = 'image/jpeg';
+      const buf = Buffer.from(await resp.arrayBuffer());
+      if (buf.length > WA_IMAGE_LIMIT) return await comprimirYSubirImagen(imageUrl);
+      const ext = (ct.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+      const id = await uploadWhatsAppMedia(buf, ct, `foto.${ext}`);
+      if (id) return id;
+      if (intento === 0) { await new Promise(r => setTimeout(r, 700)); continue; }
+    } catch {
+      if (intento === 0) { await new Promise(r => setTimeout(r, 700)); continue; }
+    }
+  }
+  return null;
+}
+
+// ── Send image by public URL ─────────────────────────────────────────────────
 export async function sendImageByUrl(to: string, imageUrl: string, caption?: string): Promise<string | null> {
   const phoneNumberId = phoneIdActual();
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
   if (!phoneNumberId || !token) return null;
+  imageUrl = urlSegura(imageUrl);
+
+  // 1) PREFERIR subir el archivo (confiable). Si la foto existe, esto siempre
+  //    llega, sin que Meta dependa del enlace de Supabase.
+  try {
+    const mediaId = await subirImagenDesdeUrl(imageUrl);
+    if (mediaId) {
+      const w = await sendMediaMessage(to, mediaId, 'image', { caption });
+      if (w) return w;
+    }
+  } catch { /* si algo falla en la subida, se intenta por link abajo */ }
+
+  // 2) Fallback: por link (por si la descarga en servidor falló pero el link sí sirve).
   try {
     const imageObj: Record<string, string> = { link: imageUrl };
     if (caption) imageObj.caption = caption;
@@ -295,6 +360,18 @@ export async function sendImageByUrl(to: string, imageUrl: string, caption?: str
     console.error('[WhatsApp] sendImageByUrl network error:', e);
     return null;
   }
+}
+
+/**
+ * Reenvía una imagen SUBIÉNDOLA como archivo (no por link). Se usa cuando el envío
+ * por link falló porque Meta no pudo descargar la URL (error 131103 "Downloading
+ * media from weblink failed"). Al subir el archivo nosotros, Meta ya no depende del
+ * enlace. Devuelve el nuevo whatsapp_id, o null si la imagen de origen está rota.
+ */
+export async function reenviarImagenComoMedia(to: string, imageUrl: string, caption?: string): Promise<string | null> {
+  const mediaId = await comprimirYSubirImagen(imageUrl);
+  if (!mediaId) return null;
+  return await sendMediaMessage(to, mediaId, 'image', { caption });
 }
 
 // ── Send audio by public URL (no media_id required) ──────────────────────────

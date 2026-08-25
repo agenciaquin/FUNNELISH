@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { sendRecordatorioTemplate } from '@/lib/whatsapp';
+import { sendRecordatorioTemplate, sendTextMessage } from '@/lib/whatsapp';
 
 // Motor de remarketing de pedidos pendientes por confirmar.
 // Se ejecuta por cron (ver vercel.json) cada hora.
@@ -48,13 +48,36 @@ export async function GET(req: NextRequest) {
   // Pedidos enviados, no confirmados, recientes
   const { data: pend, error } = await supabase
     .from('clientes_funnelish')
-    .select('id, telefono, nombre, producto, wa_enviado_at, remarketing_1_at, remarketing_2_at')
+    .select('id, telefono, nombre, producto, abono, abono_recibido, wa_enviado_at, remarketing_1_at, remarketing_2_at')
     .eq('confirmado', false)
     .eq('wa_enviado', true)
     .gte('wa_enviado_at', hace3dias)
     .limit(60);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Elige el recordatorio correcto: si el pedido está PENDIENTE DE ABONO, no se le
+  // pregunta "¿los datos están correctos?" — se le recuerda el ABONO (texto libre,
+  // solo dentro de la ventana de 24h). Si no, va la plantilla normal de confirmación.
+  async function enviarRecordatorio(p: any, waPhone: string, ahora: number): Promise<string | null> {
+    const nom = String(p.nombre || '').split(' ')[0] || '';
+    const pendAbono = Number(p.abono) > 0 && !p.abono_recibido;
+    if (pendAbono) {
+      const { data: ultCli } = await supabase.from('messages')
+        .select('created_at').eq('conversation_id', waPhone).eq('role', 'user')
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      const horas = ultCli ? (ahora - new Date(ultCli.created_at).getTime()) / 3_600_000 : 999;
+      if (horas > 23.5) return null; // fuera de la ventana: no se puede texto libre
+      const abonoTxt = (Number(p.abono) || 5000).toLocaleString('es-CO');
+      const txt = `¡Hola${nom ? ' ' + nom : ''}! 😊 Quedo pendiente de tu *abono de $${abonoTxt}* para procesar y despachar tu pedido de *${p.producto}*. Apenas lo hagas, envíame el *comprobante* por aquí y lo dejo listo 🚚`;
+      const wamid = await sendTextMessage(waPhone, txt);
+      if (wamid) await guardarMensajeBot(supabase, waPhone, txt, wamid);
+      return wamid;
+    }
+    const wamid = await sendRecordatorioTemplate(waPhone, nom || 'hola');
+    if (wamid) await guardarMensajeBot(supabase, waPhone, `😊 ¡Hola! ¿Me confirmas si todos los datos están correctos para despacharte tu pedido de *${p.producto}*? 🚚`, wamid);
+    return wamid;
+  }
 
   let enviados1 = 0, enviados2 = 0, escalados = 0, saltados = 0;
 
@@ -75,10 +98,9 @@ export async function GET(req: NextRequest) {
 
     // 1er recordatorio: 4h después de enviado
     if (!rm1 && enviadoAt && ahora - enviadoAt >= HORAS(4)) {
-      const wamid = await sendRecordatorioTemplate(waPhone, String(p.nombre || '').split(' ')[0] || 'hola');
+      const wamid = await enviarRecordatorio(p, waPhone, ahora);
       if (wamid) {
         await supabase.from('clientes_funnelish').update({ remarketing_1_at: now.toISOString() }).eq('id', p.id);
-        await guardarMensajeBot(supabase, waPhone, `😊 ¡Hola! ¿Me confirmas si todos los datos están correctos para despacharte tu pedido de *${p.producto}*? 🚚`, wamid);
         enviados1++;
       }
       continue;
@@ -86,10 +108,9 @@ export async function GET(req: NextRequest) {
 
     // 2do recordatorio: >=20h después del 1ro
     if (rm1 && !rm2 && ahora - rm1 >= HORAS(20)) {
-      const wamid = await sendRecordatorioTemplate(waPhone, String(p.nombre || '').split(' ')[0] || 'hola');
+      const wamid = await enviarRecordatorio(p, waPhone, ahora);
       if (wamid) {
         await supabase.from('clientes_funnelish').update({ remarketing_2_at: now.toISOString() }).eq('id', p.id);
-        await guardarMensajeBot(supabase, waPhone, `😊 ¿Me confirmas si todos los datos están correctos para despacharte tu pedido de *${p.producto}*? 🚚`, wamid);
         enviados2++;
       }
       continue;

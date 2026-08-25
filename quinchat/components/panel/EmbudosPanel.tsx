@@ -2,9 +2,18 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import VistaPreviaEmbudo from './VistaPreviaEmbudo';
+import EmbudoStatsModal from './EmbudoStatsModal';
+import CarritosAbandonados from './CarritosAbandonados';
+import PlantillasEmbudoPanel from './PlantillasEmbudoPanel';
+import VentasPorCampana from './VentasPorCampana';
+import EditorPareja, { selectoresPareja, selectoresPolos } from './EditorPareja';
+import SeccionDiseno from './SeccionDiseno';
 import ArmarPackSelector from '../publico/ArmarPackSelector';
-import { esVideo, acentoDe } from '@/lib/funnels';
+import { esVideo, acentoDe, imgOptim } from '@/lib/funnels';
+import type { LayoutEmbudo } from '@/lib/bloques';
+import { bloquesARenderizar } from '@/lib/bloques';
 import { createBrowserSupabaseClient } from '@/lib/supabase';
+import { marcarSinGuardar, confirmarSalida } from '@/lib/panel/cambios';
 
 /**
  * Sube un archivo y devuelve su enlace público.
@@ -36,6 +45,16 @@ async function subirArchivo(file: File, slug: string): Promise<string | null> {
   const info = await r1.json();
   if (!r1.ok) throw new Error(info.error || 'No se pudo preparar la subida.');
 
+  // R2: subir por PUT directo a la URL prefirmada.
+  if (info.mode === 'r2') {
+    const put = await fetch(info.uploadUrl, {
+      method: 'PUT', body: file, headers: { 'Content-Type': file.type },
+    });
+    if (!put.ok) throw new Error('No se pudo subir el archivo (R2).');
+    return info.publicUrl as string;
+  }
+
+  // Supabase (respaldo): subida firmada.
   const sb = createBrowserSupabaseClient();
   const { error } = await sb.storage
     .from('chat-media').uploadToSignedUrl(info.path, info.token, file, { contentType: file.type });
@@ -54,6 +73,7 @@ interface Variante {
   imagen?: string; tallas?: string[]; selectores?: Selector[];
   // "Arma tu pack" (cascada): escudería → color → talla por buzo.
   armarPack?: { unidades: number; categorias: { nombre: string; colores: Opcion[] }[]; tallas: string[]; labelCategoria?: string; labelPrenda?: string };
+  estilo?: string; // 'polos' → VARIABLES POLOS (a prueba de renombrado)
 }
 
 interface Embudo {
@@ -70,6 +90,7 @@ interface Embudo {
   color: string | null;
   miniatura_url: string | null;
   anuncios: string | null;
+  layout: LayoutEmbudo | null;
 }
 
 const vacio = (): Embudo => ({
@@ -81,6 +102,7 @@ const vacio = (): Embudo => ({
   whatsapp: '', pixel_meta: null, pixel_meta_token: null,
   pixel_tiktok: null, pixel_tiktok_token: null,
   audio_url: null, video_url: null, color: null, miniatura_url: null, anuncios: null,
+  layout: null,
 });
 
 const pesos = (n: number) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
@@ -89,6 +111,10 @@ export default function EmbudosPanel() {
   const [embudos, setEmbudos] = useState<Embudo[]>([]);
   const [cargando, setCargando] = useState(true);
   const [vista, setVista] = useState<'lista' | 'editar'>('lista');
+  const [statsDe, setStatsDe] = useState<{ slug: string; producto?: string } | null>(null);
+  const [carritosOpen, setCarritosOpen] = useState(false);
+  const [verPlantillas, setVerPlantillas] = useState(false);
+  const [verCampanas, setVerCampanas] = useState(false);
   const [actual, setActual] = useState<Embudo>(vacio());
   const [guardando, setGuardando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -198,6 +224,7 @@ export default function EmbudosPanel() {
     historial.current.push(a);
     if (historial.current.length > 60) historial.current.shift();
     setPasosDeshacer(historial.current.length);
+    marcarSinGuardar(true); // hay cambios sin guardar
     return { ...a, [campo]: valor };
   });
 
@@ -209,6 +236,9 @@ export default function EmbudosPanel() {
     });
   }
 
+  // Al desmontar la sección Embudos, limpia el aviso de "cambios sin guardar".
+  useEffect(() => () => marcarSinGuardar(false), []);
+
   // Reordenar productos: mueve la variante `from` a la posición `to`.
   // Guarda en el historial para que también se pueda deshacer con Ctrl+Z.
   const moverVariante = (from: number, to: number) => setActual(a => {
@@ -217,6 +247,7 @@ export default function EmbudosPanel() {
     historial.current.push(a);
     if (historial.current.length > 60) historial.current.shift();
     setPasosDeshacer(historial.current.length);
+    marcarSinGuardar(true);
     const vs = [...a.variantes];
     const [m] = vs.splice(from, 1);
     vs.splice(to, 0, m);
@@ -399,6 +430,7 @@ export default function EmbudosPanel() {
         ? `⚠️ ${data.aviso}`
         : `✅ Guardado. Ábrelo en /p/${data.slug}`);
       await cargar();
+      marcarSinGuardar(false); // ya quedó guardado
       setVista('lista');
     } finally { setGuardando(false); }
   }
@@ -442,8 +474,51 @@ export default function EmbudosPanel() {
     } finally { setGuardando(false); }
   }
 
+  /** Crea un embudo nuevo a partir de una plantilla y abre el editor. */
+  function crearEmbudoDesdePlantilla(p: any) {
+    historial.current = []; setPasosDeshacer(0);
+    const base = vacio();
+    const nuevo = (p?.tipo === 'completa' && p?.datos)
+      ? { ...base, ...p.datos, slug: '', activo: true, layout: p.datos.layout ?? p.layout ?? null }
+      : { ...base, layout: p?.layout ?? null };
+    setActual(nuevo as Embudo);
+    setVerPlantillas(false);
+    setVista('editar');
+    marcarSinGuardar(false);
+    setAviso('✅ Embudo nuevo con la plantilla aplicada. Ponle dirección, fotos y precio, y guarda.');
+  }
+
+  // Colores del catálogo aplanados (para importar en el producto Pareja).
+  const coloresCatalogo = (() => {
+    // TODOS los colores de TODOS los catálogos, con su familia (F1, motos…) para
+    // distinguirlos. Solo se quitan duplicados EXACTOS (misma familia + mismo color).
+    const vistos = new Set<string>();
+    const out: { valor: string; imagen?: string; familia?: string }[] = [];
+    for (const c of catalogosFull) {
+      const familia = String((c as any).familia ?? '').trim();
+      for (const x of ((c as any).catalogo_colores ?? [])) {
+        const valor = String(x.color ?? '').trim();
+        if (!valor) continue;
+        const k = `${familia.toLowerCase()}::${valor.toLowerCase()}`;
+        if (vistos.has(k)) continue;
+        vistos.add(k);
+        out.push({ valor, imagen: x.url_imagen || undefined, familia });
+      }
+    }
+    return out;
+  })();
+
   const input = 'w-full px-3 py-2 rounded-lg border border-[#E8E8E8] text-sm focus:outline-none focus:border-[#00A89D]';
   const label = 'block text-xs font-semibold text-[#0D0D0D] mb-1';
+
+  // ── Plantillas de embudo (diseños reutilizables) ───────────────────────────
+  if (verPlantillas) return <PlantillasEmbudoPanel onClose={() => setVerPlantillas(false)} onUsar={crearEmbudoDesdePlantilla} />;
+
+  // ── Ventas por campaña (prendas + $ por campaña, con fechas) ────────────────
+  if (verCampanas) return <VentasPorCampana onClose={() => setVerCampanas(false)} />;
+
+  // ── Carritos abandonados (pantalla completa, no modal) ─────────────────────
+  if (carritosOpen) return <CarritosAbandonados onClose={() => setCarritosOpen(false)} />;
 
   // ── Lista ─────────────────────────────────────────────────────────────────
   if (vista === 'lista') {
@@ -457,10 +532,27 @@ export default function EmbudosPanel() {
                 Tus páginas de venta. El pedido entra directo al chat, sin intermediarios.
               </p>
             </div>
-            <button
-              onClick={() => { historial.current = []; setPasosDeshacer(0); setActual(vacio()); setVista('editar'); setAviso(null); }}
-              className="px-4 py-2.5 rounded-xl bg-[#00A89D] text-white text-sm font-semibold hover:bg-[#00847A]"
-            >+ Nuevo embudo</button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setVerCampanas(true)}
+                title="Prendas y dinero vendido por cada campaña"
+                className="px-4 py-2.5 rounded-xl border border-[#8B5CF6]/40 text-[#6D28D9] text-sm font-semibold hover:bg-[#8B5CF6]/10"
+              >📊 Campañas</button>
+              <button
+                onClick={() => setVerPlantillas(true)}
+                title="Diseños reutilizables para tus páginas"
+                className="px-4 py-2.5 rounded-xl border border-[#00A89D]/40 text-[#00847A] text-sm font-semibold hover:bg-[#00A89D]/10"
+              >🧩 Plantillas</button>
+              <button
+                onClick={() => setCarritosOpen(true)}
+                title="Clientes que empezaron a comprar y no terminaron"
+                className="px-4 py-2.5 rounded-xl border border-[#F59E0B]/50 text-[#B45309] text-sm font-semibold hover:bg-[#F59E0B]/10"
+              >🛒 Carritos abandonados</button>
+              <button
+                onClick={() => { historial.current = []; setPasosDeshacer(0); setActual(vacio()); setVista('editar'); setAviso(null); marcarSinGuardar(false); }}
+                className="px-4 py-2.5 rounded-xl bg-[#00A89D] text-white text-sm font-semibold hover:bg-[#00847A]"
+              >+ Nuevo embudo</button>
+            </div>
           </header>
 
           {aviso && <div className="mb-4 text-xs p-3 rounded-xl bg-white border border-[#E8E8E8]">{aviso}</div>}
@@ -475,7 +567,7 @@ export default function EmbudosPanel() {
                 <div key={e.slug} className="bg-white rounded-2xl border border-[#E8E8E8] p-4 shadow-sm flex items-center gap-3">
                   {e.imagenes?.[0] ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={e.imagenes[0]} alt="" className="w-14 h-14 rounded-lg object-cover shrink-0" />
+                    <img src={imgOptim(e.imagenes[0], 120)} alt="" className="w-14 h-14 rounded-lg object-contain bg-[#F5F5F5] shrink-0" />
                   ) : (
                     <div className="w-14 h-14 rounded-lg bg-[#F5F5F5] flex items-center justify-center text-xl shrink-0">🛍️</div>
                   )}
@@ -507,7 +599,12 @@ export default function EmbudosPanel() {
                       className="px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-xs hover:bg-[#F5F5F5]"
                     >Ver</a>
                     <button
-                      onClick={() => { historial.current = []; setPasosDeshacer(0); setActual({ ...vacio(), ...e }); setVista('editar'); setAviso(null); }}
+                      onClick={() => setStatsDe({ slug: e.slug, producto: e.producto })}
+                      title="Ver dónde llegan y dónde se cae la venta"
+                      className="px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-xs hover:bg-[#F5F5F5]"
+                    >📊 Estadísticas</button>
+                    <button
+                      onClick={() => { historial.current = []; setPasosDeshacer(0); setActual({ ...vacio(), ...e }); setVista('editar'); setAviso(null); marcarSinGuardar(false); }}
                       className="px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-xs hover:bg-[#F5F5F5]"
                     >Editar</button>
                     <button
@@ -526,6 +623,7 @@ export default function EmbudosPanel() {
             </div>
           )}
         </div>
+        {statsDe && <EmbudoStatsModal slug={statsDe.slug} producto={statsDe.producto} onClose={() => setStatsDe(null)} />}
       </div>
     );
   }
@@ -535,7 +633,7 @@ export default function EmbudosPanel() {
     <div className="flex-1 min-w-0 overflow-y-auto bg-[#FAF9F6]">
       <div className="max-w-6xl mx-auto px-4 md:px-8 py-6">
         <div className="flex items-center justify-between gap-3 mb-4">
-          <button onClick={() => setVista('lista')} className="text-xs text-[#00A89D] font-semibold hover:underline">
+          <button onClick={() => { if (confirmarSalida()) setVista('lista'); }} className="text-xs text-[#00A89D] font-semibold hover:underline">
             ← Volver a la lista
           </button>
           <div className="flex items-center gap-2">
@@ -658,6 +756,27 @@ export default function EmbudosPanel() {
               <input type="checkbox" checked={actual.activo} onChange={e => set('activo', e.target.checked)} />
               Página activa (si la apagas, deja de abrir)
             </label>
+
+            {/* Mostrar/ocultar el 2º botón COMPRAR (el de más abajo). */}
+            {(() => {
+              const bloques = bloquesARenderizar(actual.layout);
+              const idxBotones = bloques.map((b, i) => (b.tipo === 'boton' ? i : -1)).filter(i => i >= 0);
+              if (idxBotones.length < 2) return null; // este embudo solo tiene 1 botón
+              const mostrar2 = idxBotones.filter(i => bloques[i].visible !== false).length >= 2;
+              const toggle = (on: boolean) => {
+                const bs = bloquesARenderizar(actual.layout).map(b => ({ ...b }));
+                const idxs = bs.map((b, i) => (b.tipo === 'boton' ? i : -1)).filter(i => i >= 0);
+                if (on) idxs.forEach(i => { bs[i].visible = true; });
+                else bs[idxs[idxs.length - 1]].visible = false; // oculta el último botón
+                set('layout', { bloques: bs });
+              };
+              return (
+                <label className="flex items-center gap-2 text-xs">
+                  <input type="checkbox" checked={mostrar2} onChange={e => toggle(e.target.checked)} />
+                  Mostrar el 2º botón <b>COMPRAR</b> (el de más abajo)
+                </label>
+              );
+            })()}
           </section>
 
           {/* Fotos */}
@@ -823,14 +942,28 @@ export default function EmbudosPanel() {
           <section className="bg-white rounded-2xl border border-[#E8E8E8] p-4 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold">Productos del checkout</h2>
-              <button
-                onClick={() => set('variantes', [...actual.variantes, {
-                  id: `v${Date.now()}`, nombre: '', precio: actual.precio,
-                  precioAntes: actual.precio_antes ?? undefined,
-                  selectores: [{ etiqueta: 'TALLA', opciones: actual.tallas }],
-                }])}
-                className="text-xs text-[#00A89D] font-semibold hover:underline"
-              >+ Agregar producto</button>
+              <div className="flex items-center gap-3 flex-wrap justify-end">
+                <button
+                  onClick={() => set('variantes', [...actual.variantes, {
+                    id: `v${Date.now()}`, nombre: '', precio: actual.precio,
+                    precioAntes: actual.precio_antes ?? undefined,
+                    selectores: [{ etiqueta: 'TALLA', opciones: actual.tallas }],
+                  }])}
+                  className="text-xs text-[#00A89D] font-semibold hover:underline"
+                >+ Agregar producto</button>
+                <button
+                  onClick={() => set('variantes', [...actual.variantes, {
+                    id: `v${Date.now()}`, nombre: '', precio: actual.precio,
+                    precioAntes: actual.precio_antes ?? undefined,
+                    selectores: [
+                      { etiqueta: 'COLOR', opciones: [{ valor: '', imagen: '' }] },
+                      { etiqueta: 'TALLA', opciones: actual.tallas.map(valor => ({ valor })) },
+                    ],
+                  }])}
+                  title="Producto con desplegable de color y talla (como el ejemplo)"
+                  className="text-xs text-[#7C3AED] font-semibold hover:underline"
+                >⚡ + Producto variable (color + talla)</button>
+              </div>
             </div>
             <p className="text-[10px] text-[#6B6B6B] leading-snug">
               Cada uno es una opción que el cliente puede escoger. Si no agregas ninguno,
@@ -933,7 +1066,9 @@ export default function EmbudosPanel() {
               };
               const selectores = v.selectores ?? [{ etiqueta: 'TALLA', opciones: v.tallas ?? actual.tallas }];
 
-              const esPack = /pack/i.test(v.nombre || '') || selectores.some(s => /buzo|prenda|elige/i.test(s.grupo || ''));
+              const esPack = /pack|pareja/i.test(v.nombre || '') || selectores.some(s => /buzo|prenda|elige|dama|caballero/i.test(s.grupo || ''));
+              const esPareja = (v.selectores ?? []).some(s => /dama|caballero|mujer|hombre/i.test(s.grupo || ''));
+              const esPolos  = v.estilo === 'polos' || (v.selectores ?? []).some(s => /polo\s*\d/i.test(s.grupo || ''));
 
               const total = actual.variantes.length;
               return (
@@ -974,6 +1109,21 @@ export default function EmbudosPanel() {
                         title="Bajar"
                         className="w-6 h-6 rounded-md text-[13px] text-[#00847A] hover:bg-[#00A89D]/15 disabled:opacity-30 disabled:cursor-not-allowed"
                       >↓</button>
+                      <button
+                        onClick={() => {
+                          const copia: Variante = {
+                            ...v,
+                            id: `v${Date.now()}`,
+                            nombre: v.nombre ? `${v.nombre} (copia)` : '',
+                            selectores: (v.selectores ?? []).map(s => ({ ...s, opciones: [...s.opciones] })),
+                          };
+                          const vs = [...actual.variantes];
+                          vs.splice(i + 1, 0, copia);
+                          set('variantes', vs);
+                        }}
+                        title="Duplicar este producto"
+                        className="text-[11px] text-[#00847A] hover:underline ml-1"
+                      >⧉ Duplicar</button>
                       <button
                         onClick={() => set('variantes', actual.variantes.filter((_, j) => j !== i))}
                         className="text-[11px] text-[#DC2626] hover:underline ml-1"
@@ -1022,9 +1172,9 @@ export default function EmbudosPanel() {
                   {(() => {
                     // Un pack REAL agrupa por prenda ("ELIGE BUZO 1"). Un color como grupo
                     // (NEGRO, ROJO) NO es pack: es una unidad con varios colores.
-                    const esPackVar = /pack/i.test(v.nombre || '')
-                      || selectores.some(s => /buzo|prenda|elige/i.test(s.grupo || ''));
-                    if (esPackVar) return null; // los packs usan el editor de abajo
+                    const esPackVar = /pack|pareja/i.test(v.nombre || '')
+                      || selectores.some(s => /buzo|prenda|elige|dama|caballero|mujer|hombre/i.test(s.grupo || ''));
+                    if (esPackVar) return null; // los packs y parejas usan el editor de abajo
 
                     const colorSel = selectores.find(s => /color/i.test(s.etiqueta));
                     const tallaSel = selectores.find(s => /talla/i.test(s.etiqueta) || !s.etiqueta?.trim());
@@ -1142,8 +1292,8 @@ export default function EmbudosPanel() {
                     );
                   })()}
 
-                  {/* Elecciones del cliente (solo para PACKS con varias prendas) */}
-                  {(/pack/i.test(v.nombre || '') || selectores.some(s => /buzo|prenda|elige/i.test(s.grupo || ''))) &&
+                  {/* Elecciones del cliente (solo PACKS con varias prendas; los POLOS usan su propio editor) */}
+                  {!esPolos && (/pack/i.test(v.nombre || '') || selectores.some(s => /buzo|prenda|elige/i.test(s.grupo || ''))) &&
                   <div className="border-t border-[#EEE] pt-2.5">
                     <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
                       <span className="text-[11px] font-semibold text-[#0D0D0D]">
@@ -1304,14 +1454,20 @@ export default function EmbudosPanel() {
                       <button
                         key={cantidad}
                         onClick={() => {
-                          // Los demás productos del checkout son los colores disponibles
-                          const colores = actual.variantes
+                          // 1º: los colores propios de ESTE producto (los de "Colores (cada uno con su foto)").
+                          const colorSelActual = selectores.find(s => /color/i.test(s.etiqueta));
+                          const coloresPropios = (colorSelActual?.opciones ?? [])
+                            .map(o => (typeof o === 'string' ? { valor: o } : o))
+                            .filter(o => o && String(o.valor).trim());
+                          // 2º: si no tiene colores propios, usa los OTROS productos del checkout.
+                          const coloresDeOtros = actual.variantes
                             .filter((_, j) => j !== i)
                             .filter(o => o.imagen && !/pack/i.test(o.nombre))
                             .map(o => ({ valor: o.nombre, imagen: o.imagen }));
+                          const colores = coloresPropios.length > 0 ? coloresPropios : coloresDeOtros;
 
                           if (colores.length === 0) {
-                            alert('Primero crea los colores con su foto. Luego este botón los usa para armar el pack.');
+                            alert('Primero crea los colores con su foto (arriba, en "Colores"). Luego este botón los usa para armar el pack.');
                             return;
                           }
                           if (packConEscuderia && escuderias.length === 0) {
@@ -1333,6 +1489,32 @@ export default function EmbudosPanel() {
                         className="px-3 py-1.5 rounded-lg border border-[#00A89D]/40 text-[11px] text-[#00847A] hover:bg-[#00A89D]/10"
                       >⚡ Armar pack de {cantidad}</button>
                     ))}
+
+                    {/* Producto PAREJA: dos lados fijos (Dama + Caballero), cada uno con sus
+                        colores y tallas propias. */}
+                    <button
+                      onClick={() => {
+                        if ((v.selectores?.length ?? 0) > 0 && !confirm('Esto reemplaza las opciones actuales por la estructura de PAREJA (Dama + Caballero). ¿Seguir?')) return;
+                        cambiar({ nombre: v.nombre || 'PAREJA', selectores: selectoresPareja(), armarPack: undefined });
+                      }}
+                      className="px-3 py-1.5 rounded-lg border border-[#EC4899]/50 text-[11px] text-[#9D174D] bg-[#EC4899]/5 hover:bg-[#EC4899]/10 font-semibold"
+                    >👫 Pareja (Dama + Caballero)</button>
+
+                    <button
+                      onClick={() => {
+                        if ((v.selectores?.length ?? 0) > 0 && !confirm('Esto reemplaza las opciones actuales por VARIABLES POLOS: un pack x2 donde el cliente elige color y talla de cada polo. ¿Seguir?')) return;
+                        cambiar({ nombre: v.nombre || 'PACK X2 POLOS', selectores: selectoresPolos(2), armarPack: undefined, estilo: 'polos' });
+                      }}
+                      className="px-3 py-1.5 rounded-lg border border-[#0EA5E9]/50 text-[11px] text-[#075985] bg-[#0EA5E9]/5 hover:bg-[#0EA5E9]/10 font-semibold"
+                    >🎽 Variables Polos (pack x2)</button>
+
+                    <button
+                      onClick={() => {
+                        if ((v.selectores?.length ?? 0) > 0 && !confirm('Esto reemplaza las opciones actuales por VARIABLES POLOS x3: tres polos con color y talla. ¿Seguir?')) return;
+                        cambiar({ nombre: v.nombre || 'PACK X3 POLOS', selectores: selectoresPolos(3), armarPack: undefined, estilo: 'polos' });
+                      }}
+                      className="px-3 py-1.5 rounded-lg border border-[#0EA5E9]/50 text-[11px] text-[#075985] bg-[#0EA5E9]/5 hover:bg-[#0EA5E9]/10 font-semibold"
+                    >🎽 Variables Polos (pack x3)</button>
 
                     {/* "Arma tu pack/unidad": abre un SELECTOR con buscador para elegir SOLO
                         las escuderías que se quieran (no todas). x1 = una sola prenda. */}
@@ -1475,6 +1657,15 @@ export default function EmbudosPanel() {
                         </div>
                       )}
                     </div>
+                  )}
+
+                  {(esPareja || esPolos) && (
+                    <EditorPareja
+                      selectores={selectores}
+                      coloresCatalogo={coloresCatalogo}
+                      onChange={(s) => cambiar({ selectores: s })}
+                      titulo={esPolos ? '🎽 VARIABLES POLOS · cada polo con su color y talla' : undefined}
+                    />
                   )}
                   </div>
                 </div>
@@ -1703,10 +1894,13 @@ export default function EmbudosPanel() {
             </div>
           </section>
 
+          {/* Diseño de la página por bloques + plantillas */}
+          <SeccionDiseno actual={actual} set={set} setActual={setActual} setAviso={setAviso} />
+
           {aviso && <div className="text-xs p-3 rounded-xl bg-white border border-[#E8E8E8]">{aviso}</div>}
 
           <div className="flex gap-2 pb-8">
-            <button onClick={() => setVista('lista')} className="flex-1 py-2.5 rounded-xl border border-[#E8E8E8] text-sm text-[#6B6B6B] hover:bg-[#F5F5F5]">
+            <button onClick={() => { if (confirmarSalida()) setVista('lista'); }} className="flex-1 py-2.5 rounded-xl border border-[#E8E8E8] text-sm text-[#6B6B6B] hover:bg-[#F5F5F5]">
               Cancelar
             </button>
             <button onClick={guardar} disabled={guardando} className="flex-1 py-2.5 rounded-xl bg-[#00A89D] text-white text-sm font-semibold hover:bg-[#00847A] disabled:opacity-50">
@@ -1718,7 +1912,7 @@ export default function EmbudosPanel() {
 
           {/* Columna de vista previa (pegada al hacer scroll en escritorio) */}
           <div className={`lg:w-[340px] lg:shrink-0 lg:sticky lg:top-6 ${verPreview ? '' : 'hidden lg:block'}`}>
-            <VistaPreviaEmbudo d={actual} />
+            <VistaPreviaEmbudo d={actual} layout={actual.layout} />
           </div>
         </div>{/* fin lg:flex */}
       </div>

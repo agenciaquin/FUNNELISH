@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { esVideo } from '@/lib/funnels';
+import { esVideo, imgOptim } from '@/lib/funnels';
 
 // Solo UN video de la página se queda con el sonido, para que no suenen varios a la vez.
 let audioTomado = false;
@@ -91,5 +91,5 @@ export default function Medio({
     );
   }
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={url} alt={alt} className={className} />;
+  return <img src={imgOptim(url, 900)} alt={alt} className={className} loading="lazy" />;
 }

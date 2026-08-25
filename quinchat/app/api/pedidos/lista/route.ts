@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { nombresDeAnuncioMeta } from '@/lib/meta-ads';
 
 /**
  * Pedidos para el panel.
@@ -7,7 +8,11 @@ import { createServerSupabaseClient } from '@/lib/supabase';
  * ?dias=7
  */
 export async function GET(req: NextRequest) {
-  const origen = req.nextUrl.searchParams.get('origen') ?? 'web';
+  // Canal de venta: funnel (páginas web-%), whatsapp (bot wa-%), o todas.
+  // Se acepta el viejo ?origen= para no romper llamadas anteriores.
+  const origen = req.nextUrl.searchParams.get('origen');
+  let canal = req.nextUrl.searchParams.get('canal') ?? '';
+  if (!canal) canal = origen === 'todos' ? 'todas' : 'funnel';
   const dias   = Number(req.nextUrl.searchParams.get('dias') ?? 7);
   const desde  = new Date(Date.now() - dias * 86_400_000).toISOString();
 
@@ -19,8 +24,10 @@ export async function GET(req: NextRequest) {
     .order('created_at', { ascending: false })
     .limit(400);
 
-  // Los pedidos de nuestras páginas llevan referencia que empieza por "web-"
-  if (origen === 'web') consulta = consulta.like('referencia', 'web-%');
+  // Funnel = páginas propias (referencia "web-"); WhatsApp = bot (referencia "wa-").
+  if (canal === 'funnel')        consulta = consulta.like('referencia', 'web-%');
+  else if (canal === 'whatsapp') consulta = consulta.like('referencia', 'wa-%');
+  else                           consulta = consulta.or('referencia.like.web-%,referencia.like.wa-%');
 
   const { data, error } = await consulta;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -55,6 +62,22 @@ export async function GET(req: NextRequest) {
       }
     }
   } catch { /* si no hay fotos, la lista igual funciona */ }
+
+  // Nombre de la campaña (desde Meta) + plataforma (Facebook / TikTok) por pedido.
+  try {
+    const mapaNombres = await nombresDeAnuncioMeta();
+    for (const p of pedidos as any[]) {
+      const src  = String(p.utm_source ?? '').toLowerCase();
+      const camp = String(p.utm_campaign ?? '').trim();
+      let plataforma: 'facebook' | 'tiktok' | null = null;
+      if (/tiktok|tik.?tok|ttclid|\btt\b/.test(src)) plataforma = 'tiktok';
+      else if (/facebook|instagram|meta|\bfb\b|\big\b/.test(src)) plataforma = 'facebook';
+      else if (/^\d{10,}$/.test(camp)) plataforma = 'facebook'; // IDs de anuncio Meta
+      p.plataforma = plataforma;
+      p.campana_nombre = mapaNombres.get(camp) || null;
+    }
+  } catch { /* si Meta falla, quedan solo los IDs */ }
+
   const resumen = {
     total:       pedidos.length,
     confirmados: pedidos.filter(p => p.confirmado).length,

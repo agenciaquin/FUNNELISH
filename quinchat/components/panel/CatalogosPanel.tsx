@@ -330,6 +330,24 @@ export default function CatalogosPanel() {
   // Re-estampar marca de agua en todas las fotos que aún no la tienen
   const [marcando, setMarcando] = useState(false);
   const [marcaAviso, setMarcaAviso] = useState<string | null>(null);
+
+  // Diagnóstico de fotos rotas
+  const [revisando, setRevisando]   = useState(false);
+  const [reporteFotos, setReporteFotos] = useState<any | null>(null);
+
+  async function revisarFotos() {
+    setRevisando(true);
+    setReporteFotos(null);
+    try {
+      const res = await fetch('/api/catalogo/revisar-fotos');
+      const data = await res.json();
+      setReporteFotos(data);
+    } catch {
+      setReporteFotos({ error: 'No se pudo revisar. Reintenta.' });
+    } finally {
+      setRevisando(false);
+    }
+  }
   const reestamparTodas = async () => {
     if (marcando) return;
     setMarcando(true);
@@ -401,9 +419,33 @@ export default function CatalogosPanel() {
   };
 
   const handleDeleteCat = async (id: string) => {
-    if (!confirm('¿Eliminar este catálogo y todos sus colores?')) return;
+    if (!confirm('¿Mover este catálogo a la papelera?\n\nPodrás recuperarlo después. El bot deja de usarlo mientras esté en la papelera.')) return;
     await fetch(`/api/catalogos/${id}`, { method: 'DELETE' });
-    load();
+    await Promise.all([load(), cargarPapelera()]);
+  };
+
+  // ── Papelera de catálogos (borrado suave, recuperable) ──────────────────────
+  const [papelera, setPapelera]         = useState<Catalogo[]>([]);
+  const [papeleraOpen, setPapeleraOpen] = useState(false);
+  const cargarPapelera = async () => {
+    try {
+      const res = await fetch('/api/catalogos?papelera=1');
+      if (res.ok) setPapelera(await res.json());
+    } catch { /* ignorar */ }
+  };
+  useEffect(() => { cargarPapelera(); }, []);
+
+  const restaurarCat = async (id: string) => {
+    await fetch(`/api/catalogos/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion: 'restaurar' }),
+    });
+    await Promise.all([load(), cargarPapelera()]);
+  };
+  const borrarDefinitivoCat = async (id: string) => {
+    if (!confirm('¿Borrar este catálogo DEFINITIVAMENTE?\n\nEsto NO se puede deshacer: se elimina el catálogo y todos sus colores.')) return;
+    await fetch(`/api/catalogos/${id}?permanente=1`, { method: 'DELETE' });
+    await cargarPapelera();
   };
 
   // ── Handlers de color (modal editar) ─────────────────────────────────────────
@@ -525,6 +567,14 @@ export default function CatalogosPanel() {
             🏷️ {marcando ? 'Marcando…' : 'Marcar fotos'}
           </button>
           <button
+            onClick={revisarFotos}
+            disabled={revisando}
+            title="Revisa todas las fotos y muestra cuáles están rotas"
+            className="flex items-center gap-2 px-4 py-2.5 border border-[#DC2626]/40 text-[#DC2626] text-sm font-semibold rounded-xl hover:bg-[#DC2626]/10 transition-all disabled:opacity-50"
+          >
+            🔎 {revisando ? 'Revisando…' : 'Revisar fotos'}
+          </button>
+          <button
             onClick={() => setModalCat('new')}
             className="flex items-center gap-2 px-4 py-2.5 bg-[#00A89D] text-white text-sm font-semibold rounded-xl hover:bg-[#008F85] transition-all shadow-sm"
           >
@@ -535,6 +585,34 @@ export default function CatalogosPanel() {
       {marcaAviso && (
         <div className="px-6 py-2 bg-[#00A89D]/8 border-b border-[#00A89D]/20 text-xs text-[#00847A] font-medium">
           {marcaAviso}
+        </div>
+      )}
+      {reporteFotos && (
+        <div className="px-6 py-3 bg-[#FEF7F7] border-b border-[#DC2626]/20 text-xs text-[#7F1D1D]">
+          {reporteFotos.error ? (
+            <span>❌ {reporteFotos.error}</span>
+          ) : (
+            <div className="space-y-1">
+              <p className="font-semibold">
+                🔎 Revisadas {reporteFotos.total} fotos · ✅ {reporteFotos.ok} bien ·
+                ♻️ {reporteFotos.recuperables} recuperables (el bot manda la original) ·
+                🚫 {reporteFotos.rotas_totales} rotas de verdad
+              </p>
+              {reporteFotos.rotas_totales > 0 && (
+                <div>
+                  <p className="font-semibold mt-1">Hay que resubir la foto de estos colores:</p>
+                  <ul className="list-disc ml-5">
+                    {(reporteFotos.detalle_rotas ?? []).map((r: any, i: number) => (
+                      <li key={i}>{r.producto} — <strong>{r.color}</strong> (marcada: {r.estado_marcada}, original: {r.estado_original})</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {reporteFotos.rotas_totales === 0 && (
+                <p>Ninguna foto está rota del todo. Las recuperables ya las cubre el bot con la foto original. 🙌</p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -749,6 +827,47 @@ export default function CatalogosPanel() {
             );
           })
         )}
+
+        {/* ── PAPELERA (catálogos borrados, recuperables) ── */}
+        <div className="mt-4 bg-white rounded-2xl border border-[#E8E8E8] shadow-sm overflow-hidden">
+          <button
+            onClick={() => setPapeleraOpen(o => !o)}
+            className="w-full flex items-center gap-2 px-4 py-3 text-sm font-semibold text-[#0D0D0D] hover:bg-[#FAFAFA]"
+          >
+            🗑 Papelera
+            {papelera.length > 0 && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FEE2E2] text-[#DC2626]">{papelera.length}</span>
+            )}
+            <span className="text-[10px] text-[#9A9A9A] font-normal">· catálogos borrados que puedes recuperar</span>
+            <span className="ml-auto text-[10px] text-[#9A9A9A]">{papeleraOpen ? '▲' : '▼'}</span>
+          </button>
+          {papeleraOpen && (
+            papelera.length === 0 ? (
+              <p className="text-xs text-[#9A9A9A] text-center py-6">La papelera está vacía.</p>
+            ) : (
+              <div className="divide-y divide-[#F4F4F4] border-t border-[#F0F0F0]">
+                {papelera.map(cat => (
+                  <div key={cat.id} className="flex items-center gap-3 px-4 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold truncate text-[#6B6B6B]">{cat.familia}</p>
+                      <p className="text-[11px] text-[#9A9A9A] truncate">
+                        {(cat.catalogo_colores?.length ?? 0)} colores · patrón: {cat.patron}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => restaurarCat(cat.id)}
+                      className="text-[11px] font-semibold text-[#00847A] hover:underline shrink-0 px-2 py-1"
+                    >↩ Restaurar</button>
+                    <button
+                      onClick={() => borrarDefinitivoCat(cat.id)}
+                      className="text-[11px] font-semibold text-[#DC2626] hover:bg-[#FEE2E2] rounded-lg shrink-0 px-2 py-1"
+                    >🗑 Borrar del todo</button>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+        </div>
       </div>
 
       {/* ── Modales ── */}

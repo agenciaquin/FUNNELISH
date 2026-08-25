@@ -20,9 +20,11 @@ export interface Conversation {
   fijado?: boolean;   // se muestra siempre arriba de la lista
   linea?: string | null; // 'ventas' = bandeja Chat Ventas; null/'funnel' = Chat Funnel
   interaccion_bot?: boolean; // true si el cliente respondió después de que el bot escribió
+  entrega_fallida?: boolean; // true si el último mensaje enviado NO se pudo entregar
+  notas?: string | null;     // notas internas del asesor sobre este chat (no las ve el cliente)
 }
 
-export interface Etiqueta { id: string; nombre: string; color: string; }
+export interface Etiqueta { id: string; nombre: string; color: string; tipo?: 'estado' | 'adicional'; }
 
 /** Etiquetas del negocio: siempre disponibles (no dependen de la base de datos) */
 export const ETIQUETAS_FIJAS: Etiqueta[] = [
@@ -36,6 +38,8 @@ export const ETIQUETAS_FIJAS: Etiqueta[] = [
   { id: 'cancel',    nombre: 'PEDIDO CANCELADO',           color: '#EF4444' },
   { id: 'vendedor',  nombre: 'VENDEDOR',                   color: '#F59E0B' },
   { id: 'revlili',   nombre: 'POR REVISAR LILIBETH',       color: '#EC4899' },
+  { id: 'ofisin',    nombre: 'OFICINA SIN ABONO',          color: '#DC2626' },
+  { id: 'oficon',    nombre: 'OFICINA CON ABONO',          color: '#15803D' },
 ];
 
 /**
@@ -54,7 +58,7 @@ export const ESTADOS_CONV = [
  * ETIQUETAS ADICIONALES: se suman al estado sin reemplazarlo.
  * Un chat puede estar en "VENTA REALIZADA" y además marcado como "HUMANO".
  */
-export const TAGS_CONV = ['HUMANO', 'PENDIENTE DE ABONO'];
+export const TAGS_CONV = ['HUMANO', 'PENDIENTE DE ABONO', 'OFICINA SIN ABONO', 'OFICINA CON ABONO'];
 
 export function parseLabels(label: string | null | undefined): string[] {
   return (label ?? '').split('|').map(s => s.trim()).filter(Boolean);
@@ -64,9 +68,11 @@ export function joinLabels(arr: string[]): string {
   return [...new Set(arr.map(s => s.trim()).filter(Boolean))].join(' | ');
 }
 
-/** Cambia el estado conservando las etiquetas adicionales que tuviera. */
-export function conEstado(labelActual: string | null | undefined, estado: string | null): string | null {
-  const tags = parseLabels(labelActual).filter(l => !ESTADOS_CONV.includes(l.toUpperCase()));
+/** Cambia el estado conservando las etiquetas adicionales que tuviera.
+ *  `estados` permite incluir estados personalizados creados por el usuario. */
+export function conEstado(labelActual: string | null | undefined, estado: string | null, estados: string[] = ESTADOS_CONV): string | null {
+  const estUp = new Set(estados.map(e => e.toUpperCase()));
+  const tags = parseLabels(labelActual).filter(l => !estUp.has(l.toUpperCase()));
   const nuevo = joinLabels(estado ? [estado, ...tags] : tags);
   return nuevo || null;
 }

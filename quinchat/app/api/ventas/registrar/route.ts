@@ -98,6 +98,10 @@ export async function POST(req: NextRequest) {
     const DESTINOS = esWhatsApp
       ? ['573143534918', '573187051499']
       : ['573167648391', '573187051499'];
+    // Título de la ficha según el origen real del chat (no siempre WhatsApp).
+    const tituloFicha = esWhatsApp
+      ? '💬 *VENTA CONFIRMADA — CHAT WHATSAPP*'
+      : '📊 *VENTA CONFIRMADA — CHAT FUNNEL*';
 
     // Pedido más reciente no cancelado de este cliente (viene del funnel o de una venta previa)
     const { data: pedido } = await supabase
@@ -118,7 +122,7 @@ export async function POST(req: NextRequest) {
       const direccion = String(d.direccion ?? '').trim();
 
       const ficha =
-        `💬 *VENTA CONFIRMADA — CHAT WHATSAPP*\n` +
+        `${tituloFicha}\n` +
         `_Marcada manualmente desde el panel_\n` +
         `Nombre: ${nombre || '—'}\n` +
         `Teléfono: ${String(d.telefono ?? '').replace(/\D/g, '').slice(-10) || tel10}\n` +
@@ -196,7 +200,7 @@ export async function POST(req: NextRequest) {
       : `Valor: ${pedido.valor ?? '—'}`;
 
     const registro =
-      `💬 *VENTA CONFIRMADA — CHAT WHATSAPP*\n` +
+      `${tituloFicha}\n` +
       `_Marcada manualmente desde el panel_\n` +
       `Nombre: ${pedido.nombre ?? '—'}\n` +
       `Teléfono: ${pedido.telefono ?? tel10}\n` +

@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { obtenerFunnel } from '@/lib/funnels';
 import FormularioPedido from '@/components/publico/FormularioPedido';
+import { registrarPasoServidor } from '@/lib/funnel-track';
 import Pixeles from '@/components/publico/Pixeles';
 import PersonasComprando from '@/components/publico/PersonasComprando';
 import Medio from '@/components/publico/Medio';
@@ -24,6 +25,9 @@ export default async function PaginaPedido({
   const query = await searchParams;
   const f = await obtenerFunnel(slug);
   if (!f) notFound();
+
+  // Paso 'pedido' (abrió el formulario) — registrado desde el servidor.
+  await registrarPasoServidor(slug, 'pedido');
 
   const utms: Record<string, string> = {};
   for (const k of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'ttclid', 'fbclid']) {

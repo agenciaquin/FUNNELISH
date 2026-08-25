@@ -76,7 +76,7 @@ export default function ArmarPackSelector({
             <span key={wi}>
               <span
                 className="inline-block font-extrabold rounded px-1"
-                style={activo ? { background: '#fff', color: acento.texto } : { background: acento.boton, color: '#fff' }}
+                style={activo ? { background: '#fff', color: acento.texto } : { background: '#F97316', color: '#fff' }}
               >{w}</span>{' '}
             </span>
           ))}
@@ -122,15 +122,15 @@ export default function ArmarPackSelector({
   );
 
   return (
-    <div className="px-3 space-y-4">
+    <div className="px-3 space-y-2.5">
       <style>{`
         @keyframes quinLatido { 0%,100%{transform:scale(1)} 50%{transform:scale(1.035)} }
         .quin-latido { animation: quinLatido 1.1s ease-in-out infinite; }
         @keyframes quinPop { 0%{transform:scale(1)} 45%{transform:scale(2.6)} 100%{transform:scale(1)} }
         .quin-pop { animation: quinPop 0.6s ease; }
       `}</style>
-      <p className="text-center text-[12px] text-[#6B6B6B] pt-1">
-        🧩 Arma tu {unidades > 1 ? `pack de ${unidades}` : prendaLabel}: completa <b>{catLabel}, color y talla</b>{unidades > 1 ? ` de cada ${prendaLabel}` : ''}. Te voy guiando paso a paso 👇
+      <p className="text-center text-[11.5px] text-[#6B6B6B]">
+        🧩 Arma tu {unidades > 1 ? `pack de ${unidades}` : prendaLabel}: completa <b>{catLabel}, color y talla</b>{unidades > 1 ? ` de cada ${prendaLabel}` : ''}.
       </p>
       {buzos.map((b, i) => {
         const listo = b.escuderia && b.color && b.talla;
@@ -150,15 +150,15 @@ export default function ArmarPackSelector({
             style={{ borderColor: listo ? acento.boton : '#3DC12A' }}
           >
             {/* Banner: Paso X de N · ELIGE BUZO X */}
-            <div className="bg-[#0D0D0D] text-white rounded-t-lg px-3 py-2 flex items-center justify-center gap-2">
+            <div className="bg-[#0D0D0D] text-white rounded-t-lg px-3 py-1.5 flex items-center justify-center gap-2">
               {unidades > 1 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20">Paso {i + 1} de {unidades}</span>}
-              <span className="font-extrabold text-sm tracking-wide">{unidades > 1 ? `ELIGE ${PRENDA} ${i + 1}` : `ELIGE TU ${PRENDA}`}</span>
+              <span className="font-extrabold text-[13px] tracking-wide">{unidades > 1 ? `ELIGE ${PRENDA} ${i + 1}` : `ELIGE TU ${PRENDA}`}</span>
             </div>
 
-            <div className="p-3 space-y-3">
+            <div className="p-2 space-y-2">
               {/* Escudería: fila completa arriba (respira mejor en móvil) */}
-              <div className={`rounded-lg p-2 -m-2 ${paso === 1 ? 'ring-2 ring-offset-1' : ''}`} style={paso === 1 ? { ['--tw-ring-color' as any]: acento.boton } : {}}>
-                <p className="text-center text-[13px] font-extrabold mb-2" style={{ color: acento.texto }}>{marca(1)} Elige la {catLabel}</p>
+              <div className={`rounded-lg p-1.5 -m-1.5 ${paso === 1 ? 'ring-2 ring-offset-1' : ''}`} style={paso === 1 ? { ['--tw-ring-color' as any]: acento.boton } : {}}>
+                <p className="text-center text-[12px] font-extrabold mb-1.5" style={{ color: acento.texto }}>{marca(1)} Elige la {catLabel}</p>
                 <div className="grid grid-cols-2 gap-1.5">
                   {config.categorias.map(c => (
                     <Chip key={c.nombre} activo={b.escuderia === c.nombre} onClick={() => set(i, { escuderia: c.nombre })}>
@@ -169,10 +169,10 @@ export default function ArmarPackSelector({
               </div>
 
               {/* Color y talla: DESPLEGABLES (2 columnas) */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 {/* Color: desplegable con los colores compartidos + extras de la escudería */}
                 <div className={`rounded-lg p-1 ${paso === 2 ? 'ring-2 ring-offset-1 quin-latido' : ''}`} style={paso === 2 ? { ['--tw-ring-color' as any]: acento.boton } : {}}>
-                  <p className="text-center text-[12px] font-extrabold mb-2" style={{ color: acento.texto }}>{marca(2)} Elige el color</p>
+                  <p className="text-center text-[12px] font-extrabold mb-1" style={{ color: acento.texto }}>{marca(2)} Elige el color</p>
                   <div className="flex items-center gap-1.5">
                     {(() => { const f = fotoDe(b.escuderia, b.color); return f ? (
                       <button
@@ -209,7 +209,7 @@ export default function ArmarPackSelector({
 
                 {/* Talla: desplegable */}
                 <div className={`rounded-lg p-1 ${paso === 3 ? 'ring-2 ring-offset-1 quin-latido' : ''}`} style={paso === 3 ? { ['--tw-ring-color' as any]: acento.boton } : {}}>
-                  <p className="text-center text-[12px] font-extrabold mb-2" style={{ color: acento.texto }}>{marca(3)} Elige la talla</p>
+                  <p className="text-center text-[12px] font-extrabold mb-1" style={{ color: acento.texto }}>{marca(3)} Elige la talla</p>
                   <select
                     value={b.talla}
                     onChange={e => set(i, { talla: e.target.value })}
@@ -226,7 +226,7 @@ export default function ArmarPackSelector({
             </div>
 
             {/* Guía didáctica: qué paso sigue */}
-            <div className="px-3 pb-2">
+            <div className="px-2 pb-1.5">
               {paso === 1 && <p className="text-center text-[12px] font-bold" style={{ color: acento.texto }}>👇 Empieza eligiendo la <b>{catLabel}</b></p>}
               {paso === 2 && <p className="text-center text-[12px] font-bold" style={{ color: acento.texto }}>👉 ¡Bien! Ahora elige el <b>color</b></p>}
               {paso === 3 && <p className="text-center text-[12px] font-bold" style={{ color: acento.texto }}>👉 Ya casi: elige la <b>talla</b></p>}

@@ -27,6 +27,9 @@ const FILTER_TABS: { key: string; label: string; color: string; test: (c: Conver
   { key: 'abono',     label: 'Pendiente de abono',       color: '#EAB308', test: c => !!c.label && c.label.includes('PENDIENTE DE ABONO') },
   { key: 'procesado', label: 'Anulado en Effi',         color: '#DC2626', test: c => !!c.label && c.label.includes('ANULADO EN EFFI') },
   { key: 'vendedor',  label: '🏆 Vendedores',            color: '#F59E0B', test: c => !!c.label && c.label.toUpperCase().includes('VENDEDOR') },
+  { key: 'ofisin',    label: '🏢 Oficina sin abono',     color: '#DC2626', test: c => !!c.label && c.label.toUpperCase().includes('OFICINA SIN ABONO') },
+  { key: 'oficon',    label: '🏢 Oficina con abono',     color: '#15803D', test: c => !!c.label && c.label.toUpperCase().includes('OFICINA CON ABONO') },
+  { key: 'noentreg',  label: '📵 No entregado',          color: '#B91C1C', test: c => !!(c as any).entrega_fallida },
 ];
 
 /** ¿Es un chat del equipo de vendedores (no un cliente)? */
@@ -111,12 +114,20 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
     ...etiquetasDB.filter(e => !ETIQUETAS_FIJAS.some(f => f.nombre === e.nombre)),
   ];
 
-  /** Las que se pueden sumar a un chat sin reemplazar su estado. */
+  /** Estados = los fijos + los que el usuario creó marcados como "estado". */
+  const estadosDisponibles = [
+    ...ESTADOS_CONV,
+    ...etiquetasDB.filter(e => e.tipo === 'estado').map(e => e.nombre)
+      .filter(n => !ESTADOS_CONV.includes(n.toUpperCase())),
+  ];
+
+  /** Las que se pueden sumar a un chat sin reemplazar su estado (adicionales). */
   const tagsDisponibles = [
     ...TAGS_CONV,
     ...etiquetasDB
+      .filter(e => e.tipo !== 'estado')
       .map(e => e.nombre)
-      .filter(n => !ESTADOS_CONV.includes(n.toUpperCase()) && !TAGS_CONV.includes(n.toUpperCase())),
+      .filter(n => !estadosDisponibles.some(s => s.toUpperCase() === n.toUpperCase()) && !TAGS_CONV.includes(n.toUpperCase())),
   ];
 
   const dropRef = useRef<HTMLDivElement>(null);
@@ -504,12 +515,12 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
                         onClick={() => setSubmenu(null)}
                         className="w-full px-3.5 py-2 text-[10px] text-[#6B6B6B] hover:bg-[#F5F5F5] text-left border-b border-[#F0F0F0]"
                       >‹ Volver</button>
-                      {ESTADOS_CONV.map(est => {
-                        const activo = labels.some(l => l.toUpperCase() === est);
+                      {estadosDisponibles.map(est => {
+                        const activo = labels.some(l => l.toUpperCase() === est.toUpperCase());
                         return (
                           <button
                             key={est}
-                            onClick={() => actualizarConv(conv.id, { label: conEstado(conv.label, activo ? null : est) })}
+                            onClick={() => actualizarConv(conv.id, { label: conEstado(conv.label, activo ? null : est, estadosDisponibles) })}
                             className={`w-full flex items-center gap-2 px-3.5 py-2.5 text-[11px] hover:bg-[#F5F5F5] text-left ${activo ? 'bg-[#F5F5F5] font-semibold' : ''}`}
                             style={{ color: colorDe(est) }}
                           >
@@ -602,8 +613,18 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
                     </div>
 
                     {/* Row 3: chips de etiqueta (puede haber varias) */}
-                    {labels.length > 0 && (
+                    {(labels.length > 0 || (conv as any).entrega_fallida) && (
                       <div className="mt-1 flex flex-wrap gap-1">
+                        {(conv as any).entrega_fallida && (
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold leading-none"
+                            style={{ color: '#B91C1C', background: '#B91C1C18' }}
+                            title="El último mensaje enviado no se pudo entregar"
+                          >
+                            <span className="w-1 h-1 rounded-full shrink-0" style={{ background: '#B91C1C' }} />
+                            📵 No entregado
+                          </span>
+                        )}
                         {labels.map(nombre => {
                           const e = etiquetas.find(x => x.nombre === nombre);
                           const color = e?.color ?? '#6B6B6B';

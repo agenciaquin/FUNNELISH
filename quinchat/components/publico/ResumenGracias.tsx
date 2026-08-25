@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 
 interface Pedido {
   producto: string; seleccion: string; valor: number;
-  foto: string | null; nombre: string; referencia: string;
+  foto: string | null; imagenes?: string[]; nombre: string; referencia: string;
 }
 
 const pesos = (n: number) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
@@ -36,10 +36,21 @@ export default function ResumenGracias({ whatsapp }: { whatsapp: string }) {
           </p>
 
           <div className="flex items-center gap-3 px-4 py-3">
-            {p.foto && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={p.foto} alt="" className="w-16 h-16 rounded-lg object-cover border border-[#E8E8E8] shrink-0" />
-            )}
+            {(() => {
+              // 1 prenda → 1 foto; pack x2 → 2 fotos; pack x3 → 3 fotos.
+              const fotos = (p.imagenes && p.imagenes.length > 0)
+                ? p.imagenes
+                : (p.foto ? [p.foto] : []);
+              if (fotos.length === 0) return null;
+              return (
+                <div className="flex flex-col gap-1 shrink-0">
+                  {fotos.slice(0, 3).map((f, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img key={i} src={f} alt="" className={`${fotos.length > 1 ? 'w-14 h-14' : 'w-16 h-16'} rounded-lg object-cover border border-[#E8E8E8]`} />
+                  ))}
+                </div>
+              );
+            })()}
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold text-[#0D0D0D] leading-tight">{p.producto}</p>
               {p.seleccion && (

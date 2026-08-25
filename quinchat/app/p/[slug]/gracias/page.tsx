@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { obtenerFunnel } from '@/lib/funnels';
 import ResumenGracias from '@/components/publico/ResumenGracias';
+import { registrarPasoServidor } from '@/lib/funnel-track';
 import { numeroDelBot } from '@/lib/whatsapp';
 
 export const dynamic = 'force-dynamic';
@@ -11,6 +12,9 @@ export default async function PaginaGracias({ params }: { params: Promise<{ slug
   const { slug } = await params;
   const f = await obtenerFunnel(slug);
   if (!f) notFound();
+
+  // Paso 'compra' (llegó a la página de gracias) — registrado desde el servidor.
+  await registrarPasoServidor(slug, 'compra');
 
   // Siempre el número del bot: nunca uno escrito a mano en el embudo
   const whatsappBot = await numeroDelBot();

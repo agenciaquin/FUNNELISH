@@ -42,8 +42,9 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
     throw new Error('Se requiere al menos un mensaje.');
   }
 
-  // Límite de seguridad: máximo 50 turnos de historial para evitar costos excesivos
-  const MAX_HISTORY = 50;
+  // Límite de historial: 20 turnos. Suficiente para no perder el hilo del pedido
+  // y bastante más barato que mandar 50 en cada mensaje (esos tokens NO se cachean).
+  const MAX_HISTORY = 20;
   const messages = req.messages.slice(-MAX_HISTORY);
 
   // Las fotos del cliente se adjuntan al ÚLTIMO mensaje, para que el modelo
@@ -75,20 +76,28 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
   // siguientes de la misma conversación (dentro de ~5 min) no se reprocesa y
   // cuesta ~10% de lo normal. Ese es el gran ahorro.
   const systemText = req.systemPrompt ?? getSystemPrompt(req.tenantId);
-  // Bloque 1 (estable): se cachea y se reutiliza en todas las conversaciones.
-  // Bloque 2 (dinámico, opcional): datos del cliente que cambian; NO se cachea.
-  const systemBlocks: any[] = [
-    { type: 'text', text: systemText, cache_control: { type: 'ephemeral' } },
-  ];
-  if (req.systemDynamic && req.systemDynamic.trim()) {
-    systemBlocks.push({ type: 'text', text: req.systemDynamic });
-  }
-  const response = await client.messages.create({
+  // Bloque 1 (estable): se cachea. Con TTL de 1 HORA (en vez de 5 min) la misma
+  // caché se REUTILIZA muchísimo más entre clientes y mensajes, así casi no se
+  // REESCRIBE (que es lo caro). Bloque 2 (dinámico): datos del cliente; NO se cachea.
+  const bloqueDinamico: any[] = (req.systemDynamic && req.systemDynamic.trim())
+    ? [{ type: 'text', text: req.systemDynamic }]
+    : [];
+
+  const crear = (ttlLargo: boolean) => client.messages.create({
     model: MODEL,
     max_tokens: req.maxTokens ?? 1024,
-    system: systemBlocks,
+    system: [
+      { type: 'text', text: systemText, cache_control: ttlLargo ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' } },
+      ...bloqueDinamico,
+    ] as any,
     messages: armados as any,
-  });
+  }, ttlLargo ? { headers: { 'anthropic-beta': 'extended-cache-ttl-2025-04-11' } } : undefined);
+
+  // Intenta con caché de 1h; si el entorno no la soporta, cae a la de 5 min
+  // (comportamiento anterior) para NO romper nunca la respuesta del bot.
+  let response;
+  try { response = await crear(true); }
+  catch { response = await crear(false); }
 
   // Extraer texto de la respuesta
   const textBlock = response.content.find((b) => b.type === 'text');

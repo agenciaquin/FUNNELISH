@@ -3,9 +3,10 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import { signOut } from 'next-auth/react';
+import { confirmarSalida } from '@/lib/panel/cambios';
 import BotonAvisos from './BotonAvisos';
 
-export type PanelSection = 'chat' | 'chat_ventas' | 'estadisticas' | 'embudos' | 'pedidos' | 'ventas' | 'vendedores' | 'seguimiento' | 'objeciones' | 'memoria' | 'faq' | 'entrenamiento' | 'plantillas' | 'disparadores' | 'contactos' | 'etiquetas' | 'catalogos' | 'integraciones' | 'ajustes' | 'manual';
+export type PanelSection = 'chat' | 'chat_ventas' | 'metas' | 'estadisticas' | 'embudos' | 'pedidos' | 'ventas' | 'vendedores' | 'seguimiento' | 'objeciones' | 'memoria' | 'faq' | 'entrenamiento' | 'plantillas' | 'disparadores' | 'contactos' | 'etiquetas' | 'catalogos' | 'integraciones' | 'ajustes' | 'manual';
 
 // Íconos SVG personalizados (embudo de ventas y WhatsApp)
 const IconoEmbudo = ({ color }: { color: string }) => (
@@ -24,6 +25,7 @@ type NavItem = { key: PanelSection; label: string; icon?: string; svg?: 'embudo'
 const NAV_MAIN: NavItem[] = [
   { key: 'chat',         label: 'Chat Funnel',   svg: 'embudo',   color: '#3B82F6' },
   { key: 'chat_ventas',  label: 'Chat WhatsApp', svg: 'whatsapp', color: '#25D366' },
+  { key: 'metas',        label: 'Tus metas',    icon: '🏅' },
   { key: 'estadisticas', label: 'Estadísticas', icon: '📊' },
   { key: 'embudos',      label: 'Embudos',      icon: '🚀' },
   { key: 'pedidos',      label: 'Pedidos',      icon: '🛒' },
@@ -162,7 +164,7 @@ export default function Sidebar({ userName, activeSection, onSectionChange }: Pr
         <BotonAvisos />
         {/* Refrescar toda la app: si algo se traba, la deja como recién abierta */}
         <button
-          onClick={() => window.location.reload()}
+          onClick={() => { if (confirmarSalida()) window.location.reload(); }}
           title="Recargar la aplicación completa"
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-white/85 hover:text-white hover:bg-white/15 hover:translate-x-1 transition-all duration-200 ease-out"
         >
@@ -170,7 +172,7 @@ export default function Sidebar({ userName, activeSection, onSectionChange }: Pr
           <span>Refrescar app</span>
         </button>
         <button
-          onClick={() => signOut({ callbackUrl: '/login' })}
+          onClick={() => { if (confirmarSalida()) signOut({ callbackUrl: '/login' }); }}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-white/85 hover:text-white hover:bg-white/15 hover:translate-x-1 transition-all duration-200 ease-out"
         >
           <span className="text-base shrink-0">↩</span>

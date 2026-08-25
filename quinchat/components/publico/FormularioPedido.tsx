@@ -5,15 +5,20 @@ import { useRouter } from 'next/navigation';
 import { normalizarOpciones, acentoDe } from '@/lib/funnels';
 import type { Funnel, VarianteFunnel } from '@/lib/funnels';
 import ArmarPackSelector, { type PackSalida } from './ArmarPackSelector';
+import { registrarPaso } from './FunnelTracker';
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
 
 interface Props {
   funnel: Funnel;
   utms: Record<string, string>;
+  // Cuando el checkout va DENTRO de la página de venta (una sola pantalla): la
+  // barra flotante "COMPLETAR MI PEDIDO" no debe salir hasta que el cliente
+  // llegue al formulario.
+  embebido?: boolean;
 }
 
-export default function FormularioPedido({ funnel, utms }: Props) {
+export default function FormularioPedido({ funnel, utms, embebido }: Props) {
   const router = useRouter();
   const acento = acentoDe(funnel.color);
 
@@ -21,7 +26,9 @@ export default function FormularioPedido({ funnel, utms }: Props) {
     ? funnel.variantes
     : [{ id: 'unica', nombre: funnel.producto, precio: funnel.precio, precioAntes: funnel.precio_antes ?? undefined }];
 
-  const [varianteId, setVarianteId] = useState(variantes[0].id);
+  // Si hay VARIAS opciones, no se preselecciona ninguna: el cliente elige. Si hay
+  // una sola, esa queda activa (no hay nada que elegir).
+  const [varianteId, setVarianteId] = useState(variantes.length > 1 ? '' : variantes[0].id);
   // Una elección por cada selector del producto (talla, color 1, color 2…)
   const [elecciones, setElecciones] = useState<string[]>([]);
   // Estado del constructor "arma tu pack" (cuando la variante lo usa)
@@ -34,6 +41,9 @@ export default function FormularioPedido({ funnel, utms }: Props) {
   // El botón se vuelve flotante solo cuando el de verdad se sale de la pantalla
   const botonRef = useRef<HTMLButtonElement>(null);
   const [botonFlotante, setBotonFlotante] = useState(false);
+  // ¿El cliente ya llegó al formulario? (solo importa si el checkout va embebido)
+  const contenedorRef = useRef<HTMLDivElement>(null);
+  const [enCheckout, setEnCheckout] = useState(!embebido);
 
   useEffect(() => {
     const el = botonRef.current;
@@ -45,6 +55,23 @@ export default function FormularioPedido({ funnel, utms }: Props) {
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
+
+  // En una sola pantalla: la barra flotante aparece cuando el formulario sube a
+  // la vista (no desde el inicio). Una vez activada, se queda.
+  useEffect(() => {
+    if (!embebido) { setEnCheckout(true); return; }
+    const revisar = () => {
+      const el = contenedorRef.current;
+      if (!el) return;
+      if (el.getBoundingClientRect().top <= window.innerHeight * 0.55) {
+        setEnCheckout(true);
+        window.removeEventListener('scroll', revisar);
+      }
+    };
+    window.addEventListener('scroll', revisar, { passive: true });
+    revisar();
+    return () => window.removeEventListener('scroll', revisar);
+  }, [embebido]);
 
   /** Lleva al dato que falta y lo hace notar. */
   function señalar(campo: string) {
@@ -64,6 +91,8 @@ export default function FormularioPedido({ funnel, utms }: Props) {
     () => variantes.find(v => v.id === varianteId) ?? variantes[0],
     [varianteId, variantes]
   );
+  // ¿Hay varias opciones y el cliente aún no elige ninguna? → animar para que elija.
+  const sinElegir = variantes.length > 1 && !varianteId;
 
   /** Las elecciones que pide este producto. Si no define ninguna, pide la talla. */
   const selectores = useMemo(() => {
@@ -90,8 +119,29 @@ export default function FormularioPedido({ funnel, utms }: Props) {
         { etiqueta: 'TALLA', opciones: tallas },
       ];
     }
+
+    // Quita los selectores SIN opciones reales (ej. un "COLOR" vacío en un producto
+    // de un solo color): así no aparece un desplegable vacío ni bloquea la compra.
+    // Si quedara sin ninguno, deja al menos la talla.
+    sels = sels.filter(s => normalizarOpciones(s.opciones).length > 0);
+    if (sels.length === 0) sels = [{ etiqueta: 'TALLA', opciones: (funnel.tallas.length > 0 ? funnel.tallas : []) }];
     return sels;
   }, [variante, funnel.tallas]);
+
+  // Auto-elige los selectores que tienen UNA sola opción (ej. un solo color): así
+  // el cliente no tiene que elegir algo obvio y no lo bloquea al comprar. Cuando
+  // no hay variación de color, el color queda implícito en el nombre del producto.
+  useEffect(() => {
+    setElecciones(prev => {
+      const next = [...prev];
+      let cambio = false;
+      selectores.forEach((s, i) => {
+        const ops = normalizarOpciones(s.opciones);
+        if (!next[i] && ops.length === 1) { next[i] = ops[0].valor; cambio = true; }
+      });
+      return cambio ? next : prev;
+    });
+  }, [selectores]);
 
   // Lo que finalmente se guarda: "VERDE / NEGRO / M HOMBRE"
   const seleccion = elecciones.filter(Boolean).join(' / ');
@@ -110,6 +160,14 @@ export default function FormularioPedido({ funnel, utms }: Props) {
     });
     return salida;
   }, [selectores]);
+
+  // Producto PAREJA: los grupos son lados por género (Dama / Caballero). Se muestra
+  // con desplegables (color con foto + talla) en vez de los chips por pasos.
+  const esPareja = grupos.some(g => /dama|caballero|mujer|hombre/i.test(g.titulo || ''));
+  // "Variables Polos": pack x2 con color+talla por polo → usa el MISMO estilo
+  // desplegable que la pareja (pero neutro). Solo se activa con grupos "POLO 1/2".
+  const esPolos = variante.estilo === 'polos' || grupos.some(g => /polo\s*\d/i.test(g.titulo || ''));
+  const usaDropdown = esPareja || esPolos;
 
   /** Lo que aún falta, en palabras, para mostrarlo en la barra flotante. */
   const faltantes = (() => {
@@ -167,8 +225,40 @@ export default function FormularioPedido({ funnel, utms }: Props) {
     if (errores[campo]) setErrores(e => ({ ...e, [campo]: '' }));
   };
 
+  // ── Rastreo del embudo (estadísticas + carrito abandonado) ──────────────────
+  const carritoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Eligió talla/color (o armó su pack) → paso 'talla'
+  useEffect(() => {
+    if (seleccion || pack?.seleccion) registrarPaso(funnel.slug, 'talla');
+  }, [seleccion, pack?.seleccion, funnel.slug]);
+
+  // Escribió nombre + WhatsApp válido → paso 'datos' y se guarda el CARRITO
+  // ABANDONADO (si no completa la compra, queda para recuperarlo).
+  useEffect(() => {
+    const tel = datos.whatsapp.replace(/\D/g, '').replace(/^57/, '');
+    if (!datos.nombre.trim() || !/^3\d{9}$/.test(tel)) return;
+    registrarPaso(funnel.slug, 'datos');
+    if (carritoTimer.current) clearTimeout(carritoTimer.current);
+    carritoTimer.current = setTimeout(() => {
+      const usaPack = !!variante.armarPack && !!pack;
+      fetch('/api/funnels/carrito', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true,
+        body: JSON.stringify({
+          slug: funnel.slug, telefono: tel,
+          nombre: `${datos.nombre} ${datos.apellidos}`.trim(),
+          producto: usaPack ? pack!.producto : variante.nombre,
+          talla: usaPack ? pack!.seleccion : seleccion,
+          valor: variante.precio,
+        }),
+      }).catch(() => {});
+    }, 1500);
+  }, [datos.nombre, datos.apellidos, datos.whatsapp, seleccion, pack, variante, funnel.slug]);
+
   function validar(): boolean {
     const e: Record<string, string> = {};
+    // Si hay varias opciones, primero hay que elegir una.
+    if (variantes.length > 1 && !varianteId) e.variante = 'Toca la pareja que quieres';
     if (!datos.nombre.trim())     e.nombre = 'Escribe tu nombre';
     if (!datos.apellidos.trim())  e.apellidos = 'Escribe tus apellidos';
 
@@ -187,14 +277,17 @@ export default function FormularioPedido({ funnel, utms }: Props) {
       if (!pack?.completo) e.talla = 'Completa la escudería, color y talla de cada buzo';
     } else {
       selectores.forEach((s, i) => {
-        if (!elecciones[i]) e.talla = `Elige ${s.etiqueta.toLowerCase()}`;
+        // Si el selector NO tiene opciones reales (ej. producto de un solo color),
+        // no se exige: el color queda implícito en el nombre del producto.
+        const ops = normalizarOpciones(s.opciones);
+        if (ops.length > 0 && !elecciones[i]) e.talla = `Elige ${s.etiqueta.toLowerCase()}`;
       });
     }
 
     setErrores(e);
     if (Object.keys(e).length > 0) {
       // La talla y el color se piden primero: están arriba de todo
-      const orden = ['talla', ...CAMPOS.map(c => c.id as string)];
+      const orden = ['variante', 'talla', ...CAMPOS.map(c => c.id as string)];
       const primero = orden.find(k => e[k]) ?? Object.keys(e)[0];
       señalar(primero);
       // Desde aquí el botón lo sigue: llena el dato y cierra sin bajar de nuevo
@@ -204,6 +297,7 @@ export default function FormularioPedido({ funnel, utms }: Props) {
   }
 
   async function enviar() {
+    registrarPaso(funnel.slug, 'boton'); // tocó el botón (aunque falte algún dato)
     if (enviando || !validar()) return;
     setEnviando(true);
 
@@ -214,14 +308,20 @@ export default function FormularioPedido({ funnel, utms }: Props) {
     const nombreProducto = usaPack ? pack!.producto : variante.nombre;
     const seleccionFinal = usaPack ? pack!.seleccion : seleccion;
 
-    // Foto del producto elegido: la del color, si no la de la variante, si no la del embudo.
-    const fotoColor = selectores
+    // Foto de CADA color elegido (Dama, Caballero…) para armar el collage con la
+    // foto correcta de cada lado.
+    const fotosColores = selectores
       .map((s, i) => normalizarOpciones(s.opciones).find(o => o.valor === elecciones[i])?.imagen)
-      .find(Boolean);
+      .filter((x): x is string => !!x && x.startsWith('http'));
+    const fotoColor = fotosColores[0];
     const fotoPedido = usaPack
       ? (pack!.fotos[0] ?? variante.imagen ?? funnel.imagenes[0] ?? null)
       : (fotoColor ?? variante.imagen ?? funnel.imagenes[0] ?? null);
-    const imagenesPack = usaPack ? pack!.fotos : undefined; // para el collage x2
+    // Collage: "arma tu pack" usa sus fotos; PAREJA y VARIABLES POLOS usan la foto
+    // de cada lado/polo para armar el collage x2.
+    const imagenesPack = usaPack
+      ? pack!.fotos
+      : (usaDropdown && fotosColores.length > 1 ? fotosColores : undefined);
 
     // El resumen viaja a la página de gracias sin tener que consultarlo de nuevo
     try {
@@ -230,6 +330,7 @@ export default function FormularioPedido({ funnel, utms }: Props) {
         seleccion: seleccionFinal,
         valor: variante.precio,
         foto: fotoPedido,
+        imagenes: imagenesPack, // fotos de cada prenda (pack x2/x3) para el resumen
         nombre: datos.nombre,
         referencia,
       }));
@@ -310,17 +411,36 @@ export default function FormularioPedido({ funnel, utms }: Props) {
   ];
 
   return (
-    <div>
+    <div ref={contenedorRef}>
       {/* Selección de producto */}
       <h2 className="text-center font-extrabold text-lg py-3">ELIGE COLOR Y TALLA ⬇️</h2>
+      {sinElegir && (
+        <p className="text-center text-[13px] font-extrabold pb-2 animate-bounce" style={{ color: acento.texto }}>
+          👉 Da clic en el color para elegir la talla
+        </p>
+      )}
 
-      <div className="px-3 space-y-2">
-        {variantes.map(v => {
+      <div className="px-3 space-y-2" data-campo="variante">
+        {variantes.map((v, vIdx) => {
           const activa = v.id === varianteId;
+          // Pack de 2 → se resalta como "el más vendido" y es el único que palpita.
+          const esPackX2 = (v.armarPack?.unidades === 2)
+            || /(^|\s)(pack\s*x?\s*2|x2|dos\s+prendas)/i.test(v.nombre || '')
+            || new Set((v.selectores ?? []).map(s => s.grupo?.trim()).filter(Boolean)).size === 2;
+          const palpita = sinElegir && esPackX2; // SOLO el pack x2 llama la atención
           return (
-            <div key={v.id} className={`rounded-lg border-2 transition-colors ${activa ? 'border-[#0D8A3E]' : 'border-[#E0E0E0]'}`}>
+            <div
+              key={v.id}
+              style={palpita ? { ['--tw-ring-color' as any]: acento.boton } : {}}
+              className={`relative rounded-lg border-2 transition-colors ${activa ? 'border-[#0D8A3E]' : 'border-[#E0E0E0]'} ${palpita ? 'ring-2 ring-offset-2 animate-pulse' : ''}`}
+            >
+              {esPackX2 && (
+                <span className="absolute -top-2.5 right-2 z-10 bg-[#C1121F] text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full shadow-md whitespace-nowrap">
+                  🔥 MÁS VENDIDO
+                </span>
+              )}
               <button
-                onClick={() => { setVarianteId(v.id); setElecciones([]); }}
+                onClick={() => { setVarianteId(v.id); setElecciones([]); setErrores(er => ({ ...er, variante: '' })); setSeñalando(null); }}
                 className="w-full flex items-center gap-3 p-3 text-left"
               >
                 <span className={`w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center ${activa ? 'border-[#0D8A3E]' : 'border-[#C9C9C9]'}`}>
@@ -347,7 +467,153 @@ export default function FormularioPedido({ funnel, utms }: Props) {
 
               {activa && !v.armarPack && (
                 <div className={`px-3 pb-3 ${señalando === 'talla' ? 'barrido' : ''}`} data-campo="talla">
-                  {grupos.map((g, gi) => {
+                  {usaDropdown && (
+                    <div className="space-y-3 pt-1">
+                      <p className="text-center text-[12px] text-[#6B6B6B]">{esPolos ? '🎽 Elige color y talla de cada polo' : '👫 Elige color y talla de cada buzo'}</p>
+                      {grupos.map((g, gi) => {
+                        const esDama = /dama|mujer/i.test(g.titulo || '');
+                        const esCab  = /caballero|hombre/i.test(g.titulo || '');
+                        const idxColor = g.indices.find(i => normalizarOpciones(selectores[i].opciones).some(o => o.imagen))
+                          ?? g.indices.find(i => /color/i.test(selectores[i].etiqueta || ''));
+                        const idxTalla = g.indices.find(i => i !== idxColor && (/talla/i.test(selectores[i].etiqueta || '') || !String(selectores[i].etiqueta || '').trim()))
+                          ?? g.indices.find(i => i !== idxColor);
+                        const colorSel = idxColor != null ? normalizarOpciones(selectores[idxColor].opciones).find(o => o.valor === elecciones[idxColor]) : undefined;
+                        const setSel = (idx: number, val: string) => {
+                          setElecciones(prev => { const c = [...prev]; c[idx] = val; return c; });
+                          setErrores(e => ({ ...e, talla: '' }));
+                          setSeñalando(null);
+                        };
+                        const listo = g.indices.every(i => elecciones[i]);
+                        const activo = gi === grupoAbierto;                 // el lado que le toca ahora
+                        const faltaColor = idxColor != null && !elecciones[idxColor];
+                        const faltaTalla = idxTalla != null && !elecciones[idxTalla];
+                        const colorAhora = activo && faltaColor;            // paso actual: color
+                        const tallaAhora = activo && !faltaColor && faltaTalla; // paso actual: talla
+                        const rosa = '#EC4899';                             // rosado femenino (Dama)
+                        const azul = '#1E3A8A';                             // azul (Caballero)
+                        const tono = esDama ? rosa : esCab ? azul : acento.boton; // polos = color de acento
+                        const marcaColor = elecciones[idxColor ?? -1] ? '✅' : colorAhora ? '👉' : '';
+                        const marcaTalla = elecciones[idxTalla ?? -1] ? '✅' : tallaAhora ? '👉' : '';
+                        return (
+                          <div key={gi} ref={el => { gruposRef.current[gi] = el; }}
+                               className={`rounded-xl border-2 overflow-hidden transition-all ${activo && !listo ? 'ring-2 ring-offset-2' : ''}`}
+                               style={{ borderColor: listo ? tono : '#D8D8D8', ['--tw-ring-color' as any]: tono }}>
+                            <div className="text-white px-3 py-2 flex items-center justify-center gap-2 font-extrabold text-sm tracking-wide" style={{ background: tono }}>
+                              <span>{esDama ? '👩 ' : esCab ? '👨 ' : '🎽 '}{g.titulo}</span>
+                              {esPolos && idxColor != null && elecciones[idxColor] && (
+                                <span className="bg-white text-[#0D8A3E] text-[11px] font-extrabold px-2.5 py-0.5 rounded-full whitespace-nowrap shadow-sm">
+                                  ✅ {elecciones[idxColor]}{idxTalla != null && elecciones[idxTalla] ? ` · TALLA ${elecciones[idxTalla]}` : ''}
+                                </span>
+                              )}
+                            </div>
+                            {esPolos ? (
+                              /* VARIABLES POLOS: foto grande a la izquierda + desplegables al lado */
+                              <div className="p-3 flex items-stretch gap-3">
+                                <div className="w-[36%] shrink-0">
+                                  {colorSel?.imagen ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={colorSel.imagen} alt="" className="w-full h-full object-cover rounded-lg border border-[#E0E0E0]" loading="lazy" />
+                                  ) : (
+                                    <div className="w-full h-full min-h-[110px] rounded-lg bg-[#F2F2F2] flex items-center justify-center text-3xl text-[#CCC]">🎽</div>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0 space-y-2.5">
+                                  {idxColor != null && (
+                                    <div className={`rounded-lg ${colorAhora ? 'p-1 ring-2 ring-offset-1 animate-pulse' : ''}`} style={colorAhora ? { ['--tw-ring-color' as any]: tono } : {}}>
+                                      <p className="text-[12px] font-extrabold mb-1" style={{ color: acento.texto }}>{marcaColor} Elige el color</p>
+                                      <select
+                                        value={elecciones[idxColor] || ''}
+                                        onChange={e => setSel(idxColor, e.target.value)}
+                                        className="w-full px-2 py-2.5 rounded-lg border-2 text-[13px] font-semibold bg-white focus:outline-none"
+                                        style={{ borderColor: elecciones[idxColor] ? tono : '#E0E0E0' }}
+                                      >
+                                        <option value="">— Elige color —</option>
+                                        {normalizarOpciones(selectores[idxColor].opciones).map(o => (
+                                          <option key={o.valor} value={o.valor}>{o.valor}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  )}
+                                  {idxTalla != null && (
+                                    <div className={`rounded-lg ${tallaAhora ? 'p-1 ring-2 ring-offset-1 animate-pulse' : ''}`} style={tallaAhora ? { ['--tw-ring-color' as any]: tono } : {}}>
+                                      <p className="text-[12px] font-extrabold mb-1" style={{ color: acento.texto }}>{marcaTalla} Elige la talla</p>
+                                      <select
+                                        value={elecciones[idxTalla] || ''}
+                                        onChange={e => setSel(idxTalla, e.target.value)}
+                                        className="w-full px-2 py-2.5 rounded-lg border-2 text-[13px] font-semibold bg-white focus:outline-none"
+                                        style={{ borderColor: elecciones[idxTalla] ? tono : '#E0E0E0' }}
+                                      >
+                                        <option value="">— Elige talla —</option>
+                                        {normalizarOpciones(selectores[idxTalla].opciones).map(o => (
+                                          <option key={o.valor} value={o.valor}>{o.valor}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                            <div className="p-3 grid grid-cols-2 gap-3">
+                              {idxColor != null && (
+                                <div className={`rounded-lg p-1 ${colorAhora ? 'ring-2 ring-offset-1 animate-pulse' : ''}`} style={colorAhora ? { ['--tw-ring-color' as any]: tono } : {}}>
+                                  <p className="text-center text-[12px] font-extrabold mb-1.5" style={{ color: acento.texto }}>{marcaColor} Elige el color</p>
+                                  <div className="flex items-center gap-1.5">
+                                    {colorSel?.imagen ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img src={colorSel.imagen} alt="" className="w-9 h-9 object-cover rounded border border-[#E0E0E0] shrink-0" loading="lazy" />
+                                    ) : (
+                                      <span className="w-9 h-9 rounded bg-[#F2F2F2] shrink-0 flex items-center justify-center text-[12px] text-[#CCC]">🎨</span>
+                                    )}
+                                    <select
+                                      value={elecciones[idxColor] || ''}
+                                      onChange={e => setSel(idxColor, e.target.value)}
+                                      className="flex-1 min-w-0 px-1.5 py-2 rounded-lg border-2 text-[12px] font-semibold bg-white focus:outline-none"
+                                      style={{ borderColor: elecciones[idxColor] ? tono : '#E0E0E0' }}
+                                    >
+                                      <option value="">— Elige color —</option>
+                                      {normalizarOpciones(selectores[idxColor].opciones).map(o => (
+                                        <option key={o.valor} value={o.valor}>{o.valor}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                              )}
+                              {idxTalla != null && (
+                                <div className={`rounded-lg p-1 ${tallaAhora ? 'ring-2 ring-offset-1 animate-pulse' : ''}`} style={tallaAhora ? { ['--tw-ring-color' as any]: tono } : {}}>
+                                  <p className="text-center text-[12px] font-extrabold mb-1.5" style={{ color: acento.texto }}>{marcaTalla} Elige la talla</p>
+                                  <select
+                                    value={elecciones[idxTalla] || ''}
+                                    onChange={e => setSel(idxTalla, e.target.value)}
+                                    className="w-full px-1.5 py-2 rounded-lg border-2 text-[12px] font-semibold bg-white focus:outline-none"
+                                    style={{ borderColor: elecciones[idxTalla] ? tono : '#E0E0E0' }}
+                                  >
+                                    <option value="">— Elige talla —</option>
+                                    {normalizarOpciones(selectores[idxTalla].opciones).map(o => (
+                                      <option key={o.valor} value={o.valor}>{o.valor}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+                            </div>
+                            {activo && !listo && (
+                              <p className="text-center text-[12px] font-bold pb-2 animate-bounce" style={{ color: tono }}>
+                                {faltaColor ? `👉 Elige el color de ${g.titulo}` : faltaTalla ? `👉 Ahora la talla de ${g.titulo}` : ''}
+                              </p>
+                            )}
+                            {listo && (
+                              <p className="text-center text-[12px] font-bold text-white py-1.5" style={{ background: tono }}>
+                                ✅ {g.titulo}: {elecciones[idxColor ?? g.indices[0]]} · {elecciones[idxTalla ?? g.indices[0]]}
+                              </p>
+                            )}
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {!usaDropdown && grupos.map((g, gi) => {
                     const listo   = grupoCompleto(g);
                     const abierto = abiertoManual === gi || (abiertoManual === null && gi === grupoAbierto) || !g.titulo;
                     // Nº de paso entre las prendas con título (para "Paso 1 de 2")
@@ -676,10 +942,10 @@ export default function FormularioPedido({ funnel, utms }: Props) {
       </p>
 
       {/* Espacio para que la barra flotante no tape el final */}
-      {botonFlotante && <div className="h-24" />}
+      {botonFlotante && enCheckout && <div className="h-24" />}
 
       {/* Botón que acompaña al cliente hasta que termina */}
-      {botonFlotante && (
+      {botonFlotante && enCheckout && (
         <div className="fixed bottom-0 left-0 right-0 z-40 px-3 pb-3 pt-2 bg-gradient-to-t from-white via-white to-transparent">
           <div className="max-w-lg mx-auto">
             {faltantes.length > 0 && (

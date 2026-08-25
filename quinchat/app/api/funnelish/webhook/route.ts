@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendTextMessage, sendConfirmacionTemplate, sendImageByUrl } from '@/lib/whatsapp';
+import { esOficina, etiquetarOficinaSinAbono } from '@/lib/etiqueta-oficina';
 import { getProductImageUrl, FALLBACK_IMAGE } from '@/lib/product-catalog';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { isCompleteAddress, getAddressQuestion } from '@/lib/address';
@@ -92,7 +93,7 @@ const COLORES_CONOCIDOS = [
 ];
 
 function parsePack(productoNombre: string, variantName: string): {
-  esPack: boolean; familia: string; colores: string[]; productos: string[]; productoFinal: string; tallaFinal: string;
+  esPack: boolean; cantidad: number; familia: string; colores: string[]; productos: string[]; productoFinal: string; tallaFinal: string;
 } {
   const nombreUp = productoNombre.toUpperCase();
 
@@ -133,12 +134,34 @@ function parsePack(productoNombre: string, variantName: string): {
   const productos = colores.map(c => `${c} ${familia}`.trim());
   return {
     esPack:       cantidad >= 2 && colores.length >= 2, // combo de 2+ prendas con 2+ colores
+    cantidad:     Math.max(1, cantidad),                // prendas del combo (PACK X2 = 2)
     familia,
     colores,
     productos,
     productoFinal: colores.length >= 2 ? productos.join(' + ') : productoNombre,
     tallaFinal:    talla || 'Por confirmar',
   };
+}
+
+/**
+ * Arma la talla POR PRENDA a partir de la selección del embudo (packs de polos/
+ * pareja), donde viene "COLOR / TALLA / COLOR / TALLA" separada por "/". Cada
+ * prenda puede tener una talla DISTINTA, así que se muestran todas.
+ * Ej: "NEGRO / M / NEGRO / XXL" → "NEGRO M + NEGRO XXL"
+ */
+function tallaPorPrenda(seleccion: string): string {
+  const toks = String(seleccion ?? '').split('/').map(s => s.trim()).filter(Boolean);
+  if (toks.length < 3) return seleccion; // no parece pack por color/talla
+  const esTalla = (t: string) => /\b(HOMBRE|DAMA|CABALLERO|MUJER)\b/i.test(t)
+    || /^(XS|S|M|L|XL|XXL|XXXL)\b/i.test(t.replace(/[^A-Za-z0-9]/g, ''));
+  const prendas: string[] = [];
+  let buffer: string[] = [];
+  for (const tk of toks) {
+    buffer.push(tk);
+    if (esTalla(tk)) { prendas.push(buffer.join(' ')); buffer = []; }
+  }
+  if (buffer.length) prendas.push(buffer.join(' '));
+  return prendas.length >= 2 ? prendas.join(' + ') : seleccion;
 }
 
 // Busca la imagen de un COLOR dentro de una familia (estricto por color, evita repetir otro color).
@@ -156,13 +179,20 @@ async function buscarImagenColor(supabase: any, color: string, familia: string):
     return cU === colU || cU.includes(colU) || nU.includes(colU);
   });
   if (!cands.length) return null;
+  // La palabra DISTINTIVA de la familia (PULSAR, HONDA…) es la que manda; las
+  // genéricas (BUZO, MOTO…) las comparten todas.
+  const GENERICAS = new Set(['BUZO', 'MOTO', 'REFLECTIVO', 'ESCUDERIA', 'PACK', 'REDBULL']);
+  const distintivas = famWords.filter((w: string) => !GENERICAS.has(w));
   // Entre los del mismo color, el que más comparte con la familia
-  let best: { url: string; score: number } | null = null;
+  let best: { url: string; score: number; name: string } | null = null;
   for (const r of cands) {
     const nU    = (r.nombre_producto ?? '').toUpperCase();
     const score = famWords.filter((w: string) => nU.includes(w)).length;
-    if (!best || score > best.score) best = { url: r.url_imagen as string, score };
+    if (!best || score > best.score) best = { url: r.url_imagen as string, score, name: nU };
   }
+  // El match DEBE incluir la palabra distintiva de la familia; si no, es de otra
+  // familia (foto equivocada) → mejor null y que caiga a la imagen del embudo.
+  if (best && distintivas.length > 0 && !distintivas.some((w: string) => best!.name.includes(w))) return null;
   return best?.url ?? null;
 }
 
@@ -205,13 +235,26 @@ async function buscarImagenProducto(supabase: any, nombre: string): Promise<stri
       .from('catalogo_colores').select('nombre_producto, url_imagen')
       .not('url_imagen', 'is', null);
     if (allColors && allColors.length > 0) {
-      const words = nombre.toUpperCase().split(/\s+/).filter((w: string) => w.length >= 3);
-      let best: { url: string; score: number } | null = null;
+      const words = nombre.toUpperCase().split(/\s+/)
+        .map((w: string) => w.replace(/[^A-Z0-9]/g, '')).filter((w: string) => w.length >= 3);
+      // Palabras GENÉRICAS (comunes a muchas familias) y de COLOR: no identifican
+      // la marca. La palabra DISTINTIVA (PULSAR, HONDA, FERRARI…) es la que manda.
+      const GENERICAS = new Set(['BUZO', 'MOTO', 'REFLECTIVO', 'ESCUDERIA', 'PACK',
+        'NEGRO', 'ROJO', 'AZUL', 'BLANCO', 'MARFIL', 'AMARILLO', 'BEIGE', 'VERDE',
+        'GRIS', 'OSCURO', 'NAVY', 'COCOA', 'REDBULL']);
+      const distintivas = words.filter((w: string) => !GENERICAS.has(w));
+      let best: { url: string; score: number; name: string } | null = null;
       for (const row of allColors) {
         if (!row.nombre_producto || !row.url_imagen) continue;
         const name  = (row.nombre_producto as string).toUpperCase();
         const score = words.filter((w: string) => name.includes(w)).length;
-        if (score > 0 && (!best || score > best.score)) best = { url: row.url_imagen as string, score };
+        if (score > 0 && (!best || score > best.score)) best = { url: row.url_imagen as string, score, name };
+      }
+      // El match DEBE incluir la palabra distintiva (marca/familia). Si no la tiene,
+      // es de OTRA familia (ej. Honda para un Pulsar) → se descarta para no mostrar
+      // la foto equivocada; se cae a la imagen del embudo.
+      if (best && distintivas.length > 0 && !distintivas.some((w: string) => best!.name.includes(w))) {
+        best = null;
       }
       if (best) return best.url;
     }
@@ -225,8 +268,12 @@ async function buscarImagenProducto(supabase: any, nombre: string): Promise<stri
 async function generarCollagePack(supabase: any, productos: string[], imagenes: string[]): Promise<string | null> {
   try {
     const bucket   = 'chat-media';
-    const sanit    = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-    const fileName = `${productos.map(sanit).sort().join('__')}__v2.jpg`;
+    // La clave del caché DEBE depender de las FOTOS reales (los colores elegidos),
+    // NO solo del nombre del producto. Antes un pack "NEGRO + NEGRO" reusaba el
+    // collage viejo de "NEGRO + ROJO" porque el nombre era el mismo. Se hashean
+    // las URLs de las fotos EN ORDEN, así cada combinación tiene su propio archivo.
+    const hash = (s: string) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h.toString(36); };
+    const fileName = `pack-${hash(imagenes.join('|'))}__v3.jpg`;
     const path     = `packs/${fileName}`;
     const supaUrl  = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
     const publicUrl = `${supaUrl}/storage/v1/object/public/${bucket}/${path}`;
@@ -333,6 +380,16 @@ export async function POST(req: NextRequest) {
     talla          = pack.tallaFinal;                        // solo la talla: "CABALLERO - XL"
     productoNombre = `${productoNombre} - ${pack.colores[0]}`; // mostrar el color: "... - NEGRO"
   }
+
+  // Pack de NUESTRO embudo (trae fotos por prenda): cada prenda puede llevar una
+  // talla DISTINTA. Se reconstruye la talla POR PRENDA para no perder ninguna
+  // (antes solo mostraba la primera, ej. "M" en vez de "M" y "XXL").
+  const esPackDelEmbudo = Array.isArray(body.imagenes)
+    && body.imagenes.filter((u: any) => typeof u === 'string' && u.startsWith('http')).length >= 2;
+  if (esPackDelEmbudo) {
+    const perPrenda = tallaPorPrenda(variantName);
+    if (perPrenda && /\s\+\s/.test(perPrenda)) talla = perPrenda;
+  }
   const nombreImagenPrincipal = packProductos[0] ?? productoNombre;
 
   const mensaje = buildMensaje({ nombre, telefono: tel10, direccion, ciudad, departamento, correo, talla, producto: productoNombre, valor });
@@ -342,6 +399,10 @@ export async function POST(req: NextRequest) {
   // Buscar imagen(es). Para packs, una foto POR COLOR (estricto) para no repetir color.
   let imageUrl: string;
   let segundaImagenUrl: string | null;
+  // Cuando ya se armó UN collage (una sola imagen con las 2/3 prendas), NO se debe
+  // volver a enviar una "segunda imagen" suelta: eso duplicaba el envío (y fallaba
+  // con error 131047 en números inactivos). Esta bandera lo evita.
+  let esCollage = false;
   if (pack.esPack) {
     imageUrl = (await buscarImagenColor(supabase, pack.colores[0], pack.familia))
              ?? await buscarImagenProducto(supabase, packProductos[0]);
@@ -378,14 +439,19 @@ export async function POST(req: NextRequest) {
       imagenesPack.map((_, i) => `${productoNombre}-${i + 1}`),
       imagenesPack.slice(0, 3),
     );
-    if (collage) { imageUrl = collage; segundaImagenUrl = null; }
+    if (collage) { imageUrl = collage; segundaImagenUrl = null; esCollage = true; }
     else if (imagenesPack[0]) imageUrl = imagenesPack[0];
+  } else if (imagenesPack.length === 1 && imagenesPack[0].startsWith('http')) {
+    // "Arma tu buzo" de UNA prenda: la foto que el cliente eligió en la página
+    // (marca + color exactos) MANDA sobre cualquier búsqueda del catálogo, que
+    // podía traer una foto de otra familia (ej. Argentina para un Suzuki Negro).
+    imageUrl = imagenesPack[0];
   }
 
   // Un PACK X2 SIEMPRE muestra DOS fotos, aunque las dos prendas sean del mismo
   // color: así el cliente ve claro que son 2 unidades. Si no hay una segunda foto
   // (mismo color), se repite la principal.
-  if (pack.esPack && !segundaImagenUrl && imageUrl && imageUrl.startsWith('http') && imageUrl !== FALLBACK_IMAGE) {
+  if (pack.esPack && !esCollage && !segundaImagenUrl && imageUrl && imageUrl.startsWith('http') && imageUrl !== FALLBACK_IMAGE) {
     segundaImagenUrl = imageUrl;
   }
 
@@ -395,7 +461,7 @@ export async function POST(req: NextRequest) {
       && segundaImagenUrl && segundaImagenUrl.startsWith('http') && segundaImagenUrl !== FALLBACK_IMAGE
       && imageUrl !== segundaImagenUrl) {
     const collage = await generarCollagePack(supabase, pack.productos, [imageUrl, segundaImagenUrl]);
-    if (collage) { imageUrl = collage; segundaImagenUrl = null; } // collage OK → no enviar 2da por separado
+    if (collage) { imageUrl = collage; segundaImagenUrl = null; esCollage = true; } // collage OK → no enviar 2da por separado
   }
 
   const now = new Date().toISOString();
@@ -429,6 +495,7 @@ export async function POST(req: NextRequest) {
     telefono:    tel10,
     nombre,
     producto:    productoNombre,
+    cantidad:    pack.cantidad, // prendas del pedido (PACK X2 = 2) → para el monedero de metas
     foto_producto: fotoProducto,
     talla,
     valor,
@@ -656,6 +723,12 @@ export async function POST(req: NextRequest) {
     }, { onConflict: 'id' });
     if (convErr) console.error('[Funnelish] upsert conversation error:', convErr.message);
 
+    // Si el pedido entra para RECLAMAR EN OFICINA, se etiqueta como "OFICINA SIN
+    // ABONO" (etiqueta adicional, no toca el estado) para poder rescatarlo.
+    if (esOficina(direccion)) {
+      try { await etiquetarOficinaSinAbono(supabase, waPhone); } catch { /* no bloquear */ }
+    }
+
     // ── 3. Guardar foto del producto ────────────────────────────────────────
     if (imageUrl && imageUrl.startsWith('http')) {
       const { error: imgErr } = await supabase.from('messages').insert({
@@ -671,7 +744,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 3b. Segunda foto (packs X2) ─────────────────────────────────────────
-    if (enWhitelist && segundaImagenUrl && segundaImagenUrl.startsWith('http') && segundaImagenUrl !== FALLBACK_IMAGE) {
+    if (enWhitelist && !esCollage && segundaImagenUrl && segundaImagenUrl.startsWith('http') && segundaImagenUrl !== FALLBACK_IMAGE) {
       const img2Wamid = await sendImageByUrl(waPhone, segundaImagenUrl, productoNombre);
       const { error: img2Err } = await supabase.from('messages').insert({
         id:              `funnelish-img2-${referencia || Date.now()}-${Math.random().toString(36).slice(2, 8)}`,

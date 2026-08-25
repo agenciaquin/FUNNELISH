@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
 
-/** GET /api/catalogos — lista todos los catálogos con sus colores */
-export async function GET() {
+/** GET /api/catalogos — lista los catálogos activos (o la papelera con ?papelera=1) */
+export async function GET(req: NextRequest) {
+  const papelera = req.nextUrl.searchParams.get('papelera') === '1';
   const supabase = createServerSupabaseClient();
   const { data, error } = await supabase
     .from('catalogos_bot')
     .select('*, catalogo_colores(*)')
-    .eq('activo', true)
+    .eq('activo', !papelera) // activo=true = lista normal; activo=false = papelera
     .order('created_at', { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data ?? []);

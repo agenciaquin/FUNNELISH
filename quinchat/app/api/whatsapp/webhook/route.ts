@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { sendTextMessage, sendAudioByUrl, sendImageByUrl, descargarWhatsAppMedia, mostrarEscribiendo } from '@/lib/whatsapp';
+import { sendTextMessage, sendAudioByUrl, sendImageByUrl, reenviarImagenComoMedia, descargarWhatsAppMedia, mostrarEscribiendo } from '@/lib/whatsapp';
 import { transcribirAudio } from '@/lib/transcribir';
 import { PRODUCT_NAMES, FALLBACK_IMAGE, getProductImageUrl } from '@/lib/product-catalog';
 import { chat } from '@/lib/quinchat/claude';
@@ -13,6 +13,7 @@ import { bloqueDeMemoria } from '@/lib/memoria';
 import { entrarLinea, tipoDeLinea } from '@/lib/whatsapp-contexto';
 import { atenderVenta } from '@/lib/quinchat/ventas';
 import { esVendedor, vendedorDe, extraerVentas, nombreChat, generoDe, DIAS_NOMINA, LIMITE_INCENTIVO_SEG } from '@/lib/vendedores';
+import { etiquetarOficinaSinAbono, marcarOficinaAbonada, quitarEtiquetaOficina } from '@/lib/etiqueta-oficina';
 import { ADMINS_VENTAS } from '@/lib/quinchat/registro-venta';
 import { lineaTalla } from '@/lib/formato-pedido';
 
@@ -232,7 +233,12 @@ async function atenderVendedor(supabase: any, value: any, from: string): Promise
       .eq('telefono', from).gte('enviado_at', `${desde}T00:00:00`);
     const resp = (pr ?? []).filter((x: any) => x.respondido_at);
     if (resp.length) {
-      const avg = Math.round(resp.reduce((s: number, x: any) => s + (Number(x.respuesta_seg) || 0), 0) / resp.length);
+      // Tope justo: un check-in contestado más de 2 h después (el intervalo entre
+      // check-ins) casi siempre significa que el vendedor estaba FUERA cuando se
+      // envió, no que respondió lento. Se cuenta como máximo 2 h para no inflar
+      // el promedio con tiempo muerto en que ni veía el chat.
+      const TOPE_SEG = 2 * 3600;
+      const avg = Math.round(resp.reduce((s: number, x: any) => s + Math.min(Number(x.respuesta_seg) || 0, TOPE_SEG), 0) / resp.length);
       lineaProm = `\n⏱️ Tu promedio de respuesta en la nómina va en *${tiempoLegibleSeg(avg)}*.`;
       if (avg < LIMITE_INCENTIVO_SEG && resp.length >= 3) lineaProm += ' ¡Vas ganando el 5% de descuento! 🏅';
       else if (avg < LIMITE_INCENTIVO_SEG) lineaProm += ' ¡Bien! Mantén ese ritmo para el 5% de descuento. 🎯';
@@ -391,7 +397,10 @@ async function findColorVariantInDB(
   if (!catalogos?.length) return null;
 
   const pUpper = productoNombre.toUpperCase();
-  const catalog = catalogos.find(c => pUpper.includes(c.patron.toUpperCase()));
+  // El patrón MÁS ESPECÍFICO (más largo) gana. Así una familia con patrón genérico
+  // (ej. "BUZO MOTO") no le roba el producto a la específica ("BUZO MOTO PULSAR REFLECTIVO").
+  const candidatos = catalogos.filter(c => c.patron && pUpper.includes(c.patron.toUpperCase()));
+  const catalog = candidatos.sort((a, b) => (b.patron?.length ?? 0) - (a.patron?.length ?? 0))[0];
   if (!catalog) return null;
 
   const colores: ColorVariantDB[] = catalog.catalogo_colores ?? [];
@@ -508,14 +517,57 @@ export async function POST(req: NextRequest) {
         // Recuperación: si falló por la imagen (131053/131052 - media), reenviar la
         // confirmación como TEXTO para que al menos el mensaje llegue (solo sirve si
         // la ventana de 24h sigue abierta; si no, ya lo cubre la validación de envío).
-        const esErrorMedia = [131053, 131052].includes(Number(err?.code))
-          || /media/i.test(String(err?.title ?? ''));
+        const esErrorMedia = [131053, 131052, 131103].includes(Number(err?.code))
+          || /media|weblink|download|bad request/i.test(`${err?.title ?? ''} ${err?.error_data?.details ?? ''}`);
         if (esErrorMedia) {
           try {
             const { data: falloMedia } = await sb.from('messages')
               .select('conversation_id, content, type')
               .eq('whatsapp_id', wamid).maybeSingle();
             const cuerpo = String(falloMedia?.content ?? '');
+
+            // IMAGEN que Meta no pudo bajar del link (131103): la re-subimos como
+            // archivo. Así llega sin depender del enlace. Si la foto de origen está
+            // rota (404), no se puede recuperar y se avisa abajo.
+            if (falloMedia?.conversation_id && falloMedia?.type === 'image' && cuerpo.startsWith('http')) {
+              const dest = String(falloMedia.conversation_id);
+              // 1) Intento normal: re-subir la MISMA foto como archivo.
+              let nuevoWamid = await reenviarImagenComoMedia(dest, cuerpo);
+
+              // 2) Si falló (típico 404: la foto MARCADA ya no existe), usamos la foto
+              //    ORIGINAL sin marca de agua, que casi siempre sigue viva en el catálogo.
+              if (!nuevoWamid) {
+                try {
+                  const { data: catRow } = await sb.from('catalogo_colores')
+                    .select('url_original').eq('url_imagen', cuerpo).maybeSingle();
+                  const original = String((catRow as any)?.url_original ?? '');
+                  if (original.startsWith('http') && original !== cuerpo) {
+                    nuevoWamid = await reenviarImagenComoMedia(dest, original)
+                      || await sendImageByUrl(dest, original);
+                    if (nuevoWamid) console.log(`[WhatsApp] foto marcada rota, se envió la ORIGINAL → ${dest}`);
+                  }
+                } catch { /* si no hay original, no se puede recuperar */ }
+              }
+
+              if (nuevoWamid) {
+                await sb.from('messages').insert({
+                  id:              `recup-${wamid}-${Math.random().toString(36).slice(2, 8)}`,
+                  conversation_id: falloMedia.conversation_id,
+                  content:         cuerpo,
+                  role:            'assistant',
+                  type:            'image',
+                  whatsapp_id:     nuevoWamid,
+                  created_at:      new Date().toISOString(),
+                });
+                // La foto sí llegó: limpiar el error del mensaje original para que el
+                // panel no muestre la alerta roja de "no entregado".
+                await sb.from('messages').update({ status: 'sent', error_envio: null }).eq('whatsapp_id', wamid);
+                console.log(`[WhatsApp] imagen recuperada → ${falloMedia.conversation_id}`);
+              } else {
+                console.error(`[WhatsApp] FOTO ROTA sin original recuperable: ${cuerpo}`);
+              }
+            }
+
             if (falloMedia?.conversation_id && falloMedia?.type === 'text' && cuerpo && !cuerpo.startsWith('http')) {
               const nuevoWamid = await sendTextMessage(String(falloMedia.conversation_id), cuerpo);
               if (nuevoWamid) {
@@ -543,6 +595,8 @@ export async function POST(req: NextRequest) {
             .select('conversation_id').eq('whatsapp_id', wamid).maybeSingle();
           if (fallo?.conversation_id && !esVendedor(String(fallo.conversation_id))) {
             const tel = String(fallo.conversation_id).replace(/^57/, '');
+            // Marcar la conversación para poder filtrar "mensaje no entregado".
+            await sb.from('conversations').update({ entrega_fallida: true }).eq('id', fallo.conversation_id);
             await notificarSoporte(
               `⚠️ *NO SE PUDO ENTREGAR UN MENSAJE*\nCliente: ${tel}\nMotivo: ${detalle}\n\nRevísalo en el panel.`
             );
@@ -550,11 +604,16 @@ export async function POST(req: NextRequest) {
         } catch { /* no bloquear */ }
       }
 
-      const { data: msg } = await sb.from('messages').select('status').eq('whatsapp_id', wamid).maybeSingle();
+      const { data: msg } = await sb.from('messages').select('status, conversation_id').eq('whatsapp_id', wamid).maybeSingle();
       const rankActual = RANK[(msg?.status ?? '') as string] ?? -1;
       const rankNuevo  = RANK[estado] ?? -1;
       if (rankNuevo >= rankActual) {
         await sb.from('messages').update({ status: estado }).eq('whatsapp_id', wamid);
+      }
+      // Si un mensaje SÍ se entregó/leyó, el cliente es alcanzable: quitar la bandera.
+      if ((estado === 'delivered' || estado === 'read') && msg?.conversation_id) {
+        try { await sb.from('conversations').update({ entrega_fallida: false }).eq('id', msg.conversation_id); }
+        catch { /* no bloquear */ }
       }
     }
     return NextResponse.json({ status: 'ok' });
@@ -574,8 +633,10 @@ export async function POST(req: NextRequest) {
     const remitente = value.messages[0]?.from as string | undefined;
     if (remitente) {
       try {
+        // El cliente escribió: es alcanzable, así que se quita la bandera de
+        // "mensaje no entregado" si la tenía.
         await supabase.from('conversations')
-          .update({ linea: tipoLinea }).eq('id', remitente);
+          .update({ linea: tipoLinea, entrega_fallida: false }).eq('id', remitente);
       } catch { /* si aún no existe el chat, se marca al crearlo */ }
     }
   }
@@ -638,6 +699,7 @@ export async function POST(req: NextRequest) {
     // (más abajo, fuera del bloque de descarga) también pueda usarlos.
     let imgBuffer: Buffer | null = null; // imagen entrante, para clasificar comprobante vs foto
     let imgMime = '';
+    let audioComoTexto = false; // nota de voz transcrita que sigue al flujo de texto
     const TIPOS_MEDIA = ['image', 'audio', 'video', 'document', 'sticker', 'voice'];
     if (TIPOS_MEDIA.includes(msg.type)) {
       const mediaId  = msg[msg.type]?.id as string | undefined;
@@ -678,9 +740,12 @@ export async function POST(req: NextRequest) {
       const ahoraMedia = new Date().toISOString();
       const caption = (msg[msg.type]?.caption as string | undefined)?.trim();
 
-      // Registrar el archivo en el chat (aunque falle la descarga, queda constancia)
+      // Registrar el archivo en el chat (aunque falle la descarga, queda constancia).
+      // Si es una nota de voz que se va a transcribir, se guarda con un id aparte
+      // para que la transcripción (que va con el id normal) NO la sobrescriba.
+      const idMedia = ((msg.type === 'audio' || msg.type === 'voice') && audioTexto) ? `${msgId}-audio` : msgId;
       await supabase.from('messages').upsert({
-        id: msgId, conversation_id: from,
+        id: idMedia, conversation_id: from,
         content: publicUrl ?? etiqueta,
         role: 'user', type: publicUrl ? tipoGuardar : 'text',
         created_at: ahoraMedia,
@@ -723,37 +788,42 @@ export async function POST(req: NextRequest) {
       } catch { /* no bloquear */ }
 
       // ── Nota de voz ────────────────────────────────────────────────────────
-      // El bot no puede escuchar audio. Antes se quedaba callado y el cliente
-      // pensaba que lo ignoraron. Ahora responde y avisa a una persona.
+      // El bot SÍ entiende las notas de voz: se transcriben y se tratan como si el
+      // cliente las hubiera ESCRITO, para que responda al contenido de verdad.
       if (msg.type === 'audio' || msg.type === 'voice') {
         const { data: convAudio } = await supabase
           .from('conversations').select('bot_enabled').eq('id', from).maybeSingle();
         const botActivo = convAudio ? (convAudio.bot_enabled ?? true) : true;
 
-        if (audioTexto) {
-          // Se transcribió: se guarda como texto para el historial/panel y, si el
-          // bot está activo, se responde reconociendo el mensaje.
+        if (audioTexto && botActivo) {
+          // Convertimos la nota de voz en un mensaje de texto y la dejamos seguir al
+          // flujo normal: se guarda y el bot RESPONDE al contenido (ya no un
+          // "en un momento te ayudo" que dejaba al cliente esperando).
+          (msg as any).type = 'text';
+          (msg as any).text = { body: `🎙️ ${audioTexto}` };
+          audioComoTexto = true;
+        } else if (audioTexto) {
+          // Bot apagado: solo se guarda la transcripción para el panel.
           await supabase.from('messages').upsert({
             id: `${msgId}-txt`, conversation_id: from, content: `🎙️ ${audioTexto}`,
             role: 'user', type: 'text', created_at: new Date().toISOString(),
           }, { onConflict: 'id' });
-          if (botActivo) {
-            const respuesta = '¡Gracias por tu nota de voz! 🎧 Ya la recibí, en un momento te ayudo con tu pedido 😊';
-            const w = await sendTextMessage(from, respuesta);
-            await saveAndSend(supabase, from, respuesta, 'text', w);
-          }
+          continue;
         } else if (botActivo) {
           const respuesta =
             'Recibí tu nota de voz 🎧 pero por aquí no logro escucharla.\n\n' +
             '¿Me lo puedes escribir en un mensaje? Así te ayudo de una. 😊';
           const w = await sendTextMessage(from, respuesta);
           await saveAndSend(supabase, from, respuesta, 'text', w);
+          continue;
+        } else {
+          continue;
         }
-        continue;
       }
 
-      // Solo las fotos disparan el flujo de comprobante de abono
-      if (msg.type !== 'image') continue;
+      // Solo las fotos disparan el flujo de comprobante de abono. La nota de voz
+      // ya convertida en texto (audioComoTexto) sigue de largo al flujo normal.
+      if (msg.type !== 'image' && !audioComoTexto) continue;
     }
 
     // ── Imagen entrante ───────────────────────────────────────────────────────
@@ -811,6 +881,8 @@ export async function POST(req: NextRequest) {
           abono_recibido: true,
           abono_recibido_at: new Date().toISOString(),
         }).eq('id', pedImg.id);
+        // Si el pedido era de OFICINA, la etiqueta pasa de SIN a CON abono.
+        await marcarOficinaAbonada(supabase, from);
       }
 
       if (botActivo) {
@@ -925,7 +997,7 @@ export async function POST(req: NextRequest) {
     // "talla M"). Antes el bot respondía a cada uno por separado, sin ver lo que
     // venía después. Ahora espera unos segundos: si llega otro mensaje, deja que
     // ese se encargue, y responde una sola vez con todo el contexto.
-    const ESPERA_MS = 7000;
+    const ESPERA_MS = 12000;
     await new Promise(r => setTimeout(r, ESPERA_MS));
 
     const { data: llegoOtro } = await supabase
@@ -942,6 +1014,10 @@ export async function POST(req: NextRequest) {
       .from('messages').select('created_at')
       .eq('conversation_id', from).in('role', ['assistant', 'agent'])
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+    // ANTI-DOBLE: si el bot (u otro turno) YA respondió DESPUÉS de este mensaje,
+    // no se responde otra vez (evita respuestas duplicadas).
+    if (ultimaRespuesta && new Date(ultimaRespuesta.created_at).getTime() > new Date(horaMensaje).getTime()) continue;
 
     const { data: seguidos } = await supabase
       .from('messages').select('content, created_at')
@@ -1051,6 +1127,7 @@ export async function POST(req: NextRequest) {
       const wamid = await sendTextMessage(from, MSG_ABONO_CUENTA);
       await saveAndSend(supabase, from, MSG_ABONO_CUENTA, 'text', wamid);
       await agregarTagConv(supabase, from, 'PENDIENTE DE ABONO');
+      await etiquetarOficinaSinAbono(supabase, from);
       continue;
     }
 
@@ -1061,6 +1138,8 @@ export async function POST(req: NextRequest) {
         .update({ abono: 5000 })
         .eq('telefono', telAb).eq('confirmado', false)
         .not('estado', 'in', '("cancelado","duplicado")');
+      // Etiqueta adicional para rescatar estos pedidos (oficina = alto riesgo).
+      if (isOficina) await etiquetarOficinaSinAbono(supabase, from);
 
       const audioUrl   = isOficina ? AUDIO_OFICINA : AUDIO_MUNICIPIO;
       const audioLabel = isOficina ? '🎵 Audio abono oficina' : '🎵 Audio abono municipio';
@@ -1089,7 +1168,13 @@ export async function POST(req: NextRequest) {
     const cancelaPedido = ['cancela', 'cancelar', 'cancelo', 'anula', 'anular', 'anulen',
       'no lo quiero', 'ya no lo quiero', 'no quiero el pedido', 'ya no quiero', 'no me interesa',
       'no voy a comprar', 'no deseo el pedido', 'no lo voy a comprar'].some(w => textLower.includes(w));
-    const programaPedido = ['para después', 'para despues', 'más adelante', 'mas adelante',
+    // Interés en MAYOREO / reventa: NO es cancelar ni aplazar. Un vendedor que
+    // dice "más adelante hablamos para el por mayor" quiere su pedido AHORA y
+    // además comprar más después. Se deja que el bot IA responda (con calidez),
+    // en vez de dispararle la respuesta seca de "pedido programado".
+    const interesMayoreo = /por mayor|al por mayor|mayorista|mayoreo|revender|revendo|reventa|distribuidor|distribuir|soy vendedor|soy comerciante|tengo (un|mi) negocio|tengo (una|mi) tienda|comprar (mas|más) (adelante|luego|despues|después)/i.test(textLower);
+
+    const programaPedido = !interesMayoreo && ['para después', 'para despues', 'más adelante', 'mas adelante',
       'yo te aviso', 'yo aviso', 'yo le aviso', 'lo programo', 'programar el pedido', 'la próxima semana',
       'la proxima semana', 'el otro mes', 'cuando pueda', 'luego confirmo', 'luego te confirmo',
       'después confirmo', 'despues confirmo', 'después te confirmo', 'despues te confirmo',
@@ -1109,7 +1194,7 @@ export async function POST(req: NextRequest) {
     }
     if (programaPedido) {
       await setEstadoConv(supabase, from, 'PEDIDO PROGRAMADO');
-      const msg = `¡Perfecto! 😊 Dejo tu pedido guardado y no te molesto más. Cuando estés listo/a, escríbeme *CONFIRMO* y lo despachamos de una. 🚚`;
+      const msg = `Con mucho gusto 😊 Te dejo tu pedido guardado, sin ningún compromiso. Cuando quieras recibirlo, solo escríbeme *CONFIRMO* y lo despachamos enseguida. Quedo atento/a para lo que necesites 🙌🚚`;
       const wamid = await sendTextMessage(from, msg);
       await saveAndSend(supabase, from, msg, 'text', wamid);
       continue;
@@ -1327,6 +1412,28 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
+        // 🚧 OFICINA EXIGE ABONO: si el pedido va a OFICINA (por el abono ya puesto
+        // O porque la dirección es de recogida en oficina) y NO se ha recibido el
+        // abono, NO se cierra la venta. Oficina no se despacha sin abono.
+        const oficinaPorDireccion = isDirOficina(String(pedido.direccion ?? ''));
+        if (!pedido.abono_recibido && (Number(pedido.abono) > 0 || oficinaPorDireccion)) {
+          // Si es de oficina y aún no tenía abono marcado, se le pone los $5.000.
+          if (!(Number(pedido.abono) > 0)) {
+            await supabase.from('clientes_funnelish').update({ abono: 5000 }).eq('id', pedido.id);
+          }
+          await supabase.from('clientes_funnelish').update({ pidio_confirmar: true }).eq('id', pedido.id);
+          await agregarTagConv(supabase, from, 'PENDIENTE DE ABONO');
+          await etiquetarOficinaSinAbono(supabase, from);
+          const msgAbono =
+            `¡Gracias! 🙌 Tu pedido queda *pendiente del abono de $5.000* para enviarlo a la oficina de Interrapidísimo (se descuenta del total).\n` +
+            `🔑 Llave (todos los bancos, Nequi, Daviplata): *0030538367*\n` +
+            `🏦 Bancolombia Ahorros: *303-000037-98* — Klixmant SAS\n` +
+            `Cuando lo hagas, envíame el *comprobante* por aquí 📷 y lo dejo listo 🚚`;
+          const w = await sendTextMessage(from, msgAbono);
+          await saveAndSend(supabase, from, msgAbono, 'text', w);
+          continue;
+        }
+
         // Todo completo → confirmar
         await supabase.from('clientes_funnelish').update({
           confirmado: true, confirmado_at: new Date().toISOString(), estado: 'confirmado',
@@ -1432,9 +1539,12 @@ export async function POST(req: NextRequest) {
         }
 
         // ── 1.c El cliente corrige la TALLA después de confirmar ──────────────
+        // OJO: si el cliente quiere AGREGAR otra prenda (no corregir), NO es cambio
+        // de talla — se deja que el bot IA lo maneje (arma el pack con la nueva prenda).
+        const pideAgregarPrenda = /\b(agregar|agrega|agrego|agregarle|añad|anad|sumar|sumo|otro buzo|otra prenda|otro buso|un buzo (mas|más)|serian|serían|ser[ií]a|adem[aá]s|tambi[eé]n quiero|quiero otro|llevar otro|llevo otro|otro m[aá]s|dos buzos|tres buzos)\b/i.test(textLower);
         const tallaConfMatch = text.match(/\b(XS|S|M|L|XL|XXL|XXXL)\b/i);
         const pideCambioTalla = /\b(cambi|corrig|corrij|mejor|en vez|equivoc|otra talla|talla)\b/i.test(textLower);
-        if (tallaConfMatch && pideCambioTalla && confirmedPedido.id) {
+        if (tallaConfMatch && pideCambioTalla && !pideAgregarPrenda && confirmedPedido.id) {
           const nuevaTalla = tallaConfMatch[1].toUpperCase();
           if (nuevaTalla !== (confirmedPedido.talla ?? '').toUpperCase()) {
             await supabase.from('clientes_funnelish')
@@ -1891,7 +2001,12 @@ export async function POST(req: NextRequest) {
     const tallaVacia = !currentTalla || currentTalla === 'Por confirmar' || currentTalla === 'ELIGE TALLA';
     const clientGaveTalla = !!tallaMatch && tallaVacia;
     if (clientGaveTalla) {
-      currentTalla = tallaMatch![1].toUpperCase();
+      // También se lee el GÉNERO si lo dice ("XL dama" → "DAMA - XL"). Sin género
+      // se deja solo la talla (el modelo asume Hombre por defecto).
+      const generoTalla = /\b(hombre|caballero|masculino|hombres)\b/i.test(text) ? 'HOMBRE'
+                        : /\b(dama|mujer|femenin\w*|mujeres|niña|dama)\b/i.test(text) ? 'DAMA' : '';
+      const medida = tallaMatch![1].toUpperCase();
+      currentTalla = generoTalla ? `${generoTalla} - ${medida}` : medida;
       await supabase.from('clientes_funnelish').update({ talla: currentTalla }).eq('id', pendingPedido.id);
     }
 
@@ -2392,6 +2507,16 @@ export async function POST(req: NextRequest) {
         pendingPedido.abono = 5000;
       } catch { /* ignorar */ }
     }
+    // Si el cliente pasó a una dirección de DOMICILIO (ya NO es oficina) y aún no
+    // ha abonado → el abono ya no aplica (solo es para oficina). Se limpia para
+    // que la venta se cierre normal, con pago contra entrega.
+    else if (!isDirOficinaType && pendingPedido?.id && Number(pendingPedido.abono) > 0 && !pendingPedido.abono_recibido) {
+      try {
+        await supabase.from('clientes_funnelish').update({ abono: 0 }).eq('id', pendingPedido.id);
+        pendingPedido.abono = 0;
+        await quitarEtiquetaOficina(supabase, from);
+      } catch { /* ignorar */ }
+    }
     // Dir OK si es completa, si es de oficina, o si el cliente ya la dio por buena.
     const stillMissingDir   = !isCompleteAddress(currentDireccion) && !isDirOficinaType && !direccionOk;
 
@@ -2528,12 +2653,17 @@ export async function POST(req: NextRequest) {
       }\n` +
       `PROHIBIDO: mencionar otros productos, catálogo, precios de otros artículos.\n` +
       `Si el cliente pregunta por el envío o cuándo llega, responde brevemente y vuelve al tema.\n` +
+      `📏 MENSAJES MUY CORTOS: 1 o 2 frases máximo, nunca párrafos largos (abruman al cliente).\n` +
+      `⛔ NO REPITAS: lee tus mensajes anteriores. Si YA pediste un dato o YA lo dijiste, NO lo repitas. ` +
+      `Si el cliente pregunta algo mientras falta un dato, respóndele en CORTO y recuérdale en UNA sola línea ` +
+      `qué dato falta (ej: "Quedo pendiente de tu dirección para dejarlo listo 😊"). NUNCA vuelvas a pegar la lista completa de datos.\n` +
       `COLORES: si el cliente pide ver los colores o quiere cambiar de color, menciona ÚNICAMENTE estos colores disponibles de *${pendingPedido.producto}*: ${coloresReales || '(consúltalos con un asesor, no los inventes)'}. NUNCA inventes ni listes colores que no estén en esa lista exacta. Cuando elija uno, dile que lo cambias.\n` +
       `IMPORTANTE: NUNCA afirmes que ya "anotaste" o "guardaste" un color, talla o dirección — el sistema es quien los registra. Limítate a pedir el dato que falta o a confirmar lo que el sistema ya tiene.\n` +
       `Si el cliente quiere agregar más prendas del MISMO catálogo: infórmale las promos: 2 prendas $229.900 — 3 prendas $325.000. Pídele que diga los colores que quiere.\n` +
       `DAMA/MUJER: manejamos los MISMOS modelos para dama y caballero — solo cambia la horma. Si el cliente pide "para mujer/dama", dile que sí, que son los mismos diseños disponibles en horma dama, y que con gusto le tomas el pedido en dama. NUNCA lo pases con un asesor por esto.\n` +
       `Si el cliente quiere un producto que de verdad NO manejamos en el catálogo: dile que lo pasarás con el *asesor encargado de ese catálogo* (di exactamente "asesor encargado de ese catálogo", NUNCA "asesor especializado").\n` +
       `ENVÍOS: hay DOS opciones — (1) a DOMICILIO con pago contra entrega, sin abono; (2) RECOGIDA EN OFICINA de Interrapidísimo, que requiere un abono de $5.000 que se descuenta del total del pedido. NUNCA digas que no se puede reclamar en oficina: SÍ se puede, con el abono. Si el cliente objeta el abono, sé empático pero explícale que es política del área de despacho y ofrécele la opción de domicilio contra entrega.\n` +
+      `⚠️ LÓGICA DEL ABONO (muy importante): el abono es EXCLUSIVO para recogida en oficina. Si el cliente te da una *dirección de CASA completa* (calle/carrera con número), YA NO necesita abonar: ese pedido va a DOMICILIO con pago contra entrega. En ese caso NO le pidas abono, NO lo dejes "pendiente de abono" y cierra la venta normal. Solo exige el abono cuando el cliente insista en reclamar EN OFICINA.\n` +
       `NUNCA escribas URLs ni enlaces.\n\n` +
       EMPRESA_FAQ + memoriaBot;
 

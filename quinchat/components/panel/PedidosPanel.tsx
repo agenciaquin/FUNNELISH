@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, type MouseEvent } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type MouseEvent } from 'react';
+import { imgOptim } from '@/lib/funnels';
+import CarritosAbandonados from './CarritosAbandonados';
 
 interface Pedido {
   id: string; referencia: string; nombre: string; telefono: string;
@@ -8,8 +10,27 @@ interface Pedido {
   direccion: string; ciudad: string; departamento: string; correo: string;
   confirmado: boolean; estado: string; abono: number; abono_recibido: boolean;
   utm_source: string | null; utm_campaign: string | null;
+  campana_nombre?: string | null;
+  plataforma?: 'facebook' | 'tiktok' | null;
   foto?: string | null;
   created_at: string;
+}
+
+/** Logo de Facebook (azul). */
+function LogoFacebook() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" aria-label="Facebook">
+      <path fill="#1877F2" d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.69 4.53-4.69 1.31 0 2.68.24 2.68.24v2.95h-1.51c-1.49 0-1.95.93-1.95 1.88v2.25h3.32l-.53 3.49h-2.79V24C19.61 23.1 24 18.1 24 12.07" />
+    </svg>
+  );
+}
+/** Logo de TikTok (negro). */
+function LogoTikTok() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" aria-label="TikTok">
+      <path fill="#111" d="M16.6 5.82c-.9-.6-1.5-1.5-1.72-2.57a4.2 4.2 0 0 1-.07-.75h-2.9v11.6c0 1.37-1.1 2.48-2.47 2.48a2.48 2.48 0 0 1-2.48-2.48c0-1.37 1.1-2.48 2.48-2.48.26 0 .52.04.76.12V9.4a5.4 5.4 0 0 0-.76-.05 5.37 5.37 0 1 0 5.37 5.37V9.01a7.03 7.03 0 0 0 4.12 1.32V7.44c-.9 0-1.74-.27-2.45-.73" />
+    </svg>
+  );
 }
 
 const pesos = (n: number) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
@@ -23,6 +44,18 @@ function cuando(iso: string) {
     ? d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
     : d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }) + ' ' +
       d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+}
+
+// Día en Colombia (YYYY-MM-DD) a partir de una fecha ISO.
+function diaCol(iso: string) {
+  return new Date(new Date(iso).getTime() - 5 * 3600000).toISOString().slice(0, 10);
+}
+function diaBonito(iso: string) {
+  const hoy = diaCol(new Date().toISOString());
+  if (iso === hoy) return 'Hoy';
+  const [, m, d] = iso.split('-');
+  const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  return `${Number(d)} ${meses[Number(m) - 1]}`;
 }
 
 function estadoDe(p: Pedido): { texto: string; color: string; fondo: string } {
@@ -42,9 +75,10 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [resumen, setResumen] = useState({ total: 0, confirmados: 0, cancelados: 0, vendido: 0 });
   const [cargando, setCargando] = useState(true);
-  const [origen, setOrigen]     = useState<'web' | 'todos'>('web');
+  const [canal, setCanal]       = useState<'funnel' | 'whatsapp' | 'todas'>('funnel');
   const [dias, setDias]         = useState(7);
   const [busca, setBusca]       = useState('');
+  const [verCarritos, setVerCarritos] = useState(false);
 
   // Selección múltiple y acciones
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
@@ -126,12 +160,12 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
   const cargar = useCallback(async () => {
     setCargando(true);
     try {
-      const res  = await fetch(`/api/pedidos/lista?origen=${origen}&dias=${dias}`, { cache: 'no-store' });
+      const res  = await fetch(`/api/pedidos/lista?canal=${canal}&dias=${dias}`, { cache: 'no-store' });
       const data = await res.json();
       setPedidos(data.pedidos ?? []);
       setResumen(data.resumen ?? { total: 0, confirmados: 0, cancelados: 0, vendido: 0 });
     } finally { setCargando(false); }
-  }, [origen, dias]);
+  }, [canal, dias]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
@@ -151,26 +185,53 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
 
   const todosMarcados = filtrados.length > 0 && filtrados.every(p => seleccion.has(p.id));
 
+  // Desglose por día: confirmadas vs por confirmar (números y porcentaje).
+  const porDia = useMemo(() => {
+    const m = new Map<string, { total: number; conf: number; pend: number }>();
+    for (const p of pedidos) {
+      const dia = diaCol(p.created_at);
+      const g = m.get(dia) ?? { total: 0, conf: 0, pend: 0 };
+      g.total++;
+      const e = String(p.estado ?? '').toLowerCase();
+      if (p.confirmado) g.conf++;
+      else if (e !== 'cancelado' && e !== 'duplicado') g.pend++;
+      m.set(dia, g);
+    }
+    return [...m.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  }, [pedidos]);
+
   const chip = (activo: boolean) =>
     `px-3 py-1.5 rounded-lg text-xs border transition-colors ${
       activo ? 'bg-[#00A89D] text-white border-[#00A89D] font-semibold' : 'bg-white border-[#E8E8E8] hover:border-[#00A89D]'
     }`;
 
+  // Carritos abandonados en pantalla completa (con "← Volver")
+  if (verCarritos) return <CarritosAbandonados onClose={() => setVerCarritos(false)} />;
+
   return (
     <div className="flex-1 min-w-0 overflow-y-auto bg-[#FAF9F6]">
       <div className="max-w-5xl mx-auto px-4 md:px-8 py-6">
 
-        <header className="mb-5 pl-10 md:pl-0">
-          <h1 className="text-xl md:text-2xl font-bold text-[#0D0D0D]">Pedidos</h1>
-          <p className="text-xs text-[#6B6B6B] mt-1">
-            Lo que entra por tus páginas de venta, en vivo.
-          </p>
+        <header className="mb-5 pl-10 md:pl-0 flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold text-[#0D0D0D]">Pedidos</h1>
+            <p className="text-xs text-[#6B6B6B] mt-1">
+              Lo que entra por tus páginas de venta, en vivo.
+            </p>
+          </div>
+          <button
+            onClick={() => setVerCarritos(true)}
+            title="Clientes que empezaron a comprar y no terminaron"
+            className="px-4 py-2.5 rounded-xl border border-[#F59E0B]/50 text-[#B45309] text-sm font-semibold hover:bg-[#F59E0B]/10"
+          >🛒 Carritos abandonados</button>
         </header>
 
         {/* Filtros */}
         <div className="flex items-center gap-2 mb-4 flex-wrap">
-          <button onClick={() => setOrigen('web')}   className={chip(origen === 'web')}>🚀 De mis páginas</button>
-          <button onClick={() => setOrigen('todos')} className={chip(origen === 'todos')}>Todos</button>
+          <span className="text-[11px] font-bold text-[#6B6B6B] mr-0.5">Ventas:</span>
+          <button onClick={() => setCanal('funnel')}   className={chip(canal === 'funnel')}>🚀 Funnel</button>
+          <button onClick={() => setCanal('whatsapp')} className={chip(canal === 'whatsapp')}>💬 WhatsApp</button>
+          <button onClick={() => setCanal('todas')}    className={chip(canal === 'todas')}>Todas</button>
           <span className="w-px h-5 bg-[#E8E8E8] mx-1" />
           {[1, 7, 30].map(d => (
             <button key={d} onClick={() => setDias(d)} className={chip(dias === d)}>
@@ -203,6 +264,41 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
             </div>
           ))}
         </div>
+
+        {/* Confirmadas por día (números + porcentaje) */}
+        {porDia.length > 0 && (
+          <div className="bg-white rounded-2xl border border-[#E8E8E8] shadow-sm p-4 mb-5">
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-1">
+              <h2 className="text-sm font-bold text-[#0D0D0D]">📅 Confirmadas por día</h2>
+              <span className="text-[11px] text-[#6B6B6B]">
+                <span className="text-[#15803D] font-semibold">✅ confirmadas</span> · <span className="text-[#EA580C] font-semibold">⏳ por confirmar</span>
+              </span>
+            </div>
+            <div className="space-y-2.5">
+              {porDia.map(([dia, g]) => {
+                const pc = g.total ? Math.round((g.conf / g.total) * 100) : 0;
+                const pp = g.total ? Math.round((g.pend / g.total) * 100) : 0;
+                return (
+                  <div key={dia}>
+                    <div className="flex items-center justify-between text-[11px] mb-1 gap-2">
+                      <span className="font-bold text-[#0D0D0D] w-14 shrink-0">{diaBonito(dia)}</span>
+                      <span className="flex-1 text-right">
+                        <span className="text-[#15803D] font-semibold">✅ {g.conf} ({pc}%)</span>
+                        <span className="mx-1.5 text-[#C9C9C9]">·</span>
+                        <span className="text-[#EA580C] font-semibold">⏳ {g.pend} ({pp}%)</span>
+                        <span className="ml-1.5 text-[#9A9A9A]">de {g.total}</span>
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-[#F0F0F0] overflow-hidden flex">
+                      <div className="h-full bg-[#15803D]" style={{ width: `${pc}%` }} />
+                      <div className="h-full bg-[#EA580C]" style={{ width: `${pp}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Barra de selección */}
         {seleccion.size > 0 && (
@@ -240,9 +336,11 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
             </div>
           ) : filtrados.length === 0 ? (
             <p className="text-sm text-[#6B6B6B] py-12 text-center px-6">
-              {origen === 'web'
-                ? 'Todavía no hay pedidos desde tus páginas. Aparecerán aquí apenas alguien compre.'
-                : 'No hay pedidos en este período.'}
+              {canal === 'funnel'
+                ? 'Todavía no hay ventas desde tus páginas (funnel). Aparecerán apenas alguien compre.'
+                : canal === 'whatsapp'
+                ? 'Todavía no hay ventas del bot de WhatsApp en este período.'
+                : 'No hay ventas en este período.'}
             </p>
           ) : (
             <>
@@ -261,6 +359,7 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
                 <span className="w-10 shrink-0" />
                 <span className="flex-1 min-w-0">Cliente</span>
                 <span className="flex-1 min-w-0">Producto</span>
+                <span className="w-40 shrink-0">Campaña</span>
                 <span className="w-24 text-right shrink-0">Valor</span>
                 <span className="w-8 shrink-0" />
               </div>
@@ -305,7 +404,7 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
                       <span className="w-10 h-10 shrink-0 rounded-lg overflow-hidden bg-[#F2F2F2] flex items-center justify-center">
                         {p.foto ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={p.foto} alt="" className="w-full h-full object-cover" loading="lazy" />
+                          <img src={imgOptim(p.foto, 96)} alt="" className="w-full h-full object-cover" loading="lazy" />
                         ) : (
                           <span className="text-sm text-[#C9C9C9]">🛍️</span>
                         )}
@@ -323,6 +422,14 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
                         <span className="md:hidden block text-[11px] text-[#6B6B6B] truncate mt-0.5">
                           {p.producto} · {p.talla || 'sin talla'}
                         </span>
+                        {p.utm_campaign && (
+                          <span className="md:hidden flex items-center gap-1 text-[10px] font-semibold text-[#6D28D9] truncate mt-0.5">
+                            {p.plataforma === 'facebook' && <LogoFacebook />}
+                            {p.plataforma === 'tiktok' && <LogoTikTok />}
+                            {!p.plataforma && '🎯'}
+                            <span className="truncate">{p.campana_nombre || p.utm_campaign}</span>
+                          </span>
+                        )}
                       </span>
 
                       <span className="hidden md:block flex-1 min-w-0">
@@ -331,6 +438,19 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
                           {p.talla || 'sin talla'}
                           {p.abono > 0 && ` · abono ${p.abono_recibido ? '✅' : '⏳'}`}
                         </span>
+                      </span>
+
+                      <span className="hidden md:flex w-40 shrink-0 items-center gap-1.5">
+                        {p.plataforma === 'facebook' && <LogoFacebook />}
+                        {p.plataforma === 'tiktok' && <LogoTikTok />}
+                        {p.utm_campaign ? (
+                          <span
+                            className="truncate text-[11px] font-semibold text-[#6D28D9]"
+                            title={`${p.campana_nombre || p.utm_campaign}${p.utm_source ? ` · ${p.utm_source}` : ''}`}
+                          >{p.campana_nombre || p.utm_campaign}</span>
+                        ) : (
+                          <span className="text-[11px] text-[#C9C9C9]">Directo</span>
+                        )}
                       </span>
 
                       <span className="w-24 text-right shrink-0 text-sm font-bold text-[#0D0D0D]">
@@ -464,7 +584,7 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
                     <div className="flex gap-2 mb-2.5 overflow-x-auto">
                       {fotos.map((f, i) => (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img key={i} src={f} alt="" className="w-24 h-24 rounded-xl object-cover border border-[#E8E8E8] shrink-0" />
+                        <img key={i} src={imgOptim(f, 300)} alt="" className="w-24 h-24 rounded-xl object-cover border border-[#E8E8E8] shrink-0" />
                       ))}
                     </div>
                   ) : null}

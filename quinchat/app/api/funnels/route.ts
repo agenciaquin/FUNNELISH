@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
       color:              b.color              || null,
       miniatura_url:      b.miniatura_url      || null,
       anuncios:           String(b.anuncios ?? '').trim() || null,
+      layout:             b.layout ?? null,
     };
 
     const supabase = createServerSupabaseClient();
@@ -66,8 +67,8 @@ export async function POST(req: NextRequest) {
 
     // Si la base todavía no tiene alguna columna nueva (tokens o audio), se guarda
     // sin ella en vez de perder todo el embudo, y se avisa qué falta.
-    if (error && /column .*(pixel_meta_token|pixel_tiktok_token|audio_url|video_url|color|miniatura_url|anuncios).* does not exist/i.test(error.message)) {
-      const { pixel_meta_token, pixel_tiktok_token, audio_url, video_url, color, miniatura_url, anuncios, ...sinNuevas } = fila;
+    if (error && /column .*(pixel_meta_token|pixel_tiktok_token|audio_url|video_url|color|miniatura_url|anuncios|layout).* does not exist/i.test(error.message)) {
+      const { pixel_meta_token, pixel_tiktok_token, audio_url, video_url, color, miniatura_url, anuncios, layout, ...sinNuevas } = fila;
       const reintento = existe?.id
         ? await supabase.from('funnels').update(sinNuevas).eq('id', existe.id)
         : await supabase.from('funnels').insert(sinNuevas);

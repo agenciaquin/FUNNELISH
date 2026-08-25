@@ -14,6 +14,9 @@ export default function MiniaturaFlotante({ url }: { url: string }) {
   const [grande, setGrande]   = useState(false);
   const [cerrada, setCerrada] = useState(false);
   const [sonando, setSonando] = useState(false);
+  // En páginas de una sola pantalla: la miniatura solo se muestra en el INICIO
+  // (el collage). Al bajar al checkout se oculta; reaparece si el cliente sube.
+  const [enInicio, setEnInicio] = useState(true);
   const video = esVideo(url);
 
   // Entra a los 2 segundos, para no competir con lo primero que ve el cliente
@@ -22,7 +25,26 @@ export default function MiniaturaFlotante({ url }: { url: string }) {
     return () => clearTimeout(t);
   }, []);
 
+  // Si hay checkout embebido (#checkout), ocultar la miniatura al llegar a él.
+  useEffect(() => {
+    const revisar = () => {
+      const el = document.getElementById('checkout');
+      if (!el) { setEnInicio(true); return; } // página normal: siempre visible
+      setEnInicio(el.getBoundingClientRect().top > window.innerHeight * 0.6);
+    };
+    window.addEventListener('scroll', revisar, { passive: true });
+    revisar();
+    return () => window.removeEventListener('scroll', revisar);
+  }, []);
+
+  // Al ocultarse (llegó al checkout): silenciar y encoger el video.
+  useEffect(() => {
+    if (!enInicio && ref.current) { ref.current.muted = true; setSonando(false); setGrande(false); }
+  }, [enInicio]);
+
   if (cerrada) return null;
+
+  const mostrar = visible && enInicio;
 
   function alTocar() {
     const v = ref.current;
@@ -39,7 +61,7 @@ export default function MiniaturaFlotante({ url }: { url: string }) {
   return (
     <div
       className={`fixed z-40 transition-all duration-500 ${
-        visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
+        mostrar ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
       } ${grande ? 'bottom-4 right-3 w-64' : 'top-20 right-3 w-28'}`}
     >
       <div className="relative rounded-xl overflow-hidden shadow-2xl border-2 border-white bg-black">

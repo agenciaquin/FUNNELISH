@@ -9,6 +9,7 @@ interface Etiqueta {
   nombre: string;
   color: string;
   descripcion?: string;
+  tipo?: 'estado' | 'adicional';
   created_at: string;
 }
 
@@ -53,6 +54,7 @@ function EtiquetaModal({ etiqueta, onClose, onSaved }: ModalProps) {
   const [nombre,      setNombre]      = useState(etiqueta?.nombre      ?? '');
   const [color,       setColor]       = useState(etiqueta?.color       ?? '#10B981');
   const [descripcion, setDescripcion] = useState(etiqueta?.descripcion ?? '');
+  const [tipo,        setTipo]        = useState<'estado' | 'adicional'>(etiqueta?.tipo ?? 'adicional');
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState('');
 
@@ -65,7 +67,7 @@ function EtiquetaModal({ etiqueta, onClose, onSaved }: ModalProps) {
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre: nombre.trim().toUpperCase(), color, descripcion: descripcion.trim() }),
+        body: JSON.stringify({ nombre: nombre.trim().toUpperCase(), color, descripcion: descripcion.trim(), tipo }),
       });
       if (!res.ok) { const e = await res.json(); setError(e.error ?? 'Error al guardar'); return; }
       onSaved();
@@ -104,6 +106,29 @@ function EtiquetaModal({ etiqueta, onClose, onSaved }: ModalProps) {
             placeholder="Ej: VENTA REALIZADA"
             className="bg-[#FAF9F6] border border-[#E8E8E8] rounded-xl px-4 py-2.5 text-sm text-[#0D0D0D] placeholder-[#6B6B6B]/40 focus:outline-none focus:border-[#00A89D] transition-colors uppercase"
           />
+        </div>
+
+        {/* Tipo */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs text-[#6B6B6B] font-medium uppercase tracking-wide">Tipo de etiqueta</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setTipo('estado')}
+              className={`px-3 py-2.5 rounded-xl border text-left transition-all ${tipo === 'estado' ? 'border-[#00A89D] bg-[#00A89D]/10' : 'border-[#E8E8E8] hover:border-[#00A89D]/40'}`}
+            >
+              <p className="text-xs font-bold text-[#0D0D0D]">🔘 Estado del pedido</p>
+              <p className="text-[10px] text-[#6B6B6B] leading-tight mt-0.5">Una sola a la vez. Reemplaza el estado anterior.</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTipo('adicional')}
+              className={`px-3 py-2.5 rounded-xl border text-left transition-all ${tipo === 'adicional' ? 'border-[#00A89D] bg-[#00A89D]/10' : 'border-[#E8E8E8] hover:border-[#00A89D]/40'}`}
+            >
+              <p className="text-xs font-bold text-[#0D0D0D]">➕ Adicional</p>
+              <p className="text-[10px] text-[#6B6B6B] leading-tight mt-0.5">Se suma encima del estado sin borrarlo.</p>
+            </button>
+          </div>
         </div>
 
         {/* Color */}

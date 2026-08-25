@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { r2Configurado, r2Subir } from '@/lib/r2';
 
 export const maxDuration = 120;
 
@@ -22,6 +23,13 @@ export async function POST(req: NextRequest) {
     const ext = (file.type.split('/')[1] || 'mp4').replace('quicktime', 'mov');
     const ruta = `embudos/${slug}/video-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
 
+    // ── R2 (preferido) ──────────────────────────────────────────────────────
+    if (r2Configurado()) {
+      const url = await r2Subir(ruta, buffer, file.type);
+      return NextResponse.json({ ok: true, url });
+    }
+
+    // ── Supabase (respaldo) ─────────────────────────────────────────────────
     const supabase = createServerSupabaseClient();
     const { error } = await supabase.storage
       .from('chat-media').upload(ruta, buffer, { contentType: file.type, upsert: false });

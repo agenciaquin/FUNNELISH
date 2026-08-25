@@ -156,6 +156,22 @@ export default function SeguimientoPanel({ onAbrirChat }: Props) {
   const [gastoMetaError, setGastoMetaError] = useState<string | null>(null);
   const [cargandoCamp, setCargandoCamp] = useState(false);
 
+  // ── Orden de la tabla de campañas (clic en la columna) ──────────────────────
+  type CampoOrden = 'mensajes' | 'ventas' | 'gasto' | 'costoVenta' | 'conversion';
+  const [orden, setOrden] = useState<{ campo: CampoOrden; dir: 'asc' | 'desc' }>({ campo: 'ventas', dir: 'desc' });
+  const ordenarPor = (campo: CampoOrden) =>
+    setOrden(o => (o.campo === campo ? { campo, dir: o.dir === 'desc' ? 'asc' : 'desc' } : { campo, dir: 'desc' }));
+  const flecha = (campo: CampoOrden) => (orden.campo === campo ? (orden.dir === 'desc' ? ' ▼' : ' ▲') : '');
+  const valorDe = (c: Campana, campo: CampoOrden): number => {
+    if (campo === 'gasto')      return c.gasto ?? -1;
+    if (campo === 'costoVenta') return c.costoPorVenta ?? -1;
+    return Number((c as any)[campo] ?? -1);
+  };
+  const campanasOrdenadas = [...campanas].sort((a, b) => {
+    const va = valorDe(a, orden.campo), vb = valorDe(b, orden.campo);
+    return orden.dir === 'desc' ? vb - va : va - vb;
+  });
+
   const cargarCampanas = useCallback(async () => {
     setCargandoCamp(true);
     try {
@@ -409,11 +425,11 @@ export default function SeguimientoPanel({ onAbrirChat }: Props) {
               <div className="hidden md:flex items-center gap-3 px-4 py-2.5 bg-[#FAFAFA] border-b border-[#EEE] text-[10px] font-bold text-[#9A9A9A] uppercase tracking-wide">
                 <span className="flex-1">Campaña / Producto</span>
                 <span className="w-44 text-center">ID anuncio</span>
-                <span className="w-20 text-center">Mensajes</span>
-                <span className="w-16 text-center">Ventas</span>
-                <span className="w-20 text-center">Gasto</span>
-                <span className="w-24 text-center">Costo/venta</span>
-                <span className="w-16 text-center">Conv.</span>
+                <button onClick={() => ordenarPor('mensajes')} className={`w-20 text-center uppercase tracking-wide hover:text-[#0D0D0D] ${orden.campo === 'mensajes' ? 'text-[#0D0D0D]' : ''}`}>Mensajes{flecha('mensajes')}</button>
+                <button onClick={() => ordenarPor('ventas')} className={`w-16 text-center uppercase tracking-wide hover:text-[#0D0D0D] ${orden.campo === 'ventas' ? 'text-[#0D0D0D]' : ''}`}>Ventas{flecha('ventas')}</button>
+                <button onClick={() => ordenarPor('gasto')} className={`w-20 text-center uppercase tracking-wide hover:text-[#0D0D0D] ${orden.campo === 'gasto' ? 'text-[#0D0D0D]' : ''}`}>Gasto{flecha('gasto')}</button>
+                <button onClick={() => ordenarPor('costoVenta')} className={`w-24 text-center uppercase tracking-wide hover:text-[#0D0D0D] ${orden.campo === 'costoVenta' ? 'text-[#0D0D0D]' : ''}`}>Costo/venta{flecha('costoVenta')}</button>
+                <button onClick={() => ordenarPor('conversion')} className={`w-16 text-center uppercase tracking-wide hover:text-[#0D0D0D] ${orden.campo === 'conversion' ? 'text-[#0D0D0D]' : ''}`}>Conv.{flecha('conversion')}</button>
               </div>
 
               {cargandoCamp ? (
@@ -425,7 +441,7 @@ export default function SeguimientoPanel({ onAbrirChat }: Props) {
                 </p>
               ) : (
                 <div className="divide-y divide-[#F4F4F4]">
-                  {campanas.map(c => (
+                  {campanasOrdenadas.map(c => (
                     <div key={c.anuncioId} className="flex items-center gap-3 px-4 py-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">

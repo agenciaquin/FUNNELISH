@@ -1,0 +1,63 @@
+import Medio from './Medio';
+
+interface Bloque {
+  id: string;
+  tipo: 'foto' | 'video' | 'texto' | 'boton' | string;
+  url?: string;
+  titulo?: string;
+  cuerpo?: string;
+  centrado?: boolean;
+  texto?: string;
+  accion?: 'comprar' | 'url' | string;
+}
+
+/**
+ * Bloques de contenido (constructor tipo Funnelish, simple).
+ * Se muestran ARRIBA del producto. La pila es vertical: siempre se ve bien en
+ * celular. El botón "comprar" lleva a la página de pedido; el botón "url" abre
+ * un enlace externo.
+ */
+export default function Bloques({
+  bloques, acento, irAPedido,
+}: {
+  bloques: Bloque[];
+  acento: { boton: string; texto: string };
+  irAPedido: string;
+}) {
+  if (!bloques || bloques.length === 0) return null;
+  return (
+    <div>
+      {bloques.map(b => {
+        if ((b.tipo === 'foto' || b.tipo === 'video') && b.url) {
+          return <Medio key={b.id} url={b.url} alt="" className="w-full" />;
+        }
+        if (b.tipo === 'texto') {
+          return (
+            <div key={b.id} className={`px-4 py-3 ${b.centrado ? 'text-center' : ''}`}>
+              {b.titulo && (
+                <h2 className="font-extrabold text-lg mb-1" style={{ color: acento.texto }}>{b.titulo}</h2>
+              )}
+              {b.cuerpo && <p className="text-[15px] font-semibold whitespace-pre-line leading-snug">{b.cuerpo}</p>}
+            </div>
+          );
+        }
+        if (b.tipo === 'boton') {
+          const externo = b.accion === 'url' && !!b.url;
+          const href = externo ? (b.url as string) : irAPedido;
+          return (
+            <a
+              key={b.id}
+              href={href}
+              {...(externo ? { target: '_blank', rel: 'noreferrer' } : {})}
+              style={{ background: acento.boton }}
+              className="block mx-3 my-3 rounded-full text-white text-center font-extrabold text-lg py-3.5 hover:opacity-90 transition-opacity"
+            >
+              {b.texto || 'COMPRAR'}
+            </a>
+          );
+        }
+        return null;
+      })}
+    </div>
+  );
+}

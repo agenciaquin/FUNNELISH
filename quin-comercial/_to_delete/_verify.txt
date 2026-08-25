@@ -1,0 +1,2577 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { createServerSupabaseClient } from '@/lib/supabase';
+import { supabaseTenant } from '@/lib/supabase-tenant';
+import { sendTextMessage, sendAudioByUrl, sendImageByUrl, descargarWhatsAppMedia, mostrarEscribiendo } from '@/lib/whatsapp';
+import { transcribirAudio } from '@/lib/transcribir';
+import { PRODUCT_NAMES, FALLBACK_IMAGE, getProductImageUrl } from '@/lib/product-catalog';
+import { chat } from '@/lib/quinchat/claude';
+import { cargarPromptEmpresa, ANDAMIAJE_CONFIRMADO, ANDAMIAJE_SIN_PEDIDO, ANDAMIAJE_PEDIDO_ACTIVO } from '@/lib/quinchat/prompt-tenant';
+import type { ChatRequest } from '@/lib/quinchat/types';
+import { isCompleteAddress, isDirOficina, getAddressQuestion } from '@/lib/address';
+import { validateAddressLupap, getLupapMessage } from '@/lib/lupap';
+import { enviarPushATodos } from '@/lib/push';
+import { bloqueDeMemoria } from '@/lib/memoria';
+import { entrarLinea, tipoDeLinea, tenantActualId, type BaseLinea } from '@/lib/whatsapp-contexto';
+import { responderConDisparadores } from '@/lib/disparadores-bot';
+import { atenderVenta } from '@/lib/quinchat/ventas';
+import { esVendedor, vendedorDe, extraerVentas, nombreChat, generoDe, DIAS_NOMINA, LIMITE_INCENTIVO_SEG } from '@/lib/vendedores';
+import { ADMINS_VENTAS } from '@/lib/quinchat/registro-venta';
+import { lineaTalla } from '@/lib/formato-pedido';
+
+// El webhook espera unos segundos a que el cliente termine de escribir,
+// así que necesita más tiempo del que Vercel da por defecto.
+export const maxDuration = 60;
+
+// ─── Frases de confirmación natural ──────────────────────────────────────────
+
+const NATURAL_CONFIRM_PHRASES = [
+  'si esta bien', 'sí está bien', 'si está bien', 'sí esta bien',
+  'si correcto', 'sí correcto', 'si todo correcto', 'sí todo correcto',
+  'todo correcto', 'todo está correcto', 'todo esta correcto',
+  'si esos son mis datos', 'sí esos son mis datos', 'esos son mis datos',
+  'si todo esta bien', 'sí todo está bien', 'sí todo esta bien',
+  'confirmado', 'si confirmo', 'sí confirmo',
+  'si eso es', 'sí eso es', 'si todo bien', 'sí todo bien',
+  'así está bien', 'asi esta bien', 'de acuerdo', 'todo bien',
+  'si perfecto', 'sí perfecto', 'perfecto así',
+  'correcto', 'está correcto', 'esta correcto', 'es correcto',
+  'procede', 'procédelo', 'procedelo', 'procesa', 'procésalo', 'procesalo',
+  'dale', 'dale pues', 'listo confirmo', 'sí procede', 'si procede',
+  // Agradecimiento / aceptación: si ya se resolvió lo que preguntó y todo está
+  // completo, un "gracias" o "vale" cierra la venta sin exigir la palabra CONFIRMO.
+  'gracias', 'muchas gracias', 'muchísimas gracias', 'muchisimas gracias',
+  'mil gracias', 'ok gracias', 'listo gracias', 'vale gracias',
+  'muy amable', 'perfecto gracias', 'vale', 'bueno gracias',
+];
+
+// ─── TEMPORAL (registro de ventas del mes) ───────────────────────────────────
+// Reenvía cada venta confirmada a un número admin, con el mismo formato del pedido.
+// Para desactivarlo, borra esta función y sus 2 llamadas (enviarRegistroVenta).
+const ADMIN_VENTAS = '573167648391';
+// (ADMINS_VENTAS y las funciones de ficha viven en '@/lib/quinchat/registro-venta')
+// A estos números llegan los avisos operativos (mensajes no entregados, pases a
+// humano, chats que piden ayuda). Lilibeth (…499) recibe copia de todos.
+const SOPORTE = ['573143534918', '573187051499'];
+/** Envía un aviso operativo a todos los números de soporte (incluida Lilibeth). */
+async function notificarSoporte(texto: string) {
+  for (const n of SOPORTE) {
+    try { await sendTextMessage(n, texto); } catch { /* no bloquear */ }
+  }
+}
+/**
+ * PROGRAMA la ficha con período de gracia (idea 1): NO la envía de una. Marca
+ * el pedido para que un cron la mande ~5 min después. Si el cliente corrige algo
+ * (color/talla/dirección) en ese rato, la ficha sale ya CORRECTA, una sola vez.
+ */
+async function enviarRegistroVenta(supabase: any, pedido: any, _tel10: string, _from: string) {
+  if (!pedido?.id) return;
+  try {
+    await supabase.from('clientes_funnelish')
+      .update({ registro_at: new Date().toISOString(), registro_enviado: false })
+      .eq('id', pedido.id);
+  } catch { /* si falla, el cron no la mandará; se puede reenviar a mano */ }
+}
+
+// Aviso al admin cuando el cliente CORRIGE un dato después de haber confirmado.
+// Reenvía la ficha completa ya actualizada, para que no quede la versión vieja.
+async function enviarCorreccionVenta(supabase: any, pedidoId: string, tel10: string, queCambio: string, from: string) {
+  try {
+    const { data: p } = await supabase
+      .from('clientes_funnelish')
+      .select('nombre, telefono, direccion, ciudad, departamento, correo, talla, producto, valor, foto_producto')
+      .eq('id', pedidoId).maybeSingle();
+    if (!p) return;
+    const aviso =
+      `🟠 *DATOS MODIFICADOS*\n` +
+      `_El cliente cambió: ${queCambio}_\n\n` +
+      `Nombre: ${p.nombre ?? '—'}\n` +
+      `Teléfono: ${p.telefono ?? tel10}\n` +
+      `Dirección: ${p.direccion ?? '—'}\n` +
+      `Ciudad: ${p.ciudad ?? '—'}\n` +
+      `Departamento: ${p.departamento ?? '—'}\n` +
+      `Correo: ${p.correo ?? '—'}\n` +
+      `${lineaTalla(p.talla)}\n` +
+      `Producto: ${p.producto ?? '—'}\n` +
+      `Valor: ${p.valor ?? '—'}`;
+
+    // Misma presentación que la venta: foto + ficha como pie de imagen.
+    // Preferimos la foto pegada al pedido (coincide con el producto actual).
+    let urls: string[] = [];
+    const fotoPedido = String((p as any).foto_producto ?? '').trim();
+    if (fotoPedido.startsWith('http')) {
+      urls = [fotoPedido];
+    } else {
+      try {
+        const { data: imgs } = await supabase
+          .from('messages').select('content')
+          .eq('conversation_id', from).eq('type', 'image')
+          .order('created_at', { ascending: false }).limit(4);
+        urls = ([...new Set((imgs ?? []).map((m: any) => m.content))]
+          .filter((u: any) => typeof u === 'string' && u.startsWith('http')) as string[]).slice(0, 1);
+      } catch { /* ignorar */ }
+    }
+
+    for (const admin of ADMINS_VENTAS) {
+      if (urls.length > 0) await sendImageByUrl(admin, urls[0], aviso);
+      else                 await sendTextMessage(admin, aviso);
+    }
+  } catch { /* nunca bloquear la conversación */ }
+}
+
+// ─── VENDEDORES (supervisión) ─────────────────────────────────────────────────
+/** Fecha YYYY-MM-DD en hora Colombia (UTC-5), con desplazamiento de días. */
+function fechaColombia(offsetDias = 0): string {
+  const t = Date.now() - 5 * 3_600_000 + offsetDias * 86_400_000;
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+/** Segundos → "20 min", "1.5 h", "45s" (para mostrarle su promedio al vendedor). */
+function tiempoLegibleSeg(seg: number): string {
+  if (seg < 60) return `${seg}s`;
+  const min = Math.round(seg / 60);
+  if (min < 60) return `${min} min`;
+  return `${(min / 60).toFixed(1)} h`;
+}
+
+/**
+ * Atiende a un VENDEDOR del equipo (no es cliente). El bot es SUPERVISOR:
+ * toma cuántas ventas reporta y actualiza el conteo del día (o de ayer si venía
+ * de la pregunta de las 8am). Nunca le vende.
+ */
+async function atenderVendedor(supabase: any, value: any, from: string): Promise<void> {
+  const vend = vendedorDe(from);
+  if (!vend) return;
+
+  // Envía la respuesta de QUINO Y la guarda en el panel (si no, el chat sale vacío).
+  const responder = async (texto: string) => {
+    const wamid = await sendTextMessage(from, texto);
+    try {
+      await supabase.from('messages').insert({
+        id: `quino-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        conversation_id: from, content: texto, role: 'assistant', type: 'text',
+        whatsapp_id: wamid, created_at: new Date().toISOString(),
+      });
+    } catch { /* ignorar */ }
+    return wamid;
+  };
+
+  // Texto del lote (varios mensajes cortos seguidos)
+  const textos: string[] = [];
+  for (const m of value.messages ?? []) {
+    if (m.type === 'text' && m.text?.body) textos.push(m.text.body);
+    // Se guarda el mensaje para que quede el historial en el panel
+    try {
+      await supabase.from('messages').insert({
+        id: `vend-${m.id}`, conversation_id: from,
+        content: m.type === 'text' ? (m.text?.body ?? '') : `[${m.type}]`,
+        role: 'user', type: 'text', whatsapp_id: m.id, created_at: new Date().toISOString(),
+      });
+    } catch { /* duplicado de Meta: ignorar */ }
+  }
+  // Marca la conversación como del equipo (para que salga aparte, no como cliente).
+  // Se agrupan TODOS en el inbox de Chat WhatsApp (linea 'ventas'), sin importar
+  // por cuál número hayan escrito, para no tenerlos repartidos.
+  try {
+    await supabase.from('conversations').upsert({
+      id: from, contact_name: vend.nombre,
+      last_message: (textos.join(' ') || 'reporte').slice(0, 100),
+      last_message_time: new Date().toISOString(),
+      bot_enabled: true, label: 'VENDEDOR', linea: 'ventas',
+    }, { onConflict: 'tenant_id,id' });
+  } catch { /* ignorar */ }
+
+  const texto = textos.join(' ').trim();
+  const ventas = extraerVentas(texto);
+
+  // ── Pregunta pendiente: define si el número es de HOY o de AYER + tiempo resp.
+  // El tiempo se mide con el PRIMER mensaje que envía el vendedor tras la pregunta
+  // (hora real del mensaje según Meta). Solo cuenta ese primero: los siguientes
+  // mensajes ya no re-cronometran (evita trampas), solo actualizan el número.
+  const primerTs = value.messages?.[0]?.timestamp
+    ? Number(value.messages[0].timestamp) * 1000
+    : Date.now();
+  let tipo: 'hoy' | 'ayer' = 'hoy';
+  let contoTiempo = false; // ¿esta respuesta "paró el reloj" de un check-in cronometrado?
+  try {
+    const { data: preg } = await supabase.from('vendedor_preguntas')
+      .select('id, tipo, enviado_at')
+      .eq('telefono', from).is('respondido_at', null)
+      .order('enviado_at', { ascending: false }).limit(1).maybeSingle();
+    if (preg) {
+      tipo = preg.tipo === 'ayer' ? 'ayer' : 'hoy';
+      const segundos = Math.max(0, Math.round((primerTs - new Date(preg.enviado_at).getTime()) / 1000));
+      await supabase.from('vendedor_preguntas')
+        .update({ respondido_at: new Date(primerTs).toISOString(), respuesta_seg: segundos })
+        .eq('id', preg.id);
+      contoTiempo = true;
+    }
+  } catch { /* si no hay tabla de preguntas, sigue como 'hoy' */ }
+
+  // No entendió un número → pedirlo claro (ya NO se envía la presentación inicial)
+  if (ventas === null) {
+    await responder(
+      `¡Hola ${nombreChat(vend)}! 😊 Respóndeme solo con el *número total* de ventas que llevas HOY (el acumulado del día, ej: 5). Si aún no cierras ninguna, escribe 0.`);
+    return;
+  }
+
+  // ── Guardar el reporte (el ÚLTIMO número manda, no se suma) ─────────────────
+  const fecha = tipo === 'ayer' ? fechaColombia(-1) : fechaColombia(0);
+  try {
+    // upsert manual por (telefono, fecha) sin depender de constraint
+    await supabase.from('vendedor_reportes').delete().eq('telefono', from).eq('fecha', fecha);
+    await supabase.from('vendedor_reportes').insert({
+      telefono: from, nombre: vend.nombre, fecha, ventas,
+      actualizado_at: new Date().toISOString(),
+    });
+  } catch (e) { console.error('[Vendedores] guardar reporte:', e); }
+
+  // ── Promedio de respuesta en la NÓMINA (últimos 10 días) para mostrárselo ────
+  let lineaProm = '';
+  try {
+    const desde = fechaColombia(-(DIAS_NOMINA - 1));
+    const { data: pr } = await supabase.from('vendedor_preguntas')
+      .select('respuesta_seg, respondido_at')
+      .eq('telefono', from).gte('enviado_at', `${desde}T00:00:00`);
+    const resp = (pr ?? []).filter((x: any) => x.respondido_at);
+    if (resp.length) {
+      const avg = Math.round(resp.reduce((s: number, x: any) => s + (Number(x.respuesta_seg) || 0), 0) / resp.length);
+      lineaProm = `\n⏱️ Tu promedio de respuesta en la nómina va en *${tiempoLegibleSeg(avg)}*.`;
+      if (avg < LIMITE_INCENTIVO_SEG && resp.length >= 3) lineaProm += ' ¡Vas ganando el 5% de descuento! 🏅';
+      else if (avg < LIMITE_INCENTIVO_SEG) lineaProm += ' ¡Bien! Mantén ese ritmo para el 5% de descuento. 🎯';
+    }
+  } catch { /* si falla, se responde sin el promedio */ }
+
+  // ── Responder como supervisor: cálido, humano y VARIADO (IA) ────────────────
+  const nombre = nombreChat(vend);
+  const cuando = tipo === 'ayer' ? 'de ayer' : 'de hoy';
+
+  // ¿Es de tarde en Colombia? (para animar más fuerte a quien va bajo)
+  const colHourVend = new Date(Date.now() - 5 * 3_600_000).getUTCHours();
+  const esTarde = colHourVend >= 12 && tipo === 'hoy';
+
+  // QUINO contesta con IA para que suene humano y nunca repita la misma frase.
+  // Si la IA falla, se usa un respaldo con frases rotativas.
+  let humano = '';
+  try {
+    const genero = generoDe(vend);
+    const tratoGenero =
+      genero === 'mujer'
+        ? `${nombre} es MUJER: háblale SIEMPRE en femenino ("campeona", "crack", "una máquina", "lo tienes"). ` +
+          `JAMÁS le digas "hermano", "parce", "mano", "mijo" ni nada masculino.`
+        : genero === 'hombre'
+        ? `${nombre} es HOMBRE: háblale en masculino, pero SIN jerga como "hermano/parce/mano".`
+        : `No tienes confirmado el género de ${nombre}: usa palabras NEUTRAS, sin términos masculinos ni femeninos.`;
+    const sysQuino =
+      `Eres QUINO, el supervisor de ventas del equipo Klixmant (buzos de escuderías de F1/motos, ` +
+      `pago contra entrega, Colombia). Hablas con ${nombre}, vendedor(a) de tu equipo, por WhatsApp.\n` +
+      `Tu personalidad: cálido, motivador y RESPETUOSO, como un líder que valora a su equipo. ` +
+      `Hablas de forma EDUCADA y con buena energía, tuteando, pero SIN jerga informal ` +
+      `(nada de "hermano", "hermana", "parce", "pana", "mano", "mijo/mija"): dirígete por su NOMBRE.\n` +
+      `TRATO SEGÚN GÉNERO: ${tratoGenero}\n` +
+      `Acaba de reportarte que lleva ${ventas} ventas ${cuando}.\n` +
+      `Escríbele UNA respuesta CORTA (1-2 frases, no lo satures) según su nivel de ventas del día:\n` +
+      `- Menos de 4 (bajo): NO lo regañes. Motívalo a que NO baje los brazos y siga consiguiendo ventas para cerrar un buen día. Dale confianza en que todavía puede.\n` +
+      `- Entre 4 y 7 (normal): dile que va en lo normal/aceptable, pero que puede mejorar más. Empújalo a subir.\n` +
+      `- Entre 8 y 11 (estándar/bueno): reconócele el buen ritmo, va bien, anímalo a rematar el día aún mejor.\n` +
+      `- 12 o más (excelente): felicítalo con MUCHA alegría y energía, está arrasando, es un crack.\n` +
+      (esTarde ? `IMPORTANTE: es de TARDE y aún queda día. Si va bajo (menos de 4), refuerza que no se rinda, que la tarde todavía da para cerrar más ventas.\n` : ``) +
+      `REGLAS: varía SIEMPRE las palabras (NUNCA repitas la misma frase, dale una motivación distinta cada vez), usa su nombre, sé genuino, ` +
+      `mensaje corto, 1 o 2 emojis máximo. NO hables del tiempo de respuesta ni de relojes. ` +
+      `Responde SOLO con el mensaje para el vendedor, sin comillas.`;
+    const r = await chat({
+      tenantId: 'klixmant',
+      systemPrompt: sysQuino,
+      messages: [{ role: 'user', content: `Mi reporte: ${ventas} ventas ${cuando}.` }],
+      maxTokens: 120,
+    });
+    humano = (r.message ?? '').trim().replace(/^["“]|["”]$/g, '').trim();
+  } catch { /* usa el respaldo */ }
+
+  if (!humano) {
+    const rot = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+    if (ventas >= 12) {
+      humano = rot([
+        `¡${nombre}, eso es una bestialidad! 🔥 *${ventas}* ventas, ¡estás arrasando hoy! 🏆`,
+        `¡Crack total ${nombre}! *${ventas}* ventas 😱 ¡Vas volando, sigue así! 🚀`,
+        `¡${nombre} imparable! *${ventas}* ventas hoy 💪🔥 ¡Qué máquina!`,
+      ]);
+    } else if (ventas >= 8) {
+      humano = rot([
+        `¡Muy bien ${nombre}! *${ventas}* ventas, buen ritmo 🙌 Rematemos el día aún más arriba 💪`,
+        `¡Vas bien ${nombre}! *${ventas}* ya es sólido 🔥 Dale que puedes cerrar mejor todavía.`,
+        `¡Buen trabajo ${nombre}! *${ventas}* ventas 👏 Sigue empujando para redondear el día.`,
+      ]);
+    } else if (ventas >= 4) {
+      humano = rot([
+        `¡Anotado ${nombre}! *${ventas}* ventas, vas en lo normal 👍 pero puedes más, ¡a subir! 💪`,
+        `¡Bien ${nombre}! *${ventas}* van 🙂 vamos por más, que el día da para subir ese número 🚀`,
+        `¡Ok ${nombre}! *${ventas}* ventas, buen paso 👌 pero sé que puedes cerrar más hoy 🔥`,
+      ]);
+    } else {
+      humano = rot([
+        `¡Ánimo ${nombre}! 💪 Vas en *${ventas}*, no bajes los brazos que ${esTarde ? 'la tarde' : 'el día'} todavía da para cerrar varias más 🔥`,
+        `¡Con toda ${nombre}! 🙌 *${ventas}* por ahora, pero puedes remontar. ¡Sigue tocando puertas! 🚪`,
+        `¡Tú puedes ${nombre}! 💥 Vamos por más de esas *${ventas}*, que aún hay chats por cerrar hoy 🚀`,
+      ]);
+    }
+  }
+
+  let msg = `${humano}${lineaProm}`;
+  // Cierra el ciclo: si esta respuesta paró el reloj de un ⏱️, se lo confirmamos
+  // para que sepa que ya quedó registrado y no siga respondiendo por miedo a perder tiempo.
+  if (contoTiempo) {
+    msg += `\n\n✅ _¡Tiempo registrado! Ya "paraste el reloj" de este ⏱️. Hasta el próximo *MENSAJE CRONOMETRADO* puedes escribirme con calma: no afecta tu promedio._`;
+  }
+  await responder(msg);
+}
+
+// ─── Etiquetas múltiples ──────────────────────────────────────────────────────
+// Un chat puede tener un ESTADO (uno a la vez) + TAGS adicionales (HUMANO, abono).
+// Se guardan en el mismo campo `label` separados por " | ".
+const ESTADOS_CONV = ['PENDIENTE POR CONFIRMACIÓN', 'VENTA REALIZADA', 'ANULADO EN EFFI', 'PEDIDO CANCELADO', 'PEDIDO PROGRAMADO', 'ABONO POR VERIFICAR'];
+function parseLabels(label: string | null | undefined): string[] {
+  return (label ?? '').split('|').map(s => s.trim()).filter(Boolean);
+}
+function joinLabels(arr: string[]): string {
+  return [...new Set(arr.map(s => s.trim()).filter(Boolean))].join(' | ');
+}
+// Fija el ESTADO del pedido (reemplaza el estado previo, CONSERVA los tags como HUMANO).
+async function setEstadoConv(supabase: any, from: string, estado: string) {
+  const { data: conv } = await supabase.from('conversations').select('label').eq('id', from).maybeSingle();
+  const actuales = parseLabels(conv?.label);
+  const tags = actuales.filter(l => !ESTADOS_CONV.includes(l.toUpperCase()));
+  const extra: Record<string, any> = {};
+  // Al marcar la VENTA, se anota la hora: un cron apaga el bot 30 min después
+  // (ya no se necesita y podría dañar la venta respondiendo de más).
+  if (estado.toUpperCase().includes('VENTA REALIZADA')) extra.vendido_at = new Date().toISOString();
+  await supabase.from('conversations').update({ label: joinLabels([estado, ...tags]), ...extra }).eq('id', from);
+}
+// Agrega un TAG (HUMANO, PENDIENTE DE ABONO) sin quitar nada. Devuelve true si era nuevo.
+async function agregarTagConv(supabase: any, from: string, tag: string): Promise<boolean> {
+  const { data: conv } = await supabase.from('conversations').select('label').eq('id', from).maybeSingle();
+  const actuales = parseLabels(conv?.label);
+  if (actuales.map(l => l.toUpperCase()).includes(tag.toUpperCase())) return false;
+  await supabase.from('conversations').update({ label: joinLabels([...actuales, tag]) }).eq('id', from);
+  return true;
+}
+
+// Marca HUMANO (como tag, sin quitar VENTA REALIZADA u otro estado) y avisa al asesor solo 1 vez.
+async function marcarHumanoYNotificar(supabase: any, from: string) {
+  const { data: conv } = await supabase.from('conversations').select('contact_name').eq('id', from).maybeSingle();
+  const esNuevo = await agregarTagConv(supabase, from, 'HUMANO');
+  // APAGAR el bot: a partir de aquí responde el humano, el bot no vuelve a contestar
+  await supabase.from('conversations').update({ bot_enabled: false }).eq('id', from);
+  if (!esNuevo) return; // ya estaba marcado → no repetir aviso
+  const tel = from.replace(/^57/, '');
+  const cliente = conv?.contact_name && conv.contact_name !== 'Desconocido'
+    ? `${conv.contact_name} (${tel})` : tel;
+  const aviso = `🔔 El cliente ${cliente} necesita de tu asistencia para confirmar la compra.`;
+  await notificarSoporte(aviso);
+}
+
+// ─── Catálogo de colores desde la DB ─────────────────────────────────────────
+
+interface ColorVariantDB {
+  color: string;
+  nombre_producto: string;
+  url_imagen: string | null;
+}
+
+/**
+ * Busca en la tabla catalogos_bot el catálogo que corresponde al producto
+ * y, si se menciona un color, intenta encontrar la variante exacta.
+ */
+async function findColorVariantInDB(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  productoNombre: string,
+  colorMentioned: string | null,
+): Promise<{ familia: string; colores: ColorVariantDB[]; match: ColorVariantDB | null } | null> {
+  const { data: catalogos } = await supabase
+    .from('catalogos_bot')
+    .select('id, familia, patron, catalogo_colores(color, nombre_producto, url_imagen)')
+    .eq('activo', true);
+  if (!catalogos?.length) return null;
+
+  const pUpper = productoNombre.toUpperCase();
+  const catalog = catalogos.find(c => pUpper.includes(c.patron.toUpperCase()));
+  if (!catalog) return null;
+
+  const colores: ColorVariantDB[] = catalog.catalogo_colores ?? [];
+  if (!colorMentioned) return { familia: catalog.familia, colores, match: null };
+
+  const cLower = colorMentioned.toLowerCase();
+  const match = colores.find(c =>
+    cLower.includes(c.color.toLowerCase()) ||
+    c.color.toLowerCase().includes(cLower) ||
+    c.nombre_producto.toUpperCase().split(/\s+/).some(w => w.length >= 4 && cLower.includes(w.toLowerCase()))
+  ) ?? null;
+
+  return { familia: catalog.familia, colores, match };
+}
+
+/** Detecta si el texto menciona un color */
+const COLOR_NAMES = ['azul oscuro', 'rojo', 'negro', 'azul', 'blanco marfil', 'marfil', 'blanco', 'amarillo', 'beige', 'verde', 'gris', 'cocoa', 'azul navy', 'verde oscuro'];
+// Colores en uppercase para filtrar palabras de color de los nombres de producto
+const COLOR_NAMES_UPPER = new Set(COLOR_NAMES.map((c: string) => c.toUpperCase()));
+function detectColorInText(textLower: string): string | null {
+  return COLOR_NAMES.find(c => textLower.includes(c)) ?? null;
+}
+
+// ─── Helper para guardar mensajes ────────────────────────────────────────────
+
+async function saveAndSend(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  from: string,
+  content: string,
+  type: 'text' | 'image' = 'text',
+  wamid?: string | null,
+) {
+  const now = new Date().toISOString();
+  await supabase.from('messages').insert({
+    id: `bot-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    conversation_id: from,
+    content,
+    role: 'assistant',
+    type,
+    whatsapp_id: wamid ?? undefined,
+    created_at: now,
+  });
+  // El bot respondió → se limpia el "no leído" (como WhatsApp: el numerito solo
+  // sale si el CLIENTE escribió de último; si el bot contestó, desaparece).
+  await supabase.from('conversations').update({
+    ...(type === 'text' ? { last_message: content.slice(0, 100) } : {}),
+    last_message_time: now,
+    unread_count: 0,
+  }).eq('id', from);
+
+  // ── Persistir el ABONO de oficina apenas el bot MANDA LAS CUENTAS ─────────────
+  // El flujo de oficina a veces lo maneja la IA (no la lógica fija), y no guardaba
+  // el abono. Si el mensaje trae las cuentas reales del abono, el pedido lleva
+  // abono de $5.000 → así el comprobante se marca bien y la ficha sale con desglose.
+  if (type === 'text' && (content.includes('0030538367') || content.includes('303-000037-98'))) {
+    try {
+      const telAb = from.replace(/^57/, '').slice(-10);
+      await supabase.from('clientes_funnelish')
+        .update({ abono: 5000 })
+        .eq('telefono', telAb)
+        .not('estado', 'in', '("cancelado","duplicado")')
+        .or('abono.is.null,abono.eq.0');
+    } catch { /* no bloquear */ }
+  }
+}
+
+// ─── GET — verificación Meta ──────────────────────────────────────────────────
+/**
+ * Verifica el handshake de Meta contra el verify_token esperado.
+ * Reutilizable por la ruta multi-tenant `[tenant]` (cada empresa tiene el suyo).
+ */
+export function verificarMeta(req: NextRequest, expectedToken: string | undefined): NextResponse {
+  const params = req.nextUrl.searchParams;
+  const mode      = params.get('hub.mode');
+  const token     = params.get('hub.verify_token');
+  const challenge = params.get('hub.challenge');
+
+  if (mode === 'subscribe' && expectedToken && token === expectedToken) {
+    console.log('[Webhook] Meta verification OK');
+    return new NextResponse(challenge, { status: 200 });
+  }
+  return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+}
+
+export async function GET(req: NextRequest) {
+  return verificarMeta(req, process.env.WHATSAPP_VERIFY_TOKEN);
+}
+
+// ─── POST — Mensajes entrantes WhatsApp ───────────────────────────────────────
+// Ruta single-tenant (usa credenciales del entorno). La versión multi-tenant
+// vive en `webhook/[tenant]/route.ts` y llama a `procesarEntrada` con las
+// credenciales del cliente.
+export async function POST(req: NextRequest) {
+  return procesarEntrada(req);
+}
+
+/**
+ * Procesa un webhook entrante de WhatsApp. `base` trae las credenciales del
+ * tenant (multi-tenant); si viene vacío, funciona en modo single-tenant (env).
+ */
+export async function procesarEntrada(req: NextRequest, base?: BaseLinea) {
+  let body: any;
+  try { body = await req.json(); } catch { return NextResponse.json({ status: 'ok' }); }
+
+  const value = body?.entry?.[0]?.changes?.[0]?.value;
+
+  // ── Línea (número) por la que entró el mensaje ─────────────────────────────
+  // Fija el número para que TODA respuesta salga por el mismo. 'ventas' o 'funnel'.
+  // En multi-tenant además fija el TOKEN y el TENANT dueño de la conversación.
+  const phoneIdEntrante = value?.metadata?.phone_number_id as string | undefined;
+  const tipoLinea = tipoDeLinea(phoneIdEntrante, base?.phoneIdVentas);
+  entrarLinea({
+    phoneId: phoneIdEntrante ?? base?.phoneId ?? process.env.WHATSAPP_PHONE_NUMBER_ID ?? '',
+    tipo: tipoLinea,
+    accessToken: base?.accessToken,
+    tenantId: base?.tenantId,
+    phoneIdVentas: base?.phoneIdVentas,
+  });
+
+  // MULTI-TENANT: si el mensaje entró por el webhook de un cliente, todas las
+  // consultas se aíslan a ESE tenant automáticamente (ver lib/supabase-tenant).
+  // Si no hay tenant (webhook single-tenant/legacy), se usa el cliente normal.
+  const tidBot = tenantActualId();
+
+  // ── Estados de entrega/lectura de los mensajes que ENVIAMOS ────────────────
+  // Meta avisa: sent → delivered → read (o failed). Guardamos el más avanzado.
+  if (value?.statuses?.length) {
+    const sb = tidBot ? supabaseTenant(tidBot) : createServerSupabaseClient();
+    const RANK: Record<string, number> = { failed: 0, sent: 1, delivered: 2, read: 3 };
+    for (const st of value.statuses) {
+      const wamid  = st?.id as string | undefined;
+      const estado = st?.status as string | undefined;
+      if (!wamid || !estado) continue;
+      // Cuando falla, Meta explica el motivo. Se guarda para poder verlo en el panel.
+      if (estado === 'failed') {
+        const err = st?.errors?.[0];
+        const detalle = [err?.code, err?.title, err?.error_data?.details]
+          .filter(Boolean).join(' · ') || 'sin detalle';
+        console.error(`[WhatsApp] envío fallido ${wamid}: ${detalle}`);
+        await sb.from('messages').update({ error_envio: detalle }).eq('whatsapp_id', wamid);
+
+        // Recuperación: si falló por la imagen (131053/131052 - media), reenviar la
+        // confirmación como TEXTO para que al menos el mensaje llegue (solo sirve si
+        // la ventana de 24h sigue abierta; si no, ya lo cubre la validación de envío).
+        const esErrorMedia = [131053, 131052].includes(Number(err?.code))
+          || /media/i.test(String(err?.title ?? ''));
+        if (esErrorMedia) {
+          try {
+            const { data: falloMedia } = await sb.from('messages')
+              .select('conversation_id, content, type')
+              .eq('whatsapp_id', wamid).maybeSingle();
+            const cuerpo = String(falloMedia?.content ?? '');
+            if (falloMedia?.conversation_id && falloMedia?.type === 'text' && cuerpo && !cuerpo.startsWith('http')) {
+              const nuevoWamid = await sendTextMessage(String(falloMedia.conversation_id), cuerpo);
+              if (nuevoWamid) {
+                await sb.from('messages').insert({
+                  id:              `recup-${wamid}-${Math.random().toString(36).slice(2, 8)}`,
+                  conversation_id: falloMedia.conversation_id,
+                  content:         cuerpo,
+                  role:            'assistant',
+                  type:            'text',
+                  whatsapp_id:     nuevoWamid,
+                  created_at:      new Date().toISOString(),
+                });
+                console.log(`[WhatsApp] confirmación reenviada como texto → ${falloMedia.conversation_id}`);
+              }
+            }
+          } catch (e) { console.warn('[WhatsApp] recuperación por error de media falló:', e); }
+        }
+
+        // Avisar al admin: un pedido que no llega es una venta que se pierde.
+        // EXCEPCIÓN: si el destinatario es un VENDEDOR del equipo, NO se avisa
+        // (sus mensajes fallidos, ej. la plantilla de QUINO fuera de 24h, no son
+        // ventas perdidas y no necesitan alerta). Para clientes sí se avisa normal.
+        try {
+          const { data: fallo } = await sb.from('messages')
+            .select('conversation_id').eq('whatsapp_id', wamid).maybeSingle();
+          if (fallo?.conversation_id && !esVendedor(String(fallo.conversation_id))) {
+            const tel = String(fallo.conversation_id).replace(/^57/, '');
+            await notificarSoporte(
+              `⚠️ *NO SE PUDO ENTREGAR UN MENSAJE*\nCliente: ${tel}\nMotivo: ${detalle}\n\nRevísalo en el panel.`
+            );
+          }
+        } catch { /* no bloquear */ }
+      }
+
+      const { data: msg } = await sb.from('messages').select('status').eq('whatsapp_id', wamid).maybeSingle();
+      const rankActual = RANK[(msg?.status ?? '') as string] ?? -1;
+      const rankNuevo  = RANK[estado] ?? -1;
+      if (rankNuevo >= rankActual) {
+        await sb.from('messages').update({ status: estado }).eq('whatsapp_id', wamid);
+      }
+    }
+    return NextResponse.json({ status: 'ok' });
+  }
+
+  if (!value?.messages?.length) return NextResponse.json({ status: 'ok' });
+
+  const supabase      = tidBot ? supabaseTenant(tidBot) : createServerSupabaseClient();
+  const contactName   = value.contacts?.[0]?.profile?.name ?? 'Desconocido';
+  // Todo lo que el bot ha aprendido y fue aprobado — se suma a sus instrucciones
+  const memoriaBot    = await bloqueDeMemoria();
+
+  // ── Marcar el chat con la línea por la que entró ───────────────────────────
+  // Así aparece en la bandeja correcta (Chat Ventas / Chat Funnel), sin importar
+  // si lo atiende el bot vendedor o el de confirmación.
+  {
+    const remitente = value.messages[0]?.from as string | undefined;
+    if (remitente) {
+      try {
+        await supabase.from('conversations')
+          .update({ linea: tipoLinea }).eq('id', remitente);
+      } catch { /* si aún no existe el chat, se marca al crearlo */ }
+    }
+  }
+
+  // ── ¿Es un VENDEDOR del equipo? ─────────────────────────────────────────────
+  // Estos números NO son clientes: el bot es su SUPERVISOR. No se les vende; se
+  // registra cuántas ventas reportan y se responde motivándolos.
+  {
+    const remite = value.messages[0]?.from as string | undefined;
+    if (remite && esVendedor(remite)) {
+      try { await atenderVendedor(supabase, value, remite); }
+      catch (e) { console.error('[Vendedores] error atendiendo:', e); }
+      return NextResponse.json({ status: 'ok' });
+    }
+  }
+
+  // ── Línea de VENTAS ────────────────────────────────────────────────────────
+  // Si el mensaje llegó al número de ventas Y el cliente NO tiene un pedido
+  // activo, lo atiende el bot vendedor. Si ya tiene pedido, cae al flujo normal
+  // de confirmación (así "vende Y confirma" en el mismo número).
+  // La asesora de ventas atiende TODO en su número: vende, confirma y también
+  // maneja los cambios que el cliente pida después de haber comprado.
+  if (tipoLinea === 'ventas') {
+    await atenderVenta(supabase, value, contactName, new URL(req.url));
+    return NextResponse.json({ status: 'ok' });
+  }
+
+  for (const msg of value.messages) {
+    const from  = msg.from as string;
+    const msgId = msg.id  as string;
+
+    // ── ¿Vino de un anuncio de clic-a-WhatsApp? ──────────────────────────────
+    // Meta manda el anuncio de origen en el primer mensaje. Se guarda una sola
+    // vez por conversación para poder medir qué campaña trajo cada venta.
+    if (msg.referral?.source_type === 'ad' || msg.referral?.source_id) {
+      try {
+        const origen = {
+          anuncio:  msg.referral.source_id ?? null,
+          titular:  msg.referral.headline ?? null,
+          url:      msg.referral.source_url ?? null,
+          ctwa_clid: msg.referral.ctwa_clid ?? null,
+          visto_at: new Date().toISOString(),
+        };
+        const { data: convOrigen } = await supabase
+          .from('conversations').select('origen_anuncio').eq('id', from).maybeSingle();
+        if (!convOrigen?.origen_anuncio) {
+          await supabase.from('conversations')
+            .update({ origen_anuncio: JSON.stringify(origen) }).eq('id', from);
+          console.log(`[WhatsApp] conversación desde anuncio: ${origen.titular ?? origen.anuncio}`);
+        }
+      } catch (e) {
+        console.error('[WhatsApp] no se pudo guardar el origen del anuncio:', e);
+      }
+    }
+
+    // ── Archivos entrantes (foto, audio, video, documento, sticker) ──────────
+    // Se descargan de Meta, se guardan en Supabase Storage y se registran como
+    // mensaje para que se vean en el panel. Sin esto, el chat no muestra nada.
+    // Se declaran a nivel del mensaje para que el clasificador de comprobante
+    // (más abajo, fuera del bloque de descarga) también pueda usarlos.
+    let imgBuffer: Buffer | null = null; // imagen entrante, para clasificar comprobante vs foto
+    let imgMime = '';
+    const TIPOS_MEDIA = ['image', 'audio', 'video', 'document', 'sticker', 'voice'];
+    if (TIPOS_MEDIA.includes(msg.type)) {
+      const mediaId  = msg[msg.type]?.id as string | undefined;
+      const tipoGuardar = msg.type === 'sticker' ? 'image' : (msg.type === 'voice' ? 'audio' : msg.type);
+      const etiquetas: Record<string, string> = {
+        image: '🖼️ Foto', audio: '🎵 Audio', voice: '🎵 Audio',
+        video: '🎬 Video', document: '📎 Documento', sticker: '🖼️ Sticker',
+      };
+      const etiqueta = etiquetas[msg.type] ?? '📎 Archivo';
+      let publicUrl: string | null = null;
+      let audioTexto = '';   // transcripción de la nota de voz (si se pudo)
+
+      if (mediaId) {
+        try {
+          const media = await descargarWhatsAppMedia(mediaId);
+          if (media) {
+            if (msg.type === 'image') { imgBuffer = media.buffer; imgMime = (media.mimeType || 'image/jpeg').split(';')[0]; }
+            const ext = (media.mimeType.split('/')[1] ?? 'bin').split(';')[0].replace('jpeg', 'jpg');
+            const ruta = `entrantes/${from}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
+            const { error: upErr } = await supabase.storage
+              .from('chat-media')
+              .upload(ruta, media.buffer, { contentType: media.mimeType, upsert: false });
+            if (upErr) console.error('[WhatsApp] subir archivo entrante:', upErr.message);
+            else {
+              const { data: pub } = supabase.storage.from('chat-media').getPublicUrl(ruta);
+              publicUrl = pub?.publicUrl ?? null;
+            }
+            // 🎙️ Nota de voz → transcribir para entenderla.
+            if (msg.type === 'audio' || msg.type === 'voice') {
+              audioTexto = (await transcribirAudio(media.buffer, media.mimeType)) ?? '';
+            }
+          }
+        } catch (e) {
+          console.error('[WhatsApp] error guardando archivo entrante:', e);
+        }
+      }
+
+      const ahoraMedia = new Date().toISOString();
+      const caption = (msg[msg.type]?.caption as string | undefined)?.trim();
+
+      // Registrar el archivo en el chat (aunque falle la descarga, queda constancia)
+      await supabase.from('messages').upsert({
+        id: msgId, conversation_id: from,
+        content: publicUrl ?? etiqueta,
+        role: 'user', type: publicUrl ? tipoGuardar : 'text',
+        created_at: ahoraMedia,
+      }, { onConflict: 'id' });
+
+      // Si venía con texto adjunto, guardarlo como mensaje aparte
+      if (caption) {
+        await supabase.from('messages').upsert({
+          id: `${msgId}-caption`, conversation_id: from, content: caption,
+          role: 'user', type: 'text', created_at: ahoraMedia,
+        }, { onConflict: 'id' });
+      }
+
+      const { data: convMedia } = await supabase
+        .from('conversations').select('unread_count, bot_enabled').eq('id', from).maybeSingle();
+
+      if (convMedia) {
+        await supabase.from('conversations').update({
+          contact_name: contactName,
+          last_message: caption || etiqueta,
+          last_message_time: ahoraMedia,
+          unread_count: (convMedia.unread_count ?? 0) + 1,
+        }).eq('id', from);
+      } else {
+        await supabase.from('conversations').insert({
+          id: from, contact_name: contactName,
+          last_message: caption || etiqueta, last_message_time: ahoraMedia,
+          unread_count: 1, bot_enabled: true, linea: tipoLinea,
+        });
+      }
+
+      // Aviso push al panel
+      try {
+        const telM = from.replace(/^57/, '');
+        await enviarPushATodos({
+          title: contactName && contactName !== 'Desconocido' ? `${contactName} (${telM})` : telM,
+          body: caption ? `${etiqueta} — ${caption.slice(0, 90)}` : `Te envió ${etiqueta.toLowerCase()}`,
+          url: '/', tag: `chat-${from}`,
+        });
+      } catch { /* no bloquear */ }
+
+      // ── Nota de voz ────────────────────────────────────────────────────────
+      // El bot no puede escuchar audio. Antes se quedaba callado y el cliente
+      // pensaba que lo ignoraron. Ahora responde y avisa a una persona.
+      if (msg.type === 'audio' || msg.type === 'voice') {
+        const { data: convAudio } = await supabase
+          .from('conversations').select('bot_enabled').eq('id', from).maybeSingle();
+        const botActivo = convAudio ? (convAudio.bot_enabled ?? true) : true;
+
+        if (audioTexto) {
+          // Se transcribió: se guarda como texto para el historial/panel y, si el
+          // bot está activo, se responde reconociendo el mensaje.
+          await supabase.from('messages').upsert({
+            id: `${msgId}-txt`, conversation_id: from, content: `🎙️ ${audioTexto}`,
+            role: 'user', type: 'text', created_at: new Date().toISOString(),
+          }, { onConflict: 'id' });
+          if (botActivo) {
+            const respuesta = '¡Gracias por tu nota de voz! 🎧 Ya la recibí, en un momento te ayudo con tu pedido 😊';
+            const w = await sendTextMessage(from, respuesta);
+            await saveAndSend(supabase, from, respuesta, 'text', w);
+          }
+        } else if (botActivo) {
+          const respuesta =
+            'Recibí tu nota de voz 🎧 pero por aquí no logro escucharla.\n\n' +
+            '¿Me lo puedes escribir en un mensaje? Así te ayudo de una. 😊';
+          const w = await sendTextMessage(from, respuesta);
+          await saveAndSend(supabase, from, respuesta, 'text', w);
+        }
+        continue;
+      }
+
+      // Solo las fotos disparan el flujo de comprobante de abono
+      if (msg.type !== 'image') continue;
+    }
+
+    // ── Imagen entrante ───────────────────────────────────────────────────────
+    if (msg.type === 'image') {
+      // Verificar que el bot esté activo para esta conversación
+      const { data: convImg } = await supabase
+        .from('conversations').select('bot_enabled').eq('id', from).maybeSingle();
+      const botActivo = convImg ? (convImg.bot_enabled ?? true) : true;
+
+      // ¿La imagen es un COMPROBANTE de pago o una FOTO de producto? (visión)
+      let esComprobante = true; // por defecto sí; la visión lo corrige
+      if (imgBuffer) {
+        try {
+          const clasi = await chat({
+            tenantId: 'klixmant',
+            systemPrompt: 'Clasificas imágenes de un chat de ventas. Responde SOLO con "SI" o "NO". ' +
+              'Responde SI únicamente si la imagen es un COMPROBANTE DE PAGO o transferencia bancaria ' +
+              '(captura de Nequi, Bancolombia, Daviplata o un banco: con un monto, fecha y/o número de ' +
+              'referencia/aprobación). Responde NO si es una foto de un producto (ropa, buzo, chaqueta), ' +
+              'una persona, un lugar u otra cosa que no sea un comprobante de pago.',
+            messages: [{ role: 'user', content: '¿Es un comprobante de pago? Responde SI o NO.' }],
+            imagenes: [{ mimeType: imgMime || 'image/jpeg', base64: imgBuffer.toString('base64') }],
+            maxTokens: 5,
+          });
+          esComprobante = /\bs[íi]\b/i.test(clasi.message.trim());
+        } catch (e) { console.error('[Comprobante] clasificación falló:', e); }
+      }
+
+      // Si NO es comprobante (ej. foto de un buzo), no se marca abono ni se dice
+      // "recibí tu comprobante". Se responde de forma neutral.
+      if (!esComprobante) {
+        if (botActivo) {
+          const r = '¡Gracias por la foto! 😊 ¿En qué te ayudo con tu pedido? Si me enviaste tu comprobante de pago, ¿me lo confirmas? 🙌';
+          const w = await sendTextMessage(from, r);
+          await saveAndSend(supabase, from, r, 'text', w);
+        }
+        continue;
+      }
+
+      // Es un comprobante. SEGUNDO CANDADO: solo se marca abono si el pedido
+      // REALMENTE tenía abono pendiente (recoge en oficina). Una venta normal
+      // contra entrega NUNCA sale con abono aunque llegue una imagen.
+      const telImg = from.replace(/^57/, '').slice(-10);
+      const { data: pedImg } = await supabase
+        .from('clientes_funnelish')
+        .select('id, abono')
+        .eq('telefono', telImg)
+        .not('estado', 'in', '("cancelado","duplicado")')
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+      const requiereAbono = pedImg && Number(pedImg.abono) > 0;
+
+      if (requiereAbono && pedImg?.id) {
+        await supabase.from('clientes_funnelish').update({
+          abono_recibido: true,
+          abono_recibido_at: new Date().toISOString(),
+        }).eq('id', pedImg.id);
+      }
+
+      if (botActivo) {
+        let finalMsg: string;
+        if (requiereAbono) {
+          await setEstadoConv(supabase, from, 'ABONO POR VERIFICAR');
+          finalMsg = '¡Listo! ✅ Ya recibí tu comprobante del abono, gracias 🙌\n\nTu pedido queda programado para despacho. Cuando lo envíe te llegará el número de guía desde nuestro chatbot, cuyo número asociado es 3142576239, para que puedas hacerle seguimiento a tu paquete. 🚚';
+        } else {
+          // Comprobante pero el pedido es contra entrega (sin abono): se agradece
+          // sin cobrar abono ni tocar el valor.
+          finalMsg = '¡Gracias! 🙌 Recibí tu imagen. Tu pedido va *contra entrega*, así que pagas al recibir. Lo despachamos y te llega el número de guía para el seguimiento 🚚';
+        }
+        const ackWamid = await sendTextMessage(from, finalMsg);
+        if (ackWamid) await saveAndSend(supabase, from, finalMsg, 'text', ackWamid);
+      }
+      continue;
+    }
+
+    // Extraer texto de: texto normal, botón de plantilla, o botón interactivo
+    let text = '';
+    if (msg.type === 'text') {
+      text = msg.text?.body ?? '';
+    } else if (msg.type === 'button') {
+      // Clic en botón de plantilla (ej: "CONFIRMO DATOS CORRECTOS")
+      text = msg.button?.text ?? msg.button?.payload ?? '';
+    } else if (msg.type === 'interactive') {
+      text = msg.interactive?.button_reply?.title ?? msg.interactive?.button_reply?.id
+          ?? msg.interactive?.list_reply?.title ?? msg.interactive?.list_reply?.id ?? '';
+    } else {
+      continue; // otros tipos (audio, etc.) no se procesan aquí
+    }
+    if (!text.trim()) continue;
+
+    // ── Upsert conversación ──────────────────────────────────────────────────
+    const { data: existing } = await supabase
+      .from('conversations').select('unread_count, bot_enabled, interaccion_bot').eq('id', from).maybeSingle();
+
+    // Marca "interacción con el bot": el cliente respondió DESPUÉS de que el bot ya
+    // había escrito (hubo diálogo). Sirve para el filtro y el seguimiento.
+    let interaccionBot: boolean | undefined = undefined;
+    if (existing && !(existing as any).interaccion_bot) {
+      try {
+        const { data: prevBot } = await supabase.from('messages')
+          .select('id').eq('conversation_id', from).in('role', ['assistant', 'agent']).limit(1).maybeSingle();
+        if (prevBot) interaccionBot = true;
+      } catch { /* ignorar */ }
+    }
+
+    if (existing) {
+      await supabase.from('conversations').update({
+        contact_name: contactName,
+        last_message: text,
+        last_message_time: new Date().toISOString(),
+        unread_count: (existing.unread_count ?? 0) + 1,
+        ...(interaccionBot ? { interaccion_bot: true } : {}),
+      }).eq('id', from);
+    } else {
+      await supabase.from('conversations').insert({
+        id: from, contact_name: contactName,
+        last_message: text, last_message_time: new Date().toISOString(),
+        unread_count: 1, bot_enabled: true, linea: tipoLinea,
+      });
+    }
+
+    // ── Resolver contexto de mensaje citado ──────────────────────────────────
+    let replyToContent: string | null = null;
+    if (msg.context?.id) {
+      const { data: quotedMsg } = await supabase.from('messages').select('content, type')
+        .or(`whatsapp_id.eq.${msg.context.id},id.eq.${msg.context.id}`).maybeSingle();
+      if (quotedMsg) {
+        if ((quotedMsg.type === 'image' || quotedMsg.type === 'video') && quotedMsg.content.startsWith('http'))
+          replyToContent = quotedMsg.content;
+        else if (quotedMsg.type === 'image')    replyToContent = '🖼️ Foto';
+        else if (quotedMsg.type === 'audio')    replyToContent = '🎵 Audio';
+        else if (quotedMsg.type === 'video')    replyToContent = '🎬 Video';
+        else if (quotedMsg.type === 'document') replyToContent = '📎 Documento';
+        else replyToContent = quotedMsg.content;
+      } else {
+        replyToContent = '💬';
+      }
+    }
+
+    // ── Guardar mensaje entrante (idempotente) ───────────────────────────────
+    const horaMensaje = new Date().toISOString();
+    await supabase.from('messages').upsert({
+      id: msgId, conversation_id: from, content: text,
+      role: 'user', type: 'text', reply_to: replyToContent,
+      created_at: horaMensaje,
+    }, { onConflict: 'id' });
+
+    // ── Aviso push al panel (PC / celular) ───────────────────────────────────
+    // Se envía siempre, incluso con el bot apagado: si atiende una persona,
+    // es justo cuando más importa enterarse al instante.
+    try {
+      const tel = from.replace(/^57/, '');
+      await enviarPushATodos({
+        title: contactName && contactName !== 'Desconocido' ? `${contactName} (${tel})` : tel,
+        body: text.length > 120 ? `${text.slice(0, 117)}…` : text,
+        url: '/',
+        tag: `chat-${from}`, // un aviso por conversación: los nuevos reemplazan al anterior
+      });
+    } catch (e) {
+      console.error('[Push] no se pudo notificar:', e);
+    }
+
+    // ── Verificar bot activo ─────────────────────────────────────────────────
+    const botEnabled = existing ? (existing.bot_enabled ?? true) : true;
+    if (!botEnabled) continue;
+
+    // ── Esperar a que el cliente termine de escribir ─────────────────────────
+    // La gente escribe en varios mensajes cortos ("hola", "quiero el negro",
+    // "talla M"). Antes el bot respondía a cada uno por separado, sin ver lo que
+    // venía después. Ahora espera unos segundos: si llega otro mensaje, deja que
+    // ese se encargue, y responde una sola vez con todo el contexto.
+    const ESPERA_MS = 7000;
+    await new Promise(r => setTimeout(r, ESPERA_MS));
+
+    const { data: llegoOtro } = await supabase
+      .from('messages').select('id')
+      .eq('conversation_id', from).eq('role', 'user')
+      .gt('created_at', horaMensaje)
+      .limit(1);
+
+    // Llegó otro mensaje mientras esperábamos → ese lo atiende
+    if (llegoOtro && llegoOtro.length > 0) continue;
+
+    // Juntar todo lo que escribió desde la última respuesta, para leerlo completo
+    const { data: ultimaRespuesta } = await supabase
+      .from('messages').select('created_at')
+      .eq('conversation_id', from).in('role', ['assistant', 'agent'])
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+    const { data: seguidos } = await supabase
+      .from('messages').select('content, created_at')
+      .eq('conversation_id', from).eq('role', 'user').eq('type', 'text')
+      .gt('created_at', ultimaRespuesta?.created_at ?? '1970-01-01')
+      .order('created_at', { ascending: true }).limit(8);
+
+    if (seguidos && seguidos.length > 1) {
+      const juntos = seguidos
+        .map((m: any) => String(m.content ?? '').trim())
+        .filter(Boolean)
+        .join('. ');
+      if (juntos.length > 0 && juntos.length < 900) {
+        text = juntos;
+        console.log(`[WhatsApp] ${seguidos.length} mensajes seguidos unidos: "${juntos.slice(0, 80)}"`);
+      }
+    }
+
+    // Mostrarle "escribiendo…" mientras se prepara la respuesta
+    try { await mostrarEscribiendo(msgId); } catch { /* no bloquear */ }
+
+    const textLower = text.toLowerCase();
+
+    // ── Audio automático cuando pide oficina o municipio sin cobertura ────────
+    const AUDIO_OFICINA   = 'https://bjbjqmbuzpyjvcugbusx.supabase.co/storage/v1/object/public/chat-media/audios-bot/abono-oficina.ogg';
+    const AUDIO_MUNICIPIO = 'https://bjbjqmbuzpyjvcugbusx.supabase.co/storage/v1/object/public/chat-media/audios-bot/abono-municipio.ogg';
+    const isOficina   = textLower.includes('interrapidisimo') || textLower.includes('interrapidísimo')
+                     || textLower.includes('reclamar en oficina') || textLower.includes('recoger en oficina');
+    const isMunicipio = textLower.includes('no llega contra entrega')
+                     || textLower.includes('no hay contra entrega')
+                     || textLower.includes('zona rural');
+
+    // Objeción al abono (el cliente no quiere / no puede pagarlo)
+    const abonoObjection = [
+      'no quiero abonar', 'no puedo abonar', 'no pienso abonar', 'no voy a abonar',
+      'no hare abono', 'no haré abono', 'no hago abono', 'no quiero hacer el abono',
+      'no quiero hacer abono', 'no me gusta el abono', 'por que el abono', 'por qué el abono',
+      'porque el abono', 'para que el abono', 'para qué el abono', 'por que debo abonar',
+      'por qué debo abonar', 'sin abono', 'es mucho abono', 'no estoy de acuerdo con el abono',
+      'el abono es una estafa', 'el abono es un robo', 'no confio en el abono', 'no confío en el abono',
+    ].some(w => textLower.includes(w));
+
+    // El cliente acepta y pide la cuenta / cómo abonar
+    const abonoAccountReq = [
+      'cuenta para el abono', 'cuenta para abonar', 'cuenta del abono', 'cuenta pal abono',
+      'regalame la cuenta', 'regálame la cuenta', 'pasame la cuenta', 'pásame la cuenta', 'pasa la cuenta',
+      'numero de cuenta', 'número de cuenta', 'a que cuenta', 'a qué cuenta',
+      'datos para abonar', 'datos del abono', 'datos para el abono',
+      'como abono', 'cómo abono', 'como hago el abono', 'cómo hago el abono',
+      'donde abono', 'dónde abono', 'a donde abono', 'a dónde abono', 'donde consigno',
+      'quiero abonar', 'voy a abonar', 'quiero hacer el abono', 'hacer el abono', 'realizar el abono',
+      'como pago el abono', 'cómo pago el abono',
+    ].some(w => textLower.includes(w));
+
+    // Objeción PRIMERO (ej: "no quiero abonar" contiene "quiero abonar")
+    if (abonoObjection) {
+      const MSG_ABONO_OBJECION =
+        `Te entiendo perfectamente 😊 Si dependiera de mí te lo enviaría sin abono, pero es una política del área de despacho: si paso el pedido sin abono, me lo cancelan y no lo despachan.\n\n` +
+        `El abono es de solo *$5.000* y se *descuenta del total* de tu pedido, así que no pierdes nada. Lo pedimos porque sin él, muchos pedidos enviados a oficina se devolvían cuando el cliente no pasaba a reclamar. No ganaríamos nada quedándote mal por $5.000 ni dañando la reputación de la empresa 🙏\n\n` +
+        `👉 Si prefieres, también podemos enviarlo *directo a tu dirección con pago contra entrega* (sin abono). ¿Cuál opción prefieres? 🚚`;
+      const wamid = await sendTextMessage(from, MSG_ABONO_OBJECION);
+      await saveAndSend(supabase, from, MSG_ABONO_OBJECION, 'text', wamid);
+      continue;
+    }
+
+    // Cliente acepta el abono y pide la cuenta → enviar cuentas + pedir comprobante
+    // Cliente prefiere pagar por Nequi → enviar cuenta Nequi (medio de pago secundario)
+    if (textLower.includes('nequi')) {
+      const MSG_NEQUI =
+        `¡Claro! 😊 También puedes pagar por *Nequi*:\n` +
+        `📲 Nequi: *3505717342* — Jonatan Hurtado\n\n` +
+        `Cuando hagas el pago, envíame el *comprobante* por aquí 📷.`;
+      const wamid = await sendTextMessage(from, MSG_NEQUI);
+      await saveAndSend(supabase, from, MSG_NEQUI, 'text', wamid);
+      continue;
+    }
+
+    // ¿El bot ACABA de ofrecer los datos del abono ("¿Te paso los datos para el
+    // abono?") y el cliente respondió que SÍ? Entonces se le mandan las cuentas,
+    // en vez de repetir la oferta (esto causaba un loop del mismo mensaje).
+    let aceptoDatosAbono = false;
+    try {
+      const { data: ultBot } = await supabase.from('messages')
+        .select('content').eq('conversation_id', from).eq('role', 'assistant')
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      const cont = String(ultBot?.content ?? '').toLowerCase();
+      const ofrecioAbono = cont.includes('datos para el abono') || cont.includes('te paso los datos');
+      const t = textLower.trim();
+      const afirma = ['si', 'sí', 'dale', 'ok', 'okay', 'bueno', 'claro', 'listo', 'porfa', 'por favor', 'de una', 'hazlo', 'sí por favor', 'si por favor', 'obvio', 'de once']
+        .includes(t) || /^(s[ií]|dale|ok|bueno|claro|listo)\b/.test(t);
+      aceptoDatosAbono = ofrecioAbono && afirma;
+    } catch { /* ignorar */ }
+
+    if (abonoAccountReq || aceptoDatosAbono) {
+      // El pedido lleva abono de $5.000 (se descuenta del total). Se persiste.
+      const telAb = from.replace(/^57/, '').slice(-10);
+      try {
+        await supabase.from('clientes_funnelish').update({ abono: 5000 })
+          .eq('telefono', telAb).not('estado', 'in', '("cancelado","duplicado")');
+      } catch { /* ignorar */ }
+      const MSG_ABONO_CUENTA =
+        `¡Perfecto! 🙌 El abono es de solo *$5.000* y se descuenta del total de tu pedido — es decir, abonas $5.000 ahora y el resto lo pagas al recibir.\n\n` +
+        `Puedes hacer el abono a cualquiera de estas cuentas:\n` +
+        `🔑 Llave: *0030538367* — funciona con todos los bancos (Nequi, Daviplata, etc.)\n` +
+        `🏦 Bancolombia Ahorros: *303-000037-98* — Klixmant SAS\n\n` +
+        `Cuando lo hagas, envíame el *comprobante* por aquí 📷 y dejamos tu pedido listo para despacho por la oficina de Interrapidísimo. 🚚`;
+      const wamid = await sendTextMessage(from, MSG_ABONO_CUENTA);
+      await saveAndSend(supabase, from, MSG_ABONO_CUENTA, 'text', wamid);
+      await agregarTagConv(supabase, from, 'PENDIENTE DE ABONO');
+      continue;
+    }
+
+    if (isOficina || isMunicipio) {
+      // Queda anotado que este pedido lleva abono, para descontarlo del cobro
+      const telAb = from.replace(/^57/, '').slice(-10);
+      await supabase.from('clientes_funnelish')
+        .update({ abono: 5000 })
+        .eq('telefono', telAb).eq('confirmado', false)
+        .not('estado', 'in', '("cancelado","duplicado")');
+
+      const audioUrl   = isOficina ? AUDIO_OFICINA : AUDIO_MUNICIPIO;
+      const audioLabel = isOficina ? '🎵 Audio abono oficina' : '🎵 Audio abono municipio';
+      const { data: existingAudio } = await supabase.from('messages').select('id')
+        .eq('conversation_id', from).eq('type', 'audio').eq('content', audioUrl).maybeSingle();
+      if (!existingAudio) {
+        const audioWamid = await sendAudioByUrl(from, audioUrl);
+        if (audioWamid) {
+          const nowA = new Date().toISOString();
+          await supabase.from('messages').insert({
+            id: `bot-audio-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            conversation_id: from, content: audioUrl,
+            role: 'assistant', type: 'audio', whatsapp_id: audioWamid, created_at: nowA,
+          });
+          await supabase.from('conversations').update({ last_message: audioLabel, last_message_time: nowA }).eq('id', from);
+        }
+      } else {
+        const exp = `Te entiendo perfectamente 😊 Si dependiera de mí te lo enviamos sin abono, pero es una política del área de despacho. Los $5.000 son para garantizar el despacho. ¿Listo? 🙌`;
+        const expWamid = await sendTextMessage(from, exp);
+        await saveAndSend(supabase, from, exp, 'text', expWamid);
+      }
+      continue;
+    }
+
+    // ── Cancelación / programación del pedido (auto-etiqueta) ─────────────────
+    const cancelaPedido = ['cancela', 'cancelar', 'cancelo', 'anula', 'anular', 'anulen',
+      'no lo quiero', 'ya no lo quiero', 'no quiero el pedido', 'ya no quiero', 'no me interesa',
+      'no voy a comprar', 'no deseo el pedido', 'no lo voy a comprar'].some(w => textLower.includes(w));
+    const programaPedido = ['para después', 'para despues', 'más adelante', 'mas adelante',
+      'yo te aviso', 'yo aviso', 'yo le aviso', 'lo programo', 'programar el pedido', 'la próxima semana',
+      'la proxima semana', 'el otro mes', 'cuando pueda', 'luego confirmo', 'luego te confirmo',
+      'después confirmo', 'despues confirmo', 'después te confirmo', 'despues te confirmo',
+      'lo dejo para', 'lo dejamos para'].some(w => textLower.includes(w));
+
+    if (cancelaPedido) {
+      await setEstadoConv(supabase, from, 'PEDIDO CANCELADO');
+      // Marcar el pedido como cancelado en BD para que NO se pueda confirmar después
+      const telCancel = from.replace(/^57/, '').slice(-10);
+      await supabase.from('clientes_funnelish')
+        .update({ estado: 'cancelado' })
+        .eq('telefono', telCancel).eq('confirmado', false);
+      const msg = `Entendido 😊 Cancelo tu pedido por ahora. Si más adelante quieres retomarlo, escríbeme y con gusto te ayudo. ¡Gracias!`;
+      const wamid = await sendTextMessage(from, msg);
+      await saveAndSend(supabase, from, msg, 'text', wamid);
+      continue;
+    }
+    if (programaPedido) {
+      await setEstadoConv(supabase, from, 'PEDIDO PROGRAMADO');
+      const msg = `¡Perfecto! 😊 Dejo tu pedido guardado y no te molesto más. Cuando estés listo/a, escríbeme *CONFIRMO* y lo despachamos de una. 🚚`;
+      const wamid = await sendTextMessage(from, msg);
+      await saveAndSend(supabase, from, msg, 'text', wamid);
+      continue;
+    }
+
+    // ── Preguntas pendientes de Funnelish ────────────────────────────────────
+    // Cuando llega el pedido, WhatsApp solo permite plantillas (ventana de 24h cerrada),
+    // así que las preguntas por datos faltantes quedaron guardadas. El cliente acaba de
+    // escribir → la ventana está abierta → ahora sí se pueden enviar.
+    {
+      const telPend = from.replace(/^57/, '').slice(-10);
+      const { data: pedPend } = await supabase
+        .from('clientes_funnelish')
+        .select('id, preguntas_pendientes')
+        .eq('telefono', telPend).eq('confirmado', false)
+        .not('estado', 'in', '("cancelado","duplicado")')
+        .not('preguntas_pendientes', 'is', null)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+      if (pedPend?.preguntas_pendientes) {
+        // Siempre se limpian: solo se envían una vez
+        await supabase.from('clientes_funnelish')
+          .update({ preguntas_pendientes: null }).eq('id', pedPend.id);
+
+        let preguntas: string[] = [];
+        try { preguntas = JSON.parse(pedPend.preguntas_pendientes); } catch { preguntas = []; }
+
+        // Si el primer mensaje es corto/genérico ("hola", "?", "ok") → enviar las
+        // preguntas y no seguir procesando. Si trae contenido real, se limpian y el
+        // flujo normal de abajo ya se encarga de pedir lo que falte.
+        const esGenerico = text.trim().length < 25 && !/\d/.test(text);
+        if (Array.isArray(preguntas) && preguntas.length > 0 && esGenerico) {
+          for (const p of preguntas) {
+            const pw = await sendTextMessage(from, p);
+            await saveAndSend(supabase, from, p, 'text', pw);
+          }
+          continue;
+        }
+      }
+    }
+
+    // ── Detección CONFIRMO ───────────────────────────────────────────────────
+    const textClean = text.trim().toUpperCase();
+    const isConfirmo = ['CONFIRMO', '✅ CONFIRMO', 'CONFIRMO ✅', 'SI CONFIRMO', 'SÍ CONFIRMO']
+      .includes(textClean)
+      || textClean.startsWith('CONFIRMO ')
+      || textClean === 'SI'
+      || textClean === 'SÍ'
+      // Botón de la plantilla ("CONFIRMO DATOS CORRECTOS"). A veces llega unido al
+      // texto de saludo de la plantilla, así que se busca como subcadena.
+      || textClean.includes('CONFIRMO DATOS CORRECTOS')
+      // "confirmo" como palabra en cualquier parte (ej. mensajes unidos), evitando
+      // "no confirmo" y "¿cómo confirmo?".
+      || (/\bCONFIRMO\b/.test(textClean)
+          && !/\bNO\s+CONFIRMO\b/.test(textClean)
+          && !/\bC[OÓ]MO\s+CONFIRMO\b/.test(textClean));
+
+    // ── Dos pedidos pendientes DISTINTOS ─────────────────────────────────────
+    // Los duplicados por doble clic ya los descarta el webhook de Funnelish.
+    // Si aun así quedan dos pedidos vivos, son compras diferentes de verdad
+    // (otro color u otra talla) y hay que preguntarle al cliente si quiere ambas.
+    {
+      const telM = from.replace(/^57/, '').slice(-10);
+      const { data: variosPed } = await supabase
+        .from('clientes_funnelish')
+        .select('id, nombre, producto, talla, direccion, ciudad, departamento, correo, valor, telefono, abono, abono_recibido')
+        .eq('telefono', telM).eq('confirmado', false)
+        .not('estado', 'in', '("cancelado","duplicado")')
+        .order('created_at', { ascending: true });
+
+      const lista = variosPed ?? [];
+      if (lista.length > 1) {
+        const MARCA_PREGUNTA = 'tienes dos pedidos';
+
+        // ¿Ya le preguntamos cuál quiere?
+        const { data: ultimoBot } = await supabase
+          .from('messages').select('content')
+          .eq('conversation_id', from).in('role', ['assistant', 'agent'])
+          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        const yaPreguntamos = (ultimoBot?.content ?? '').toLowerCase().includes(MARCA_PREGUNTA);
+
+        // Datos que le faltan a un pedido para poder despacharlo
+        const faltantesDe = (p: any): string[] => {
+          const f: string[] = [];
+          if (!p.talla || p.talla === 'Por confirmar' || p.talla === 'ELIGE TALLA') f.push('talla');
+          if (getAddressQuestion(p.direccion)) f.push('dirección');
+          if (!p.ciudad || p.ciudad === '—') f.push('ciudad');
+          if (!p.departamento || p.departamento === '—') f.push('departamento');
+          return f;
+        };
+
+        const confirmarUno = async (p: any) => {
+          await supabase.from('clientes_funnelish').update({
+            confirmado: true, confirmado_at: new Date().toISOString(), estado: 'confirmado',
+          }).eq('id', p.id);
+          await enviarRegistroVenta(supabase, p, telM, from);
+        };
+
+        if (yaPreguntamos) {
+          const quiereAmbos = /\b(los dos|las dos|ambos|ambas|los 2|las 2|todo|todos|si.*dos)\b/i.test(textLower);
+
+          // ¿Mencionó uno en concreto? (por color o por talla)
+          const elegido = lista.find((p: any) => {
+            const palabras = String(p.producto ?? '').toUpperCase().split(/\s+/).filter((w: string) => w.length >= 4);
+            return palabras.some((w: string) => textLower.includes(w.toLowerCase()));
+          });
+
+          if (quiereAmbos) {
+            const incompletos = lista.filter((p: any) => faltantesDe(p).length > 0);
+            if (incompletos.length > 0) {
+              const detalle = incompletos
+                .map((p: any) => `• *${p.producto}*: falta ${faltantesDe(p).join(', ')}`)
+                .join('\n');
+              const msg = `¡Perfecto, te llevas los dos! 🙌\n\nSolo me falta un dato para poder despacharlos:\n\n${detalle}\n\n¿Me lo confirmas?`;
+              const w = await sendTextMessage(from, msg);
+              await saveAndSend(supabase, from, msg, 'text', w);
+              continue;
+            }
+            for (const p of lista) await confirmarUno(p);
+            await setEstadoConv(supabase, from, 'VENTA REALIZADA');
+            const msg = `¡Listo! 🙌 Quedaron confirmados tus *${lista.length} pedidos*. Cuando los envíe te llegará el número de guía desde nuestro chatbot, cuyo número asociado es 3142576239, para que puedas hacerle seguimiento. 🚚`;
+            const w = await sendTextMessage(from, msg);
+            await saveAndSend(supabase, from, msg, 'text', w);
+            continue;
+          }
+
+          if (elegido) {
+            const faltan = faltantesDe(elegido);
+            if (faltan.length > 0) {
+              const msg = `¡Perfecto, te llevas el *${elegido.producto}*! 😊\n\nSolo me falta ${faltan.join(', ')} para despacharlo. ¿Me lo confirmas?`;
+              const w = await sendTextMessage(from, msg);
+              await saveAndSend(supabase, from, msg, 'text', w);
+              continue;
+            }
+            // Confirmar el elegido y cancelar el otro
+            await confirmarUno(elegido);
+            for (const p of lista) {
+              if (p.id !== elegido.id) {
+                await supabase.from('clientes_funnelish').update({ estado: 'cancelado' }).eq('id', p.id);
+              }
+            }
+            await setEstadoConv(supabase, from, 'VENTA REALIZADA');
+            const msg = `¡Listo! ✅ Queda confirmado tu *${elegido.producto}* y cancelé el otro pedido.\n\nCuando lo envíe te llegará el número de guía desde nuestro chatbot, cuyo número asociado es 3142576239, para que puedas hacerle seguimiento. 🚚`;
+            const w = await sendTextMessage(from, msg);
+            await saveAndSend(supabase, from, msg, 'text', w);
+            continue;
+          }
+
+          // No se entendió la respuesta → volver a preguntar de forma corta
+          const opciones = lista.map((p: any, i: number) => `${i + 1}️⃣ *${p.producto}*${p.talla && p.talla !== 'Por confirmar' ? ` — talla ${p.talla}` : ''}`).join('\n');
+          const msg = `Disculpa, no te entendí 😅 Como tienes dos pedidos, dime por favor: ¿quieres *los dos* o solo uno?\n\n${opciones}`;
+          const w = await sendTextMessage(from, msg);
+          await saveAndSend(supabase, from, msg, 'text', w);
+          continue;
+        }
+
+        // Aún no le hemos preguntado: si está confirmando, preguntarle cuál quiere
+        const afirmaAlgo = isConfirmo ||
+          /\b(si|s[ií]|claro|correcto|listo|dale|ok|perfecto|confirmo|confirmado|as[ií] es|todo bien)\b/i.test(textLower);
+
+        if (afirmaAlgo) {
+          const opciones = lista.map((p: any, i: number) => {
+            const t = p.talla && p.talla !== 'Por confirmar' && p.talla !== 'ELIGE TALLA' ? ` — talla ${p.talla}` : '';
+            return `${i + 1}️⃣ *${p.producto}*${t} — ${p.valor ?? ''}`;
+          }).join('\n');
+          const msg =
+            `¡Gracias! 😊 Antes de despachar te confirmo algo: veo que *tienes dos pedidos* registrados:\n\n${opciones}\n\n` +
+            `¿Quieres *los dos*, o solo uno? Si es solo uno, dime cuál. 🙌`;
+          const w = await sendTextMessage(from, msg);
+          await saveAndSend(supabase, from, msg, 'text', w);
+          continue;
+        }
+      }
+    }
+
+    if (isConfirmo) {
+      const tel10 = from.replace(/^57/, '').slice(-10);
+      const { data: pedido } = await supabase
+        .from('clientes_funnelish')
+        .select('id, nombre, producto, talla, direccion, ciudad, departamento, correo, valor, telefono, abono, abono_recibido')
+        .eq('telefono', tel10).eq('confirmado', false)
+        .not('estado', 'in', '("cancelado","duplicado")') // no confirmar pedidos cancelados
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+      if (pedido) {
+        const missing: string[] = [];
+        if (!pedido.talla || pedido.talla === 'Por confirmar')
+          missing.push('talla del buzo (XS, S, M, L, XL, XXL, XXXL)');
+        const dirQ = getAddressQuestion(pedido.direccion);
+        if (dirQ) missing.push('dirección'); // marcador — se reemplaza abajo
+        if (!pedido.ciudad || pedido.ciudad === '—')
+          missing.push('ciudad');
+        if (!pedido.departamento || pedido.departamento === '—')
+          missing.push('departamento');
+
+        if (missing.length > 0) {
+          // El cliente YA dijo que confirma: en cuanto complete el dato que falta,
+          // se cierra la venta sola, sin volver a preguntarle si confirma.
+          await supabase.from('clientes_funnelish')
+            .update({ pidio_confirmar: true }).eq('id', pedido.id);
+
+          // Si la dirección está incompleta y es el único dato faltante, pregunta específica
+          if (dirQ && missing.length === 1) {
+            const wamid = await sendTextMessage(from, dirQ);
+            await saveAndSend(supabase, from, dirQ, 'text', wamid);
+          } else {
+            const otherMissing = missing.filter(f => f !== 'dirección');
+            const reaskParts: string[] = [];
+            if (dirQ) reaskParts.push(dirQ);
+            if (otherMissing.length > 0) reaskParts.push(`Antes de confirmar también necesito: ${otherMissing.join(', ')}.`);
+            const reask = reaskParts.join('\n\n');
+            const wamid = await sendTextMessage(from, reask);
+            await saveAndSend(supabase, from, reask, 'text', wamid);
+          }
+          continue;
+        }
+
+        // Todo completo → confirmar
+        await supabase.from('clientes_funnelish').update({
+          confirmado: true, confirmado_at: new Date().toISOString(), estado: 'confirmado',
+        }).eq('id', pedido.id);
+        await setEstadoConv(supabase, from, 'VENTA REALIZADA');
+        await enviarRegistroVenta(supabase, pedido, tel10, from); // TEMPORAL: registro de ventas
+      }
+
+      const confirmReply = '¡Gracias por tu compra, cuando lo envie te estara llegando el número de guía desde nuestro chatbot, cuyo número asociado es 3142576239, para que puedas realizarle seguimiento a tu paquete.';
+      const wamid = await sendTextMessage(from, confirmReply);
+      await saveAndSend(supabase, from, confirmReply, 'text', wamid);
+      continue;
+    }
+
+    // ── Buscar pedido pendiente ──────────────────────────────────────────────
+    // Nota: NO filtramos por wa_enviado=true — puede llegar un mensaje del cliente
+    // antes de que el webhook de Funnelish termine de marcar wa_enviado (race condition).
+    const tel10 = from.replace(/^57/, '').slice(-10);
+    const { data: pendingPedido } = await supabase
+      .from('clientes_funnelish')
+      .select('id, nombre, producto, talla, direccion, ciudad, departamento, valor, correo, telefono, direccion_ok, pidio_confirmar, abono, abono_recibido')
+      .eq('telefono', tel10).eq('confirmado', false)
+      .not('estado', 'in', '("cancelado","duplicado")') // pedidos cancelados no cuentan como pendientes
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+    // ── El cliente especificó las tallas de un PACK (2+ prendas) ─────────────
+    // Ej: "1 DAMA L MERCEDES BENZ - NEGRO / 1 CABALLERO XXL MERCEDES BENZ - NEGRO".
+    // Se guarda en la BD para que la ficha de venta salga con las tallas correctas,
+    // sin cortar el flujo: el bot igual responde con normalidad.
+    {
+      const activo = pendingPedido;
+      if (activo?.id) {
+        const partes = text.split(/[\n;,]+/).map(s => s.trim()).filter(Boolean);
+        const prendas: string[] = [];
+        for (const p of partes) {
+          const g = p.match(/\b(dama|mujer|caballero|hombre|ni[nñ]o|ni[nñ]a|unisex)\b/i);
+          const t = p.match(/\b(xs|s|m|l|xl|xxl|xxxl)\b/i);
+          if (g && t) prendas.push(`${g[1].toUpperCase()} ${t[1].toUpperCase()}`);
+        }
+        if (prendas.length >= 2) {
+          const combinada = [...new Set(prendas)].join(' / ');
+          if (combinada && combinada !== (activo.talla ?? '').toUpperCase()) {
+            await supabase.from('clientes_funnelish').update({ talla: combinada }).eq('id', activo.id);
+            (activo as any).talla = combinada;
+            // Aún no confirma: no se manda tarjeta de corrección. Al confirmar,
+            // la ficha de venta ya sale con estas tallas.
+          }
+        }
+      }
+    }
+
+    // ── Sin pedido activo ────────────────────────────────────────────────────
+    if (!pendingPedido) {
+      // ¿Hay un pedido ya confirmado? (cliente confirmó y luego sigue escribiendo)
+      const { data: confirmedPedido } = await supabase
+        .from('clientes_funnelish')
+        .select('id, nombre, producto, talla, valor, direccion, ciudad, departamento, correo, telefono, abono, abono_recibido')
+        .eq('telefono', tel10).eq('confirmado', true)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+      if (confirmedPedido) {
+        // ── 1. Redirigir a asesor si pide catálogo de otro tipo de producto ──────
+        const wantsOtherProduct = [
+          'catálogo', 'catalogo', 'futbol', 'fútbol', 'pareja', 'equipos',
+          'otro modelo', 'otra referencia', 'ver más productos', 'ver mas productos',
+          'más referencias', 'mas referencias',
+        ].some(w => textLower.includes(w));
+
+        if (wantsOtherProduct) {
+          const handoff = `Para mostrarte otros productos te paso con un asesor 😊 Un momento.`;
+          const wamid = await sendTextMessage(from, handoff);
+          await saveAndSend(supabase, from, handoff, 'text', wamid);
+          await marcarHumanoYNotificar(supabase, from);
+          continue;
+        }
+
+        // ── 1.b El cliente CORRIGE la dirección después de haber confirmado ────
+        // Debe guardarse en BD y avisarse al admin: si no, se despacha a la vieja.
+        const dirNuevaConf = isCompleteAddress(text);
+        const dirParcialConf = !dirNuevaConf &&
+          /\b(calle|carrera|diagonal|transversal|avenida|cl|cra|cr|kr|diag|av|cll|conjunto|conj|edificio|manzana|barrio|torre|apto|apartamento|interior|vereda)\b/i.test(text) &&
+          /\d/.test(text);
+
+        if ((dirNuevaConf || dirParcialConf) && confirmedPedido.id) {
+          const base  = (confirmedPedido.direccion ?? '').trim();
+          const extra = text.trim();
+          const yaIncluido = base.toLowerCase().includes(extra.toLowerCase());
+          // Dirección completa nueva → reemplaza. Dato suelto (torre, apto, barrio) → se suma.
+          const nuevaDir = dirNuevaConf
+            ? extra
+            : (base && !yaIncluido ? `${base}, ${extra}` : (base || extra));
+
+          if (nuevaDir && nuevaDir !== base) {
+            await supabase.from('clientes_funnelish')
+              .update({ direccion: nuevaDir }).eq('id', confirmedPedido.id);
+            await enviarCorreccionVenta(supabase, confirmedPedido.id, tel10, 'dirección', from);
+
+            const ok = `✅ Listo, actualicé tu dirección de envío:\n\n*${nuevaDir}*\n\nTu pedido se despacha a esa dirección. 🚚`;
+            const wamid = await sendTextMessage(from, ok);
+            await saveAndSend(supabase, from, ok, 'text', wamid);
+            continue;
+          }
+        }
+
+        // ── 1.c El cliente corrige la TALLA después de confirmar ──────────────
+        const tallaConfMatch = text.match(/\b(XS|S|M|L|XL|XXL|XXXL)\b/i);
+        const pideCambioTalla = /\b(cambi|corrig|corrij|mejor|en vez|equivoc|otra talla|talla)\b/i.test(textLower);
+        if (tallaConfMatch && pideCambioTalla && confirmedPedido.id) {
+          const nuevaTalla = tallaConfMatch[1].toUpperCase();
+          if (nuevaTalla !== (confirmedPedido.talla ?? '').toUpperCase()) {
+            await supabase.from('clientes_funnelish')
+              .update({ talla: nuevaTalla }).eq('id', confirmedPedido.id);
+            await enviarCorreccionVenta(supabase, confirmedPedido.id, tel10, 'talla', from);
+
+            const ok = `✅ Listo, cambié tu talla a *${nuevaTalla}*. Tu pedido se despacha así. 🚚`;
+            const wamid = await sendTextMessage(from, ok);
+            await saveAndSend(supabase, from, ok, 'text', wamid);
+            continue;
+          }
+        }
+
+        // ── 2. Detección de intenciones ───────────────────────────────────────
+        const wantsFoto = textLower.includes('foto') || textLower.includes('imagen');
+        const mentionedColorConf = detectColorInText(textLower);
+
+        // Leer último mensaje del bot para entender el contexto de la conversación
+        const { data: lastBotMsgConf } = await supabase
+          .from('messages').select('content')
+          .eq('conversation_id', from).in('role', ['assistant', 'agent'])
+          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        const lastBotContentConf = lastBotMsgConf?.content?.toLowerCase() ?? '';
+
+        // El bot estaba en modo AGREGAR prenda (promo)
+        const lastBotAskedAddColor =
+          lastBotContentConf.includes('agregar') ||
+          lastBotContentConf.includes('color quieres agregar') ||
+          (lastBotContentConf.includes('promo') && lastBotContentConf.includes('color'));
+
+        // El bot estaba en modo CAMBIAR color del pedido
+        const lastBotAskedChangeColor =
+          !lastBotAskedAddColor && (
+            lastBotContentConf.includes('qué color quieres cambiarlo') ||
+            lastBotContentConf.includes('cuál prefieres') ||
+            (lastBotContentConf.includes('cambiar') && lastBotContentConf.includes('color'))
+          );
+
+        // ── Helpers ───────────────────────────────────────────────────────────
+
+        // Colores únicos de la misma familia (sin duplicados por nombre_producto)
+        const getColoresFamilia = async (productoRef: string) => {
+          const { data: allC } = await supabase
+            .from('catalogo_colores').select('color, nombre_producto, url_imagen')
+            .not('url_imagen', 'is', null);
+          const refWords = productoRef.toUpperCase().split(/\s+/);
+          const brandWords = refWords.filter((w: string) => w.length >= 3 && !COLOR_NAMES_UPPER.has(w));
+          const searchWords = brandWords.length > 0 ? brandWords : refWords.filter((w: string) => w.length >= 4);
+          const all = (allC ?? []).filter((c: any) =>
+            searchWords.some((w: string) => (c.nombre_producto as string).toUpperCase().includes(w))
+          );
+          // Deduplicar por nombre_producto
+          return [...new Map(all.map((c: any) => [c.nombre_producto, c])).values()];
+        };
+
+        const updateProductoConf = async (newProducto: string, newValor?: string) => {
+          if (confirmedPedido.id) {
+            const upd: any = { producto: newProducto };
+            if (newValor) upd.valor = newValor;
+            await supabase.from('clientes_funnelish').update(upd).eq('id', confirmedPedido.id);
+            // El pedido ya estaba confirmado → avisar el cambio de producto/color
+            await enviarCorreccionVenta(supabase, confirmedPedido.id, tel10, 'producto/color', from);
+          }
+        };
+
+        const sendColorConfirm = async (newProducto: string, imgUrl: string | null | undefined) => {
+          const url = imgUrl && imgUrl !== FALLBACK_IMAGE ? imgUrl : getProductImageUrl(newProducto);
+          if (url && url !== FALLBACK_IMAGE) {
+            const imgWamid = await sendImageByUrl(from, url, newProducto);
+            await saveAndSend(supabase, from, url, 'image', imgWamid);
+          }
+          const msg = `✅ ¡Listo! Tu pedido fue actualizado a *${newProducto}*. Queda confirmado y lo despachamos en las próximas 24 horas. 🚚`;
+          const wamid = await sendTextMessage(from, msg);
+          await saveAndSend(supabase, from, msg, 'text', wamid);
+        };
+
+        const PROMO_PRICES_CONF: Record<number, string> = { 1: '$129.900', 2: '$219.900', 3: '$325.000' };
+
+        // ── 3. AGREGAR prenda a la promo ──────────────────────────────────────
+        // Frases que claramente significan "quiero otro buzo además del que ya tengo"
+        const wantsAddPromoConf = [
+          'quiero otro', 'quiero una más', 'quiero una mas', 'agrégame', 'agregame',
+          'quiero dos', 'quiero 2', 'me llevo los dos', 'llevar los dos',
+          'pack de dos', 'pack x2', 'promo de dos', 'promo x2',
+          'quiero también', 'quiero tambien', 'quiero la promo',
+          'para llevar los dos', 'no para cambiarlo', 'no quiero cambiarlo',
+          'quiero ambos', 'quiero las dos', 'quiero los dos', 'una adicional',
+          'uno adicional', 'quiero añadir', 'añadirme',
+        ].some(w => textLower.includes(w));
+
+        // También aplica si el bot preguntó por color a AGREGAR y el cliente respondió
+        const isAddingFromContext = lastBotAskedAddColor && !!mentionedColorConf;
+
+        if (wantsAddPromoConf || isAddingFromContext) {
+          const famColorsAdd = await getColoresFamilia(confirmedPedido.producto);
+
+          if (!mentionedColorConf) {
+            // Solo dijo "quiero otro" sin color → preguntar qué color quiere agregar
+            const colorList = famColorsAdd.map((c: any) => c.color).filter(Boolean).join(', ');
+            const promoMsg =
+              `¡Claro! 😊 Puedes aprovechar nuestras promos:\n` +
+              `• *2 prendas:* $229.900\n• *3 prendas:* $325.000\n\n` +
+              `¿Qué color quieres agregar?\nDisponibles: ${colorList || 'consulta con un asesor'}`;
+            const wamid = await sendTextMessage(from, promoMsg);
+            await saveAndSend(supabase, from, promoMsg, 'text', wamid);
+            continue;
+          }
+
+          // Tiene color → buscar en la familia
+          const matchAdd = famColorsAdd.find((c: any) =>
+            (c.color ?? '').toLowerCase().includes(mentionedColorConf) ||
+            mentionedColorConf.includes((c.color ?? '').toLowerCase()) ||
+            (c.nombre_producto as string).toUpperCase().includes(mentionedColorConf.toUpperCase())
+          );
+
+          if (matchAdd) {
+            // Contar cuántas prendas ya tiene (un "+" por cada prenda adicional)
+            const currentProd = confirmedPedido.producto;
+            const currentCount = currentProd.split('+').length;
+            const newCount = Math.min(currentCount + 1, 3);
+            const combinedProd = `${currentProd.trim()} + ${matchAdd.nombre_producto}`;
+            const promoValor = PROMO_PRICES_CONF[newCount] ?? '$325.000';
+
+            await updateProductoConf(combinedProd, promoValor);
+
+            // Enviar foto de la nueva prenda
+            if (matchAdd.url_imagen && matchAdd.url_imagen !== FALLBACK_IMAGE) {
+              const imgWamid = await sendImageByUrl(from, matchAdd.url_imagen, matchAdd.nombre_producto);
+              await saveAndSend(supabase, from, matchAdd.url_imagen, 'image', imgWamid);
+            }
+
+            const confirmMsg =
+              `✅ ¡Perfecto! Te agregamos *${matchAdd.nombre_producto}*.\n\n` +
+              `Tu pedido queda:\n*${combinedProd}*\n` +
+              `Valor total: *${promoValor}* 🎉\n\n` +
+              `Lo despachamos en las próximas 24 horas. 🚚`;
+            const wamid = await sendTextMessage(from, confirmMsg);
+            await saveAndSend(supabase, from, confirmMsg, 'text', wamid);
+            continue;
+          }
+
+          // Color no encontrado en la familia
+          const colorListAdd = famColorsAdd.map((c: any) => c.color).filter(Boolean).join(', ');
+          const noMatchMsg =
+            `Ese color no está disponible 😔\n` +
+            `Para agregar a tu promo puedes elegir: ${colorListAdd}\n\n¿Cuál prefieres?`;
+          const wamid = await sendTextMessage(from, noMatchMsg);
+          await saveAndSend(supabase, from, noMatchMsg, 'text', wamid);
+          continue;
+        }
+
+        // ── 4. CAMBIO de color del pedido actual ──────────────────────────────
+        const currentProductUpper = confirmedPedido.producto.toUpperCase();
+        const colorAlreadyInProduct = mentionedColorConf
+          ? currentProductUpper.includes(mentionedColorConf.toUpperCase())
+          : false;
+
+        const colorChangeWordsConf = [
+          'cambiar el color', 'cambio de color', 'otro color', 'en otro color',
+          'cambiarlo', 'me lo cambian', 'cambiar por', 'cambiar a',
+          'me lo mandan en', 'lo quiero en', 'lo quiero de', 'quiero cambiarlo',
+          'quiero cambiar', 'quiero el negro', 'quiero el azul', 'quiero el rojo', 'quiero el blanco',
+        ];
+
+        const colorChangeIntentConf =
+          colorChangeWordsConf.some(w => textLower.includes(w))
+          || (textLower.includes('cambiar') && !!mentionedColorConf)
+          || (textLower.includes('lo quiero') && !!mentionedColorConf)
+          // Solo activa "cambio" si el bot estaba en contexto de CAMBIO — NO de agregar
+          || (lastBotAskedChangeColor && !!mentionedColorConf)
+          // Foto + color diferente al actual = cambio
+          || (wantsFoto && !!mentionedColorConf && !colorAlreadyInProduct);
+
+        // ── 5. Foto del producto actual (sin cambio de color) ─────────────────
+        if (wantsFoto && !colorChangeIntentConf) {
+          const productoActual = confirmedPedido.producto;
+          let fotoUrl: string | null = null;
+          const { data: exactF } = await supabase
+            .from('catalogo_colores').select('url_imagen')
+            .ilike('nombre_producto', productoActual).not('url_imagen', 'is', null)
+            .limit(1).maybeSingle();
+          if (exactF?.url_imagen) {
+            fotoUrl = exactF.url_imagen as string;
+          } else {
+            const famColors = await getColoresFamilia(productoActual);
+            if (famColors.length > 0) {
+              const colorActual = detectColorInText(productoActual.toLowerCase());
+              if (colorActual) {
+                const matched = famColors.find((c: any) =>
+                  (c.nombre_producto as string).toUpperCase().includes(colorActual.toUpperCase())
+                );
+                if (matched?.url_imagen) fotoUrl = matched.url_imagen as string;
+              }
+              if (!fotoUrl && famColors[0]?.url_imagen) fotoUrl = famColors[0].url_imagen as string;
+            }
+          }
+          if (!fotoUrl) fotoUrl = getProductImageUrl(productoActual);
+
+          if (fotoUrl && fotoUrl !== FALLBACK_IMAGE) {
+            const imgWamid = await sendImageByUrl(from, fotoUrl, productoActual);
+            await saveAndSend(supabase, from, fotoUrl, 'image', imgWamid);
+            const fotoMsg = `📸 Aquí está la foto de tu *${productoActual}*. Tu pedido ya está confirmado y se despachará en las próximas 24 horas. 🚚`;
+            const wamid = await sendTextMessage(from, fotoMsg);
+            await saveAndSend(supabase, from, fotoMsg, 'text', wamid);
+          } else {
+            const noFotoMsg = `Tu pedido *${productoActual}* ya está confirmado y se despachará en las próximas 24 horas. 🚚 El número de guía te llegará por este chat.`;
+            const wamid = await sendTextMessage(from, noFotoMsg);
+            await saveAndSend(supabase, from, noFotoMsg, 'text', wamid);
+          }
+          continue;
+        }
+
+        // ── 6. Ejecutar cambio de color ───────────────────────────────────────
+        if (colorChangeIntentConf) {
+          const catalogResult = await findColorVariantInDB(supabase, confirmedPedido.producto, mentionedColorConf);
+
+          if (catalogResult?.match) {
+            await updateProductoConf(catalogResult.match.nombre_producto);
+            await sendColorConfirm(catalogResult.match.nombre_producto, catalogResult.match.url_imagen);
+            continue;
+          }
+
+          if (catalogResult && mentionedColorConf && catalogResult.colores.length) {
+            const colorList = [...new Set(catalogResult.colores.map((c: any) => c.color))].join(', ');
+            const noColorMsg = `Ese color no está disponible 😔 Para *${catalogResult.familia}* tenemos:\n${colorList}\n\n¿Cuál prefieres?`;
+            const wamid = await sendTextMessage(from, noColorMsg);
+            await saveAndSend(supabase, from, noColorMsg, 'text', wamid);
+            continue;
+          }
+
+          if (catalogResult && !mentionedColorConf) {
+            const colorList = [...new Set(catalogResult.colores.map((c: any) => c.color))].join(', ');
+            const ask = `¡Claro! 😊 Para *${catalogResult.familia}* tenemos:\n${colorList}\n\n¿A cuál quieres cambiar?`;
+            const wamid = await sendTextMessage(from, ask);
+            await saveAndSend(supabase, from, ask, 'text', wamid);
+            continue;
+          }
+
+          const famColors = await getColoresFamilia(confirmedPedido.producto);
+
+          if (famColors.length > 0) {
+            if (mentionedColorConf) {
+              const match = famColors.find((c: any) =>
+                (c.color ?? '').toLowerCase().includes(mentionedColorConf) ||
+                mentionedColorConf.includes((c.color ?? '').toLowerCase()) ||
+                (c.nombre_producto as string).toUpperCase().includes(mentionedColorConf.toUpperCase())
+              );
+              if (match) {
+                await updateProductoConf(match.nombre_producto);
+                await sendColorConfirm(match.nombre_producto, match.url_imagen);
+                continue;
+              }
+              const colorList = famColors.map((c: any) => c.color).filter(Boolean).join(', ');
+              const noColorMsg = `Ese color no está disponible 😔 Tenemos: ${colorList}\n\n¿Cuál prefieres?`;
+              const wamid = await sendTextMessage(from, noColorMsg);
+              await saveAndSend(supabase, from, noColorMsg, 'text', wamid);
+              continue;
+            }
+            const colorList = famColors.map((c: any) => c.color).filter(Boolean).join(', ');
+            const ask = `¡Claro! 😊 ¿A qué color quieres cambiarlo?\n\nTenemos disponibles: ${colorList}`;
+            const wamid = await sendTextMessage(from, ask);
+            await saveAndSend(supabase, from, ask, 'text', wamid);
+            continue;
+          }
+
+          const handoffColor = `Para cambiar el color de tu pedido te paso con un asesor 😊 Un momento.`;
+          const wamid = await sendTextMessage(from, handoffColor);
+          await saveAndSend(supabase, from, handoffColor, 'text', wamid);
+          await marcarHumanoYNotificar(supabase, from);
+          continue;
+        }
+
+        // ── 5. Claude para Q&A general post-confirmación ──────────────────────
+        const { data: histConf } = await supabase
+          .from('messages').select('content, role')
+          .eq('conversation_id', from).order('created_at', { ascending: false }).limit(14);
+
+        const sysConf =
+          (await cargarPromptEmpresa(supabase)) +
+          `\n\nCONTEXTO DE ESTE CHAT: el cliente YA confirmó su pedido: *${confirmedPedido.producto}* — Valor: *${confirmedPedido.valor}*. El pedido está confirmado y será despachado en las próximas 24 horas.\n` +
+          (confirmedPedido.abono_recibido
+            ? `IMPORTANTE: el cliente YA ENVIÓ el comprobante del abono y quedó recibido. NUNCA se lo vuelvas a pedir ni digas que quedas pendiente de él. Si te da las gracias, simplemente despídete confirmando que su pedido ya quedó programado para despacho.\n`
+            : '') +
+          ANDAMIAJE_CONFIRMADO + memoriaBot;
+
+        const histMsgs: ChatRequest['messages'] = [...(histConf ?? [])]
+          .reverse()
+          .filter((m: any) => m.content?.trim() && !m.content.startsWith('http'))
+          .map((m: any) => ({
+            role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+            content: m.content as string,
+          }));
+        if (!histMsgs.length || histMsgs[histMsgs.length - 1]?.role !== 'user') {
+          histMsgs.push({ role: 'user', content: text });
+        }
+
+        try {
+          const resp = await chat({ messages: histMsgs, tenantId: tidBot ?? undefined, systemPrompt: sysConf });
+
+          // ── ¿La IA confirmó un cambio del pedido? → actualizar la base y avisar
+          let visible = resp.message;
+          const mAct = resp.message.match(/\[\[ACTUALIZAR\]\]\s*(\{[\s\S]*?\})/);
+          if (mAct && confirmedPedido.id) {
+            visible = resp.message.replace(/\[\[ACTUALIZAR\]\][\s\S]*$/, '').trim();
+            try {
+              const cambios = JSON.parse(mAct[1]);
+              // SOLO se toma un campo si de verdad CAMBIÓ respecto al valor actual.
+              // Antes, la IA repetía producto/talla iguales y eso disparaba "DATOS
+              // MODIFICADOS" varias veces (y re-resolvía la foto, agarrando otro color).
+              const norm = (s: any) => String(s ?? '').trim().toUpperCase().replace(/\s+/g, ' ');
+              const upd: any = {};
+              for (const k of ['producto', 'talla', 'direccion', 'ciudad', 'departamento', 'correo']) {
+                const nuevo = typeof cambios[k] === 'string' ? cambios[k].trim() : '';
+                if (nuevo && norm(nuevo) !== norm((confirmedPedido as any)[k])) upd[k] = nuevo;
+              }
+              // Solo si el producto/color REALMENTE cambió, se actualiza la foto pegada
+              // al pedido, buscándola por el nombre nuevo en el catálogo de colores.
+              if (upd.producto) {
+                try {
+                  const { data: cats } = await supabase
+                    .from('catalogo_colores').select('nombre_producto, url_imagen')
+                    .not('url_imagen', 'is', null);
+                  const words = String(upd.producto).toUpperCase().split(/\s+/).filter((w: string) => w.length >= 3);
+                  // Palabras de COLOR del producto nuevo: la foto DEBE coincidir en color
+                  // (evita agarrar la beige cuando el pedido es negro).
+                  const colorWords = words.filter((w: string) => COLOR_NAMES_UPPER.has(w));
+                  let best: { url: string; score: number } | null = null;
+                  for (const r of cats ?? []) {
+                    const nU = String((r as any).nombre_producto ?? '').toUpperCase();
+                    if (colorWords.length && !colorWords.some((c: string) => nU.includes(c))) continue;
+                    const score = words.filter((w: string) => nU.includes(w)).length;
+                    if (score > 0 && (!best || score > best.score)) best = { url: (r as any).url_imagen, score };
+                  }
+                  const foto = best?.url; // si no hay match del color exacto, NO cambia la foto
+                  if (foto && foto !== FALLBACK_IMAGE) upd.foto_producto = foto;
+                } catch { /* si no se encuentra foto, se deja la que tenía */ }
+              }
+              if (Object.keys(upd).length) {
+                await supabase.from('clientes_funnelish').update(upd).eq('id', confirmedPedido.id);
+                // Solo avisa CORRECCIÓN si la ficha ya se envió (fuera del período de gracia).
+                const { data: pf } = await supabase.from('clientes_funnelish')
+                  .select('registro_enviado').eq('id', confirmedPedido.id).maybeSingle();
+                if (pf?.registro_enviado) {
+                  await enviarCorreccionVenta(supabase, confirmedPedido.id, tel10, Object.keys(upd).join(', '), from);
+                }
+              }
+            } catch { /* si el JSON viene mal, igual se responde al cliente */ }
+          }
+
+          const wamid = await sendTextMessage(from, visible || resp.message);
+          if (wamid) await saveAndSend(supabase, from, visible || resp.message, 'text', wamid);
+        } catch { /* ignorar error */ }
+        continue;
+      }
+
+      // Sin pedido en DB — leer historial y responder con Claude basándose en la conversación
+      const { data: histNoPedido } = await supabase
+        .from('messages').select('content, role')
+        .eq('conversation_id', from).order('created_at', { ascending: false }).limit(14);
+
+      const sysNoPedido =
+        (await cargarPromptEmpresa(supabase)) +
+        ANDAMIAJE_SIN_PEDIDO + memoriaBot;
+
+      const histNoPedidoMsgs: ChatRequest['messages'] = [...(histNoPedido ?? [])]
+        .reverse()
+        .filter((m: any) => m.content?.trim() && !m.content.startsWith('http'))
+        .map((m: any) => ({
+          role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+          content: m.content as string,
+        }));
+      if (!histNoPedidoMsgs.length || histNoPedidoMsgs[histNoPedidoMsgs.length - 1]?.role !== 'user') {
+        histNoPedidoMsgs.push({ role: 'user', content: text });
+      }
+
+      try {
+        const resp = await chat({ messages: histNoPedidoMsgs, tenantId: tidBot ?? undefined, systemPrompt: sysNoPedido });
+        const wamid = await sendTextMessage(from, resp.message);
+        if (wamid) await saveAndSend(supabase, from, resp.message, 'text', wamid);
+      } catch { /* ignorar */ }
+      continue;
+    }
+
+    // ── Solicitud de catálogo → redirigir a humano ───────────────────────────
+    const catalogWords = ['catalogo', 'catálogo', 'más productos', 'mas productos',
+      'otros productos', 'ver más', 'ver mas', 'qué más tienen', 'que mas tienen',
+      'qué tienen', 'que tienen', 'diseños disponibles', 'que diseños', 'qué diseños',
+      'ver todo', 'ver todos', 'más modelos', 'mas modelos'];
+    if (catalogWords.some(w => textLower.includes(w))) {
+      const handoff = `Para mostrarte todo el catálogo, te paso con un asesor que te puede ayudar 😊 Un momento por favor.`;
+      const wamid = await sendTextMessage(from, handoff);
+      await saveAndSend(supabase, from, handoff, 'text', wamid);
+      await marcarHumanoYNotificar(supabase, from);
+      continue;
+    }
+
+    // ── PACK: el cliente da DOS tallas en un mismo mensaje ─────────────────────
+    // Ej: "uno talla M y otro mujer talla S". Antes solo se leía la primera y la
+    // venta se registraba con una sola talla. Aquí se asignan por orden a cada
+    // prenda y se guardan las dos (para que el registro muestre ambas).
+    {
+      const prodPack = String(pendingPedido.producto ?? '');
+      const esPackPedido = /\bpack\b|\bx\s?2\b|\+/i.test(prodPack);
+      if (esPackPedido) {
+        const partes = prodPack.split('+').map(s => s.trim()).filter(Boolean);
+        const etiquetas = partes.length > 1 ? partes : ['Buzo 1', 'Buzo 2'];
+        const segmentos = textLower.split(/\s+y\s+|,\s*|\botr[oa]s?\b|\badem[aá]s\b|\btambi[eé]n\b|\/|\bel otro\b|\bla otra\b/);
+        const hallados: { talla: string; genero: string }[] = [];
+        for (const seg of segmentos) {
+          const m = seg.match(/\b(XS|S|M|L|XL|XXL|XXXL|2XL|3XL)\b/i);
+          if (!m) continue;
+          const genero = /\b(hombre|caballero|masculino|hombres)\b/i.test(seg) ? 'HOMBRE'
+                       : /\b(dama|mujer|femenin\w*|mujeres)\b/i.test(seg) ? 'DAMA' : '';
+          hallados.push({ talla: m[1].toUpperCase(), genero });
+        }
+        if (hallados.length >= 2) {
+          const nuevaTalla = etiquetas.slice(0, Math.max(2, etiquetas.length)).map((p, i) => {
+            const h = hallados[i] ?? hallados[hallados.length - 1];
+            return `${p}: ${h.genero || 'HOMBRE'} - ${h.talla}`;
+          }).join(' | ');
+          const norm = (s: string) => s.toUpperCase().replace(/[\s-]/g, '');
+          if (norm(nuevaTalla) !== norm(String(pendingPedido.talla ?? ''))) {
+            await supabase.from('clientes_funnelish').update({ talla: nuevaTalla }).eq('id', pendingPedido.id);
+            pendingPedido.talla = nuevaTalla;
+            const ok = `✅ ¡Listo! Quedan así las tallas de tu pack:\n\n${nuevaTalla.split('|').map((s: string) => `• *${s.trim()}*`).join('\n')}\n\n¿Todo correcto para despachar? 😊`;
+            const w = await sendTextMessage(from, ok);
+            await saveAndSend(supabase, from, ok, 'text', w);
+            continue;
+          }
+        }
+      }
+    }
+
+    // ── Auto-guardar talla ───────────────────────────────────────────────────
+    let currentTalla = pendingPedido.talla ?? '';
+    const tallaMatch = text.match(/\b(XS|S|M|L|XL|XXL|XXXL|2XL|3XL)\b/i);
+    const tallaVacia = !currentTalla || currentTalla === 'Por confirmar' || currentTalla === 'ELIGE TALLA';
+    const clientGaveTalla = !!tallaMatch && tallaVacia;
+    if (clientGaveTalla) {
+      currentTalla = tallaMatch![1].toUpperCase();
+      await supabase.from('clientes_funnelish').update({ talla: currentTalla }).eq('id', pendingPedido.id);
+    }
+
+    // ── El cliente CAMBIA la talla de un pedido que ya la tenía ───────────────
+    // Ej: "quiero que el negro sea XL para hombre". Antes la IA lo confirmaba de
+    // palabra pero no se guardaba, y la venta se registraba con la talla vieja.
+    let cambioTalla = false;
+    if (!clientGaveTalla && tallaMatch && !tallaVacia) {
+      const normTalla = (s: string) => s.toUpperCase().replace(/\s|-/g, '');
+      const nuevaMedida = tallaMatch[1].toUpperCase();
+      const genero = /\b(hombre|caballero|masculino)\b/i.test(text) ? 'HOMBRE'
+                   : /\b(dama|mujer|femenin)\b/i.test(text)         ? 'DAMA' : '';
+      const pideCambio = /\b(cambi|corrig|corrij|mejor|en vez|prefiero|quiero que|que sea|ponle|dej[aá]|sea|hazlo|hazla)\b/i.test(textLower);
+
+      if (pideCambio) {
+        const productos = String(pendingPedido.producto ?? '').split('+').map(s => s.trim()).filter(Boolean);
+        const esPack = productos.length > 1;
+        const medidaTxt = genero ? `${genero} - ${nuevaMedida}` : nuevaMedida;
+
+        if (esPack) {
+          // Pack: la talla puede ser distinta por prenda. Se guarda por producto.
+          // ¿A cuál de las prendas se refiere? (por el color que menciona)
+          const idx = productos.findIndex(p =>
+            p.toUpperCase().split(/\s+/).some(w => w.length >= 4 && textLower.includes(w.toLowerCase()))
+          );
+          // Talla previa de cada prenda (si ya venía desglosada, se respeta)
+          const previas = currentTalla.includes('|')
+            ? currentTalla.split('|').map((s: string) => s.split(':').slice(1).join(':').trim())
+            : productos.map(() => currentTalla);
+          const objetivo = idx >= 0 ? idx : 0;
+          previas[objetivo] = medidaTxt;
+          currentTalla = productos.map((p, i) => `${p}: ${previas[i] ?? medidaTxt}`).join(' | ');
+        } else {
+          currentTalla = medidaTxt;
+        }
+
+        if (normTalla(currentTalla) !== normTalla(pendingPedido.talla ?? '')) {
+          await supabase.from('clientes_funnelish')
+            .update({ talla: currentTalla }).eq('id', pendingPedido.id);
+          cambioTalla = true;
+
+          const ok = esPack
+            ? `✅ ¡Listo! Queda así:\n\n${currentTalla.split('|').map((s: string) => `• *${s.trim()}*`).join('\n')}\n\n¿Todo correcto para despachar? 😊`
+            : `✅ ¡Listo! Cambié tu talla a *${currentTalla}*.\n\n¿Todo correcto para despachar? 😊`;
+          const w = await sendTextMessage(from, ok);
+          await saveAndSend(supabase, from, ok, 'text', w);
+          continue;
+        }
+      }
+    }
+
+    // ── Auto-guardar dirección (validación estricta) ──────────────────────────
+    let currentDireccion = pendingPedido.direccion ?? '';
+    const dirAlreadyComplete = isCompleteAddress(currentDireccion);
+    const textIsAddress      = isCompleteAddress(text);
+    const clientGaveDireccion = !dirAlreadyComplete && textIsAddress;
+    if (clientGaveDireccion) {
+      currentDireccion = text.trim();
+      await supabase.from('clientes_funnelish').update({ direccion: currentDireccion }).eq('id', pendingPedido.id);
+    }
+
+    // ── ¿El cliente está respondiendo a "¿tu dirección está completa?" ────────
+    // Hay que saberlo ANTES de decidir si se le vuelve a preguntar, porque si ya
+    // contestó no tiene sentido insistir: es lo que hartaba a los clientes.
+    let direccionOk = pendingPedido.direccion_ok === true;
+    let preguntoPorDireccion = false;
+    if (!direccionOk) {
+      const { data: ultBot } = await supabase
+        .from('messages').select('content')
+        .eq('conversation_id', from).in('role', ['assistant', 'agent'])
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      const ultBotTxt = (ultBot?.content ?? '').toLowerCase();
+      preguntoPorDireccion =
+        ultBotTxt.includes('dirección está correcta') ||
+        ultBotTxt.includes('direccion esta correcta') ||
+        ultBotTxt.includes('dirección de envío completa') ||
+        ultBotTxt.includes('le falta *torre') ||
+        ultBotTxt.includes('torre, apartamento') ||
+        ultBotTxt.includes('número de casa o barrio');
+    }
+    // "no", "está mal", "cámbiala" → no darla por buena, pedir la correcta
+    const niegaDireccion = /\b(no|nop|est[áa] mal|incorrect|equivocad|cambi|corrig|corrij|otra direcci)\b/i.test(textLower);
+    const respondeDireccion = preguntoPorDireccion && !niegaDireccion;
+
+    // ── Dirección parcial: cliente mandó algo que parece dirección pero incompleta ──
+    // Detectar si el texto tiene palabras típicas de dirección colombiana pero isCompleteAddress es false
+    const looksLikePartialAddress = !dirAlreadyComplete && !clientGaveDireccion && (
+      /\b(calle|carrera|diagonal|transversal|avenida|cl\b|cra\b|cr\b|kr\b|diag\b|av\b|cll\b|conjunto|conj|edificio|manzana|barrio|torre|vereda)\b/i.test(text)
+    );
+    if (looksLikePartialAddress) {
+      // SUMAR el dato nuevo a la dirección que ya existía (no reemplazarla).
+      // Ej: "Calle27A #24-50" + "Barrio villa vianey" → "Calle27A #24-50, Barrio villa vianey"
+      const base  = (pendingPedido.direccion ?? '').trim();
+      const extra = text.trim();
+      const yaIncluido = base.toLowerCase().includes(extra.toLowerCase());
+      const combinada = base && !yaIncluido ? `${base}, ${extra}` : (base || extra);
+      currentDireccion = combinada;
+      await supabase.from('clientes_funnelish').update({ direccion: combinada }).eq('id', pendingPedido.id);
+
+      // Solo se insiste si el cliente NO estaba respondiendo a la pregunta.
+      // Si ya contestó, el dato que dio se toma por bueno y se sigue al cierre.
+      if (!isCompleteAddress(combinada) && !respondeDireccion) {
+        // ¿Cuántas veces ya le hemos pedido la dirección? Para no repetir lo mismo.
+        const { data: previas } = await supabase
+          .from('messages').select('content')
+          .eq('conversation_id', from).in('role', ['assistant', 'agent'])
+          .order('created_at', { ascending: false }).limit(12);
+        const intentosDir = (previas ?? []).filter((m: any) =>
+          /n[uú]mero.*direcci|direcci[oó]n.*(completa|correcta)|complemento|recibo de luz|calle \d+ #/i
+            .test(String(m.content ?? ''))).length;
+
+        if (intentosDir >= 3) {
+          // Ya insistimos suficiente: se toma la dirección tal como la dio y se sigue.
+          // Mejor cerrar la venta que perderla; el asesor puede afinar luego.
+          await supabase.from('clientes_funnelish')
+            .update({ direccion: combinada, direccion_ok: true }).eq('id', pendingPedido.id);
+          direccionOk = true;
+        } else {
+          let msjDir: string;
+          if (intentosDir >= 2) {
+            // Persuasión: en vez de repetir, se le explica por qué importa
+            msjDir = '📍 Para que la transportadora no me devuelva el pedido, necesito la '
+              + 'dirección tal cual. Puedes mirar en un recibo de luz o de agua cómo aparece '
+              + 'exactamente y me la envías así 🙏';
+          } else {
+            msjDir = getAddressQuestion(combinada) ?? '📍 Necesito la dirección completa. Por ejemplo: *Calle 15 # 20-30 Barrio Los Pinos*.';
+          }
+          const wamid = await sendTextMessage(from, msjDir);
+          await saveAndSend(supabase, from, msjDir, 'text', wamid);
+          continue;
+        }
+      }
+    }
+
+    // ── Dar por buena la dirección tras la respuesta del cliente ──────────────
+    {
+      if (respondeDireccion) {
+        const base  = (currentDireccion ?? '').trim();
+        const extra = text.trim();
+        // Quitar muletillas para que no queden dentro de la dirección
+        const limpio = extra.replace(/^(correcta|correcto|si|s[ií]|listo|ok|dale|as[ií] es|est[áa] bien)[\s,.:;-]*/i, '').trim();
+        // No pegar a la dirección el saludo automático de la página, ni preguntas,
+        // ni frases del propio bot: eso NO es un complemento de dirección.
+        const esRuido =
+          /acabo de hacer un pedido|me confirmas si qued|gracias por tu compra|te saludo de|n[uú]mero de gu[ií]a|todo bien/i.test(limpio) ||
+          limpio.includes('?') || limpio.includes('¿');
+        const aporta = limpio.length > 3 && !esRuido && !base.toLowerCase().includes(limpio.toLowerCase());
+        const nuevaDir = aporta ? (base ? `${base}, ${limpio}` : limpio) : base;
+
+        currentDireccion = nuevaDir;
+        direccionOk = true;
+        await supabase.from('clientes_funnelish')
+          .update({ direccion: nuevaDir, direccion_ok: true }).eq('id', pendingPedido.id);
+      }
+    }
+
+    // ── Helper: colores de la misma familia en catalogo_colores ─────────────
+    const getFamColores = async (productoRef: string) => {
+      const { data: allC } = await supabase
+        .from('catalogo_colores').select('color, nombre_producto, url_imagen')
+        .not('url_imagen', 'is', null);
+      const refWords = productoRef.toUpperCase().split(/\s+/);
+      const brandWords = refWords.filter((w: string) => w.length >= 3 && !COLOR_NAMES_UPPER.has(w));
+      const searchWords = brandWords.length > 0 ? brandWords : refWords.filter((w: string) => w.length >= 4);
+      return (allC ?? []).filter((c: any) =>
+        searchWords.some((w: string) => (c.nombre_producto as string).toUpperCase().includes(w))
+      );
+    };
+
+    // ── Corrección: "no es rojo, es negro" / "es uno solo" ─────────────────────
+    // Un mensaje que NIEGA o aclara que es UNA sola prenda NO debe activar la promo
+    // de 2, aunque nombre dos colores. Se interpreta como cambio de color y/o
+    // volver a un solo buzo. (Este es el bug: "no es rojo es negro" activaba el pack.)
+    {
+      const prodActual   = String(pendingPedido.producto ?? '');
+      const esPackActual  = prodActual.includes('+');
+      const diceUnoSolo   = /\b(uno solo|una sola|un solo|es uno|es una|solo uno|solo una|s[oó]lo uno|s[oó]lo una|no son dos|no quiero dos|solo quiero uno|solo quiero una)\b/i.test(textLower);
+      const niega         = /\bno\s+es\b|\bno\s+son\b|\bno\s+quiero\b|\bmejor\b|\ben\s+vez\b|\bsino\b|\bm[aá]s\s+bien\b/i.test(textLower);
+      const coloresEnTexto = COLOR_NAMES.filter(c => textLower.includes(c));
+
+      // (a) Ya es un pack y el cliente aclara que es UNO solo → deshacer el pack
+      if (esPackActual && (diceUnoSolo || niega)) {
+        const piezas = prodActual.split('+').map(s => s.trim()).filter(Boolean);
+        let elegido: string | null = null;
+        for (const col of coloresEnTexto) {
+          const m = piezas.find(p => p.toLowerCase().includes(col));
+          if (m) { elegido = m; break; }
+        }
+        // No dijo cuál color dejar → preguntar en vez de adivinar
+        if (!elegido && coloresEnTexto.length === 0) {
+          const opciones = piezas.map((p, i) => `${i + 1}. *${p}*`).join('\n');
+          const ask = `Claro 😊 ¿Cuál de los dos quieres dejar? Sería un solo buzo a *$129.900*.\n\n${opciones}\n\nDime el color (y la talla si deseas).`;
+          const w = await sendTextMessage(from, ask);
+          await saveAndSend(supabase, from, ask, 'text', w);
+          continue;
+        }
+        if (!elegido) elegido = piezas[0];
+        const tallaM = text.match(/\b(XS|S|M|L|XL|XXL|XXXL|2XL|3XL)\b/i);
+        const genero = /\b(hombre|caballero|masculino)\b/i.test(text) ? 'HOMBRE'
+                     : /\b(dama|mujer|femenin)\b/i.test(text) ? 'DAMA' : '';
+        const upd: any = { producto: elegido, valor: '$129.900' };
+        if (tallaM) upd.talla = genero ? `${genero} - ${tallaM[1].toUpperCase()}` : tallaM[1].toUpperCase();
+        await supabase.from('clientes_funnelish').update(upd).eq('id', pendingPedido.id);
+        Object.assign(pendingPedido, upd);
+        const okMsg = `✅ Perfecto, queda *un solo buzo*: *${elegido}*${upd.talla ? ` — talla *${upd.talla}*` : ''}.\n\n💰 Valor: *$129.900*\n\n¿Te lo confirmo así para despacharlo? 😊`;
+        const w = await sendTextMessage(from, okMsg);
+        await saveAndSend(supabase, from, okMsg, 'text', w);
+        continue;
+      }
+
+      // (b) Aún es UNA prenda y el cliente corrige el color ("no es rojo, es negro")
+      if (!esPackActual && niega) {
+        const actualLower = prodActual.toLowerCase();
+        const deseados = coloresEnTexto.filter(c => !actualLower.includes(c));
+        if (deseados.length) {
+          const colorDeseado = deseados[deseados.length - 1]; // el último color nombrado
+          const fam = await getFamColores(prodActual);
+          const match = fam.find((c: any) =>
+            (c.color ?? '').toLowerCase().includes(colorDeseado) ||
+            (c.nombre_producto as string).toUpperCase().includes(colorDeseado.toUpperCase())
+          );
+          if (match) {
+            await supabase.from('clientes_funnelish')
+              .update({ producto: match.nombre_producto }).eq('id', pendingPedido.id);
+            pendingPedido.producto = match.nombre_producto;
+            const imgUrl = match.url_imagen || getProductImageUrl(match.nombre_producto);
+            if (imgUrl && imgUrl !== FALLBACK_IMAGE) {
+              const iw = await sendImageByUrl(from, imgUrl, match.nombre_producto);
+              await saveAndSend(supabase, from, imgUrl, 'image', iw);
+            }
+            const okMsg = `✅ ¡Listo! Corregí tu pedido a *${match.nombre_producto}*.\n\nRevisa la foto y me confirmas si está todo correcto 😊🚚`;
+            const w = await sendTextMessage(from, okMsg);
+            await saveAndSend(supabase, from, okMsg, 'text', w);
+            continue;
+          }
+        }
+      }
+    }
+
+    // ── Multi-prenda (promos) ─────────────────────────────────────────────────
+    // 1 prenda: $129.900 | 2 prendas: $219.900 | 3 prendas: $325.000
+    const PROMO_PRICES: Record<number, string> = { 1: '$129.900', 2: '$219.900', 3: '$325.000' };
+    const allColorsInText = COLOR_NAMES.filter(c => textLower.includes(c));
+    const mentionsDos = ['quiero dos', 'comprar dos', '2 prendas', '2 buzos', 'dos prendas',
+      'dos buzos', 'los dos', 'las dos', 'quiero 2', 'pack x2', 'combo 2',
+      'quiero comprar dos', 'quiero otro', 'quiero otra', 'quiero añadir',
+      'añadir uno', 'añadir una', 'agregar uno', 'agregar una',
+      'uno más', 'una más', 'uno mas', 'una mas'].some(w => textLower.includes(w));
+    const mentionsTres = ['quiero tres', 'comprar tres', '3 prendas', '3 buzos', 'tres prendas',
+      'tres buzos', 'quiero 3', 'pack x3', 'combo 3', 'quiero comprar tres'].some(w => textLower.includes(w));
+    // No activar la promo si el mensaje niega o aclara que es UNA sola prenda:
+    // "no es rojo es negro" o "es uno solo" nombran 2 colores pero significan 1.
+    const esCorreccionUno = /\bno\s+es\b|\bno\s+son\b|\bno\s+quiero\b|\bmejor\b|\ben\s+vez\b|\bsino\b|\bm[aá]s\s+bien\b|\buno solo\b|\buna sola\b|\bes uno\b|\bes una\b|\bsolo uno\b|\bsolo una\b|\bs[oó]lo uno\b|\bs[oó]lo una\b|\bno son dos\b/i.test(textLower);
+    // Si el pedido YA es un pack (armado en el embudo, el producto trae "+" o "PACK X"),
+    // NO se re-activa la promo: el cliente solo está confirmando, no pidiendo más prendas.
+    // (Evita la doble confirmación en los pedidos de "arma tu pack").
+    const yaEsPack = /\+|\bpack\s*x?\s*[23]\b/i.test(String(pendingPedido.producto ?? ''));
+    const isMultiPrenda = (allColorsInText.length >= 2 || mentionsDos || mentionsTres) && !esCorreccionUno && !yaEsPack;
+
+    if (isMultiPrenda) {
+      const famColoresMulti = await getFamColores(pendingPedido.producto);
+
+      if (famColoresMulti.length > 0) {
+        // Contar cuántas prendas quiere
+        const itemCount = Math.min(
+          mentionsTres || allColorsInText.length >= 3 ? 3
+            : mentionsDos || allColorsInText.length >= 2 ? 2 : 1,
+          3
+        );
+
+        // Buscar match en catálogo para cada color mencionado
+        const matchedItems: Array<{ nombre_producto: string; url_imagen: string | null }> = [];
+        for (const color of allColorsInText) {
+          const match = famColoresMulti.find((c: any) =>
+            (c.color ?? '').toLowerCase().includes(color) ||
+            color.includes((c.color ?? '').toLowerCase()) ||
+            (c.nombre_producto as string).toUpperCase().includes(color.toUpperCase())
+          );
+          if (match && !matchedItems.some(i => i.nombre_producto === match.nombre_producto)) {
+            matchedItems.push({ nombre_producto: match.nombre_producto, url_imagen: match.url_imagen });
+          }
+        }
+
+        // Si encontramos 2+ items del mismo catálogo → es multi-prenda
+        if (matchedItems.length >= 2 || (mentionsDos && matchedItems.length >= 1)) {
+          // Incluir producto actual si no está
+          const currentIn = matchedItems.some(
+            i => i.nombre_producto.toUpperCase() === (pendingPedido.producto ?? '').toUpperCase()
+          );
+          if (!currentIn && matchedItems.length < itemCount) {
+            matchedItems.unshift({ nombre_producto: pendingPedido.producto, url_imagen: null });
+          }
+
+          const finalItems = matchedItems.slice(0, Math.max(itemCount, matchedItems.length > 3 ? 3 : matchedItems.length));
+          const realCount = Math.min(finalItems.length, 3);
+          const combinedProduct = finalItems.map(i => i.nombre_producto).join(' + ');
+          const promoValue = PROMO_PRICES[realCount] ?? PROMO_PRICES[3];
+
+          // Actualizar pedido en DB con combo + precio promo
+          await supabase.from('clientes_funnelish')
+            .update({ producto: combinedProduct, valor: promoValue })
+            .eq('id', pendingPedido.id);
+
+          // Enviar foto de cada prenda
+          for (const item of finalItems) {
+            const imgUrl = item.url_imagen || getProductImageUrl(item.nombre_producto);
+            if (imgUrl && imgUrl !== FALLBACK_IMAGE) {
+              const imgWamid = await sendImageByUrl(from, imgUrl, item.nombre_producto);
+              await saveAndSend(supabase, from, imgUrl, 'image', imgWamid);
+            }
+          }
+
+          // Mensaje de promo
+          const itemLines = finalItems.map((item, i) => `${i + 1}. *${item.nombre_producto}*`).join('\n');
+          const promoMsg = realCount > 1
+            ? `🎉 ¡Promo activada! Tu pedido de ${realCount} prendas:\n${itemLines}\n\n💰 Valor total: *${promoValue}*\n\nRevisa las fotos y escribe *CONFIRMO* para que lo despachemos en 24h. 🚚`
+            : `✅ Listo. Tu pedido:\n*${combinedProduct}* — *${promoValue}*\n\nEscribe *CONFIRMO* para confirmar. 🚚`;
+          const wamid = await sendTextMessage(from, promoMsg);
+          await saveAndSend(supabase, from, promoMsg, 'text', wamid);
+          continue;
+        }
+
+        // "quiero otro" sin color → preguntar qué color + mostrar promo
+        if ((mentionsDos || mentionsTres) && allColorsInText.length === 0) {
+          const colorListPend = famColoresMulti.map((c: any) => c.color).filter(Boolean).join(', ');
+          const promoCount = mentionsTres ? 3 : 2;
+          const promoValorRef = PROMO_PRICES[promoCount];
+          const askColorMsg =
+            `¡Perfecto! 😊 Para la promo de ${promoCount} prendas: *${promoValorRef}*\n\n` +
+            `¿Qué color quieres agregar y en qué talla?\n` +
+            `Disponibles: ${colorListPend || 'consulta con un asesor'}`;
+          const wamid = await sendTextMessage(from, askColorMsg);
+          await saveAndSend(supabase, from, askColorMsg, 'text', wamid);
+          continue;
+        }
+        // Colores no coinciden con la familia → seguir flujo normal
+      }
+      // famColores vacío → puede ser otra marca → seguir flujo normal (Claude fallback)
+    }
+
+    // ── Cambio de color ──────────────────────────────────────────────────────
+    const colorChangeWords = [
+      'cambiar el color', 'cambio de color', 'otro color', 'en otro color',
+      'cambiarlo', 'cambien', 'pueden cambiar', 'me lo cambian',
+      'cambiar por', 'cambiar a', 'cambiar al', 'cambiar el buzo',
+      'me lo mandan en', 'lo quiero en', 'lo quiero de',
+    ];
+    const mentionedColor    = detectColorInText(textLower);
+    // ¿El producto ya tiene ese color? (para no reprocesar lo mismo)
+    const colorYaEnProducto = mentionedColor
+      ? (pendingPedido.producto ?? '').toUpperCase().includes(mentionedColor.toUpperCase())
+      : false;
+    const colorChangeIntent = colorChangeWords.some(w => textLower.includes(w))
+      || (textLower.includes('cambiar') && !!mentionedColor) // "cambiar" + color
+      || (textLower.includes('lo quiero') && !!mentionedColor)
+      // Mención simple del color ("color blanco", "blanco", "quiero el negro") → seleccionarlo y GUARDARLO
+      || (!!mentionedColor && !colorYaEnProducto && textLower.trim().length < 40 && !/\bno\b/.test(textLower));
+
+    // Detectar si el bot preguntó por el color en su último mensaje
+    const { data: lastBotMsg } = await supabase
+      .from('messages').select('content')
+      .eq('conversation_id', from).in('role', ['assistant', 'agent'])
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    const lastBotAskedColor = !!(
+      lastBotMsg?.content?.toLowerCase().includes('qué color') ||
+      lastBotMsg?.content?.toLowerCase().includes('que color') ||
+      lastBotMsg?.content?.toLowerCase().includes('a qué color') ||
+      lastBotMsg?.content?.toLowerCase().includes('colores disponibles') ||
+      lastBotMsg?.content?.toLowerCase().includes('tenemos:')
+    );
+    const lastBotAskedAddColorPending =
+      lastBotMsg?.content?.toLowerCase().includes('quieres agregar') ||
+      lastBotMsg?.content?.toLowerCase().includes('color quieres agregar');
+
+    if (lastBotAskedAddColorPending && mentionedColor) {
+      const famColPend = await getFamColores(pendingPedido.producto);
+      const matchPend = famColPend.find((c: any) =>
+        (c.color ?? '').toLowerCase().includes(mentionedColor) ||
+        (c.nombre_producto as string).toUpperCase().includes(mentionedColor.toUpperCase())
+      );
+      if (matchPend) {
+        const currentCount = (pendingPedido.producto ?? '').split('+').length;
+        const newCount = Math.min(currentCount + 1, 3);
+        const combinedProd = `${pendingPedido.producto.trim()} + ${matchPend.nombre_producto}`;
+        const promoValor = PROMO_PRICES[newCount] ?? '$325.000';
+        await supabase.from('clientes_funnelish').update({ producto: combinedProd, valor: promoValor }).eq('id', pendingPedido.id);
+        if (matchPend.url_imagen && matchPend.url_imagen !== FALLBACK_IMAGE) {
+          const imgWamid = await sendImageByUrl(from, matchPend.url_imagen, matchPend.nombre_producto);
+          await saveAndSend(supabase, from, matchPend.url_imagen, 'image', imgWamid);
+        }
+        const confirmMsg =
+          `✅ ¡Promo activada! Tu pedido:\n*${combinedProd}*\n\n` +
+          `💰 Valor: *${promoValor}*\n\nEscribe *CONFIRMO* para que lo despachemos en 24h. 🚚`;
+        const wamid = await sendTextMessage(from, confirmMsg);
+        await saveAndSend(supabase, from, confirmMsg, 'text', wamid);
+        continue;
+      }
+    }
+
+    if (colorChangeIntent || (lastBotAskedColor && mentionedColor)) {
+      // Buscar el catálogo del producto en la DB
+      const catalogResult = await findColorVariantInDB(supabase, pendingPedido.producto, mentionedColor);
+
+      if (!catalogResult) {
+        // Sin catalogos_bot — buscar directamente en catalogo_colores por palabras del producto
+        const famColors = await getFamColores(pendingPedido.producto);
+
+        if (famColors.length > 0) {
+          if (mentionedColor) {
+            const match = famColors.find((c: any) =>
+              (c.color ?? '').toLowerCase().includes(mentionedColor) ||
+              mentionedColor.includes((c.color ?? '').toLowerCase()) ||
+              (c.nombre_producto as string).toUpperCase().includes(mentionedColor.toUpperCase())
+            );
+            if (match) {
+              const newProduct = match.nombre_producto;
+              const imgUrl = match.url_imagen || getProductImageUrl(newProduct);
+              // Foto del color nuevo pegada al pedido (para que la ficha salga correcta)
+              const updFam: any = { producto: newProduct };
+              if (imgUrl && imgUrl !== FALLBACK_IMAGE) updFam.foto_producto = imgUrl;
+              await supabase.from('clientes_funnelish').update(updFam).eq('id', pendingPedido.id);
+              if (imgUrl && imgUrl !== FALLBACK_IMAGE) {
+                const imgWamid = await sendImageByUrl(from, imgUrl, newProduct);
+                await saveAndSend(supabase, from, imgUrl, 'image', imgWamid);
+              }
+              const confirmMsg = `✅ ¡Listo! Cambié tu pedido a *${newProduct}*.\n\nRevisa la foto y me confirmas si está todo correcto para procesar tu despacho 😊🚚`;
+              const wamid = await sendTextMessage(from, confirmMsg);
+              await saveAndSend(supabase, from, confirmMsg, 'text', wamid);
+              continue;
+            }
+            // Color mencionado no existe → mostrar disponibles
+            const colorList = famColors.map((c: any) => c.color).join(', ');
+            const noColorMsg = `Lo sentimos 😔 Ese color no está disponible.\n\nColores disponibles: ${colorList}\n\n¿Cuál prefieres?`;
+            const wamid = await sendTextMessage(from, noColorMsg);
+            await saveAndSend(supabase, from, noColorMsg, 'text', wamid);
+            continue;
+          }
+          // No mencionó color → listar disponibles
+          const colorList = famColors.map((c: any) => c.color).join(', ');
+          const ask = `¡Claro! 😊 ¿A qué color quieres cambiarlo?\n\nTenemos disponibles: ${colorList}`;
+          const wamid = await sendTextMessage(from, ask);
+          await saveAndSend(supabase, from, ask, 'text', wamid);
+          continue;
+        }
+
+        // No hay colores en DB para esta familia (puede ser otra marca) → asesor
+        const msg = `Para cambiar el modelo, te paso con un asesor 😊 Un momento.`;
+        const wamid = await sendTextMessage(from, msg);
+        await saveAndSend(supabase, from, msg, 'text', wamid);
+        await marcarHumanoYNotificar(supabase, from);
+        continue;
+      }
+
+      if (catalogResult.match) {
+        // Color encontrado en catalogos_bot → actualizar pedido + enviar foto
+        const newProduct = catalogResult.match.nombre_producto;
+        const imgUrl = catalogResult.match.url_imagen || getProductImageUrl(newProduct);
+        // Guardar la foto del color nuevo PEGADA al pedido: así la ficha al admin
+        // sale con la prenda correcta y no con el color anterior.
+        const updCambio: any = { producto: newProduct };
+        if (imgUrl && imgUrl !== FALLBACK_IMAGE) updCambio.foto_producto = imgUrl;
+        await supabase.from('clientes_funnelish').update(updCambio).eq('id', pendingPedido.id);
+
+        if (imgUrl && imgUrl !== FALLBACK_IMAGE) {
+          const imgWamid = await sendImageByUrl(from, imgUrl, newProduct);
+          await saveAndSend(supabase, from, imgUrl, 'image', imgWamid);
+        }
+        const confirmMsg = `✅ Listo, cambié tu pedido a *${newProduct}*.\n\nRevisa la foto y escribe *CONFIRMO* o "si está bien" para que despachemos en 24 horas. 🚚`;
+        const wamid = await sendTextMessage(from, confirmMsg);
+        await saveAndSend(supabase, from, confirmMsg, 'text', wamid);
+
+      } else if (mentionedColor && catalogResult.colores.length) {
+        // Mencionó un color que no está → mostrar disponibles
+        const colorList = catalogResult.colores.map(c => c.color).join(', ');
+        const noColor = `Lo sentimos 😔 Ese color no está disponible para *${catalogResult.familia}*.\n\nColores disponibles: ${colorList}\n\n¿Cuál prefieres?`;
+        const wamid = await sendTextMessage(from, noColor);
+        await saveAndSend(supabase, from, noColor, 'text', wamid);
+
+      } else {
+        // No mencionó color → preguntar cuál quiere
+        const colorList = catalogResult.colores.map(c => c.color).join(', ');
+        const ask = `¡Claro! 😊 ¿A qué color quieres cambiarlo?\n\nPara *${catalogResult.familia}* tenemos: ${colorList || 'consulta con un asesor'}`;
+        const wamid = await sendTextMessage(from, ask);
+        await saveAndSend(supabase, from, ask, 'text', wamid);
+      }
+      continue;
+    }
+
+    // ── Estado actual de campos ──────────────────────────────────────────────
+    const stillMissingTalla = !currentTalla || currentTalla === 'Por confirmar';
+    const isDirOficinaType  = isDirOficina(currentDireccion);
+    // Todo pedido de OFICINA lleva abono de $5.000. Se persiste apenas se detecta,
+    // para que la ficha (automática o marcada a mano) salga con el desglose correcto
+    // (Total / Abono / Cobrar) y no con los datos de inicio.
+    if (isDirOficinaType && pendingPedido?.id && !Number(pendingPedido.abono)) {
+      try {
+        await supabase.from('clientes_funnelish').update({ abono: 5000 }).eq('id', pendingPedido.id);
+        pendingPedido.abono = 5000;
+      } catch { /* ignorar */ }
+    }
+    // Dir OK si es completa, si es de oficina, o si el cliente ya la dio por buena.
+    const stillMissingDir   = !isCompleteAddress(currentDireccion) && !isDirOficinaType && !direccionOk;
+
+    // ── Cerrar la venta sola ─────────────────────────────────────────────────
+    // El cliente ya había dicho CONFIRMO y solo faltaba un dato. Ya lo dio:
+    // no se le pregunta nada más — se le manda el resumen y el agradecimiento.
+    if (pendingPedido.pidio_confirmar === true && !stillMissingTalla && !stillMissingDir && !isDirOficinaType) {
+      await supabase.from('clientes_funnelish').update({
+        confirmado: true, confirmado_at: new Date().toISOString(), estado: 'confirmado',
+      }).eq('id', pendingPedido.id);
+      await setEstadoConv(supabase, from, 'VENTA REALIZADA');
+
+      const pedidoFinal = { ...pendingPedido, talla: currentTalla, direccion: currentDireccion };
+      await enviarRegistroVenta(supabase, pedidoFinal, tel10, from);
+
+      const nombreCorto = String(pendingPedido.nombre ?? '').split(' ')[0] || '';
+      const resumen =
+        `¡Listo${nombreCorto ? ` ${nombreCorto}` : ''}! 🎉 Así queda tu pedido:\n\n` +
+        `👤 *${pendingPedido.nombre ?? '—'}*\n` +
+        `📱 *${pendingPedido.telefono ?? tel10}*\n` +
+        `📍 *${currentDireccion}*\n` +
+        `👕 *Talla: ${currentTalla}*\n` +
+        `🏁 *${pendingPedido.producto ?? '—'}*\n` +
+        `💰 *${pendingPedido.valor ?? '—'} contra entrega*\n\n` +
+        `¡Gracias por tu compra! Cuando lo envíe te estará llegando el número de guía desde nuestro chatbot, cuyo número asociado es 3142576239, para que puedas realizarle seguimiento a tu paquete. 🚚`;
+
+      const w = await sendTextMessage(from, resumen);
+      await saveAndSend(supabase, from, resumen, 'text', w);
+      continue;
+    }
+
+    // Si el cliente afirma pero aún falta un dato, se anota su intención de
+    // confirmar para cerrar la venta en cuanto complete lo que falte.
+    if (pendingPedido.pidio_confirmar !== true && (stillMissingTalla || stillMissingDir)) {
+      const afirmaSimple = /\b(si|s[ií]|claro|correcto|correcta|listo|dale|ok|perfecto|confirmo|confirmado|as[ií] es|todo bien|est[áa] bien)\b/i.test(textLower);
+      const niega = /\b(no|nop|cambi|corrig|corrij|error|equivoc|mal|falta|faltan)\b/i.test(textLower);
+      if (afirmaSimple && !niega) {
+        await supabase.from('clientes_funnelish')
+          .update({ pidio_confirmar: true }).eq('id', pendingPedido.id);
+      }
+    }
+
+    // ── Respuesta fija si el cliente acaba de dar un dato ────────────────────
+    let fixedReply: string | null = null;
+
+    if (clientGaveTalla && clientGaveDireccion) {
+      fixedReply = stillMissingTalla || stillMissingDir
+        ? null // edge case — no debería pasar
+        : `✅ ¡Perfecto! Anoté tu talla *${currentTalla}* y tu dirección. Tu pedido: *${pendingPedido.producto}*.\n\n¿Me confirmas que está todo correcto para procesar tu despacho? 😊🚚`;
+    } else if (clientGaveTalla) {
+      if (isDirOficinaType) {
+        // Dirección es oficina → recordar el abono en vez de pedir dirección
+        fixedReply = `✅ Talla *${currentTalla}* anotada.\n\nRecuerda que para el despacho por la oficina de Interrapidísimo necesitas hacer el abono de $5.000. Cuando lo hayas hecho, envíame el comprobante por aquí 📷`;
+      } else if (stillMissingDir) {
+        const addrQTalla = getAddressQuestion(currentDireccion) ?? '📍 Para completar el pedido necesito tu dirección de domicilio completa (ej: Calle 15 # 20-30, Barrio). ¿Cuál es?';
+        fixedReply = `✅ Talla *${currentTalla}* confirmada.\n\n${addrQTalla}`;
+      } else {
+        fixedReply = `✅ ¡Perfecto! Talla *${currentTalla}* anotada. Tu pedido: *${pendingPedido.producto}*.\n\n¿Me confirmas que está todo correcto para procesar tu despacho? 😊🚚`;
+      }
+    } else if (clientGaveDireccion) {
+      // Validar dirección con Lupap (geocodificación real)
+      const lupapCity = pendingPedido.ciudad ?? '';
+      const lupapVal  = await validateAddressLupap(currentDireccion, lupapCity);
+      const lupapMsg  = getLupapMessage(lupapVal, currentDireccion);
+
+      if (lupapMsg) {
+        // Lupap encontró un problema → enviar el mensaje específico (no confirmar la dirección)
+        fixedReply = lupapMsg;
+      } else {
+        // Dirección verificada → confirmar normalmente
+        fixedReply = stillMissingTalla
+          ? `✅ Dirección anotada.\n\n📋 ¿Me confirmas tu talla del buzo? (XS, S, M, L, XL, XXL, XXXL)`
+          : `✅ ¡Dirección anotada! Ya tengo todo para tu pedido: *${pendingPedido.producto}*.\n\n¿Me confirmas que está todo correcto para procesar tu despacho? 😊🚚`;
+      }
+    }
+
+    if (fixedReply) {
+      const wamid = await sendTextMessage(from, fixedReply);
+      await saveAndSend(supabase, from, fixedReply, 'text', wamid);
+      continue;
+    }
+
+    // ── Confirmación por lenguaje natural cuando todo está completo ──────────
+    // Solo se activa cuando: hay pedido + talla ok + dirección domicilio ok (no oficina) + mensaje corto afirmativo
+    const allDataReady = !stillMissingTalla && !stillMissingDir && !isDirOficinaType;
+    // Afirmación natural: corto + palabra afirmativa + SIN negación/corrección
+    const afirmativo = /\b(si|s[ií]|claro|correcto|correctos|exacto|exactamente|listo|dale|ok|okay|oka|perfecto|confirmo|confirmado|confirmar|acuerdo|as[ií]\s*es|eso\s*es|bien|vale|de\s*una|de\s*once|h[aá]gale|todo\s*bien|todo\s*correcto|est[aá]\s*bien|est[aá]\s*correcto)\b/i.test(textLower);
+    const niegaOCorrige = /\b(no|nop|nel|cambi|corrig|corrij|error|equivoc|mal|pero|falta|faltan|arregl|otro\s*color|otra\s*talla|otra\s*direccion)\b/i.test(textLower);
+    const esAfirmacion = afirmativo || NATURAL_CONFIRM_PHRASES.some(p => textLower.includes(p));
+    if (allDataReady && textLower.trim().length < 60 && esAfirmacion && !niegaOCorrige) {
+      await supabase.from('clientes_funnelish').update({
+        confirmado: true, confirmado_at: new Date().toISOString(), estado: 'confirmado',
+      }).eq('id', pendingPedido.id);
+      await setEstadoConv(supabase, from, 'VENTA REALIZADA');
+      await enviarRegistroVenta(supabase, pendingPedido, tel10, from); // TEMPORAL: registro de ventas
+      // Cierre suave: primero deja el pedido listo (como opción, sin exigir nada),
+      // luego el mensaje de gracias con el seguimiento.
+      const cierreMsg = '✅ Listo, así queda tu pedido 🙌 Cualquier duda me escribes por aquí 😊';
+      const w1 = await sendTextMessage(from, cierreMsg);
+      await saveAndSend(supabase, from, cierreMsg, 'text', w1);
+      const finalMsg = '¡Gracias por tu compra! 🎉 Cuando lo envíe te estará llegando el número de guía desde nuestro chatbot, cuyo número asociado es 3142576239, para que puedas realizarle seguimiento a tu paquete. 🚚';
+      const wamid = await sendTextMessage(from, finalMsg);
+      await saveAndSend(supabase, from, finalMsg, 'text', wamid);
+      continue;
+    }
+
+    // ── Claude como fallback (solo MODO CONFIRMACIÓN) ────────────────────────
+    const { data: shortHistory } = await supabase
+      .from('messages').select('content, role')
+      .eq('conversation_id', from).order('created_at', { ascending: false }).limit(14);
+
+    const missingList: string[] = [];
+    if (stillMissingTalla) missingList.push('talla del buzo (XS, S, M, L, XL, XXL, XXXL)');
+    if (stillMissingDir)   missingList.push('dirección completa de domicilio (ej: Calle 15 # 20-30)');
+
+    // Colores REALES del producto (para que la IA NO invente colores)
+    let coloresReales = '';
+    try {
+      const fam = await getFamColores(pendingPedido.producto);
+      const nombres = [...new Set((fam ?? []).map((c: any) => String(c.color ?? '').trim()).filter(Boolean))];
+      if (nombres.length) coloresReales = nombres.join(', ');
+    } catch { /* si falla, no se listan */ }
+
+    const sysPrompt =
+      (await cargarPromptEmpresa(supabase)) +
+      `\n\nCONTEXTO DE ESTE CHAT: el cliente tiene un pedido ACTIVO por confirmar. Pedido: *${pendingPedido.producto}* — Valor: *${pendingPedido.valor}*.\n` +
+      (pendingPedido.abono_recibido
+        ? `IMPORTANTE: el cliente YA ENVIÓ el comprobante del abono. NUNCA se lo vuelvas a pedir ni digas que quedas pendiente de él.\n`
+        : '') +
+      `${missingList.length > 0
+        ? `Aún falta: ${missingList.join(' y ')}. Pide SOLO eso, de forma amable y breve.`
+        : `Todos los datos están completos. Pídele de forma natural y humana que confirme si todo está correcto para procesar su pedido. Evita sonar robótico (NO digas "escribe CONFIRMO"); con cualquier frase afirmativa del cliente basta.`
+      }\n` +
+      `COLORES: si el cliente pide ver los colores o quiere cambiar de color, menciona ÚNICAMENTE estos colores disponibles de *${pendingPedido.producto}*: ${coloresReales || '(consúltalos con un asesor, no los inventes)'}. NUNCA inventes ni listes colores que no estén en esa lista exacta. Cuando elija uno, dile que lo cambias.\n` +
+      ANDAMIAJE_PEDIDO_ACTIVO + memoriaBot;
+
+    const chatHistory: ChatRequest['messages'] = [...(shortHistory ?? [])]
+      .reverse()
+      .filter((m: any) => m.content?.trim() && !m.content.startsWith('http'))
+      .map((m: any) => ({
+        role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+        content: m.content as string,
+      }));
+
+    if (!chatHistory.length || chatHistory[chatHistory.length - 1]?.role !== 'user') {
+      chatHistory.push({ role: 'user', content: text });
+    }
+
+    // ── Motor híbrido: reglas (disparadores) primero, para no gastar IA ──
+    // Si una regla del cliente coincide y pide no involucrar al asistente,
+    // ya respondió la plantilla y saltamos la IA. Fail-open: si algo falla,
+    // sigue el flujo normal con IA.
+    try {
+      const rd = await responderConDisparadores(supabase, from, text);
+      if (rd.manejado && rd.saltarIA) continue;
+    } catch { /* fail-open */ }
+
+    let botReply: string;
+    try {
+      const resp = await chat({ messages: chatHistory, tenantId: tidBot ?? undefined, systemPrompt: sysPrompt });
+      botReply = resp.message;
+    } catch { continue; }
+
+    const botWamid = await sendTextMessage(from, botReply);
+    if (!botWamid) continue;
+    await saveAndSend(supabase, from, botReply, 'text', botWamid);
+  }
+
+  return NextResponse.json({ status: 'ok' });
+}
