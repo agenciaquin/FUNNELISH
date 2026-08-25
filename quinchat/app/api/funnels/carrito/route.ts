@@ -12,12 +12,16 @@ export async function POST(req: NextRequest) {
   const telefono = String(b?.telefono ?? '').replace(/\D/g, '').replace(/^57/, '').slice(-10);
   if (!slug || !/^3\d{9}$/.test(telefono)) return NextResponse.json({ ok: false }, { status: 200 });
 
-  const fila = {
+  // TODOS los datos que el cliente alcanzó a escribir (dirección, ciudad, etc.)
+  // se guardan en la columna jsonb `datos`.
+  const extra = (b?.datos && typeof b.datos === 'object') ? b.datos : null;
+  const fila: any = {
     slug, telefono,
     nombre:   b?.nombre   ? String(b.nombre).slice(0, 120)   : null,
     producto: b?.producto ? String(b.producto).slice(0, 200) : null,
     talla:    b?.talla    ? String(b.talla).slice(0, 120)    : null,
     valor:    Number(b?.valor) > 0 ? Number(b.valor) : null,
+    datos:    extra,
     updated_at: new Date().toISOString(),
   };
 
@@ -27,16 +31,25 @@ export async function POST(req: NextRequest) {
     // Guardado SIN depender del índice único (slug,telefono): primero intenta
     // ACTUALIZAR la fila existente; si no existe ninguna, INSERTA. Así funciona
     // aunque el índice único no se haya creado (era la causa de la lista vacía).
-    const { data: upd, error: uErr } = await admin
-      .from('carritos_abandonados')
-      .update(fila).eq('slug', slug).eq('telefono', telefono).select('id');
+    const guardar = async (f: any) => {
+      const { data: upd, error: uErr } = await admin
+        .from('carritos_abandonados')
+        .update(f).eq('slug', slug).eq('telefono', telefono).select('id');
+      if (uErr) return uErr;
+      if (!upd || upd.length === 0) {
+        const { error: iErr } = await admin.from('carritos_abandonados').insert(f);
+        return iErr ?? null;
+      }
+      return null;
+    };
 
-    if (uErr) {
-      console.error('[carrito] update falló:', uErr.message);
-    } else if (!upd || upd.length === 0) {
-      const { error: iErr } = await admin.from('carritos_abandonados').insert(fila);
-      if (iErr) console.error('[carrito] insert falló:', iErr.message);
+    let err = await guardar(fila);
+    // Si la columna `datos` aún no existe (falta la migración), guarda sin ella.
+    if (err && /datos/i.test(err.message)) {
+      const { datos, ...sinDatos } = fila;
+      err = await guardar(sinDatos);
     }
+    if (err) console.error('[carrito] no se guardó:', err.message);
   } catch (e) { console.error('[carrito] error inesperado:', e); }
 
   return NextResponse.json({ ok: true }, { status: 200 });
@@ -47,12 +60,19 @@ export async function GET(req: NextRequest) {
   const verRecuperados = req.nextUrl.searchParams.get('recuperados') === '1';
   const admin = createServerSupabaseClient();
 
-  const { data: carritos, error } = await admin
+  const pedir = (cols: string) => admin
     .from('carritos_abandonados')
-    .select('id, slug, nombre, telefono, producto, talla, valor, recuperado, created_at')
+    .select(cols)
     .eq('recuperado', verRecuperados)
     .order('created_at', { ascending: false })
     .limit(500);
+
+  let { data: carritos, error } = await pedir('id, slug, nombre, telefono, producto, talla, valor, datos, nota, recuperado, created_at');
+  // Si faltan columnas nuevas (datos / nota), NO rompas: vuelve a pedir sin ellas
+  // para que los carritos sigan mostrándose igual.
+  if (error && /datos|nota/i.test(error.message)) {
+    ({ data: carritos, error } = await pedir('id, slug, nombre, telefono, producto, talla, valor, recuperado, created_at'));
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const lista = carritos ?? [];
@@ -82,18 +102,45 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ carritos: abiertos, total: abiertos.length, totalTabla, permiso });
 }
 
-// PATCH: marca un carrito como recuperado o lo reabre.
+// PATCH: marca un carrito como recuperado/reabre, o guarda una nota del asesor.
+//  - { id, recuperado }  → marca/reabre
+//  - { id, nota }        → guarda/actualiza la nota privada
 export async function PATCH(req: NextRequest) {
   let b: any;
   try { b = await req.json(); } catch { return NextResponse.json({ error: 'body inválido' }, { status: 400 }); }
   const id = String(b?.id ?? '');
   if (!id) return NextResponse.json({ error: 'falta id' }, { status: 400 });
-  const recuperado = b?.recuperado !== false;
+
+  const patch: any = {};
+  if ('nota' in b) {
+    patch.nota = b.nota ? String(b.nota).slice(0, 2000) : null;
+  } else {
+    const recuperado = b?.recuperado !== false;
+    patch.recuperado = recuperado;
+    patch.recuperado_at = recuperado ? new Date().toISOString() : null;
+  }
 
   const admin = createServerSupabaseClient();
-  const { error } = await admin.from('carritos_abandonados')
-    .update({ recuperado, recuperado_at: recuperado ? new Date().toISOString() : null })
-    .eq('id', id);
+  const { error } = await admin.from('carritos_abandonados').update(patch).eq('id', id);
+  if (error) {
+    if (/nota/i.test(error.message)) {
+      return NextResponse.json({ error: 'Falta correr la migración: agrega la columna nota a carritos_abandonados.' }, { status: 409 });
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true });
+}
+
+// DELETE: elimina definitivamente carritos. ?id=x (uno) o ?ids=a,b,c (varios).
+export async function DELETE(req: NextRequest) {
+  const sp = req.nextUrl.searchParams;
+  const idsParam = sp.get('ids');
+  const uno = sp.get('id');
+  const ids = idsParam ? idsParam.split(',').map(s => s.trim()).filter(Boolean) : uno ? [uno] : [];
+  if (ids.length === 0) return NextResponse.json({ error: 'falta id' }, { status: 400 });
+
+  const admin = createServerSupabaseClient();
+  const { error } = await admin.from('carritos_abandonados').delete().in('id', ids);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

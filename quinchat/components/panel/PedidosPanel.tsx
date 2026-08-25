@@ -13,6 +13,8 @@ interface Pedido {
   campana_nombre?: string | null;
   plataforma?: 'facebook' | 'tiktok' | null;
   foto?: string | null;
+  embudo_slug?: string | null;
+  embudo_nombre?: string | null;
   created_at: string;
 }
 
@@ -430,6 +432,14 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
                             <span className="truncate">{p.campana_nombre || p.utm_campaign}</span>
                           </span>
                         )}
+                        {p.embudo_slug && (
+                          <a
+                            href={`https://pedido.klixmant.shop/${p.embudo_slug}`}
+                            target="_blank" rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            className="md:hidden block text-[10px] font-semibold text-[#00847A] truncate mt-0.5 hover:underline"
+                          >🚀 {p.embudo_nombre || p.embudo_slug} ↗</a>
+                        )}
                       </span>
 
                       <span className="hidden md:block flex-1 min-w-0">
@@ -440,16 +450,27 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
                         </span>
                       </span>
 
-                      <span className="hidden md:flex w-40 shrink-0 items-center gap-1.5">
-                        {p.plataforma === 'facebook' && <LogoFacebook />}
-                        {p.plataforma === 'tiktok' && <LogoTikTok />}
-                        {p.utm_campaign ? (
-                          <span
-                            className="truncate text-[11px] font-semibold text-[#6D28D9]"
-                            title={`${p.campana_nombre || p.utm_campaign}${p.utm_source ? ` · ${p.utm_source}` : ''}`}
-                          >{p.campana_nombre || p.utm_campaign}</span>
-                        ) : (
-                          <span className="text-[11px] text-[#C9C9C9]">Directo</span>
+                      <span className="hidden md:flex w-40 shrink-0 flex-col gap-0.5">
+                        <span className="flex items-center gap-1.5">
+                          {p.plataforma === 'facebook' && <LogoFacebook />}
+                          {p.plataforma === 'tiktok' && <LogoTikTok />}
+                          {p.utm_campaign ? (
+                            <span
+                              className="truncate text-[11px] font-semibold text-[#6D28D9]"
+                              title={`${p.campana_nombre || p.utm_campaign}${p.utm_source ? ` · ${p.utm_source}` : ''}`}
+                            >{p.campana_nombre || p.utm_campaign}</span>
+                          ) : (
+                            <span className="text-[11px] text-[#C9C9C9]">Directo</span>
+                          )}
+                        </span>
+                        {p.embudo_slug && (
+                          <a
+                            href={`https://pedido.klixmant.shop/${p.embudo_slug}`}
+                            target="_blank" rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            title={`Ver embudo: ${p.embudo_nombre || p.embudo_slug}`}
+                            className="truncate text-[10px] font-semibold text-[#00847A] hover:underline"
+                          >🚀 {p.embudo_nombre || p.embudo_slug} ↗</a>
                         )}
                       </span>
 

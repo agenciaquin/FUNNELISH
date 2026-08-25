@@ -17,27 +17,43 @@ export async function GET(req: NextRequest) {
   const desde  = new Date(Date.now() - dias * 86_400_000).toISOString();
 
   const supabase = createServerSupabaseClient();
-  let consulta = supabase
-    .from('clientes_funnelish')
-    .select('id, referencia, nombre, telefono, producto, talla, valor, direccion, ciudad, departamento, correo, confirmado, estado, abono, abono_recibido, utm_source, utm_campaign, created_at')
-    .gte('created_at', desde)
-    .order('created_at', { ascending: false })
-    .limit(400);
+  const COLS_BASE = 'id, referencia, nombre, telefono, producto, talla, valor, direccion, ciudad, departamento, correo, confirmado, estado, abono, abono_recibido, utm_source, utm_campaign, created_at';
 
-  // Funnel = páginas propias (referencia "web-"); WhatsApp = bot (referencia "wa-").
-  if (canal === 'funnel')        consulta = consulta.like('referencia', 'web-%');
-  else if (canal === 'whatsapp') consulta = consulta.like('referencia', 'wa-%');
-  else                           consulta = consulta.or('referencia.like.web-%,referencia.like.wa-%');
+  // Se intenta traer también foto_producto; si esa columna no existe en esta base,
+  // se reintenta SIN ella para que la lista NUNCA se caiga (y los pedidos se vean).
+  async function traer(cols: string) {
+    let c = supabase
+      .from('clientes_funnelish')
+      .select(cols)
+      .gte('created_at', desde)
+      .order('created_at', { ascending: false })
+      .limit(400);
+    if (canal === 'funnel')        c = c.like('referencia', 'web-%');
+    else if (canal === 'whatsapp') c = c.like('referencia', 'wa-%');
+    else                           c = c.or('referencia.like.web-%,referencia.like.wa-%');
+    return c;
+  }
 
-  const { data, error } = await consulta;
+  let { data, error } = await traer(`${COLS_BASE}, foto_producto`);
+  if (error) {
+    // Reintento sin foto_producto (por si la columna no está migrada).
+    ({ data, error } = await traer(COLS_BASE));
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const pedidos = data ?? [];
+  const pedidos = (data ?? []) as any[];
 
-  // Miniatura del producto: la primera foto que el bot le mandó a ese cliente.
-  // Se traen todas de una sola vez para no consultar pedido por pedido.
+  // Miniatura del producto: PRIMERO la foto guardada CON ESTE pedido (la correcta,
+  // la del producto que compró). Solo si el pedido no tiene foto propia, se usa
+  // como respaldo la primera foto que el bot le mandó a ese cliente (puede ser de
+  // otro producto de un chat anterior, por eso va de último).
+  for (const p of pedidos as any[]) {
+    const propia = String(p.foto_producto ?? '').trim();
+    p.foto = propia.startsWith('http') ? propia : null;
+  }
   try {
-    const convIds = [...new Set(pedidos
+    const faltan = (pedidos as any[]).some(p => !p.foto);
+    const convIds = !faltan ? [] : [...new Set(pedidos
       .map(p => `57${String(p.telefono ?? '').replace(/\D/g, '').slice(-10)}`)
       .filter(id => id.length === 12))];
 
@@ -56,12 +72,34 @@ export async function GET(req: NextRequest) {
         if (!primeraFoto.has(conv)) primeraFoto.set(conv, c);
       }
 
-      for (const p of pedidos) {
+      for (const p of pedidos as any[]) {
+        if (p.foto) continue; // ya tiene su foto propia (la correcta)
         const conv = `57${String(p.telefono ?? '').replace(/\D/g, '').slice(-10)}`;
-        (p as any).foto = primeraFoto.get(conv) ?? null;
+        p.foto = primeraFoto.get(conv) ?? null;
       }
     }
   } catch { /* si no hay fotos, la lista igual funciona */ }
+
+  // ── De qué EMBUDO vino cada venta (cruzando por nombre de producto/variantes) ──
+  // El pedido no guarda el slug, así que se empareja el producto con los nombres de
+  // cada embudo. Se agrega p.embudo_slug y p.embudo_nombre para el enlace de vista previa.
+  try {
+    const { data: funnels } = await supabase
+      .from('funnels').select('slug, nombre, producto, variantes').limit(500);
+    const mapa = (funnels ?? []).map((f: any) => {
+      let variantes: any[] = [];
+      try { variantes = Array.isArray(f.variantes) ? f.variantes : JSON.parse(f.variantes ?? '[]'); } catch { /* */ }
+      const nombres = [f.producto, ...variantes.map((v: any) => v?.nombre)]
+        .map((n: any) => String(n ?? '').trim().toUpperCase()).filter((n: string) => n.length >= 3);
+      return { slug: f.slug as string, nombre: (f.nombre || f.producto || f.slug) as string, nombres };
+    });
+    for (const p of pedidos) {
+      const prod = String(p.producto ?? '').toUpperCase();
+      if (!prod) continue;
+      const match = mapa.find(m => m.nombres.some(n => prod.includes(n) || n.includes(prod.split(' - ')[0].trim())));
+      if (match) { p.embudo_slug = match.slug; p.embudo_nombre = match.nombre; }
+    }
+  } catch { /* si no se puede cruzar, la lista igual funciona */ }
 
   // Nombre de la campaña (desde Meta) + plataforma (Facebook / TikTok) por pedido.
   try {

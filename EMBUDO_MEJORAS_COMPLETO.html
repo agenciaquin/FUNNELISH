@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mejoras del Editor de Embudos — Guía completa</title>
+<style>
+  :root{ --oro:#D4AF37; --neg:#0D0D0D; --gris:#1a1a1a; --txt:#EDEDED; --sub:#9a9a9a; --linea:#2a2a2a; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--neg); color:var(--txt); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; line-height:1.6; }
+  .wrap{ max-width:900px; margin:0 auto; padding:40px 22px 80px; }
+  header{ border-bottom:2px solid var(--oro); padding-bottom:20px; margin-bottom:28px; }
+  h1{ font-size:30px; margin:0 0 6px; color:#fff; letter-spacing:.5px; }
+  h1 span{ color:var(--oro); }
+  .lead{ color:var(--sub); font-size:15px; margin:0; }
+  .ejemplo{ display:inline-block; margin-top:12px; font-size:13px; color:var(--oro); text-decoration:none; border:1px solid var(--oro); padding:6px 12px; border-radius:999px; }
+  .nota{ background:var(--gris); border-left:4px solid var(--oro); padding:12px 16px; border-radius:8px; margin:22px 0; font-size:14px; color:var(--txt); }
+  h2{ font-size:20px; color:var(--oro); margin:38px 0 10px; padding-top:10px; border-top:1px solid var(--linea); }
+  h3{ font-size:15px; color:#fff; margin:18px 0 6px; }
+  p,li{ font-size:14.5px; }
+  code{ background:#000; color:var(--oro); padding:2px 6px; border-radius:5px; font-size:13px; font-family:"Courier New",monospace; }
+  ul{ margin:8px 0 8px 4px; padding-left:20px; }
+  li{ margin:4px 0; }
+  table{ width:100%; border-collapse:collapse; margin:14px 0; font-size:13px; }
+  th,td{ border:1px solid var(--linea); padding:7px 10px; text-align:left; }
+  th{ background:var(--gris); color:var(--oro); }
+  td code{ font-size:12px; }
+  .pill{ display:inline-block; background:var(--oro); color:#000; font-weight:800; font-size:11px; padding:2px 9px; border-radius:999px; margin-right:6px; }
+  .foot{ margin-top:40px; padding-top:18px; border-top:1px solid var(--linea); color:var(--sub); font-size:13px; }
+  strong{ color:#fff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Mejoras del Editor de <span>Embudos</span></h1>
+  <p class="lead">Guía completa, detalle por detalle, para replicar cada función en otros proyectos (Next.js 16 + Supabase + Tailwind).</p>
+  <a class="ejemplo" href="https://pedido.klixmant.shop/f1-escuderia-tk" target="_blank">Ejemplo en vivo → /f1-escuderia-tk</a>
+</header>
+
+<div class="nota"><strong>Regla base:</strong> cada cambio es <strong>retrocompatible</strong>. Si un campo no existe en un embudo viejo, se usa el valor por defecto y se comporta como antes. Nada rompe los embudos publicados.</div>
+
+<h2>0) Arquitectura del sistema de bloques</h2>
+<ul>
+  <li>El embudo guarda su diseño en <code>layout</code> (jsonb): <code>{ bloques: Bloque[], checkout?: {...} }</code>.</li>
+  <li><code>Bloque = { id, tipo, visible?, props? }</code>. Cada bloque guarda TODO su estilo en <code>props</code> (size, color, bg, font, align, anim, mt, mb, w, url…).</li>
+  <li>Componentes presentacionales <strong>compartidos</strong> entre la página pública (servidor) y la vista previa (navegador): se ven idénticos.</li>
+  <li>Archivos: <code>lib/bloques.ts</code>, <code>app/p/[slug]/page.tsx</code>, <code>components/panel/EmbudosPanel.tsx</code>, <code>VistaPreviaEmbudo.tsx</code>, <code>EditorBloqueLateral.tsx</code>, <code>components/publico/*</code>.</li>
+</ul>
+
+<h2>1) Editor visual dentro del teléfono</h2>
+<ul>
+  <li>Cada bloque tiene controles al pasar el mouse: <strong>▲ ▼</strong> mover, <strong>⧉</strong> duplicar, <strong>👁</strong> mostrar/ocultar, <strong>✕</strong> borrar, <strong>⠿</strong> arrastrar.</li>
+  <li>Se puede arrastrar (drag &amp; drop) para reordenar.</li>
+  <li>Al tocar un bloque se abre su editor en la columna del centro (arranca vacía: "👉 Toca un bloque…").</li>
+  <li>Cabecera: solo Dirección (slug) + Nombre del producto + switch <strong>Embudo PRENDIDO/APAGADO</strong>.</li>
+  <li>Botón <strong>"💾 Guardar cambios"</strong> por bloque: guarda sin sacarte del editor.</li>
+  <li>Proporciones reales: marco <code>max-w-[360px]</code>, pantalla <code>height: min(80vh,720px)</code>.</li>
+</ul>
+
+<h2>2) Paleta de bloques + botón "+" al final de cada bloque</h2>
+<ul>
+  <li>Izquierda: <strong>"＋ Agregar bloque"</strong> lista el catálogo. Repetibles siempre; únicos solo si no están.</li>
+  <li>En el teléfono, al final de cada bloque un botón <strong>"＋"</strong> inserta un bloque en esa posición exacta.</li>
+  <li><strong>Solo aparece en el bloque SELECCIONADO</strong> (<code>selectedId === b.id</code>); oculto en los demás.</li>
+  <li>Implementación: estado <code>paletaIdx</code> + <code>agregarEn(idx, tipo)</code> (inserta en <code>idx+1</code>); cada bloque envuelto en <code>&lt;Fragment&gt;</code>.</li>
+</ul>
+
+<h2>3) Mini-barra de texto (Fuente · Color · Tamaño · Emoji)</h2>
+<ul>
+  <li>Componente <code>MiniBarraTexto.tsx</code>. Props: <code>fontKey, colorKey, sizeKey, textKey, sizeMin, sizeMax, colorDefault</code>.</li>
+  <li>Chips compactos <strong>🔤 Fuente · ● Color · 🅰 Tamaño · 😊 Emoji</strong> con pop pequeño cada uno.</li>
+  <li>Puesta encima de: texto libre, etiqueta de botón, título de reseñas y título de Stock. Los públicos leen esas props.</li>
+</ul>
+
+<h2>4) Espacios compactos + juntar bloques</h2>
+<ul>
+  <li>Menos aire por defecto en botones, Stock y reseñas.</li>
+  <li>Sliders <strong>Espacio arriba/abajo</strong> (<code>mt</code>/<code>mb</code>) aceptan <strong>negativos</strong> (min -40) para juntar bloques.</li>
+</ul>
+
+<h2>5) Bloque "Clientes felices" (reseñas)</h2>
+<p>Foto grande izquierda + tarjeta con borde derecha (nombre, comentario, estrellas). Cada reseña tiene:</p>
+<h3>5.1 Reseña gatillo <span class="pill">gatillo</span></h3>
+<ul><li>Se resalta (borde rojo + "🆕 NUEVA RESEÑA") y dispara el aviso flotante (punto 6).</li></ul>
+<h3>5.2 Botón de compra entre reseñas <span class="pill">boton</span></h3>
+<ul>
+  <li>Marca 🛒 en la reseña tras la cual sale un botón de compra a todo el ancho.</li>
+  <li>Con todas las opciones: <code>botonTexto, botonColor, botonColorTexto, botonVariante, botonEscala, botonSize, botonAncho (40–100%), botonAlign (izq/centro/der)</code>.</li>
+</ul>
+<h3>5.3 Título editable</h3>
+<ul><li>Mini-barra con <code>tituloFont, tituloColor, tituloSize</code>.</li></ul>
+
+<h2>6) Aviso flotante "Nueva reseña agregada"</h2>
+<ul>
+  <li>Componente <code>ResenaGatillo.tsx</code>. Al tocarlo hace scroll a la reseña.</li>
+  <li>Editable desde el bloque de reseñas: <code>avisoTexto, avisoColor, avisoColorTexto, avisoPosicion (4 esquinas), avisoAparece (seg), avisoDura (seg → luego se borra)</code>.</li>
+  <li>Muestra foto + primer nombre de la reseña gatillo.</li>
+</ul>
+
+<h2>7) Bloque "Botón MÁS VENDIDO"</h2>
+<ul>
+  <li>Bloque del catálogo (<code>mas_vendido</code>): se agrega/elimina como los demás.</li>
+  <li>Props: <code>texto, emoji, color, colorTexto, modelo, posicion, size</code>.</li>
+  <li>Al tocarlo: <code>CustomEvent('quin:mas-vendido')</code> + scroll a <code>#checkout</code>. El checkout preselecciona ese modelo y le pone etiqueta 🔥 MÁS VENDIDO.</li>
+  <li>El editor muestra un dropdown con las variantes del embudo.</li>
+  <li>Se <strong>eliminó la insignia flotante antigua</strong> (ya no se renderiza ni se edita).</li>
+</ul>
+
+<h2>8) Bloque "Stock / escasez" — barra que baja sola</h2>
+<ul>
+  <li>Componente <code>BarraStockAnimada.tsx</code>. Casilla "📉 Barra que baja sola".</li>
+  <li>Props: <code>barraInicial, barraFinal (mínimo, nunca se vacía), cadaSeg (def 15), paso (def 1)</code>.</li>
+  <li>Sin activar = barra fija con <code>porcentaje</code> (compatible).</li>
+</ul>
+
+<h2>9) Bloque "Ventas en vivo" (prueba social)</h2>
+<ul>
+  <li>Bloque <code>ventas</code>. Componente <code>NotifVentas.tsx</code>.</li>
+  <li>Props: <code>titulo, items[] (rotan), emoji, color, colorTexto, size, posicion (4 esquinas/centro), delayInicial (def 10), intervalo (def 15), duracion (def 3)</code>.</li>
+  <li>Primer aviso a <code>delayInicial</code>; luego cada <code>intervalo</code>; visible <code>duracion</code> seg; rota por <code>items</code>.</li>
+  <li>Flotante: se saca del flujo normal y se renderiza aparte.</li>
+</ul>
+
+<h2>10) Checkout editable (Fase 1)</h2>
+<ul>
+  <li>Al entrar a la pestaña Checkout se abre el editor. Config en <code>layout.checkout</code> (sin columna nueva).</li>
+  <li>Campos: <code>titulo, subtitulo, tituloDatos, textoBoton, colorBoton, sellos[{emoji,texto}], mostrarSellos</code>.</li>
+  <li>Se aplica a <code>CheckoutPro</code>, <code>FormularioPedido</code> y la vista previa. No toca la lógica del pedido.</li>
+</ul>
+<div class="nota"><strong>Fase 2 (pendiente):</strong> reordenar/ocultar secciones del checkout y bloques libres entre pasos. No hecho aún por ser lo más delicado (afecta orden y envío del pedido).</div>
+
+<h2>11) Editor de producto/variantes</h2>
+<ul>
+  <li>Opciones de pack (Pareja, Polos x2/x3, Armar pack, Arma tu pack) ahora <strong>desplegables</strong> con "📦 Opciones de pack ▸" (estado <code>packsOpen[i]</code>).</li>
+  <li>"📥 Traer de Catálogos" trae colores con foto <strong>y también las tallas</strong> (del embudo o por defecto S–XXXL). Todo editable; el precio se edita arriba.</li>
+</ul>
+
+<h2>Catálogo de bloques</h2>
+<table>
+<tr><th>Bloque</th><th>Clave</th><th>Repetible</th></tr>
+<tr><td>Banner de clientes</td><td><code>banner</code></td><td>no</td></tr>
+<tr><td>Titular</td><td><code>titular</code></td><td>no</td></tr>
+<tr><td>Portada (galería/video)</td><td><code>portada</code></td><td>no</td></tr>
+<tr><td>Botón COMPRAR</td><td><code>boton</code></td><td>sí</td></tr>
+<tr><td>Precio</td><td><code>precio</code></td><td>no</td></tr>
+<tr><td>Contador de oferta</td><td><code>contador</code></td><td>no</td></tr>
+<tr><td>Últimas unidades</td><td><code>ultimas_unidades</code></td><td>no</td></tr>
+<tr><td>Características</td><td><code>caracteristicas</code></td><td>no</td></tr>
+<tr><td>Estrellas de reseña</td><td><code>estrellas</code></td><td>sí</td></tr>
+<tr><td>Clientes felices</td><td><code>testimonios</code></td><td>sí</td></tr>
+<tr><td>Gatillos mentales</td><td><code>gatillos</code></td><td>sí</td></tr>
+<tr><td>Stock / escasez</td><td><code>stock</code></td><td>sí</td></tr>
+<tr><td>Botón MÁS VENDIDO</td><td><code>mas_vendido</code></td><td>no</td></tr>
+<tr><td>Ventas en vivo</td><td><code>ventas</code></td><td>no</td></tr>
+<tr><td>Checkout / Checkout PRO</td><td><code>checkout</code> / <code>checkout_pro</code></td><td>no</td></tr>
+<tr><td>Texto libre</td><td><code>texto</code></td><td>sí</td></tr>
+<tr><td>Imagen / Video extra</td><td><code>imagen</code></td><td>sí</td></tr>
+<tr><td>Espacio en blanco</td><td><code>espacio</code></td><td>sí</td></tr>
+</table>
+
+<h2>Reglas de oro al replicar</h2>
+<ul>
+  <li>Todo lo nuevo es <strong>opcional y con default</strong>: los embudos viejos no cambian.</li>
+  <li>Los flotantes (<code>mas_vendido</code>, <code>ventas</code>) se sacan del flujo normal (<code>return null</code>) y se renderizan fijos aparte.</li>
+  <li>Los estilos por bloque viven en <code>props</code>; público y preview leen lo mismo.</li>
+  <li>Verificar siempre con <code>tsc --noEmit</code> antes de desplegar.</li>
+  <li>Deploy: <code>cd "…\quinchat"; vercel --prod</code> (PowerShell usa <code>;</code>, no <code>&amp;&amp;</code>).</li>
+</ul>
+
+<p class="foot">Documento generado para replicar las mejoras del constructor de embudos de QuinChat. Todo aplica a embudos nuevos sin afectar los ya publicados.</p>
+</div>
+</body>
+</html>

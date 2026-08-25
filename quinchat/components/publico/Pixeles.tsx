@@ -15,25 +15,42 @@ export default function Pixeles({
   meta?: string | null;
   tiktok?: string | null;
   evento?: 'PageView' | 'ViewContent' | 'InitiateCheckout' | 'Purchase';
-  datos?: { valor?: number; producto?: string; id?: string };
+  datos?: { valor?: number; producto?: string; id?: string; contentId?: string; email?: string; phone?: string };
 }) {
   useEffect(() => {
     if (evento === 'PageView') return; // ese ya lo dispara el código de abajo
     const w = window as any;
 
+    // content_id: TikTok/Meta lo EXIGEN. Usamos un id estable del producto.
+    const contentId = String(datos?.contentId || datos?.producto || 'producto').slice(0, 100);
+    const contents = [{
+      content_id: contentId, content_name: datos?.producto,
+      content_type: 'product', quantity: 1, price: datos?.valor,
+    }];
+
     try {
       if (w.fbq) {
         w.fbq('track', evento, {
           content_name: datos?.producto,
-          value: datos?.valor,
-          currency: 'COP',
+          content_ids: [contentId], content_type: 'product', contents,
+          value: datos?.valor, currency: 'COP',
         }, datos?.id ? { eventID: datos.id } : undefined);
       }
       if (w.ttq) {
+        // Coincidencia avanzada: email/teléfono (TikTok los hashea solo).
+        if (datos?.email || datos?.phone) {
+          w.ttq.identify({
+            email: datos?.email || undefined,
+            phone_number: datos?.phone || undefined,
+          });
+        }
         w.ttq.track(
           evento === 'InitiateCheckout' ? 'InitiateCheckout'
           : evento === 'Purchase' ? 'CompletePayment' : 'ViewContent',
-          { content_name: datos?.producto, value: datos?.valor, currency: 'COP' },
+          {
+            content_id: contentId, content_type: 'product', contents,
+            content_name: datos?.producto, value: datos?.valor, currency: 'COP',
+          },
           datos?.id ? { event_id: datos.id } : undefined
         );
       }

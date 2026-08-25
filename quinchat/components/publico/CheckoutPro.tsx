@@ -14,6 +14,9 @@ interface Props {
   // Cuando el checkout va DENTRO de la página de venta (una sola pantalla), la
   // barra flotante no debe salir hasta que el cliente llegue al formulario.
   embebido?: boolean;
+  // Nombre del modelo "MÁS VENDIDO": lleva la etiqueta y se preselecciona al
+  // tocar el sello flotante (evento quin:mas-vendido).
+  modeloMasVendido?: string;
 }
 
 /**
@@ -22,9 +25,11 @@ interface Props {
  * El botón se enciende solo cuando el pedido está completo. Es un componente
  * aparte del clásico (FormularioPedido): no afecta a los embudos existentes.
  */
-export default function CheckoutPro({ funnel, utms, embebido }: Props) {
+export default function CheckoutPro({ funnel, utms, embebido, modeloMasVendido }: Props) {
   const router = useRouter();
   const acento = acentoDe(funnel.color);
+
+  const norm = (s: string) => (s || '').trim().toLowerCase();
 
   // Cada variante es un MODELO (Red Bull, McLaren…). Si no hay, un producto único.
   const modelos: VarianteFunnel[] = funnel.variantes.length > 0
@@ -73,6 +78,22 @@ export default function CheckoutPro({ funnel, utms, embebido }: Props) {
     return () => obs.disconnect();
   }, []);
 
+  // El sello flotante "MÁS VENDIDO" avisa qué modelo preseleccionar.
+  useEffect(() => {
+    const onMV = (e: Event) => {
+      const nombre = (e as CustomEvent).detail?.modelo as string | undefined;
+      const objetivo = nombre || modeloMasVendido;
+      if (!objetivo) return;
+      const m = modelos.find(x => norm(x.nombre) === norm(objetivo));
+      if (m) {
+        setModeloId(m.id);
+        setErrores(er => ({ ...er, modelo: '' }));
+      }
+    };
+    window.addEventListener('quin:mas-vendido', onMV);
+    return () => window.removeEventListener('quin:mas-vendido', onMV);
+  }, [modelos, modeloMasVendido]);
+
   useEffect(() => {
     if (!embebido) { setEnCheckout(true); return; }
     const revisar = () => {
@@ -118,6 +139,7 @@ export default function CheckoutPro({ funnel, utms, embebido }: Props) {
           nombre: `${datos.nombre} ${datos.apellidos}`.trim(),
           producto: cantidad > 1 ? `${modelo.nombre} x${cantidad}` : modelo.nombre,
           talla: seleccion, valor: total,
+          datos: { ...datos, seleccion },
         }),
       }).catch(() => {});
     }, 1500);
@@ -163,9 +185,15 @@ export default function CheckoutPro({ funnel, utms, embebido }: Props) {
     } catch { /* ignorar */ }
 
     const w = window as any;
+    const telPx = datos.whatsapp.replace(/\D/g, '').replace(/^57/, '');
+    const emailPx = (datos as any).correo || undefined;
+    const contents = [{ content_id: funnel.slug, content_name: nombreProducto, content_type: 'product', quantity: cantidad, price: total }];
     try {
-      w.fbq?.('track', 'Purchase', { value: total, currency: 'COP', content_name: nombreProducto }, { eventID: referencia });
-      w.ttq?.track('CompletePayment', { value: total, currency: 'COP', content_name: nombreProducto }, { event_id: referencia });
+      w.fbq?.('track', 'Purchase', { content_name: nombreProducto, content_ids: [funnel.slug], content_type: 'product', contents, value: total, currency: 'COP' }, { eventID: referencia });
+      if (w.ttq) {
+        w.ttq.identify({ phone_number: telPx ? `+57${telPx}` : undefined, email: emailPx });
+        w.ttq.track('CompletePayment', { content_id: funnel.slug, content_type: 'product', contents, content_name: nombreProducto, value: total, currency: 'COP' }, { event_id: referencia });
+      }
     } catch { /* ignorar */ }
 
     const cookie = (n: string) =>
@@ -184,7 +212,10 @@ export default function CheckoutPro({ funnel, utms, embebido }: Props) {
     const envio = fetch('/api/pedidos', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cuerpo, keepalive: true,
     });
-    const espera = new Promise<'lento'>(r => setTimeout(() => r('lento'), 2500));
+    // Esperamos hasta 12s a que el servidor confirme que el pedido SE GUARDÓ antes de
+    // mostrar "gracias". Si de verdad falla, dejamos reintentar (no mostramos gracias).
+    // Si solo va lento (>12s), pasamos igual: keepalive termina de guardarlo en segundo plano.
+    const espera = new Promise<'lento'>(r => setTimeout(() => r('lento'), 12000));
 
     try {
       const resultado = await Promise.race([envio, espera]);
@@ -256,13 +287,17 @@ export default function CheckoutPro({ funnel, utms, embebido }: Props) {
           <div className="grid grid-cols-2 gap-2">
             {modelos.map(m => {
               const activo = m.id === modeloId;
+              const esTop = !!modeloMasVendido && norm(m.nombre) === norm(modeloMasVendido);
               return (
                 <button
                   key={m.id}
                   onClick={() => { setModeloId(m.id); setErrores(e => ({ ...e, modelo: '' })); setSeñalando(null); }}
-                  className={`rounded-xl border-2 p-1.5 text-center transition-colors ${señalando === 'modelo' && !modeloId ? 'animate-pulse' : ''}`}
-                  style={{ borderColor: activo ? acento.boton : '#E5E5E5', background: activo ? '#F3FBF6' : '#fff' }}
+                  className={`relative rounded-xl border-2 p-1.5 text-center transition-colors ${señalando === 'modelo' && !modeloId ? 'animate-pulse' : ''}`}
+                  style={{ borderColor: esTop ? '#C1121F' : activo ? acento.boton : '#E5E5E5', background: activo ? '#F3FBF6' : '#fff' }}
                 >
+                  {esTop && (
+                    <span className="absolute -top-2 left-1/2 -translate-x-1/2 z-10 rounded-full bg-[#C1121F] text-white text-[9px] font-extrabold px-2 py-0.5 shadow whitespace-nowrap border border-white">🔥 MÁS VENDIDO</span>
+                  )}
                   {m.imagen ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={imgOptim(m.imagen, 240)} alt={m.nombre} className="w-full aspect-square object-cover rounded-lg" loading="lazy" />

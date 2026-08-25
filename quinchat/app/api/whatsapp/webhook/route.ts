@@ -1165,9 +1165,24 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Cancelación / programación del pedido (auto-etiqueta) ─────────────────
-    const cancelaPedido = ['cancela', 'cancelar', 'cancelo', 'anula', 'anular', 'anulen',
+    // OJO: en Colombia "cancelar" también significa PAGAR ("cancelaré el valor al
+    // recibir" = pagaré al recibir). NO se debe cancelar el pedido en ese caso.
+    const contextoPago = /\b(valor|total|monto|al recibir|contra\s?entrega|contraentrega|de contado|contado|efectivo|el dinero|la plata|todo el valor|todo al recibir|pagar|pago|pagu[eé])\b/i.test(textLower);
+
+    const cancelaExplicito = [
       'no lo quiero', 'ya no lo quiero', 'no quiero el pedido', 'ya no quiero', 'no me interesa',
-      'no voy a comprar', 'no deseo el pedido', 'no lo voy a comprar'].some(w => textLower.includes(w));
+      'no voy a comprar', 'no deseo el pedido', 'no lo voy a comprar',
+      'cancela el pedido', 'cancelar el pedido', 'cancelame el pedido', 'cancélame el pedido',
+      'cancela mi pedido', 'cancelar mi pedido', 'cancela la compra', 'cancelar la compra',
+      'anula el pedido', 'anular el pedido', 'anulen el pedido', 'anula mi pedido', 'cancelen el pedido',
+      'cancela la orden', 'cancelar la orden',
+    ].some(w => textLower.includes(w));
+
+    const mencionaCancel = /\b(cancel\w+|anul\w+)\b/i.test(textLower);
+
+    // Es cancelación real si: lo pide explícito, O menciona "cancelar/anular" SIN que
+    // sea en sentido de pago (así "cancelaré el valor al recibir" NO cancela).
+    const cancelaPedido = cancelaExplicito || (mencionaCancel && !contextoPago);
     // Interés en MAYOREO / reventa: NO es cancelar ni aplazar. Un vendedor que
     // dice "más adelante hablamos para el por mayor" quiere su pedido AHORA y
     // además comprar más después. Se deja que el bot IA responda (con calidez),
@@ -1238,7 +1253,7 @@ export async function POST(req: NextRequest) {
 
     // ── Detección CONFIRMO ───────────────────────────────────────────────────
     const textClean = text.trim().toUpperCase();
-    const isConfirmo = ['CONFIRMO', '✅ CONFIRMO', 'CONFIRMO ✅', 'SI CONFIRMO', 'SÍ CONFIRMO']
+    let isConfirmo = ['CONFIRMO', '✅ CONFIRMO', 'CONFIRMO ✅', 'SI CONFIRMO', 'SÍ CONFIRMO']
       .includes(textClean)
       || textClean.startsWith('CONFIRMO ')
       || textClean === 'SI'
@@ -1251,6 +1266,25 @@ export async function POST(req: NextRequest) {
       || (/\bCONFIRMO\b/.test(textClean)
           && !/\bNO\s+CONFIRMO\b/.test(textClean)
           && !/\bC[OÓ]MO\s+CONFIRMO\b/.test(textClean));
+
+    // Respuesta afirmativa suelta ("sí", "correcto", "así está bien", "todo bien"…)
+    // cuenta como CONFIRMO SOLO si el último mensaje del bot pidió confirmar.
+    // Así evitamos que el pedido quede pendiente y el remarketing lo vuelva a pinchar.
+    if (!isConfirmo) {
+      const t = text.trim().toLowerCase();
+      const afirmativo =
+        /\b(s[ií]|claro|correcto|listo|dale|okay|ok|perfecto|as[ií] est[aá] bien|as[ií] esta bien|as[ií] es|todo bien|todo correcto|est[aá] bien|de una|obvio|confirmado|as[ií] qued[oó] bien)\b/.test(t)
+        && !/\bno\b/.test(t);
+      if (afirmativo) {
+        const { data: ultBot } = await supabase.from('messages')
+          .select('content').eq('conversation_id', from).in('role', ['assistant', 'agent'])
+          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        const c = (ultBot?.content ?? '').toLowerCase();
+        const botPidioConfirmar =
+          /confirm|es correcta|est[aá] correcto|todo bien|todo correcto|despachar|para despacharte|datos est[aá]n correctos|qued[oó] bien/.test(c);
+        if (botPidioConfirmar) isConfirmo = true;
+      }
+    }
 
     // ── Dos pedidos pendientes DISTINTOS ─────────────────────────────────────
     // Los duplicados por doble clic ya los descarta el webhook de Funnelish.
@@ -1374,7 +1408,7 @@ export async function POST(req: NextRequest) {
       const tel10 = from.replace(/^57/, '').slice(-10);
       const { data: pedido } = await supabase
         .from('clientes_funnelish')
-        .select('id, nombre, producto, talla, direccion, ciudad, departamento, correo, valor, telefono, abono, abono_recibido')
+        .select('id, nombre, producto, talla, direccion, ciudad, departamento, correo, valor, telefono, abono, abono_recibido, pidio_confirmar')
         .eq('telefono', tel10).eq('confirmado', false)
         .not('estado', 'in', '("cancelado","duplicado")') // no confirmar pedidos cancelados
         .order('created_at', { ascending: false }).limit(1).maybeSingle();
@@ -1390,21 +1424,39 @@ export async function POST(req: NextRequest) {
         if (!pedido.departamento || pedido.departamento === '—')
           missing.push('departamento');
 
+        // Anti-bucle: si lo ÚNICO que "falta" es la dirección, ya hay algo escrito,
+        // y YA le preguntamos antes (pidio_confirmar) y ahora vuelve a confirmar →
+        // se toma la dirección tal cual y se cierra la venta (no repetir la pregunta).
+        const soloDireccion = missing.length === 1 && missing[0] === 'dirección';
+        const direccionPresente = String(pedido.direccion ?? '').trim().length > 5;
+        if (soloDireccion && direccionPresente && pedido.pidio_confirmar === true) {
+          await supabase.from('clientes_funnelish').update({ direccion_ok: true }).eq('id', pedido.id);
+          missing.length = 0; // damos por buena la dirección y seguimos al cierre
+        }
+
         if (missing.length > 0) {
           // El cliente YA dijo que confirma: en cuanto complete el dato que falta,
           // se cierra la venta sola, sin volver a preguntarle si confirma.
           await supabase.from('clientes_funnelish')
             .update({ pidio_confirmar: true }).eq('id', pedido.id);
 
-          // Si la dirección está incompleta y es el único dato faltante, pregunta específica
+          const nom = String(pedido.nombre || '').split(' ')[0] || '';
+          // Preguntas variadas y personalizadas (no repetir siempre lo mismo).
+          const variantesDir = [
+            `📍 ${nom ? nom + ', ' : ''}para que el domiciliario no tenga problema, ¿me confirmas la dirección con el *número de casa/apto o barrio*? 😊`,
+            `📍 ¡Casi listo${nom ? ', ' + nom : ''}! Solo revísame la dirección: ¿tiene *número de casa, apartamento o barrio*? Así el envío llega derechito 🚚`,
+            `📍 ${nom ? nom + ', ' : ''}una última cosa para despachar sin errores: pásame la dirección *completa* (con número o barrio) por favor 🙏`,
+          ];
+          // Si la dirección está incompleta y es el único dato faltante, pregunta específica (variada)
           if (dirQ && missing.length === 1) {
-            const wamid = await sendTextMessage(from, dirQ);
-            await saveAndSend(supabase, from, dirQ, 'text', wamid);
+            const msjDir = variantesDir[Math.floor(Math.random() * variantesDir.length)];
+            const wamid = await sendTextMessage(from, msjDir);
+            await saveAndSend(supabase, from, msjDir, 'text', wamid);
           } else {
             const otherMissing = missing.filter(f => f !== 'dirección');
             const reaskParts: string[] = [];
-            if (dirQ) reaskParts.push(dirQ);
-            if (otherMissing.length > 0) reaskParts.push(`Antes de confirmar también necesito: ${otherMissing.join(', ')}.`);
+            if (dirQ) reaskParts.push(variantesDir[Math.floor(Math.random() * variantesDir.length)]);
+            if (otherMissing.length > 0) reaskParts.push(`Y antes de confirmar también necesito: ${otherMissing.join(', ')}.`);
             const reask = reaskParts.join('\n\n');
             const wamid = await sendTextMessage(from, reask);
             await saveAndSend(supabase, from, reask, 'text', wamid);

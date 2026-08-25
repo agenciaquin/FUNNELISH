@@ -26,6 +26,7 @@ const FaqPanel           = dynamic(() => import('./FaqPanel'),            { ssr:
 const EmbudosPanel       = dynamic(() => import('./EmbudosPanel'),        { ssr: false });
 const PedidosPanel       = dynamic(() => import('./PedidosPanel'),        { ssr: false });
 const SeguimientoPanel   = dynamic(() => import('./SeguimientoPanel'),    { ssr: false });
+const RemarketingPanel   = dynamic(() => import('./RemarketingPanel'),     { ssr: false });
 const VentasPanel        = dynamic(() => import('./VentasPanel'),         { ssr: false });
 const MetasPanel         = dynamic(() => import('./MetasPanel'),          { ssr: false });
 const VendedoresPanel    = dynamic(() => import('./VendedoresPanel'),     { ssr: false });
@@ -383,6 +384,7 @@ export default function WhatsAppPanel({ userName }: Props) {
           onAbrirChat={id => { setActiveSection('chat'); selectConversation(id); }}
         />
       )}
+      {activeSection === 'remarketing'   && <RemarketingPanel />}
       {activeSection === 'entrenamiento' && <EntrenamientoPanel />}
       {activeSection === 'plantillas'    && <PlantillasPanel />}
       {activeSection === 'disparadores'  && <DisparadoresPanel />}

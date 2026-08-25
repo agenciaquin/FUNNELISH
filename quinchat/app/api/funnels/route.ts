@@ -1,13 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
 
-/** Lista los embudos para el panel. */
-export async function GET() {
+/**
+ * Lista los embudos para el panel.
+ * - Sin parámetro → solo activos (eliminado null o false).
+ * - ?papelera=1   → solo los que están en la papelera (eliminado = true).
+ * Degradación con gracia: si la columna `eliminado` aún no existe (falta la
+ * migración), no rompe: la lista normal devuelve todo y la papelera vacía.
+ */
+export async function GET(req: NextRequest) {
+  const papelera = req.nextUrl.searchParams.get('papelera') === '1';
   const supabase = createServerSupabaseClient();
-  const { data, error } = await supabase
-    .from('funnels').select('*').order('creado_at', { ascending: false });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  let q = supabase.from('funnels').select('*').order('creado_at', { ascending: false });
+  q = papelera ? q.eq('eliminado', true) : q.or('eliminado.is.null,eliminado.eq.false');
+
+  const { data, error } = await q;
+  if (error) {
+    if (/eliminado/i.test(error.message)) {
+      if (papelera) return NextResponse.json({ embudos: [] });
+      const { data: all, error: e2 } = await supabase
+        .from('funnels').select('*').order('creado_at', { ascending: false });
+      if (e2) return NextResponse.json({ error: e2.message }, { status: 500 });
+      return NextResponse.json({ embudos: all ?? [] });
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
   return NextResponse.json({ embudos: data ?? [] });
 }
 
@@ -55,6 +73,7 @@ export async function POST(req: NextRequest) {
       miniatura_url:      b.miniatura_url      || null,
       anuncios:           String(b.anuncios ?? '').trim() || null,
       layout:             b.layout ?? null,
+      insignia:           b.insignia ?? null,
     };
 
     const supabase = createServerSupabaseClient();
@@ -67,8 +86,8 @@ export async function POST(req: NextRequest) {
 
     // Si la base todavía no tiene alguna columna nueva (tokens o audio), se guarda
     // sin ella en vez de perder todo el embudo, y se avisa qué falta.
-    if (error && /column .*(pixel_meta_token|pixel_tiktok_token|audio_url|video_url|color|miniatura_url|anuncios|layout).* does not exist/i.test(error.message)) {
-      const { pixel_meta_token, pixel_tiktok_token, audio_url, video_url, color, miniatura_url, anuncios, layout, ...sinNuevas } = fila;
+    if (error && /column .*(pixel_meta_token|pixel_tiktok_token|audio_url|video_url|color|miniatura_url|anuncios|layout|insignia).* does not exist/i.test(error.message)) {
+      const { pixel_meta_token, pixel_tiktok_token, audio_url, video_url, color, miniatura_url, anuncios, layout, insignia, ...sinNuevas } = fila;
       const reintento = existe?.id
         ? await supabase.from('funnels').update(sinNuevas).eq('id', existe.id)
         : await supabase.from('funnels').insert(sinNuevas);
@@ -87,13 +106,53 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/** Elimina un embudo. */
-export async function DELETE(req: NextRequest) {
-  const slug = req.nextUrl.searchParams.get('slug');
-  if (!slug) return NextResponse.json({ error: 'Falta la dirección.' }, { status: 400 });
+/**
+ * Envía a la papelera (borrado suave) o restaura embudos.
+ * body: { accion: 'eliminar' | 'restaurar', ids: string[] }  (ids = slugs)
+ */
+export async function PATCH(req: NextRequest) {
+  let b: any;
+  try { b = await req.json(); } catch { return NextResponse.json({ error: 'body inválido' }, { status: 400 }); }
+
+  const accion = b?.accion;
+  const ids = Array.isArray(b?.ids) ? b.ids.map(String).map((s: string) => s.trim()).filter(Boolean) : [];
+  if (!['eliminar', 'restaurar'].includes(accion) || ids.length === 0) {
+    return NextResponse.json({ error: 'Falta la acción o los elementos.' }, { status: 400 });
+  }
 
   const supabase = createServerSupabaseClient();
-  const { error } = await supabase.from('funnels').delete().eq('slug', slug);
+  const patch = accion === 'eliminar'
+    ? { eliminado: true,  eliminado_at: new Date().toISOString() }
+    : { eliminado: false, eliminado_at: null };
+
+  const { error } = await supabase.from('funnels').update(patch).in('slug', ids);
+  if (error) {
+    if (/eliminado/i.test(error.message)) {
+      return NextResponse.json({
+        error: 'Falta correr la migración: agrega las columnas eliminado / eliminado_at a la tabla funnels (sql/embudos-papelera.sql).',
+      }, { status: 409 });
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true });
+}
+
+/**
+ * Borrado REAL y permanente (no papelera, no caché).
+ * Acepta ?slug=x, ?id=x (uno) o ?ids=a,b,c (varios). Todos son slugs.
+ */
+export async function DELETE(req: NextRequest) {
+  const sp = req.nextUrl.searchParams;
+  const idsParam = sp.get('ids');
+  const uno = sp.get('id') || sp.get('slug');
+  const slugs = idsParam
+    ? idsParam.split(',').map(s => s.trim()).filter(Boolean)
+    : uno ? [uno] : [];
+
+  if (slugs.length === 0) return NextResponse.json({ error: 'Falta la dirección.' }, { status: 400 });
+
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase.from('funnels').delete().in('slug', slugs);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

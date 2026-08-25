@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { obtenerFunnel } from '@/lib/funnels';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,10 +23,33 @@ export async function GET(req: NextRequest) {
     } catch { return 0; }
   }
 
-  const [landing, scrollFin, pedido, talla, datos, boton, compra] = await Promise.all([
+  const [landing, scrollFin, pedido, talla, datos, boton] = await Promise.all([
     contar('landing'), contar('scroll_fin'), contar('pedido'),
-    contar('talla'), contar('datos'), contar('boton'), contar('compra'),
+    contar('talla'), contar('datos'), contar('boton'),
   ]);
+
+  // "Compra realizada" = VENTAS REALES guardadas en la tabla (no el contador de la
+  // página de gracias, que se infla con recargas). El pedido no guarda el slug, así
+  // que se cruzan por el nombre del producto/variantes de este embudo.
+  async function contarVentasReales(): Promise<number> {
+    try {
+      const f = await obtenerFunnel(slug);
+      const nombres = [f?.producto, ...((f?.variantes ?? []).map(v => v.nombre))]
+        .map(n => String(n ?? '').trim().toUpperCase()).filter(n => n.length >= 3);
+      if (nombres.length === 0) return 0;
+      const { data } = await admin.from('clientes_funnelish')
+        .select('producto, estado')
+        .like('referencia', 'web-%')
+        .gte('created_at', desde)
+        .neq('estado', 'duplicado')
+        .limit(3000);
+      return (data ?? []).filter(o => {
+        const p = String((o as any).producto ?? '').toUpperCase();
+        return nombres.some(n => p.includes(n) || n.includes(p.split(' - ')[0].trim()));
+      }).length;
+    } catch { return 0; }
+  }
+  const compra = await contarVentasReales();
 
   const pct = (n: number, base: number) => (base > 0 ? Math.round((n / base) * 1000) / 10 : 0);
 

@@ -568,6 +568,54 @@ export async function sendRecordatorioTemplate(to: string, nombre: string): Prom
 }
 
 /**
+ * Envía CUALQUIER plantilla de remarketing aprobada en Meta, con {{1}} = nombre y
+ * (opcional) una imagen de encabezado. Funciona fuera de la ventana de 24h.
+ * Se usa para campañas por etiqueta (promos, recompra, descuentos).
+ */
+export async function sendPlantillaRemarketing(
+  to: string,
+  templateName: string,
+  nombre: string,
+  imageUrl?: string,
+  lang = 'es',
+): Promise<string | null> {
+  const phoneNumberId = phoneIdActual();
+  const token = process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!phoneNumberId || !token) {
+    console.error('[WhatsApp] Missing credentials for remarketing template');
+    return null;
+  }
+  const components: any[] = [];
+  if (imageUrl && imageUrl.startsWith('http')) {
+    components.push({ type: 'header', parameters: [{ type: 'image', image: { link: imageUrl } }] });
+  }
+  components.push({ type: 'body', parameters: [{ type: 'text', text: nombre || 'hola' }] });
+
+  const payload = {
+    messaging_product: 'whatsapp',
+    to,
+    type: 'template',
+    template: { name: templateName, language: { code: lang }, components },
+  };
+  try {
+    const res = await fetch(`${WA_API_URL}/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      console.error('[WhatsApp] remarketing template failed:', await res.text());
+      return null;
+    }
+    const data = await res.json();
+    return (data.messages?.[0]?.id as string) ?? null;
+  } catch (e) {
+    console.error('[WhatsApp] Network error (remarketing):', e);
+    return null;
+  }
+}
+
+/**
  * Plantilla "mantener_chat_activo" — sin variables.
  * Se envía a los números de registro de ventas para pedirles que respondan y así
  * la ventana de 24h no se cierre (si se cierra, dejan de llegar los registros).

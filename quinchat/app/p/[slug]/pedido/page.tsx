@@ -41,7 +41,7 @@ export default async function PaginaPedido({
         meta={f.pixel_meta}
         tiktok={f.pixel_tiktok}
         evento="InitiateCheckout"
-        datos={{ valor: f.precio, producto: f.producto }}
+        datos={{ valor: f.precio, producto: f.producto, contentId: f.slug }}
       />
 
       {f.imagen_banner && (

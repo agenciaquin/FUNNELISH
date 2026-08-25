@@ -250,10 +250,17 @@ export default function FormularioPedido({ funnel, utms, embebido }: Props) {
           producto: usaPack ? pack!.producto : variante.nombre,
           talla: usaPack ? pack!.seleccion : seleccion,
           valor: variante.precio,
+          // TODOS los datos que el cliente alcanzó a escribir + las fotos elegidas.
+          datos: {
+            ...datos,
+            seleccion: usaPack ? pack!.seleccion : seleccion,
+            imagenes: [variante.imagen, ...(funnel.imagenes ?? [])].filter(Boolean).slice(0, 4),
+          },
         }),
       }).catch(() => {});
     }, 1500);
-  }, [datos.nombre, datos.apellidos, datos.whatsapp, seleccion, pack, variante, funnel.slug]);
+  }, [datos.nombre, datos.apellidos, datos.whatsapp, datos.correo, datos.direccion,
+      datos.barrio, datos.municipio, datos.departamento, seleccion, pack, variante, funnel.slug]);
 
   function validar(): boolean {
     const e: Record<string, string> = {};
@@ -314,14 +321,17 @@ export default function FormularioPedido({ funnel, utms, embebido }: Props) {
       .map((s, i) => normalizarOpciones(s.opciones).find(o => o.valor === elecciones[i])?.imagen)
       .filter((x): x is string => !!x && x.startsWith('http'));
     const fotoColor = fotosColores[0];
-    const fotoPedido = usaPack
-      ? (pack!.fotos[0] ?? variante.imagen ?? funnel.imagenes[0] ?? null)
-      : (fotoColor ?? variante.imagen ?? funnel.imagenes[0] ?? null);
     // Collage: "arma tu pack" usa sus fotos; PAREJA y VARIABLES POLOS usan la foto
     // de cada lado/polo para armar el collage x2.
     const imagenesPack = usaPack
       ? pack!.fotos
       : (usaDropdown && fotosColores.length > 1 ? fotosColores : undefined);
+    // La miniatura (imagen) SIEMPRE prefiere una foto REAL del producto elegido
+    // (la 1ª del pack/collage o el color) antes que caer a la portada del embudo,
+    // que puede ser una imagen genérica (moto/hero) y no el producto.
+    const fotoPedido = usaPack
+      ? (pack!.fotos[0] ?? variante.imagen ?? funnel.imagenes[0] ?? null)
+      : (imagenesPack?.[0] ?? fotoColor ?? variante.imagen ?? funnel.imagenes[0] ?? null);
 
     // El resumen viaja a la página de gracias sin tener que consultarlo de nuevo
     try {
@@ -338,9 +348,15 @@ export default function FormularioPedido({ funnel, utms, embebido }: Props) {
 
     // Avisar a los píxeles de una vez
     const w = window as any;
+    const telPx = datos.whatsapp.replace(/\D/g, '').replace(/^57/, '');
+    const emailPx = (datos as any).correo || undefined;
+    const contents = [{ content_id: funnel.slug, content_name: nombreProducto, content_type: 'product', quantity: 1, price: variante.precio }];
     try {
-      w.fbq?.('track', 'Purchase', { value: variante.precio, currency: 'COP', content_name: variante.nombre }, { eventID: referencia });
-      w.ttq?.track('CompletePayment', { value: variante.precio, currency: 'COP', content_name: variante.nombre }, { event_id: referencia });
+      w.fbq?.('track', 'Purchase', { content_name: nombreProducto, content_ids: [funnel.slug], content_type: 'product', contents, value: variante.precio, currency: 'COP' }, { eventID: referencia });
+      if (w.ttq) {
+        w.ttq.identify({ phone_number: telPx ? `+57${telPx}` : undefined, email: emailPx });
+        w.ttq.track('CompletePayment', { content_id: funnel.slug, content_type: 'product', contents, content_name: nombreProducto, value: variante.precio, currency: 'COP' }, { event_id: referencia });
+      }
     } catch { /* ignorar */ }
 
     // Cookies del píxel de Meta: mejoran la coincidencia del evento server-side
@@ -374,7 +390,10 @@ export default function FormularioPedido({ funnel, utms, embebido }: Props) {
       keepalive: true,
     });
 
-    const espera = new Promise<'lento'>(r => setTimeout(() => r('lento'), 2500));
+    // Esperamos hasta 12s a que el servidor confirme que el pedido SE GUARDÓ antes de
+    // mostrar "gracias". Si falla de verdad, dejamos reintentar; si solo va lento (>12s),
+    // pasamos igual porque keepalive termina de guardarlo en segundo plano.
+    const espera = new Promise<'lento'>(r => setTimeout(() => r('lento'), 12000));
 
     try {
       const resultado = await Promise.race([envio, espera]);

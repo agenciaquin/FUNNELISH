@@ -91,7 +91,16 @@ export interface Funnel {
   anuncios: string | null;   // IDs de anuncios (Meta/TikTok) que llevan a este producto
   miniatura_url: string | null; // miniatura flotante opcional (foto o video)
   layout: LayoutEmbudo | null;  // diseño por bloques; null = orden por defecto
+  insignia: Insignia | null;    // botón flotante "MÁS VENDIDO 🔥" (posición fija)
   creado_at: string;
+}
+
+/** Insignia flotante "MÁS VENDIDO 🔥": el admin la arrastra y queda fija. */
+export interface Insignia {
+  activo?: boolean;
+  texto?: string;   // por defecto "MÁS VENDIDO"
+  x?: number;       // posición horizontal en % (0–100)
+  y?: number;       // posición vertical en % (0–100)
 }
 
 /** Detecta si un enlace subido es un video (por su extensión). */
@@ -139,6 +148,7 @@ export async function obtenerFunnel(slug: string): Promise<Funnel | null> {
       tallas:          parseLista(data.tallas),
       variantes:       parseJSON<VarianteFunnel[]>(data.variantes, []),
       layout:          parseJSON<LayoutEmbudo | null>(data.layout, null),
+      insignia:        parseJSON<Insignia | null>(data.insignia, null),
     } as Funnel;
   } catch (e) {
     console.error('[Funnels] error leyendo el embudo:', e);

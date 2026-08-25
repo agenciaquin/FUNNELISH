@@ -4,16 +4,19 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import VistaPreviaEmbudo from './VistaPreviaEmbudo';
 import EmbudoStatsModal from './EmbudoStatsModal';
 import CarritosAbandonados from './CarritosAbandonados';
+import ModalConfirm from './ModalConfirm';
+import EmbudosPapelera from './EmbudosPapelera';
 import PlantillasEmbudoPanel from './PlantillasEmbudoPanel';
 import VentasPorCampana from './VentasPorCampana';
 import EditorPareja, { selectoresPareja, selectoresPolos } from './EditorPareja';
 import SeccionDiseno from './SeccionDiseno';
 import ArmarPackSelector from '../publico/ArmarPackSelector';
-import { esVideo, acentoDe, imgOptim } from '@/lib/funnels';
-import type { LayoutEmbudo } from '@/lib/bloques';
-import { bloquesARenderizar } from '@/lib/bloques';
+import { esVideo, acentoDe, imgOptim, type Insignia } from '@/lib/funnels';
+import type { LayoutEmbudo, Bloque } from '@/lib/bloques';
+import { bloquesARenderizar, nuevoIdBloque, CATALOGO_BLOQUES } from '@/lib/bloques';
+import EditorBloqueLateral from './EditorBloqueLateral';
 import { createBrowserSupabaseClient } from '@/lib/supabase';
-import { marcarSinGuardar, confirmarSalida } from '@/lib/panel/cambios';
+import { marcarSinGuardar, confirmarSalida, haySinGuardar } from '@/lib/panel/cambios';
 
 /**
  * Sube un archivo y devuelve su enlace público.
@@ -91,6 +94,7 @@ interface Embudo {
   miniatura_url: string | null;
   anuncios: string | null;
   layout: LayoutEmbudo | null;
+  insignia: Insignia | null;
 }
 
 const vacio = (): Embudo => ({
@@ -102,7 +106,7 @@ const vacio = (): Embudo => ({
   whatsapp: '', pixel_meta: null, pixel_meta_token: null,
   pixel_tiktok: null, pixel_tiktok_token: null,
   audio_url: null, video_url: null, color: null, miniatura_url: null, anuncios: null,
-  layout: null,
+  layout: null, insignia: null,
 });
 
 const pesos = (n: number) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
@@ -113,6 +117,9 @@ export default function EmbudosPanel() {
   const [vista, setVista] = useState<'lista' | 'editar'>('lista');
   const [statsDe, setStatsDe] = useState<{ slug: string; producto?: string } | null>(null);
   const [carritosOpen, setCarritosOpen] = useState(false);
+  const [papeleraOpen, setPapeleraOpen] = useState(false);
+  const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
+  const [confirmarEliminar, setConfirmarEliminar] = useState(false);
   const [verPlantillas, setVerPlantillas] = useState(false);
   const [verCampanas, setVerCampanas] = useState(false);
   const [actual, setActual] = useState<Embudo>(vacio());
@@ -120,6 +127,9 @@ export default function EmbudosPanel() {
   const [aviso, setAviso] = useState<string | null>(null);
   const [subiendo, setSubiendo] = useState<string | null>(null);
   const [verPreview, setVerPreview] = useState(false); // en móvil: alterna edición / vista previa
+  const [bloqueSelId, setBloqueSelId] = useState<string | null>(null); // bloque seleccionado en el teléfono
+  const [verContenido, setVerContenido] = useState(false); // mostrar el formulario completo (oculto por defecto)
+  const [checkoutModo, setCheckoutModo] = useState(false);  // pestaña Checkout: solo "Productos del checkout"
 
   const refGaleria  = useRef<HTMLInputElement>(null);
   const refBanner   = useRef<HTMLInputElement>(null);
@@ -168,6 +178,7 @@ export default function EmbudosPanel() {
   const [packBusca, setPackBusca]   = useState('');
   // Importador de catálogos en el producto "unidad" (traer colores + fotos ya creados)
   const [impPicker, setImpPicker]   = useState<number | null>(null);
+  const [packsOpen, setPacksOpen]   = useState<Record<number, boolean>>({});
   const [impBusca, setImpBusca]     = useState('');
 
   useEffect(() => {
@@ -412,7 +423,35 @@ export default function EmbudosPanel() {
     setAviso(`✅ Pack de ${unidades} armado: cada prenda pide su color y su talla. Revisa el precio del pack.`);
   }
 
-  async function guardar() {
+  // ── Edición visual de bloques (clic en el teléfono → editor lateral) ────────
+  const bloquesActuales = (): Bloque[] => bloquesARenderizar(actual.layout);
+  const bloqueSel: Bloque | null = bloqueSelId
+    ? bloquesActuales().find(b => b.id === bloqueSelId) ?? null
+    : null;
+  const actualizarBloque = (nb: Bloque) =>
+    set('layout', { bloques: bloquesActuales().map(b => (b.id === nb.id ? nb : b)) });
+  const duplicarBloque = () => {
+    const bs = bloquesActuales();
+    const i = bs.findIndex(b => b.id === bloqueSelId);
+    if (i < 0) return;
+    const copia: Bloque = { ...bs[i], id: nuevoIdBloque() };
+    set('layout', { bloques: [...bs.slice(0, i + 1), copia, ...bs.slice(i + 1)] });
+    setBloqueSelId(copia.id);
+  };
+  const borrarBloque = () => {
+    set('layout', { bloques: bloquesActuales().filter(b => b.id !== bloqueSelId) });
+    setBloqueSelId(null);
+  };
+  // Agregar un bloque nuevo desde la paleta (columna izquierda).
+  const agregarBloque = (tipo: string) => {
+    const nuevo: Bloque = { id: nuevoIdBloque(), tipo, visible: true };
+    set('layout', { bloques: [...bloquesActuales(), nuevo] });
+    setBloqueSelId(nuevo.id);
+  };
+
+  // `salir` = true → guarda y vuelve a la lista (botón principal).
+  // `salir` = false → guarda pero SE QUEDA en el editor (botón "Guardar cambios" del bloque).
+  async function guardar(salir = true) {
     if (!actual.slug.trim() || !actual.producto.trim()) {
       alert('La dirección y el nombre del producto son obligatorios.');
       return;
@@ -426,20 +465,46 @@ export default function EmbudosPanel() {
       });
       const data = await res.json();
       if (!res.ok) { setAviso(`❌ ${data.error}`); return; }
-      setAviso(data.aviso
-        ? `⚠️ ${data.aviso}`
-        : `✅ Guardado. Ábrelo en /p/${data.slug}`);
-      await cargar();
       marcarSinGuardar(false); // ya quedó guardado
-      setVista('lista');
+      if (salir) {
+        setAviso(data.aviso ? `⚠️ ${data.aviso}` : `✅ Guardado. Ábrelo en /p/${data.slug}`);
+        await cargar();
+        setVista('lista');
+      } else {
+        // Guardado sin salir: aviso breve y seguimos editando.
+        setAviso('✅ Cambios guardados.');
+      }
     } finally { setGuardando(false); }
   }
 
-  async function borrar(slug: string) {
-    if (!confirm(`¿Borrar el embudo "${slug}"?\n\nLa página dejará de funcionar de inmediato.`)) return;
-    await fetch(`/api/funnels?slug=${encodeURIComponent(slug)}`, { method: 'DELETE' });
+  // Enviar a la papelera (borrado suave). No borra: se puede restaurar.
+  async function enviarPapelera(slugs: string[]) {
+    if (slugs.length === 0) return;
+    const r = await fetch('/api/funnels', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion: 'eliminar', ids: slugs }),
+    });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      setAviso(d.error || 'No se pudo enviar a la papelera.');
+      return;
+    }
+    setSeleccion(new Set());
     await cargar();
   }
+
+  // El botón individual de la tarjeta también manda a la papelera (recuperable).
+  async function borrar(slug: string) {
+    await enviarPapelera([slug]);
+  }
+
+  const alternarSel = (slug: string) => setSeleccion(s => {
+    const n = new Set(s);
+    n.has(slug) ? n.delete(slug) : n.add(slug);
+    return n;
+  });
+  const seleccionarTodos = () =>
+    setSeleccion(s => (s.size === embudos.length ? new Set() : new Set(embudos.map(e => e.slug))));
 
   /** Inventa una dirección libre a partir de otra, sin repetir ninguna. */
   function slugLibre(base: string): string {
@@ -549,6 +614,17 @@ export default function EmbudosPanel() {
                 className="px-4 py-2.5 rounded-xl border border-[#F59E0B]/50 text-[#B45309] text-sm font-semibold hover:bg-[#F59E0B]/10"
               >🛒 Carritos abandonados</button>
               <button
+                onClick={() => setPapeleraOpen(true)}
+                title="Embudos eliminados (se pueden restaurar)"
+                className="px-4 py-2.5 rounded-xl border border-[#E8E8E8] text-[#6B6B6B] text-sm font-semibold hover:bg-[#F5F5F5]"
+              >🗑️ Papelera</button>
+              <button
+                onClick={() => setConfirmarEliminar(true)}
+                disabled={seleccion.size === 0}
+                title="Enviar a la papelera los embudos seleccionados"
+                className="px-4 py-2.5 rounded-xl bg-[#DC2626] text-white text-sm font-semibold hover:bg-[#B91C1C] disabled:opacity-40 disabled:cursor-not-allowed"
+              >🗑 Eliminar{seleccion.size ? ` (${seleccion.size})` : ''}</button>
+              <button
                 onClick={() => { historial.current = []; setPasosDeshacer(0); setActual(vacio()); setVista('editar'); setAviso(null); marcarSinGuardar(false); }}
                 className="px-4 py-2.5 rounded-xl bg-[#00A89D] text-white text-sm font-semibold hover:bg-[#00847A]"
               >+ Nuevo embudo</button>
@@ -557,6 +633,17 @@ export default function EmbudosPanel() {
 
           {aviso && <div className="mb-4 text-xs p-3 rounded-xl bg-white border border-[#E8E8E8]">{aviso}</div>}
 
+          {!cargando && embudos.length > 0 && (
+            <div className="flex items-center gap-3 mb-3 text-xs">
+              <button onClick={seleccionarTodos} className="font-medium text-[#00847A] hover:underline">
+                {seleccion.size === embudos.length ? 'Quitar selección' : 'Seleccionar todos'}
+              </button>
+              {seleccion.size > 0 && (
+                <span className="text-[#6B6B6B]"><b className="text-[#0D0D0D]">{seleccion.size}</b> seleccionado(s)</span>
+              )}
+            </div>
+          )}
+
           {cargando ? (
             <p className="text-sm text-[#6B6B6B] py-10 text-center">Cargando…</p>
           ) : embudos.length === 0 ? (
@@ -564,7 +651,16 @@ export default function EmbudosPanel() {
           ) : (
             <div className="space-y-3">
               {embudos.map(e => (
-                <div key={e.slug} className="bg-white rounded-2xl border border-[#E8E8E8] p-4 shadow-sm flex items-center gap-3">
+                <div key={e.slug} className={`bg-white rounded-2xl border p-4 shadow-sm flex items-center gap-3 ${
+                  seleccion.has(e.slug) ? 'border-[#00A89D] ring-1 ring-[#00A89D]/30' : 'border-[#E8E8E8]'
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={seleccion.has(e.slug)}
+                    onChange={() => alternarSel(e.slug)}
+                    title="Seleccionar"
+                    className="w-4 h-4 accent-[#00A89D] shrink-0"
+                  />
                   {e.imagenes?.[0] ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={imgOptim(e.imagenes[0], 120)} alt="" className="w-14 h-14 rounded-lg object-contain bg-[#F5F5F5] shrink-0" />
@@ -624,6 +720,20 @@ export default function EmbudosPanel() {
           )}
         </div>
         {statsDe && <EmbudoStatsModal slug={statsDe.slug} producto={statsDe.producto} onClose={() => setStatsDe(null)} />}
+
+        {papeleraOpen && (
+          <EmbudosPapelera onClose={() => setPapeleraOpen(false)} onCambio={cargar} />
+        )}
+
+        <ModalConfirm
+          abierto={confirmarEliminar}
+          titulo="Enviar a la papelera"
+          mensaje={`¿Enviar ${seleccion.size} elemento(s) a la papelera? Podrás restaurarlos después.`}
+          textoConfirmar="Enviar a papelera"
+          peligro
+          onConfirmar={() => { setConfirmarEliminar(false); enviarPapelera([...seleccion]); }}
+          onCancelar={() => setConfirmarEliminar(false)}
+        />
       </div>
     );
   }
@@ -656,11 +766,79 @@ export default function EmbudosPanel() {
           </div>
         </div>
 
-        <h1 className="text-lg font-bold mb-5">{actual.slug ? 'Editar embudo' : 'Nuevo embudo'}</h1>
+        {/* Encabezado fijo: dirección de la página, nombre y prender/apagar */}
+        <div className="bg-white rounded-2xl border border-[#E8E8E8] p-3 mb-4 flex items-end gap-3 flex-wrap">
+          <div className="flex-1 min-w-[160px]">
+            <label className={label}>Dirección de la página</label>
+            <input value={actual.slug} onChange={e => set('slug', e.target.value)} placeholder="nacional-2026" className={input} />
+            <p className="text-[10px] text-[#6B6B6B] mt-0.5">/p/{actual.slug || '…'}</p>
+          </div>
+          <div className="flex-1 min-w-[160px]">
+            <label className={label}>Nombre del producto</label>
+            <input value={actual.producto} onChange={e => set('producto', e.target.value)} placeholder="NACIONAL 2026" className={input} />
+          </div>
+          <button
+            onClick={() => set('activo', !actual.activo)}
+            title="Prender o apagar el embudo"
+            className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs font-bold shrink-0 ${actual.activo ? 'bg-[#15803D]/10 text-[#15803D]' : 'bg-[#DC2626]/10 text-[#DC2626]'}`}
+          >
+            <span className={`w-8 h-4 rounded-full relative transition-colors ${actual.activo ? 'bg-[#15803D]' : 'bg-[#C9C9C9]'}`}>
+              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${actual.activo ? 'left-[18px]' : 'left-0.5'}`} />
+            </span>
+            {actual.activo ? 'Embudo PRENDIDO' : 'Embudo APAGADO'}
+          </button>
+        </div>
 
         <div className="lg:flex lg:gap-6 lg:items-start">
+          {/* Columna de PALETA de bloques (agregar) */}
+          <div className={`lg:w-[150px] lg:shrink-0 mb-4 lg:mb-0 ${verPreview ? 'hidden lg:block' : ''}`}>
+            <div className="lg:sticky lg:top-6 bg-white rounded-2xl border border-[#E8E8E8] p-2">
+              <p className="text-[11px] font-bold text-[#6B6B6B] px-1 mb-1.5">➕ Agregar bloque</p>
+              <div className="grid grid-cols-2 lg:grid-cols-1 gap-1">
+                {CATALOGO_BLOQUES.map(d => (
+                  <button
+                    key={d.clave}
+                    onClick={() => agregarBloque(d.clave)}
+                    title={d.desc}
+                    className="flex items-center gap-1.5 p-2 rounded-lg border border-[#E8E8E8] hover:bg-[#00A89D]/10 hover:border-[#00A89D]/40 text-[11px] text-left"
+                  >
+                    <span className="text-sm shrink-0">{d.emoji}</span>
+                    <span className="leading-tight truncate">{d.nombre}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           {/* Columna de edición */}
           <div className={`flex-1 min-w-0 ${verPreview ? 'hidden lg:block' : ''}`}>
+
+        {/* Editor del bloque seleccionado en el teléfono (edición visual premium) */}
+        {bloqueSel && (
+          <div className="mb-4">
+            <EditorBloqueLateral
+              bloque={bloqueSel}
+              onChange={actualizarBloque}
+              onDuplicar={duplicarBloque}
+              onBorrar={borrarBloque}
+              onCerrar={() => setBloqueSelId(null)}
+              onGuardar={() => guardar(false)}
+              onSubirArchivo={(file) => subirArchivo(file, actual.slug || 'general')}
+              setCampo={set}
+              imagenes={actual.imagenes}
+              precio={actual.precio}
+              precioAntes={actual.precio_antes}
+              variantes={(actual.variantes ?? []).map(v => ({ id: v.id, nombre: v.nombre }))}
+              frases={actual.frases}
+              onFrases={(listaF) => {
+                const limpias = listaF.slice(0, 5);
+                set('frases', limpias.filter(f => f.trim()));
+                set('titulo', limpias.find(f => f.trim()) ?? '');
+                setActual(a => ({ ...a, frases: limpias } as Embudo));
+              }}
+            />
+          </div>
+        )}
 
         {/* Entradas de archivo ocultas */}
         <input ref={refGaleria}  type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) subir(f, 'galeria'); e.target.value = ''; }} />
@@ -674,112 +852,32 @@ export default function EmbudosPanel() {
         <input ref={refMini}     type="file" accept="image/*,video/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) subir(f, 'miniatura'); e.target.value = ''; }} />
 
         <div className="space-y-5">
-          {/* Básico */}
-          <section className="bg-white rounded-2xl border border-[#E8E8E8] p-4 space-y-3">
-            <h2 className="text-sm font-bold">Lo básico</h2>
-            <div className="grid md:grid-cols-2 gap-3">
-              <div>
-                <label className={label}>Dirección de la página</label>
-                <input value={actual.slug} onChange={e => set('slug', e.target.value)} placeholder="nacional-2026" className={input} />
-                <p className="text-[10px] text-[#6B6B6B] mt-1">Queda como /p/{actual.slug || '…'}</p>
-              </div>
-              <div>
-                <label className={label}>Nombre del producto</label>
-                <input value={actual.producto} onChange={e => set('producto', e.target.value)} placeholder="NACIONAL 2026" className={input} />
-              </div>
-              <div>
-                <label className={label}>Precio de hoy</label>
-                <input type="number" value={actual.precio} onChange={e => set('precio', Number(e.target.value))} className={input} />
-              </div>
-              <div>
-                <label className={label}>Precio tachado</label>
-                <input type="number" value={actual.precio_antes ?? ''} onChange={e => set('precio_antes', e.target.value ? Number(e.target.value) : null)} className={input} />
-              </div>
+          {/* Aviso en modo Checkout */}
+          {checkoutModo && (
+            <div className="rounded-2xl border border-[#00A89D]/40 bg-[#00A89D]/10 p-3 text-center text-[13px] font-semibold text-[#00847A]">
+              🛒 Editando el CHECKOUT · aquí armas los productos, colores, tallas y precio que el cliente elige.
             </div>
-            <div>
-              <label className={label}>Titular (frases que van rotando)</label>
-              <p className="text-[10px] text-[#6B6B6B] mb-2">
-                Se alternan cada 5 segundos en la franja amarilla de arriba. Puedes poner hasta 5.
-              </p>
+          )}
 
-              {(() => {
-                const frases = actual.frases.length > 0 ? actual.frases : [actual.titulo || ''];
-                const guardar = (nuevas: string[]) => {
-                  const limpias = nuevas.slice(0, 5);
-                  set('frases', limpias.filter(f => f.trim()));
-                  set('titulo', limpias.find(f => f.trim()) ?? '');
-                  // Se guarda la lista completa para no perder los campos vacíos
-                  setActual(a => ({ ...a, frases: limpias } as Embudo));
-                };
-
-                return (
-                  <div className="space-y-2">
-                    {frases.map((f, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-[#00A89D]/10 text-[#00847A] text-[11px] font-bold flex items-center justify-center shrink-0">
-                          {i + 1}
-                        </span>
-                        <input
-                          value={f}
-                          onChange={e => {
-                            const c = [...frases];
-                            c[i] = e.target.value;
-                            guardar(c);
-                          }}
-                          placeholder={
-                            i === 0 ? '🔥ÚLTIMAS UNIDADES🔥COMPRA YA!🔥'
-                            : i === 1 ? '🚚 ENVÍO GRATIS A TODA COLOMBIA'
-                            : '💰 PAGAS CUANDO RECIBES'
-                          }
-                          className={`${input} flex-1`}
-                        />
-                        {frases.length > 1 && (
-                          <button
-                            onClick={() => guardar(frases.filter((_, j) => j !== i))}
-                            className="w-7 h-7 rounded-lg text-[#DC2626] hover:bg-[#FEE2E2] shrink-0 text-xs"
-                          >✕</button>
-                        )}
-                      </div>
-                    ))}
-
-                    {frases.length < 5 && (
-                      <button
-                        onClick={() => guardar([...frases, ''])}
-                        className="text-[11px] text-[#00A89D] font-semibold hover:underline"
-                      >+ Agregar frase</button>
-                    )}
-                  </div>
-                );
-              })()}
+          {/* Constructor vacío: se llena al tocar un bloque en el teléfono */}
+          {!bloqueSel && !checkoutModo && (
+            <div className="rounded-2xl border border-dashed border-[#DADADA] p-6 text-center text-sm text-[#9A9A9A]">
+              👉 Toca un bloque en el teléfono para editarlo, o usa la paleta de la izquierda para agregar bloques.
             </div>
-            <label className="flex items-center gap-2 text-xs">
-              <input type="checkbox" checked={actual.activo} onChange={e => set('activo', e.target.checked)} />
-              Página activa (si la apagas, deja de abrir)
-            </label>
+          )}
 
-            {/* Mostrar/ocultar el 2º botón COMPRAR (el de más abajo). */}
-            {(() => {
-              const bloques = bloquesARenderizar(actual.layout);
-              const idxBotones = bloques.map((b, i) => (b.tipo === 'boton' ? i : -1)).filter(i => i >= 0);
-              if (idxBotones.length < 2) return null; // este embudo solo tiene 1 botón
-              const mostrar2 = idxBotones.filter(i => bloques[i].visible !== false).length >= 2;
-              const toggle = (on: boolean) => {
-                const bs = bloquesARenderizar(actual.layout).map(b => ({ ...b }));
-                const idxs = bs.map((b, i) => (b.tipo === 'boton' ? i : -1)).filter(i => i >= 0);
-                if (on) idxs.forEach(i => { bs[i].visible = true; });
-                else bs[idxs[idxs.length - 1]].visible = false; // oculta el último botón
-                set('layout', { bloques: bs });
-              };
-              return (
-                <label className="flex items-center gap-2 text-xs">
-                  <input type="checkbox" checked={mostrar2} onChange={e => toggle(e.target.checked)} />
-                  Mostrar el 2º botón <b>COMPRAR</b> (el de más abajo)
-                </label>
-              );
-            })()}
-          </section>
+          {/* Mostrar/ocultar el formulario completo. Por defecto se edita todo
+              tocando los bloques en el teléfono; esto es para ajustes finos. */}
+          {!checkoutModo && (
+            <button onClick={() => setVerContenido(v => !v)}
+              className="w-full py-2.5 rounded-xl border border-[#E8E8E8] text-sm font-semibold text-[#6B6B6B] hover:bg-[#F5F5F5]">
+              {verContenido ? '▲ Ocultar contenido y ajustes' : '⚙️ Contenido y ajustes (fotos, precio, textos, productos…)'}
+            </button>
+          )}
 
-          {/* Fotos */}
+          {(verContenido || checkoutModo) && (<>
+          {/* Fotos (oculto en modo Checkout) */}
+          {!checkoutModo && (
           <section className="bg-white rounded-2xl border border-[#E8E8E8] p-4 space-y-3">
             <h2 className="text-sm font-bold">Fotos</h2>
 
@@ -937,6 +1035,7 @@ export default function EmbudosPanel() {
               )}
             </div>
           </section>
+          )}
 
           {/* Variantes */}
           <section className="bg-white rounded-2xl border border-[#E8E8E8] p-4 space-y-3">
@@ -1257,7 +1356,14 @@ export default function EmbudosPanel() {
                                           const existentes = new Set(colores.map((x: any) => String(x.valor).toUpperCase()));
                                           const nuevos = cols.filter((x: any) => !existentes.has(x.valor.toUpperCase()));
                                           const base = colores.filter((x: any) => x.valor);
-                                          escribir([...base, ...nuevos], tallas);
+                                          // Trae también las tallas: si el producto no tiene, usa las del embudo
+                                          // (o unas por defecto). Quedan editables abajo.
+                                          const tallasFinal = (tallas && tallas.length > 0)
+                                            ? tallas
+                                            : (actual.tallas && actual.tallas.length > 0
+                                                ? actual.tallas
+                                                : ['S', 'M', 'L', 'XL', 'XXL', 'XXXL']);
+                                          escribir([...base, ...nuevos], tallasFinal);
                                           if (!v.nombre?.trim()) cambiar({ nombre });
                                           setImpPicker(null);
                                         }}
@@ -1449,6 +1555,12 @@ export default function EmbudosPanel() {
                       🏁 Elegir escudería en el pack
                     </label>
 
+                    <button type="button" onClick={() => setPacksOpen(o => ({ ...o, [i]: !o[i] }))}
+                      className="px-3 py-1.5 rounded-lg border border-[#7C3AED]/40 text-[11px] text-[#6D28D9] bg-[#7C3AED]/5 hover:bg-[#7C3AED]/10 font-semibold">
+                      {packsOpen[i] ? '▾ Ocultar opciones de pack' : '📦 Opciones de pack (pareja, polos, arma tu pack…) ▸'}
+                    </button>
+
+                    {packsOpen[i] && (<>
                     {/* Arma las elecciones del pack usando los colores ya creados */}
                     {[2, 3].map(cantidad => (
                       <button
@@ -1533,6 +1645,7 @@ export default function EmbudosPanel() {
                         className="px-3 py-1.5 rounded-lg border border-[#7C3AED]/40 text-[11px] text-[#6D28D9] bg-[#7C3AED]/5 hover:bg-[#7C3AED]/10 font-semibold"
                       >🧩 {cantidad === 1 ? 'Arma tu unidad (elige escudería)' : `Arma tu pack x${cantidad}`}</button>
                     ))}
+                    </>)}
 
                     {v.armarPack && (
                       <button
@@ -1896,6 +2009,7 @@ export default function EmbudosPanel() {
 
           {/* Diseño de la página por bloques + plantillas */}
           <SeccionDiseno actual={actual} set={set} setActual={setActual} setAviso={setAviso} />
+          </>)}
 
           {aviso && <div className="text-xs p-3 rounded-xl bg-white border border-[#E8E8E8]">{aviso}</div>}
 
@@ -1903,7 +2017,7 @@ export default function EmbudosPanel() {
             <button onClick={() => { if (confirmarSalida()) setVista('lista'); }} className="flex-1 py-2.5 rounded-xl border border-[#E8E8E8] text-sm text-[#6B6B6B] hover:bg-[#F5F5F5]">
               Cancelar
             </button>
-            <button onClick={guardar} disabled={guardando} className="flex-1 py-2.5 rounded-xl bg-[#00A89D] text-white text-sm font-semibold hover:bg-[#00847A] disabled:opacity-50">
+            <button onClick={() => guardar(true)} disabled={guardando} className="flex-1 py-2.5 rounded-xl bg-[#00A89D] text-white text-sm font-semibold hover:bg-[#00847A] disabled:opacity-50">
               {guardando ? 'Guardando…' : 'Guardar'}
             </button>
           </div>
@@ -1911,8 +2025,29 @@ export default function EmbudosPanel() {
           </div>{/* fin columna de edición */}
 
           {/* Columna de vista previa (pegada al hacer scroll en escritorio) */}
-          <div className={`lg:w-[340px] lg:shrink-0 lg:sticky lg:top-6 ${verPreview ? '' : 'hidden lg:block'}`}>
-            <VistaPreviaEmbudo d={actual} layout={actual.layout} />
+          <div className={`lg:w-[370px] lg:shrink-0 lg:sticky lg:top-6 ${verPreview ? '' : 'hidden lg:block'}`}>
+            <VistaPreviaEmbudo
+              d={actual} layout={actual.layout}
+              onLayout={(l) => set('layout', l)}
+              selectedId={bloqueSelId}
+              onImagenes={(lista) => set('imagenes', lista)}
+              onSubirArchivo={(file) => subirArchivo(file, actual.slug || 'general')}
+              onModoChange={(m) => {
+                // Al tocar "Checkout" en el teléfono, muestra SOLO "Productos del
+                // checkout" en el centro; al volver a Inicio, vuelve a lo normal.
+                if (m === 'checkout') { setBloqueSelId(null); setVerContenido(true); setCheckoutModo(true); }
+                else { setCheckoutModo(false); }
+              }}
+              onSelect={(id) => {
+                if (id === bloqueSelId) { setBloqueSelId(null); return; }
+                // Aviso para no perder trabajo al cambiar de bloque con cambios pendientes.
+                if (bloqueSelId && haySinGuardar()) {
+                  const ok = window.confirm('No has guardado los cambios de este bloque.\n\nAceptar = Guardar ahora · Cancelar = seguir sin guardar');
+                  if (ok) guardar(false);
+                }
+                setBloqueSelId(id);
+              }}
+            />
           </div>
         </div>{/* fin lg:flex */}
       </div>
