@@ -448,6 +448,15 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
                           {p.talla || 'sin talla'}
                           {p.abono > 0 && ` · abono ${p.abono_recibido ? '✅' : '⏳'}`}
                         </span>
+                        {p.embudo_slug && (
+                          <a
+                            href={`https://pedido.klixmant.shop/${p.embudo_slug}`}
+                            target="_blank" rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            title={`Ver embudo en vista previa: ${p.embudo_nombre || p.embudo_slug}`}
+                            className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-bold text-[#00847A] bg-[#00A89D]/10 rounded-full px-2 py-0.5 hover:bg-[#00A89D]/20 max-w-full truncate"
+                          >🚀 {p.embudo_nombre || p.embudo_slug} · ver ↗</a>
+                        )}
                       </span>
 
                       <span className="hidden md:flex w-40 shrink-0 flex-col gap-0.5">
@@ -463,15 +472,6 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
                             <span className="text-[11px] text-[#C9C9C9]">Directo</span>
                           )}
                         </span>
-                        {p.embudo_slug && (
-                          <a
-                            href={`https://pedido.klixmant.shop/${p.embudo_slug}`}
-                            target="_blank" rel="noopener noreferrer"
-                            onClick={e => e.stopPropagation()}
-                            title={`Ver embudo: ${p.embudo_nombre || p.embudo_slug}`}
-                            className="truncate text-[10px] font-semibold text-[#00847A] hover:underline"
-                          >🚀 {p.embudo_nombre || p.embudo_slug} ↗</a>
-                        )}
                       </span>
 
                       <span className="w-24 text-right shrink-0 text-sm font-bold text-[#0D0D0D]">

@@ -34,9 +34,9 @@ export async function GET(req: NextRequest) {
     return c;
   }
 
-  let { data, error } = await traer(`${COLS_BASE}, foto_producto`);
+  let { data, error } = await traer(`${COLS_BASE}, foto_producto, funnel_slug`);
   if (error) {
-    // Reintento sin foto_producto (por si la columna no está migrada).
+    // Reintento sin las columnas nuevas (por si no están migradas todavía).
     ({ data, error } = await traer(COLS_BASE));
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -93,11 +93,25 @@ export async function GET(req: NextRequest) {
         .map((n: any) => String(n ?? '').trim().toUpperCase()).filter((n: string) => n.length >= 3);
       return { slug: f.slug as string, nombre: (f.nombre || f.producto || f.slug) as string, nombres };
     });
+    const porSlug = new Map(mapa.map(m => [m.slug, m]));
+
     for (const p of pedidos) {
+      // 1º: si el pedido guardó el slug del embudo (nuevos pedidos) → EXACTO.
+      const slugGuardado = String(p.funnel_slug ?? '').trim();
+      if (slugGuardado) {
+        p.embudo_slug = slugGuardado;
+        p.embudo_nombre = porSlug.get(slugGuardado)?.nombre || slugGuardado;
+        continue;
+      }
+      // 2º: pedidos viejos sin slug → cruzar por nombre, PERO solo si hay UNA sola
+      // coincidencia (si varios embudos comparten el nombre, no adivinamos).
       const prod = String(p.producto ?? '').toUpperCase();
       if (!prod) continue;
-      const match = mapa.find(m => m.nombres.some(n => prod.includes(n) || n.includes(prod.split(' - ')[0].trim())));
-      if (match) { p.embudo_slug = match.slug; p.embudo_nombre = match.nombre; }
+      const coincidencias = mapa.filter(m => m.nombres.some(n => prod.includes(n) || n.includes(prod.split(' - ')[0].trim())));
+      if (coincidencias.length === 1) {
+        p.embudo_slug = coincidencias[0].slug;
+        p.embudo_nombre = coincidencias[0].nombre;
+      }
     }
   } catch { /* si no se puede cruzar, la lista igual funciona */ }
 

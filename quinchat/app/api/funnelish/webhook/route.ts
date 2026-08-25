@@ -578,6 +578,15 @@ export async function POST(req: NextRequest) {
 
   console.log(`[Funnelish] pedido guardado=${pedidoGuardado} tel=${tel10} ref=${referencia || 'sin-ref'}`);
 
+  // Guardar el EMBUDO de origen (slug) por separado, para atribución exacta. Va en un
+  // update aparte para NO romper el guardado si la columna aún no existe en la base.
+  const funnelSlug = buscarUtm('slug');
+  if (pedidoGuardado && pedidoId && funnelSlug) {
+    const { error: slugErr } = await supabase
+      .from('clientes_funnelish').update({ funnel_slug: funnelSlug }).eq('id', pedidoId);
+    if (slugErr) console.warn('[Funnelish] no se pudo guardar funnel_slug (¿falta la columna?):', slugErr.message);
+  }
+
   // ── Pedido duplicado (el cliente hizo doble clic en "Comprar") ───────────────
   // Si en los últimos 45 min ya entró un pedido del MISMO producto para este
   // teléfono, no es una compra nueva: es el mismo pedido repetido. Se conserva
