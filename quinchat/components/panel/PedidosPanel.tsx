@@ -71,9 +71,11 @@ function estadoDe(p: Pedido): { texto: string; color: string; fondo: string } {
 interface Props {
   /** Abre el chat de ese cliente dentro del panel. */
   onAbrirChat?: (conversationId: string) => void;
+  /** Abre ese embudo en el editor (sección Embudos) para editarlo. */
+  onEditarEmbudo?: (slug: string) => void;
 }
 
-export default function PedidosPanel({ onAbrirChat }: Props) {
+export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [resumen, setResumen] = useState({ total: 0, confirmados: 0, cancelados: 0, vendido: 0 });
   const [cargando, setCargando] = useState(true);
@@ -212,7 +214,7 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
 
   return (
     <div className="flex-1 min-w-0 overflow-y-auto bg-[#FAF9F6]">
-      <div className="max-w-5xl mx-auto px-4 md:px-8 py-6">
+      <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6">
 
         <header className="mb-5 pl-10 md:pl-0 flex items-start justify-between gap-3 flex-wrap">
           <div>
@@ -361,6 +363,7 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
                 <span className="w-10 shrink-0" />
                 <span className="flex-1 min-w-0">Cliente</span>
                 <span className="flex-1 min-w-0">Producto</span>
+                <span className="w-40 shrink-0">Embudo</span>
                 <span className="w-40 shrink-0">Campaña</span>
                 <span className="w-24 text-right shrink-0">Valor</span>
                 <span className="w-8 shrink-0" />
@@ -450,6 +453,30 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
                         </span>
                       </span>
 
+                      {/* Embudo del que vino: nombre + ver (vista previa) + editar */}
+                      <span className="hidden md:flex w-40 shrink-0 min-w-0 items-center gap-1">
+                        {p.embudo_slug ? (
+                          <>
+                            <a
+                              href={`https://pedido.klixmant.shop/${p.embudo_slug}`}
+                              target="_blank" rel="noopener noreferrer"
+                              onClick={e => e.stopPropagation()}
+                              title={`Ver en vista previa: ${p.embudo_nombre || p.embudo_slug}`}
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-[#00847A] bg-[#00A89D]/10 rounded-lg px-2 py-1 hover:bg-[#00A89D]/20 min-w-0 truncate"
+                            >🚀 <span className="truncate">{p.embudo_nombre || p.embudo_slug}</span> ↗</a>
+                            {onEditarEmbudo && (
+                              <button
+                                onClick={e => { e.stopPropagation(); onEditarEmbudo(p.embudo_slug!); }}
+                                title={`Editar embudo: ${p.embudo_nombre || p.embudo_slug}`}
+                                className="shrink-0 text-[11px] rounded-lg px-1.5 py-1 border border-[#E8E8E8] hover:bg-[#F5F5F5]"
+                              >✏️</button>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-[11px] text-[#C9C9C9]">—</span>
+                        )}
+                      </span>
+
                       <span className="hidden md:flex w-40 shrink-0 flex-col gap-0.5">
                         <span className="flex items-center gap-1.5">
                           {p.plataforma === 'facebook' && <LogoFacebook />}
@@ -463,15 +490,6 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
                             <span className="text-[11px] text-[#C9C9C9]">Directo</span>
                           )}
                         </span>
-                        {p.embudo_slug && (
-                          <a
-                            href={`https://pedido.klixmant.shop/${p.embudo_slug}`}
-                            target="_blank" rel="noopener noreferrer"
-                            onClick={e => e.stopPropagation()}
-                            title={`Ver embudo: ${p.embudo_nombre || p.embudo_slug}`}
-                            className="truncate text-[10px] font-semibold text-[#00847A] hover:underline"
-                          >🚀 {p.embudo_nombre || p.embudo_slug} ↗</a>
-                        )}
                       </span>
 
                       <span className="w-24 text-right shrink-0 text-sm font-bold text-[#0D0D0D]">

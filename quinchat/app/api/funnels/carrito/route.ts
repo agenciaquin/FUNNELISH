@@ -77,16 +77,30 @@ export async function GET(req: NextRequest) {
 
   const lista = carritos ?? [];
   const tels = [...new Set(lista.map((c: any) => String(c.telefono)))];
-  const compraron = new Set<string>();
+  // Para cada teléfono, la fecha del pedido REALIZADO más reciente (cualquier estado
+  // menos cancelado/duplicado). Si el cliente hizo un pedido en o después de crear el
+  // carrito, ese carrito ya NO está abandonado → se saca de la lista.
+  const ultimoPedido = new Map<string, string>();
   if (tels.length && !verRecuperados) {
     try {
       const { data: peds } = await admin.from('clientes_funnelish')
-        .select('telefono').eq('confirmado', true).in('telefono', tels);
-      for (const p of peds ?? []) compraron.add(String((p as any).telefono));
+        .select('telefono, created_at, estado')
+        .in('telefono', tels)
+        .not('estado', 'in', '("cancelado","duplicado")');
+      for (const p of peds ?? []) {
+        const t = String((p as any).telefono);
+        const ca = String((p as any).created_at ?? '');
+        const prev = ultimoPedido.get(t);
+        if (!prev || ca > prev) ultimoPedido.set(t, ca);
+      }
     } catch { /* si falla, se muestran todos */ }
   }
 
-  const abiertos = verRecuperados ? lista : lista.filter((c: any) => !compraron.has(String(c.telefono)));
+  const abiertos = verRecuperados ? lista : lista.filter((c: any) => {
+    const ped = ultimoPedido.get(String(c.telefono));
+    // hay un pedido de ese teléfono creado en o después del carrito → ya compró → fuera
+    return !(ped && ped >= String(c.created_at));
+  });
 
   // Diagnóstico: cuántos registros hay en TOTAL en la tabla (para distinguir
   // "tabla vacía" de "todos filtrados por ya compraron"). Si da error, es el grant.

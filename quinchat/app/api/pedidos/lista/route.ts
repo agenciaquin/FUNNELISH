@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   const desde  = new Date(Date.now() - dias * 86_400_000).toISOString();
 
   const supabase = createServerSupabaseClient();
-  const COLS_BASE = 'id, referencia, nombre, telefono, producto, talla, valor, direccion, ciudad, departamento, correo, confirmado, estado, abono, abono_recibido, utm_source, utm_campaign, created_at';
+  const COLS_BASE = 'id, referencia, nombre, telefono, producto, talla, valor, direccion, ciudad, departamento, correo, confirmado, estado, abono, abono_recibido, utm_source, utm_campaign, referrer, created_at';
 
   // Se intenta traer también foto_producto; si esa columna no existe en esta base,
   // se reintenta SIN ella para que la lista NUNCA se caiga (y los pedidos se vean).
@@ -34,9 +34,9 @@ export async function GET(req: NextRequest) {
     return c;
   }
 
-  let { data, error } = await traer(`${COLS_BASE}, foto_producto`);
+  let { data, error } = await traer(`${COLS_BASE}, foto_producto, funnel_slug`);
   if (error) {
-    // Reintento sin foto_producto (por si la columna no está migrada).
+    // Reintento sin las columnas nuevas (por si no están migradas todavía).
     ({ data, error } = await traer(COLS_BASE));
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -91,13 +91,51 @@ export async function GET(req: NextRequest) {
       try { variantes = Array.isArray(f.variantes) ? f.variantes : JSON.parse(f.variantes ?? '[]'); } catch { /* */ }
       const nombres = [f.producto, ...variantes.map((v: any) => v?.nombre)]
         .map((n: any) => String(n ?? '').trim().toUpperCase()).filter((n: string) => n.length >= 3);
-      return { slug: f.slug as string, nombre: (f.nombre || f.producto || f.slug) as string, nombres };
+      // Mostramos el PRODUCTO (así nombras cada embudo: "F1 ESCUDERIA TIK TOK"),
+      // no el `nombre` interno (que suele quedar como "Nacional 2026 (copia)…" al duplicar).
+      return { slug: f.slug as string, nombre: (f.producto || f.nombre || f.slug) as string, nombres };
     });
+    const porSlug = new Map(mapa.map(m => [m.slug, m]));
+    const slugsValidos = new Set(mapa.map(m => m.slug));
+
+    // Saca el slug del embudo desde una URL (referrer): …/{slug}, …/{slug}/pedido, etc.
+    const slugDeUrl = (url: string): string | null => {
+      const u = String(url ?? '');
+      if (!/klixmant\.shop/i.test(u) && !/\/p\//.test(u)) {
+        // igual intentamos: tomar el primer segmento de ruta que sea un slug válido
+      }
+      const partes = u.replace(/^https?:\/\/[^/]+/i, '').split(/[/?#]/).filter(Boolean);
+      for (const seg of partes) {
+        if (seg === 'p' || seg === 'pedido' || seg === 'gracias') continue;
+        if (slugsValidos.has(seg)) return seg;
+      }
+      return null;
+    };
+
     for (const p of pedidos) {
+      // 1º: si el pedido guardó el slug del embudo (nuevos pedidos) → EXACTO.
+      const slugGuardado = String(p.funnel_slug ?? '').trim();
+      if (slugGuardado && slugsValidos.has(slugGuardado)) {
+        p.embudo_slug = slugGuardado;
+        p.embudo_nombre = porSlug.get(slugGuardado)?.nombre || slugGuardado;
+        continue;
+      }
+      // 2º: sacar el embudo del referrer (la URL de venta de donde vino) → confiable.
+      const slugRef = slugDeUrl(p.referrer);
+      if (slugRef) {
+        p.embudo_slug = slugRef;
+        p.embudo_nombre = porSlug.get(slugRef)?.nombre || slugRef;
+        continue;
+      }
+      // 3º: pedidos viejos sin slug ni referrer → cruzar por nombre SOLO si hay UNA
+      // sola coincidencia (si varios embudos comparten el nombre, no adivinamos).
       const prod = String(p.producto ?? '').toUpperCase();
       if (!prod) continue;
-      const match = mapa.find(m => m.nombres.some(n => prod.includes(n) || n.includes(prod.split(' - ')[0].trim())));
-      if (match) { p.embudo_slug = match.slug; p.embudo_nombre = match.nombre; }
+      const coincidencias = mapa.filter(m => m.nombres.some(n => prod.includes(n) || n.includes(prod.split(' - ')[0].trim())));
+      if (coincidencias.length === 1) {
+        p.embudo_slug = coincidencias[0].slug;
+        p.embudo_nombre = coincidencias[0].nombre;
+      }
     }
   } catch { /* si no se puede cruzar, la lista igual funciona */ }
 

@@ -62,6 +62,7 @@ export async function POST(req: NextRequest) {
         ? b.imagenes.filter((u: any) => typeof u === 'string' && u.startsWith('http'))
         : undefined,
       meta: {
+        slug:         String(b.slug ?? '').trim(),   // embudo de origen (para atribución exacta)
         utm_source:   b.utms?.utm_source   ?? '',
         utm_medium:   b.utms?.utm_medium   ?? '',
         utm_campaign: b.utms?.utm_campaign ?? '',
