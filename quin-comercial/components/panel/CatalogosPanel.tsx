@@ -18,6 +18,8 @@ interface Col { id: string; vid: string; uniq: boolean; vals: Opt[] }
 // stockPol: qué pasa cuando esa variante llega a 0.
 //   'bloquear' = no se puede elegir para la venta · 'seguir' = se sigue vendiendo.
 type StockPol = 'bloquear' | 'seguir';
+// Etiqueta de la política de stock: una sola fuente de verdad para tabla, popover y ajustes.
+const POL_LABEL: Record<StockPol, string> = { bloquear: '🚫 No dejar vender', seguir: '✅ Seguir vendiendo' };
 // stockTallas: unidades por cada valor de la variable "contar por" (ej. { S: 50, M: 25 }).
 //   Si existe, el stock total (stock) es la suma. Si no, stock es un número único.
 interface Row { id: string; img: string | null; v: Record<string, string[]>; stock?: number | null; stockPol?: StockPol; stockTallas?: Record<string, number> }
@@ -873,16 +875,19 @@ export default function CatalogosPanel() {
                       </td>
                     );
                   })()}
-                  {usaStock && (
-                    <td className="px-2.5 py-2 align-middle" style={{ borderBottom: '1px solid #F2F0EA' }}>
-                      <select value={r.stockPol ?? 'bloquear'} onChange={e => setRows(d.rows.map(x => x.id === r.id ? { ...x, stockPol: e.target.value as StockPol } : x))}
-                        className="border rounded-lg px-2 py-[6px] text-[12px] font-semibold bg-white w-full"
-                        style={{ borderColor: line, color: (r.stockPol ?? 'bloquear') === 'bloquear' ? '#C8102E' : '#1E9E5A' }}>
-                        <option value="bloquear">🚫 No dejar vender</option>
-                        <option value="seguir">✅ Seguir vendiendo</option>
-                      </select>
-                    </td>
-                  )}
+                  {usaStock && (() => {
+                    const pol: StockPol = r.stockPol ?? 'bloquear';
+                    return (
+                      <td className="px-2.5 py-2 align-middle" style={{ borderBottom: '1px solid #F2F0EA' }}>
+                        <button onClick={e => abrirPol(r.id, e.currentTarget)}
+                          className="flex items-center gap-1.5 w-full border rounded-lg px-2 py-[6px] text-[12px] font-semibold bg-white text-left"
+                          style={{ borderColor: line, color: pol === 'bloquear' ? '#C8102E' : '#1E9E5A' }}>
+                          <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{POL_LABEL[pol]}</span>
+                          <span className="text-[9px]" style={{ color: muted }}>▾</span>
+                        </button>
+                      </td>
+                    );
+                  })()}
                   <td style={{ borderBottom: '1px solid #F2F0EA' }}></td>
                   <td className="px-2.5" style={{ borderBottom: '1px solid #F2F0EA' }}><button onClick={() => { setRows(d.rows.filter(x => x.id !== r.id)); cerrarDrop(); }} className="text-[#C3BFB6] hover:text-[#C8102E] font-bold px-1.5">✕</button></td>
                 </tr>
@@ -925,6 +930,11 @@ export default function CatalogosPanel() {
     tallas.forEach(t => { if (typeof st[t] === 'number') vals[t] = st[t]; });
     triggerRef.current = el; setDrop('s' + rid); setTmp({ type: 'stock', rid, vals, mismo: '', all: false });
   }
+  function abrirPol(rid: string, el: HTMLElement) {
+    const r = findR(rid); if (!r) return;
+    if (drop === 'z' + rid) { cerrarDrop(); return; }
+    triggerRef.current = el; setDrop('z' + rid); setTmp({ type: 'pol', rid, val: (r.stockPol ?? 'bloquear') as StockPol, all: false });
+  }
 
   function PopoverContenido() {
     const d = draft;
@@ -932,6 +942,29 @@ export default function CatalogosPanel() {
     const opBtn = 'flex items-center gap-2 w-full px-2.5 py-[7px] rounded-lg text-[12.5px] text-left font-medium hover:bg-[#F6F4EF]';
     const cbox = (on: boolean) => <span className="w-4 h-4 rounded-[5px] grid place-items-center text-[10px] text-white shrink-0" style={on ? { background: '#00A89D', border: '1px solid #00A89D' } : { background: '#fff', border: '1.5px solid #D5D1C8' }}>{on ? '✓' : ''}</span>;
     const rdio = (on: boolean) => <span className="w-4 h-4 rounded-full shrink-0" style={on ? { border: '5px solid #00A89D' } : { border: '1.5px solid #D5D1C8', background: '#fff' }} />;
+
+    // ── Popover: AL LLEGAR A 0 (política de una fila, o de todas) ──
+    if (tmp?.type === 'pol') {
+      const opciones: StockPol[] = ['bloquear', 'seguir'];
+      return (
+        <div>
+          <div className="text-[9.5px] font-mono uppercase tracking-wider text-[#8A9793] px-2.5 pt-1.5 pb-1">Al llegar a 0</div>
+          {opciones.map(o => (
+            <button key={o} className={`${opBtn} ${tmp.val === o ? 'font-bold' : ''}`} onClick={() => setTmp({ ...tmp, val: o })}>
+              {rdio(tmp.val === o)}<span style={{ color: o === 'bloquear' ? '#C8102E' : '#1E9E5A' }}>{POL_LABEL[o]}</span>
+            </button>
+          ))}
+          <button className="flex items-center gap-2 w-full px-2.5 py-2 rounded-lg mt-1 text-[11.5px] font-semibold text-left" style={{ background: '#FFF6EA', color: '#8A5000' }} onClick={() => setTmp({ ...tmp, all: !tmp.all })}>{cbox(!!tmp.all)}Aplicar a todas las filas</button>
+          <div className="flex gap-1.5 pt-2 mt-1.5 border-t" style={{ borderColor: '#F2F0EA' }}>
+            <button className="flex-1 border rounded-lg py-1.5 text-[12px] font-bold" style={{ borderColor: line }} onClick={cerrarDrop}>Cancelar</button>
+            <button className="flex-1 rounded-lg py-1.5 text-[12px] font-bold text-white" style={{ background: teal }} onClick={() => {
+              const rows = d.rows.map(x => (tmp.all || x.id === tmp.rid) ? { ...x, stockPol: tmp.val as StockPol } : x);
+              setDraft({ ...d, rows }); cerrarDrop();
+            }}>Aplicar</button>
+          </div>
+        </div>
+      );
+    }
 
     // ── Popover: UNIDADES POR TALLA (stock por talla de una fila) ──
     if (tmp?.type === 'stock') {
@@ -1198,8 +1231,8 @@ export default function CatalogosPanel() {
             <div className="rounded-xl p-3 mb-3" style={{ background: wash, border: `1px solid ${line}` }}>
               <label className="block text-[10px] font-mono uppercase tracking-wider text-[#8A9793] mb-1.5">Por defecto, al llegar a 0</label>
               <div className="flex gap-2 flex-wrap">
-                <button onClick={() => setDef('bloquear', df.aviso)} className={`${btn} text-[12px] py-1.5`} style={df.pol === 'bloquear' ? { background: '#C8102E', borderColor: '#C8102E', color: '#fff' } : { borderColor: line }}>🚫 No dejar vender</button>
-                <button onClick={() => setDef('seguir', df.aviso)} className={`${btn} text-[12px] py-1.5`} style={df.pol === 'seguir' ? { background: '#1E9E5A', borderColor: '#1E9E5A', color: '#fff' } : { borderColor: line }}>✅ Seguir vendiendo</button>
+                <button onClick={() => setDef('bloquear', df.aviso)} className={`${btn} text-[12px] py-1.5`} style={df.pol === 'bloquear' ? { background: '#C8102E', borderColor: '#C8102E', color: '#fff' } : { borderColor: line }}>{POL_LABEL.bloquear}</button>
+                <button onClick={() => setDef('seguir', df.aviso)} className={`${btn} text-[12px] py-1.5`} style={df.pol === 'seguir' ? { background: '#1E9E5A', borderColor: '#1E9E5A', color: '#fff' } : { borderColor: line }}>{POL_LABEL.seguir}</button>
               </div>
               <p className="text-[11px] text-[#8A9793] mt-2">Es el valor que traerán las variantes nuevas al activar el stock. Cada producto lo puede cambiar.</p>
             </div>
