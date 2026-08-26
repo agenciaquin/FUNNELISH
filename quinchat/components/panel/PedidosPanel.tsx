@@ -71,9 +71,11 @@ function estadoDe(p: Pedido): { texto: string; color: string; fondo: string } {
 interface Props {
   /** Abre el chat de ese cliente dentro del panel. */
   onAbrirChat?: (conversationId: string) => void;
+  /** Abre ese embudo en el editor (sección Embudos) para editarlo. */
+  onEditarEmbudo?: (slug: string) => void;
 }
 
-export default function PedidosPanel({ onAbrirChat }: Props) {
+export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [resumen, setResumen] = useState({ total: 0, confirmados: 0, cancelados: 0, vendido: 0 });
   const [cargando, setCargando] = useState(true);
@@ -451,16 +453,25 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
                         </span>
                       </span>
 
-                      {/* Embudo del que vino (nombre como lo nombraste) + enlace vista previa */}
-                      <span className="hidden md:flex w-40 shrink-0 min-w-0">
+                      {/* Embudo del que vino: nombre + ver (vista previa) + editar */}
+                      <span className="hidden md:flex w-40 shrink-0 min-w-0 items-center gap-1">
                         {p.embudo_slug ? (
-                          <a
-                            href={`https://pedido.klixmant.shop/${p.embudo_slug}`}
-                            target="_blank" rel="noopener noreferrer"
-                            onClick={e => e.stopPropagation()}
-                            title={`Ver embudo en vista previa: ${p.embudo_nombre || p.embudo_slug}`}
-                            className="inline-flex items-center gap-1 text-[11px] font-bold text-[#00847A] bg-[#00A89D]/10 rounded-lg px-2 py-1 hover:bg-[#00A89D]/20 max-w-full truncate"
-                          >🚀 <span className="truncate">{p.embudo_nombre || p.embudo_slug}</span> ↗</a>
+                          <>
+                            <a
+                              href={`https://pedido.klixmant.shop/${p.embudo_slug}`}
+                              target="_blank" rel="noopener noreferrer"
+                              onClick={e => e.stopPropagation()}
+                              title={`Ver en vista previa: ${p.embudo_nombre || p.embudo_slug}`}
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-[#00847A] bg-[#00A89D]/10 rounded-lg px-2 py-1 hover:bg-[#00A89D]/20 min-w-0 truncate"
+                            >🚀 <span className="truncate">{p.embudo_nombre || p.embudo_slug}</span> ↗</a>
+                            {onEditarEmbudo && (
+                              <button
+                                onClick={e => { e.stopPropagation(); onEditarEmbudo(p.embudo_slug!); }}
+                                title={`Editar embudo: ${p.embudo_nombre || p.embudo_slug}`}
+                                className="shrink-0 text-[11px] rounded-lg px-1.5 py-1 border border-[#E8E8E8] hover:bg-[#F5F5F5]"
+                              >✏️</button>
+                            )}
+                          </>
                         ) : (
                           <span className="text-[11px] text-[#C9C9C9]">—</span>
                         )}

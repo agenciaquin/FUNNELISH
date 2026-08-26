@@ -38,6 +38,7 @@ interface Props {
 
 export default function WhatsAppPanel({ userName }: Props) {
   const [activeSection, setActiveSection] = useState<PanelSection>('chat');
+  const [embudoAEditar, setEmbudoAEditar] = useState<string | null>(null); // abrir un embudo desde Pedidos
 
   // Al refrescar, vuelve a la MISMA sección donde estabas (no al inicio).
   useEffect(() => {
@@ -362,10 +363,11 @@ export default function WhatsAppPanel({ userName }: Props) {
       {activeSection === 'estadisticas'  && <EstadisticasPanel />}
       {activeSection === 'memoria'       && <MemoriaPanel />}
       {activeSection === 'faq'           && <FaqPanel />}
-      {activeSection === 'embudos'       && <EmbudosPanel />}
+      {activeSection === 'embudos'       && <EmbudosPanel abrirSlug={embudoAEditar} onAbierto={() => setEmbudoAEditar(null)} />}
       {activeSection === 'pedidos'       && (
         <PedidosPanel
           onAbrirChat={id => { setActiveSection('chat'); selectConversation(id); }}
+          onEditarEmbudo={slug => { setEmbudoAEditar(slug); setActiveSection('embudos'); }}
         />
       )}
       {activeSection === 'ventas'        && (

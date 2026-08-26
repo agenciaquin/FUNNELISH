@@ -111,7 +111,7 @@ const vacio = (): Embudo => ({
 
 const pesos = (n: number) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
 
-export default function EmbudosPanel() {
+export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: string | null; onAbierto?: () => void } = {}) {
   const [embudos, setEmbudos] = useState<Embudo[]>([]);
   const [cargando, setCargando] = useState(true);
   const [vista, setVista] = useState<'lista' | 'editar'>('lista');
@@ -225,6 +225,19 @@ export default function EmbudosPanel() {
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  // Abrir DIRECTO un embudo para editar (viene desde Pedidos: "editar embudo").
+  useEffect(() => {
+    if (!abrirSlug || embudos.length === 0) return;
+    const e = embudos.find(x => x.slug === abrirSlug);
+    if (e) {
+      historial.current = []; setPasosDeshacer(0);
+      setActual({ ...vacio(), ...e } as Embudo);
+      setVista('editar'); setAviso(null); marcarSinGuardar(false);
+    }
+    onAbierto?.(); // se consume una sola vez
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirSlug, embudos]);
 
   // ── Deshacer (Ctrl+Z) ──────────────────────────────────────────────────────
   // Cada cambio guarda una copia del estado anterior. Deshacer restaura la última.
