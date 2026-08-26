@@ -91,7 +91,9 @@ export async function GET(req: NextRequest) {
       try { variantes = Array.isArray(f.variantes) ? f.variantes : JSON.parse(f.variantes ?? '[]'); } catch { /* */ }
       const nombres = [f.producto, ...variantes.map((v: any) => v?.nombre)]
         .map((n: any) => String(n ?? '').trim().toUpperCase()).filter((n: string) => n.length >= 3);
-      return { slug: f.slug as string, nombre: (f.nombre || f.producto || f.slug) as string, nombres };
+      // Mostramos el PRODUCTO (así nombras cada embudo: "F1 ESCUDERIA TIK TOK"),
+      // no el `nombre` interno (que suele quedar como "Nacional 2026 (copia)…" al duplicar).
+      return { slug: f.slug as string, nombre: (f.producto || f.nombre || f.slug) as string, nombres };
     });
     const porSlug = new Map(mapa.map(m => [m.slug, m]));
     const slugsValidos = new Set(mapa.map(m => m.slug));
