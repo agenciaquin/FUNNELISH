@@ -74,6 +74,10 @@ export async function POST(req: NextRequest) {
       anuncios:           String(b.anuncios ?? '').trim() || null,
       layout:             b.layout ?? null,
       insignia:           b.insignia ?? null,
+      // Al GUARDAR o DUPLICAR, el embudo queda ACTIVO. Esto evita que si el enlace ya
+      // existía en la papelera (borrado), el nuevo se quede oculto marcado como borrado.
+      eliminado:          false,
+      eliminado_at:       null,
     };
 
     const supabase = createServerSupabaseClient();
@@ -86,8 +90,8 @@ export async function POST(req: NextRequest) {
 
     // Si la base todavía no tiene alguna columna nueva (tokens o audio), se guarda
     // sin ella en vez de perder todo el embudo, y se avisa qué falta.
-    if (error && /column .*(pixel_meta_token|pixel_tiktok_token|audio_url|video_url|color|miniatura_url|anuncios|layout|insignia).* does not exist/i.test(error.message)) {
-      const { pixel_meta_token, pixel_tiktok_token, audio_url, video_url, color, miniatura_url, anuncios, layout, insignia, ...sinNuevas } = fila;
+    if (error && /column .*(pixel_meta_token|pixel_tiktok_token|audio_url|video_url|color|miniatura_url|anuncios|layout|insignia|eliminado|eliminado_at).* does not exist/i.test(error.message)) {
+      const { pixel_meta_token, pixel_tiktok_token, audio_url, video_url, color, miniatura_url, anuncios, layout, insignia, eliminado, eliminado_at, ...sinNuevas } = fila;
       const reintento = existe?.id
         ? await supabase.from('funnels').update(sinNuevas).eq('id', existe.id)
         : await supabase.from('funnels').insert(sinNuevas);

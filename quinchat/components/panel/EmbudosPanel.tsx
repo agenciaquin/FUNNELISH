@@ -519,24 +519,35 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
   const seleccionarTodos = () =>
     setSeleccion(s => (s.size === embudos.length ? new Set() : new Set(embudos.map(e => e.slug))));
 
-  /** Inventa una dirección libre a partir de otra, sin repetir ninguna. */
-  function slugLibre(base: string): string {
+  /** Convierte un nombre en una dirección (slug) válida y ÚNICA. */
+  function slugDesdeNombre(nombre: string): string {
+    const base = nombre
+      .toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')   // quita acentos
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') // solo letras/números y guiones
+      || 'embudo';
     const usados = new Set(embudos.map(e => e.slug));
-    const raiz = base.replace(/-copia(-\d+)?$/, ''); // no encadenar "copia-copia"
-    let intento = `${raiz}-copia`;
+    if (!usados.has(base)) return base;
     let n = 2;
-    while (usados.has(intento)) { intento = `${raiz}-copia-${n}`; n++; }
-    return intento;
+    while (usados.has(`${base}-${n}`)) n++;
+    return `${base}-${n}`;
   }
 
-  /** Copia un embudo idéntico y solo le cambia la dirección (para no repetir link). */
+  /** Copia un embudo idéntico, preguntando ANTES cómo se llamará el nuevo. */
   async function duplicar(e: Embudo) {
-    const nuevoSlug = slugLibre(e.slug);
+    const sugerido = (e.producto || e.nombre || '').trim();
+    const nombre = window.prompt('¿Cómo quieres nombrar el nuevo embudo?', sugerido ? `${sugerido} 2` : '');
+    if (nombre === null) return;            // canceló
+    const limpio = nombre.trim();
+    if (!limpio) { setAviso('❌ Escribe un nombre para el nuevo embudo.'); return; }
+
+    const nuevoSlug = slugDesdeNombre(limpio);
     const copia: Embudo = {
       ...vacio(),
       ...e,
       slug: nuevoSlug,
-      nombre: e.nombre ? `${e.nombre} (copia)` : e.nombre,
+      nombre: limpio,       // nombre interno = lo que escribiste
+      producto: limpio,     // y también el nombre del producto (lo que ves en la lista)
     };
     setGuardando(true);
     try {
@@ -547,7 +558,7 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
       });
       const data = await res.json();
       if (!res.ok) { setAviso(`❌ ${data.error}`); return; }
-      setAviso(`✅ Embudo duplicado en pedido.klixmant.shop/${data.slug ?? nuevoSlug}`);
+      setAviso(`✅ "${limpio}" duplicado en pedido.klixmant.shop/${data.slug ?? nuevoSlug}`);
       await cargar();
     } finally { setGuardando(false); }
   }
