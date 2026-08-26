@@ -212,7 +212,7 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
 
   return (
     <div className="flex-1 min-w-0 overflow-y-auto bg-[#FAF9F6]">
-      <div className="max-w-5xl mx-auto px-4 md:px-8 py-6">
+      <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6">
 
         <header className="mb-5 pl-10 md:pl-0 flex items-start justify-between gap-3 flex-wrap">
           <div>
@@ -361,6 +361,7 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
                 <span className="w-10 shrink-0" />
                 <span className="flex-1 min-w-0">Cliente</span>
                 <span className="flex-1 min-w-0">Producto</span>
+                <span className="w-40 shrink-0">Embudo</span>
                 <span className="w-40 shrink-0">Campaña</span>
                 <span className="w-24 text-right shrink-0">Valor</span>
                 <span className="w-8 shrink-0" />
@@ -448,14 +449,20 @@ export default function PedidosPanel({ onAbrirChat }: Props) {
                           {p.talla || 'sin talla'}
                           {p.abono > 0 && ` · abono ${p.abono_recibido ? '✅' : '⏳'}`}
                         </span>
-                        {p.embudo_slug && (
+                      </span>
+
+                      {/* Embudo del que vino (nombre como lo nombraste) + enlace vista previa */}
+                      <span className="hidden md:flex w-40 shrink-0 min-w-0">
+                        {p.embudo_slug ? (
                           <a
                             href={`https://pedido.klixmant.shop/${p.embudo_slug}`}
                             target="_blank" rel="noopener noreferrer"
                             onClick={e => e.stopPropagation()}
                             title={`Ver embudo en vista previa: ${p.embudo_nombre || p.embudo_slug}`}
-                            className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-bold text-[#00847A] bg-[#00A89D]/10 rounded-full px-2 py-0.5 hover:bg-[#00A89D]/20 max-w-full truncate"
-                          >🚀 {p.embudo_nombre || p.embudo_slug} · ver ↗</a>
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-[#00847A] bg-[#00A89D]/10 rounded-lg px-2 py-1 hover:bg-[#00A89D]/20 max-w-full truncate"
+                          >🚀 <span className="truncate">{p.embudo_nombre || p.embudo_slug}</span> ↗</a>
+                        ) : (
+                          <span className="text-[11px] text-[#C9C9C9]">—</span>
                         )}
                       </span>
 

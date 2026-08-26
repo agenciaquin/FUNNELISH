@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   const desde  = new Date(Date.now() - dias * 86_400_000).toISOString();
 
   const supabase = createServerSupabaseClient();
-  const COLS_BASE = 'id, referencia, nombre, telefono, producto, talla, valor, direccion, ciudad, departamento, correo, confirmado, estado, abono, abono_recibido, utm_source, utm_campaign, created_at';
+  const COLS_BASE = 'id, referencia, nombre, telefono, producto, talla, valor, direccion, ciudad, departamento, correo, confirmado, estado, abono, abono_recibido, utm_source, utm_campaign, referrer, created_at';
 
   // Se intenta traer también foto_producto; si esa columna no existe en esta base,
   // se reintenta SIN ella para que la lista NUNCA se caiga (y los pedidos se vean).
@@ -94,17 +94,39 @@ export async function GET(req: NextRequest) {
       return { slug: f.slug as string, nombre: (f.nombre || f.producto || f.slug) as string, nombres };
     });
     const porSlug = new Map(mapa.map(m => [m.slug, m]));
+    const slugsValidos = new Set(mapa.map(m => m.slug));
+
+    // Saca el slug del embudo desde una URL (referrer): …/{slug}, …/{slug}/pedido, etc.
+    const slugDeUrl = (url: string): string | null => {
+      const u = String(url ?? '');
+      if (!/klixmant\.shop/i.test(u) && !/\/p\//.test(u)) {
+        // igual intentamos: tomar el primer segmento de ruta que sea un slug válido
+      }
+      const partes = u.replace(/^https?:\/\/[^/]+/i, '').split(/[/?#]/).filter(Boolean);
+      for (const seg of partes) {
+        if (seg === 'p' || seg === 'pedido' || seg === 'gracias') continue;
+        if (slugsValidos.has(seg)) return seg;
+      }
+      return null;
+    };
 
     for (const p of pedidos) {
       // 1º: si el pedido guardó el slug del embudo (nuevos pedidos) → EXACTO.
       const slugGuardado = String(p.funnel_slug ?? '').trim();
-      if (slugGuardado) {
+      if (slugGuardado && slugsValidos.has(slugGuardado)) {
         p.embudo_slug = slugGuardado;
         p.embudo_nombre = porSlug.get(slugGuardado)?.nombre || slugGuardado;
         continue;
       }
-      // 2º: pedidos viejos sin slug → cruzar por nombre, PERO solo si hay UNA sola
-      // coincidencia (si varios embudos comparten el nombre, no adivinamos).
+      // 2º: sacar el embudo del referrer (la URL de venta de donde vino) → confiable.
+      const slugRef = slugDeUrl(p.referrer);
+      if (slugRef) {
+        p.embudo_slug = slugRef;
+        p.embudo_nombre = porSlug.get(slugRef)?.nombre || slugRef;
+        continue;
+      }
+      // 3º: pedidos viejos sin slug ni referrer → cruzar por nombre SOLO si hay UNA
+      // sola coincidencia (si varios embudos comparten el nombre, no adivinamos).
       const prod = String(p.producto ?? '').toUpperCase();
       if (!prod) continue;
       const coincidencias = mapa.filter(m => m.nombres.some(n => prod.includes(n) || n.includes(prod.split(' - ')[0].trim())));
