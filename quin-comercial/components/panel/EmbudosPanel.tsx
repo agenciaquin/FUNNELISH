@@ -1297,7 +1297,8 @@ export default function EmbudosPanel() {
               <button type="button" onClick={() => { setCheckoutModo(false); setTabEditor('cero'); }} className="shrink-0 text-[13px] font-bold text-[#00847A] hover:underline">🏠 Volver a Inicio (armar la página)</button>
             </div>
           )}
-          {/* Básico */}
+          {/* Básico (se oculta en modo checkout: ahí solo van los Productos del checkout) */}
+          {!checkoutModo && (
           <section className="bg-white rounded-2xl border border-[#E8E8E8] p-4 space-y-3">
             <h2 className="text-sm font-bold">Lo básico</h2>
             <div className="grid md:grid-cols-2 gap-3">
@@ -1384,6 +1385,7 @@ export default function EmbudosPanel() {
               Ocultar el segundo botón &quot;COMPRAR&quot; (el de abajo de la página)
             </label>
           </section>
+          )}
 
           {/* Fotos (se oculta en modo checkout) */}
           {!checkoutModo && (
