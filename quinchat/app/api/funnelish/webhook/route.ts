@@ -581,6 +581,20 @@ export async function POST(req: NextRequest) {
   // Guardar el EMBUDO de origen (slug) por separado, para atribución exacta. Va en un
   // update aparte para NO romper el guardado si la columna aún no existe en la base.
   const funnelSlug = buscarUtm('slug');
+
+  // Modo de confirmación del embudo: decide si el bot atiende o lo hace un humano.
+  //   'bot' / 'agente' → el bot responde (por defecto).
+  //   'humano'         → se envía el mensaje pero el bot NO responde (lo atiende una persona).
+  let confirmModo = 'bot';
+  if (funnelSlug) {
+    try {
+      const { data: f } = await supabase
+        .from('funnels').select('confirmacion_modo').eq('slug', funnelSlug).maybeSingle();
+      if (f?.confirmacion_modo) confirmModo = String(f.confirmacion_modo);
+    } catch { /* si falla la lectura, queda 'bot' */ }
+  }
+  const botOn = confirmModo !== 'humano';
+
   if (pedidoGuardado && pedidoId && funnelSlug) {
     const { error: slugErr } = await supabase
       .from('clientes_funnelish').update({ funnel_slug: funnelSlug }).eq('id', pedidoId);
@@ -727,7 +741,7 @@ export async function POST(req: NextRequest) {
       last_message:      mensajeAlmacenado.slice(0, 100),
       last_message_time: now,
       unread_count:      1,
-      bot_enabled:       true,
+      bot_enabled:       botOn, // 'humano' → bot apagado (lo confirma una persona)
       label:             'PENDIENTE POR CONFIRMACIÓN',
     }, { onConflict: 'id' });
     if (convErr) console.error('[Funnelish] upsert conversation error:', convErr.message);

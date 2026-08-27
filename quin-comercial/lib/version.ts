@@ -2,13 +2,14 @@
 // que desplegar. Sirve para confirmar, desde /api/version, que el `vercel --prod`
 // SÍ quedó en vivo (si el número que ves en la web coincide con el último, los
 // cambios ya están activos para TODOS los bots de los clientes).
-export const VERSION = 'v160';
+export const VERSION = 'v161';
 
 // Fecha aproximada de esta versión (referencia para ti, no afecta nada).
 export const VERSION_FECHA = '2026-08-27';
 
 // Resumen corto de lo último que entró en esta versión.
 export const VERSION_CAMBIOS = [
+  'Editor · nuevo "Constructor de Embudos" de 3 columnas (como el mockup): a la IZQUIERDA la paleta de bloques por categorías (Texto, Multimedia, Gatillos y disparadores, Botones, Información y producto, Formulario) que se ARRASTRAN y SUELTAN al lienzo; en el CENTRO el lienzo con toggle 📱 móvil / 🖥️ escritorio y las pestañas Página de inicio / Checkout; a la DERECHA el panel de propiedades (Contenido / Diseño / Avanzado) con Acciones rápidas (duplicar, eliminar, mover), la lista "Estructura del embudo" y Tips. Un encabezado con atrasar/adelantar, Vista previa y Guardar. Se conservó TODO: los bloques, el arrastrar-y-soltar, el redimensionar por esquinas, el checkout y el guardado. No toca pedidos ni confirmaciones.',
   'Pie de página · el texto de abajo de la página (antes fijo "Klixmant SAS · Pago contra entrega en toda Colombia") ahora es EDITABLE por embudo: en "Contenido y ajustes → Lo básico" hay un campo "Nombre de tu empresa (pie de página)". Cada cliente pone el suyo y se muestra así: "{Tu Empresa} · Pago contra entrega en toda Colombia". Si se deja vacío, aparece solo "Pago contra entrega en toda Colombia" (ya nunca sale Klixmant). Aditivo y retrocompatible. Necesita correr el SQL sql/funnel-pie-empresa.sql.',
   'Editor · se quitó el botón de dos versiones (VERSIÓN ACTUAL / VERSIÓN NUEVA): ahora hay UNA sola versión de la página, más simple. Al abrir un embudo, si tenías un borrador con bloques armados ese pasa a ser tu página única; si el borrador estaba vacío se conserva la página publicada tal cual (no se borra nada). Nada cambia en la BD hasta que das Guardar, y la página pública sigue leyendo la misma versión de siempre. No toca el checkout, el envío del pedido ni las confirmaciones.',
   'Editor · en modo checkout, el botón "🏠 Inicio" del teléfono ahora TE LLEVA a editar la página de inicio (armar bloques), y "🛒 Checkout" te muestra el checkout — así te mueves entre los dos con esos mismos botones, sin el enlace aparte de "Volver a Inicio". (Junto con las pestañas verdes del centro de v156, tienes navegación clara Inicio ↔ Checkout.)',

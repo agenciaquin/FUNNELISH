@@ -75,56 +75,60 @@ function nuevoBloque(tipo: string): BloqueLayout {
   return b;
 }
 
-// ── Paleta "ESTRUCTURA" (estilo Funnelish): categorías de elementos que se
-// arrastran al teléfono. Cada tarjeta mapea a un `tipo` de bloque real; las que
-// aún no tienen bloque van con `pronto` (se muestran, pero deshabilitadas).
+// Item de la paleta del constructor (una tarjeta que se arrastra al lienzo).
+// `tipo` apunta a un bloque real; `pronto` = se muestra pero deshabilitado.
 type EstItem = { label: string; ic: string; tipo?: string; nuevo?: boolean; obsoleto?: boolean; pronto?: boolean };
-const ESTRUCTURA_CATS: { cat: string; items: EstItem[] }[] = [
+// ── Paleta del "Constructor de Embudos" (3 columnas): agrupa los BLOQUES REALES
+// del negocio en categorías (como el mockup). Cada item apunta a un `tipo` que ya
+// existe en nuevoBloque/vistaBloque/editorBloque, así nada se rompe. `pronto` =
+// se muestra deshabilitado (aún sin bloque).
+const PALETA_CATS: { cat: string; items: EstItem[] }[] = [
   { cat: 'Disposición', items: [
     { label: 'Sección', ic: '🗂️', tipo: 'separador' },
-    { label: 'Fila', ic: '📶', pronto: true },
     { label: 'Espaciador', ic: '↕️', tipo: 'espaciador' },
-    { label: 'Recipiente', ic: '🔲', pronto: true },
-    { label: 'Reloj de repetición', ic: '⏱️', tipo: 'contador_pagina', nuevo: true },
-    { label: 'Carrusel', ic: '🎠', tipo: 'carrusel', nuevo: true },
   ] },
   { cat: 'Texto', items: [
     { label: 'Titular', ic: '🔠', tipo: 'encabezado' },
     { label: 'Párrafo', ic: '📝', tipo: 'texto' },
-    { label: 'Tabla de contenido', ic: '📋', tipo: 'beneficios', nuevo: true },
+    { label: 'Texto libre', ic: '🗒️', tipo: 'texto' },
+    { label: 'Características', ic: '📋', tipo: 'caracteristicas' },
+    { label: 'Preguntas frecuentes', ic: '❓', tipo: 'faq' },
   ] },
-  { cat: 'Medios de comunicación', items: [
-    { label: 'Carrusel multimedia', ic: '🖼️', tipo: 'carrusel', nuevo: true },
-    { label: 'Imagen', ic: '🏞️', tipo: 'foto' },
+  { cat: 'Multimedia', items: [
+    { label: 'Imagen / Video', ic: '🏞️', tipo: 'foto' },
     { label: 'Vídeo', ic: '▶️', tipo: 'video' },
-    { label: 'Carrusel de imágenes', ic: '🎞️', tipo: 'carrusel' },
-    { label: 'Antes / Después', ic: '🔀', pronto: true },
-    { label: 'Insertar vídeo', ic: '📺', tipo: 'video' },
+    { label: 'Carrusel de imágenes', ic: '🎠', tipo: 'carrusel', nuevo: true },
+    { label: 'Collage', ic: '🖼️', tipo: 'collage' },
+    { label: 'Banner de clientes', ic: '🎪', tipo: 'banner_clientes' },
+    { label: 'Portada (galería)', ic: '🛍️', tipo: 'galeria' },
+  ] },
+  { cat: 'Gatillos y disparadores', items: [
+    { label: 'Contador de oferta', ic: '⏱️', tipo: 'contador_pagina' },
+    { label: 'Minutero', ic: '⏲️', tipo: 'contador' },
+    { label: 'Gatillos mentales', ic: '🧠', tipo: 'gatillos' },
+    { label: 'Últimas unidades', ic: '⚠️', tipo: 'ultimas_unidades' },
+    { label: 'Stock / escasez', ic: '📉', tipo: 'stock' },
+    { label: 'Ventas en vivo', ic: '📣', tipo: 'ventas' },
   ] },
   { cat: 'Botones (CTA)', items: [
     { label: 'Botón', ic: '🔘', tipo: 'boton' },
+    { label: 'Botón COMPRAR', ic: '🟢', tipo: 'boton_comprar' },
     { label: 'Enlace', ic: '🔗', tipo: 'enlace' },
+    { label: 'Botón MÁS VENDIDO', ic: '🔥', tipo: 'mas_vendido' },
+  ] },
+  { cat: 'Información y producto', items: [
+    { label: 'Precio', ic: '💲', tipo: 'precio' },
+    { label: 'Estrellas de reseña', ic: '⭐', tipo: 'estrellas' },
+    { label: 'Clientes felices', ic: '😍', tipo: 'testimonios' },
+    { label: 'Social', ic: '🌐', tipo: 'social' },
+    { label: 'HTML personalizado', ic: '🧩', tipo: 'html' },
   ] },
   { cat: 'Formulario', items: [
-    { label: 'Formulario de 2 pasos', ic: '🧾', tipo: 'checkout' },
-    { label: 'Caja', ic: '☑️', pronto: true },
-    { label: 'Aporte', ic: '📥', pronto: true },
-    { label: 'Área de texto', ic: '📄', pronto: true },
-    { label: 'Radio', ic: '🔘', pronto: true },
-    { label: 'Número', ic: '🔢', pronto: true },
-    { label: 'Seleccionar', ic: '🔽', pronto: true },
-    { label: 'Entrada doble', ic: '⧉', pronto: true },
-    { label: 'Fecha', ic: '📅', pronto: true },
-  ] },
-  { cat: 'Otros', items: [
-    { label: 'Social', ic: '🌐', tipo: 'social' },
-    { label: 'Barra de progreso', ic: '📊', tipo: 'stock' },
-    { label: 'Menú', ic: '☰', pronto: true },
-    { label: 'Minutero', ic: '⏲️', tipo: 'contador' },
-    { label: 'HTML personalizado', ic: '🧩', tipo: 'html' },
-    { label: 'Preguntas frecuentes', ic: '❓', tipo: 'faq' },
+    { label: 'Checkout (formulario)', ic: '🛒', tipo: 'checkout' },
+    { label: 'Checkout PRO', ic: '⚡', tipo: 'checkout_pro' },
   ] },
 ];
+
 // Bloques que se pueden redimensionar arrastrando las esquinas (alto/ancho).
 const RESIZABLE = new Set(['carrusel', 'foto']);
 const REDES: { key: string; label: string; ic: string }[] = [
@@ -190,12 +194,15 @@ export default function EditorBloques({
   // Pestaña del teléfono: la página (inicio) o el checkout.
   const [vistaTel, setVistaTel] = useState<'inicio' | 'checkout'>('inicio');
   // Paleta activa: 'boton' (lista de bloques dinámicos) o 'estructura' (grid Funnelish).
-  const [paleta, setPaleta] = useState<'boton' | 'estructura'>('boton');
-  const [buscarEst, setBuscarEst] = useState('');
   // Reordenar fotos del carrusel arrastrando (índice que se está moviendo).
   const [dragFoto, setDragFoto] = useState<number | null>(null);
   // Redimensionar un bloque arrastrando sus esquinas (alto/ancho).
   const [rz, setRz] = useState<null | { id: string; corner: string; startX: number; startY: number; startH: number; startW: number; contW: number; props: any }>(null);
+  // Constructor de Embudos (3 columnas): dispositivo del lienzo y pestaña del
+  // panel derecho de propiedades.
+  const [dispositivo, setDispositivo] = useState<'movil' | 'escritorio'>('movil');
+  const [panelTab, setPanelTab] = useState<'contenido' | 'diseno' | 'avanzado'>('contenido');
+  const [buscarPal, setBuscarPal] = useState('');
 
   const set = (nv: BloqueLayout[]) => onLayout(nv);
   const upd = (id: string, patch: any) => set(bs.map(b => (b.id === id ? { ...b, ...patch } : b)));
@@ -311,164 +318,134 @@ export default function EditorBloques({
   };
 
   const selBloque = bs.find(b => b.id === sel) || null;
-  const nombreTipo = (t: string) => {
-    const it = BLOQUES.find(x => x.tipo === t) || (t === 'checkout_pro' ? { icono: '⚡', label: 'Checkout PRO' } : null);
-    return it ? `${it.icono} ${it.label}` : t;
+  // Icono + nombre legible de un tipo de bloque (para la cabecera del panel y la
+  // lista "Estructura del embudo"). Busca en la lista plana, luego en la paleta
+  // por categorías, luego en un mapa de respaldo.
+  const metaTipo = (t: string): { ic: string; label: string } => {
+    const b = BLOQUES.find(x => x.tipo === t);
+    if (b) return { ic: b.icono, label: b.label };
+    for (const c of PALETA_CATS) { const it = c.items.find(x => x.tipo === t); if (it) return { ic: it.ic, label: it.label }; }
+    const extra: Record<string, [string, string]> = {
+      texto: ['📝', 'Texto'], encabezado: ['🔠', 'Titular'], boton: ['🔘', 'Botón'], video: ['▶️', 'Video'],
+      collage: ['🖼️', 'Collage'], faq: ['❓', 'Preguntas'], enlace: ['🔗', 'Enlace'], social: ['🌐', 'Social'],
+      html: ['🧩', 'HTML'], carrusel: ['🎠', 'Carrusel'], separador: ['➖', 'Sección'], espaciador: ['↕️', 'Espacio'],
+      contador: ['⏲️', 'Minutero'], beneficios: ['✅', 'Beneficios'], garantia: ['🏅', 'Garantía'],
+      confianza: ['🛡️', 'Confianza'], detalle: ['📸', 'Detalle'], checkout_pro: ['⚡', 'Checkout PRO'],
+    };
+    const e = extra[t]; return e ? { ic: e[0], label: e[1] } : { ic: '🧱', label: t };
   };
+  const nombreTipo = (t: string) => { const m = metaTipo(t); return `${m.ic} ${m.label}`; };
+
+  // Marco del lienzo según el dispositivo elegido (móvil = teléfono; escritorio = ancho).
+  const marcoOut = dispositivo === 'movil'
+    ? 'w-full max-w-[380px] rounded-[2rem] border-[6px] border-[#1A1A1A] bg-[#1A1A1A] shadow-xl overflow-hidden'
+    : 'w-full max-w-[880px] rounded-2xl border border-[#D8D8D8] bg-[#EDEDED] p-2 shadow-xl overflow-hidden';
+  const marcoIn = dispositivo === 'movil'
+    ? 'bg-white min-h-[200px] max-h-[min(80vh,720px)] overflow-y-auto'
+    : 'bg-white rounded-xl min-h-[200px] max-h-[min(80vh,720px)] overflow-y-auto';
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-[11px] text-[#6B6B6B] text-center">Arma tu página bloque por bloque: <b>toca un bloque en el teléfono</b> para editarlo aquí en el centro; con su barra lo mueves ⠿↑↓, lo ocultas 👁, lo duplicas ⧉ o lo borras 🗑. Para agregar, arrastra un elemento de la izquierda o toca un <b className="text-[#00A89D]">+</b>.</p>
+      {/* ── ENCABEZADO: Constructor de Embudos ── */}
+      <div className="flex items-center gap-2.5 flex-wrap bg-white border border-[#E8E8E8] rounded-2xl px-4 py-3 shadow-sm">
+        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+          <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#00A89D] to-[#0D8A3E] grid place-items-center text-white text-lg shadow shrink-0">🎨</span>
+          <div className="min-w-0">
+            <div className="text-[15px] font-extrabold text-[#0D0D0D] leading-tight">Constructor de Embudos</div>
+            <div className="text-[11px] text-[#9A9A9A] leading-tight truncate">Arrastra y suelta los bloques para construir tu embudo</div>
+          </div>
+        </div>
+        {(onDeshacer || onRehacer) && (
+          <div className="inline-flex rounded-xl border border-[#E8E8E8] overflow-hidden">
+            <button type="button" onClick={onDeshacer} disabled={!puedeDeshacer} title="Atrasar (Ctrl+Z)"
+              className={`px-3 py-2 text-lg leading-none ${puedeDeshacer ? 'text-[#00847A] hover:bg-[#00A89D]/10' : 'text-[#CFCFCF] cursor-not-allowed'}`}>↶</button>
+            <span className="w-px bg-[#E8E8E8]" />
+            <button type="button" onClick={onRehacer} disabled={!puedeRehacer} title="Adelantar (Ctrl+Y)"
+              className={`px-3 py-2 text-lg leading-none ${puedeRehacer ? 'text-[#00847A] hover:bg-[#00A89D]/10' : 'text-[#CFCFCF] cursor-not-allowed'}`}>↷</button>
+          </div>
+        )}
+        <div className="inline-flex rounded-xl border border-[#E8E8E8] overflow-hidden">
+          <button type="button" onClick={() => setDispositivo('movil')} title="Vista móvil"
+            className={`px-3 py-2 text-base ${dispositivo === 'movil' ? 'bg-[#00A89D] text-white' : 'text-[#6B6B6B] hover:bg-[#F5F5F5]'}`}>📱</button>
+          <button type="button" onClick={() => setDispositivo('escritorio')} title="Vista escritorio"
+            className={`px-3 py-2 text-base ${dispositivo === 'escritorio' ? 'bg-[#00A89D] text-white' : 'text-[#6B6B6B] hover:bg-[#F5F5F5]'}`}>🖥️</button>
+        </div>
+        {d.slug ? (
+          <a href={`/p/${d.slug}`} target="_blank" rel="noreferrer"
+            className="px-4 py-2 rounded-xl border border-[#E8E8E8] text-[13px] font-semibold hover:bg-[#F5F5F5]">Vista previa</a>
+        ) : null}
+        {onGuardar && (
+          <button type="button" onClick={onGuardar} disabled={guardando}
+            className="px-5 py-2 rounded-xl bg-[#00A89D] text-white text-[13px] font-bold hover:bg-[#00847A] disabled:opacity-60">
+            {guardando ? 'Guardando…' : 'Guardar'}
+          </button>
+        )}
+        <button type="button" onClick={() => setSel(null)} title="Cerrar edición del bloque"
+          className="w-9 h-9 rounded-xl border border-[#E8E8E8] text-[#6B6B6B] hover:bg-[#F5F5F5] grid place-items-center">✕</button>
+      </div>
 
-      <div className="lg:flex lg:gap-3 lg:items-start lg:justify-center space-y-3 lg:space-y-0">
-        {/* ── Columna 1: Paleta (con desplegable: Botón dinámico / Estructura) ── */}
-        <div className={`${paleta === 'estructura' ? 'lg:w-64' : 'lg:w-44'} lg:shrink-0 lg:sticky lg:top-2 lg:max-h-[82vh] overflow-y-auto bg-white border border-[#E8E8E8] rounded-2xl p-2`}>
-          {/* Desplegable: elige qué paleta abrir para usar sus herramientas */}
-          <label className="block text-[9px] font-bold uppercase tracking-wide text-[#9A9A9A] px-1 mb-1">Paleta de herramientas</label>
-          <select value={paleta} onChange={e => { setPaleta(e.target.value as any); setPendingTipo(null); }}
-            className="w-full mb-2 rounded-lg border border-[#00A89D]/40 bg-[#E9F7F5] text-[#00847A] text-[12px] font-bold px-2 py-2 cursor-pointer">
-            <option value="boton">🧩 Botón dinámico</option>
-            <option value="estructura">🏗️ Estructura (arrastrar)</option>
-          </select>
+      {/* ── 3 COLUMNAS: Paleta · Lienzo · Propiedades ── */}
+      <div className="lg:flex lg:gap-3 lg:items-start space-y-3 lg:space-y-0">
 
-          {paleta === 'boton' ? (<>
-            <p className="text-[11px] font-bold text-[#6B6B6B] px-1 mb-1.5">＋ Agregar bloque</p>
-            <div className="grid grid-cols-2 lg:grid-cols-1 gap-1">
-              {BLOQUES.map(o => {
-                const yaEsta = bloqueadoUnico(o.tipo);
-                return (
-                  <button key={o.tipo} type="button"
-                    draggable={!yaEsta}
-                    onDragStart={() => { if (!yaEsta) { setDragTipo(o.tipo); setSel(null); } }}
-                    onDragEnd={() => { setDragTipo(null); setOverIdx(null); }}
-                    onClick={() => { if (!yaEsta) setPendingTipo(pendingTipo === o.tipo ? null : o.tipo); }}
-                    disabled={yaEsta}
-                    className={`flex items-center gap-2 px-2 py-2 rounded-lg text-[11px] border text-left ${yaEsta ? 'border-[#EEE] opacity-40 cursor-default' : 'cursor-grab active:cursor-grabbing ' + (pendingTipo === o.tipo ? 'border-[#00A89D] bg-[#00A89D]/10 text-[#00847A] font-semibold' : 'border-[#EEE] hover:bg-[#F5F5F5]')}`}
-                    title={yaEsta ? 'Ya está en la página' : `Arrastra o toca para agregar: ${o.label}`}
-                  >
-                    <span className="text-sm shrink-0">{o.icono}</span><span className="truncate">{o.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </>) : (<>
-            {/* Buscador */}
-            <div className="relative mb-2">
-              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#9A9A9A] text-[12px]">🔍</span>
-              <input value={buscarEst} onChange={e => setBuscarEst(e.target.value)} placeholder="Escribe para buscar…"
-                className="w-full pl-7 pr-2 py-2 rounded-lg border border-[#E8E8E8] text-[12px] focus:border-[#00A89D] outline-none" />
-            </div>
-            {(() => {
-              const q = buscarEst.trim().toLowerCase();
-              const cats = ESTRUCTURA_CATS
-                .map(c => ({ ...c, items: c.items.filter(it => !q || it.label.toLowerCase().includes(q)) }))
-                .filter(c => c.items.length);
-              if (!cats.length) return <p className="text-[11px] text-[#9A9A9A] px-1 py-3 text-center">Sin resultados.</p>;
-              return cats.map(c => (
-                <div key={c.cat} className="mb-2">
-                  <p className="text-[9px] font-bold uppercase tracking-wide text-[#9A9A9A] px-1 mb-1">{c.cat}</p>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {c.items.map(it => {
-                      const yaEsta = bloqueadoUnico(it.tipo);
-                      const inactivo = it.pronto || yaEsta;
-                      const activoSel = it.tipo && pendingTipo === it.tipo;
-                      return (
-                        <button key={it.label} type="button"
-                          draggable={!inactivo}
-                          onDragStart={() => { if (!inactivo && it.tipo) { setDragTipo(it.tipo); setSel(null); } }}
-                          onDragEnd={() => { setDragTipo(null); setOverIdx(null); }}
-                          onClick={() => { if (!inactivo && it.tipo) setPendingTipo(pendingTipo === it.tipo ? null : it.tipo); }}
-                          disabled={inactivo}
-                          title={it.pronto ? 'Próximamente' : yaEsta ? 'Ya está en la página' : `Arrastra o toca para agregar: ${it.label}`}
-                          className={`relative flex flex-col items-center justify-center gap-1 px-1.5 py-2.5 rounded-xl border text-center transition-colors ${
-                            inactivo
-                              ? 'border-[#EEE] opacity-45 cursor-default'
-                              : 'cursor-grab active:cursor-grabbing ' + (activoSel ? 'border-[#00A89D] bg-[#00A89D]/10' : 'border-[#E8E8E8] hover:border-[#00A89D]/50 hover:bg-[#00A89D]/5')
-                          }`}>
-                          {it.nuevo && <span className="absolute top-1 right-1 text-[7px] font-extrabold text-white bg-[#4C6EF5] rounded px-1 py-[1px]">NUEVO</span>}
-                          {it.obsoleto && <span className="absolute top-1 right-1 text-[7px] font-extrabold text-white bg-[#9A9A9A] rounded px-1 py-[1px]">OBSOLETO</span>}
-                          {it.pronto && <span className="absolute top-1 right-1 text-[7px] font-extrabold text-white bg-[#E6A817] rounded px-1 py-[1px]">PRONTO</span>}
-                          <span className="text-lg leading-none">{it.ic}</span>
-                          <span className="text-[10px] font-semibold text-[#4A4A4A] leading-tight">{it.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+        {/* ── Columna 1: PALETA de bloques (por categorías, arrastrar y soltar) ── */}
+        <div className="lg:w-56 lg:shrink-0 lg:sticky lg:top-2 lg:max-h-[86vh] overflow-y-auto bg-white border border-[#E8E8E8] rounded-2xl p-3">
+          <div className="text-[13px] font-extrabold text-[#0D0D0D] mb-0.5">Bloques</div>
+          <p className="text-[10px] text-[#9A9A9A] mb-2">Arrastra y suelta los bloques al lienzo.</p>
+          <div className="relative mb-2">
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#9A9A9A] text-[12px]">🔍</span>
+            <input value={buscarPal} onChange={e => setBuscarPal(e.target.value)} placeholder="Buscar bloque…"
+              className="w-full pl-7 pr-2 py-2 rounded-lg border border-[#E8E8E8] text-[12px] focus:border-[#00A89D] outline-none" />
+          </div>
+          {(() => {
+            const q = buscarPal.trim().toLowerCase();
+            const cats = PALETA_CATS
+              .map(c => ({ ...c, items: c.items.filter(it => !q || it.label.toLowerCase().includes(q)) }))
+              .filter(c => c.items.length);
+            if (!cats.length) return <p className="text-[11px] text-[#9A9A9A] px-1 py-3 text-center">Sin resultados.</p>;
+            return cats.map(c => (
+              <div key={c.cat} className="mb-2.5">
+                <p className="text-[9px] font-bold uppercase tracking-wide text-[#9A9A9A] px-0.5 mb-1">{c.cat}</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {c.items.map(it => {
+                    const yaEsta = bloqueadoUnico(it.tipo);
+                    const inactivo = it.pronto || yaEsta;
+                    const activoSel = it.tipo && pendingTipo === it.tipo;
+                    return (
+                      <button key={it.label} type="button"
+                        draggable={!inactivo}
+                        onDragStart={() => { if (!inactivo && it.tipo) { setDragTipo(it.tipo); setSel(null); } }}
+                        onDragEnd={() => { setDragTipo(null); setOverIdx(null); }}
+                        onClick={() => { if (!inactivo && it.tipo) setPendingTipo(pendingTipo === it.tipo ? null : it.tipo); }}
+                        disabled={inactivo}
+                        title={it.pronto ? 'Próximamente' : yaEsta ? 'Ya está en la página' : `Arrastra o toca para agregar: ${it.label}`}
+                        className={`relative flex flex-col items-center justify-center gap-1 px-1.5 py-2.5 rounded-xl border text-center transition-colors ${
+                          inactivo
+                            ? 'border-[#EEE] opacity-45 cursor-default'
+                            : 'cursor-grab active:cursor-grabbing ' + (activoSel ? 'border-[#00A89D] bg-[#00A89D]/10' : 'border-[#E8E8E8] hover:border-[#00A89D]/50 hover:bg-[#00A89D]/5')
+                        }`}>
+                        {it.nuevo && <span className="absolute top-1 right-1 text-[7px] font-extrabold text-white bg-[#4C6EF5] rounded px-1 py-[1px]">NUEVO</span>}
+                        {it.pronto && <span className="absolute top-1 right-1 text-[7px] font-extrabold text-white bg-[#E6A817] rounded px-1 py-[1px]">PRONTO</span>}
+                        <span className="text-lg leading-none">{it.ic}</span>
+                        <span className="text-[10px] font-semibold text-[#4A4A4A] leading-tight">{it.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-              ));
-            })()}
-            <p className="text-[9.5px] text-[#9A9A9A] px-1 mt-1">Sostén con el mouse y arrastra al teléfono. Las marcadas <b className="text-[#E6A817]">PRONTO</b> las construimos enseguida.</p>
-          </>)}
-
+              </div>
+            ));
+          })()}
           {pendingTipo && (
-            <div className="mt-2 text-[10px] text-[#00847A] bg-[#00A89D]/10 rounded-lg p-2">
-              Toca un <b>+</b> donde va.
+            <div className="mt-1 text-[10px] text-[#00847A] bg-[#00A89D]/10 rounded-lg p-2">
+              Toca un <b>+</b> en el lienzo donde va.
               <button onClick={() => setPendingTipo(null)} className="block mt-1 text-[#DC2626] font-semibold">Cancelar</button>
             </div>
           )}
         </div>
 
-        {/* ── Columna 2: Editor del bloque seleccionado ── */}
-        <div className="flex-1 min-w-0 lg:max-w-[420px] lg:sticky lg:top-2">
-          {selBloque ? (
-            <div className="bg-white border border-[#E8E8E8] rounded-2xl overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[#E8E8E8]">
-                <button onClick={() => setSel(null)} className="text-[12px] font-semibold text-[#00847A] hover:underline">← Volver</button>
-                <b className="text-[13px] flex-1 truncate text-right">{nombreTipo(selBloque.tipo)}</b>
-              </div>
-              <div className="p-3 space-y-3">
-                {/* Acciones del bloque (como la referencia): Guardar / Duplicar / Borrar */}
-                <button onClick={() => setSel(null)} className="w-full py-2.5 rounded-xl bg-[#00A89D] text-white text-sm font-bold hover:bg-[#00847A]">💾 Guardar cambios</button>
-                <div className="flex gap-2">
-                  <button onClick={() => { duplicar(selBloque.id); }} className="flex-1 py-2 rounded-xl border border-[#E8E8E8] text-[13px] font-semibold hover:bg-[#F5F5F5]">⧉ Duplicar</button>
-                  <button onClick={() => { borrar(selBloque.id); }} className="flex-1 py-2 rounded-xl border border-[#F3C3CB] text-[#C1121F] text-[13px] font-semibold hover:bg-[#FDEEF0]">🗑 Borrar</button>
-                </div>
-              </div>
-              <div className="px-3 pb-3 space-y-3 max-h-[60vh] overflow-y-auto border-t border-[#F0F0F0] pt-3">
-                {editorBloque(selBloque)}
-                {controlEspacio(selBloque)}
-              </div>
-            </div>
-          ) : (
-            <div className="bg-white border border-dashed border-[#E8E8E8] rounded-2xl p-8 text-center text-[#9A9A9A] text-[13px]">
-              👉 Toca un bloque en el teléfono para editarlo.
-              <div className="text-[11px] mt-1.5">O arrastra un elemento de la izquierda para agregarlo.</div>
-            </div>
-          )}
-        </div>
-
-        {/* ── Columna 3: Teléfono (organiza y previsualiza) ── */}
-        <div className="w-full lg:max-w-[380px] lg:shrink-0 flex flex-col gap-2.5 mx-auto">
-          {/* Barra superior: atrasar / adelantar · vista previa · guardar */}
-          {(onDeshacer || onRehacer || onGuardar) && (
-            <div className="flex items-center gap-2 flex-wrap justify-center">
-              {(onDeshacer || onRehacer) && (
-                <div className="inline-flex rounded-xl border border-[#E8E8E8] bg-white overflow-hidden shadow-sm">
-                  <button type="button" onClick={onDeshacer} disabled={!puedeDeshacer}
-                    title="Atrasar (deshacer · Ctrl+Z)"
-                    className={`px-3 py-2 text-lg leading-none transition-colors ${puedeDeshacer ? 'text-[#00847A] hover:bg-[#00A89D]/10' : 'text-[#CFCFCF] cursor-not-allowed'}`}>↶</button>
-                  <span className="w-px bg-[#E8E8E8]" />
-                  <button type="button" onClick={onRehacer} disabled={!puedeRehacer}
-                    title="Adelantar (rehacer · Ctrl+Y)"
-                    className={`px-3 py-2 text-lg leading-none transition-colors ${puedeRehacer ? 'text-[#00847A] hover:bg-[#00A89D]/10' : 'text-[#CFCFCF] cursor-not-allowed'}`}>↷</button>
-                </div>
-              )}
-              <div className="inline-flex items-center gap-1.5 rounded-xl bg-[#00A89D] text-white px-3 py-2 text-[11px] font-extrabold shadow-sm">
-                📱 <span className="leading-tight">VISTA PREVIA<br />FORMATO TELÉFONO</span>
-              </div>
-              {onGuardar && (
-                <button type="button" onClick={onGuardar} disabled={guardando}
-                  title="Guardar el embudo"
-                  className="inline-flex flex-col items-center justify-center rounded-xl bg-[#0D8A3E] text-white px-3 py-1.5 text-[10px] font-extrabold shadow-sm hover:bg-[#0B7A36] disabled:opacity-60">
-                  <span className="text-base leading-none">💾</span>
-                  {guardando ? 'GUARDANDO…' : 'GUARDAR'}
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Pestañas: PÁGINA DE INICIO / CHECKOUT (botones verdes) */}
-          <div className="flex gap-2">
+        {/* ── Columna 2: LIENZO (organiza y previsualiza) ── */}
+        <div className="flex-1 min-w-0 flex flex-col gap-2.5 items-center">
+          {/* Pestañas: PÁGINA DE INICIO / CHECKOUT */}
+          <div className="flex gap-2 w-full max-w-[420px]">
             <button type="button"
               onClick={() => { setVistaTel('inicio'); if (selBloque && (selBloque.tipo === 'checkout' || selBloque.tipo === 'checkout_pro')) setSel(null); }}
               className={`flex-1 rounded-xl py-2.5 text-[12px] font-extrabold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all border-2 ${vistaTel === 'inicio' ? 'bg-[#00A89D] text-white border-[#00A89D] shadow-md' : 'bg-white text-[#00847A] border-[#00A89D]/40 hover:bg-[#00A89D]/5'}`}>🛍️ Página de inicio</button>
@@ -476,16 +453,16 @@ export default function EditorBloques({
               onClick={() => { if (onAbrirCheckout) { onAbrirCheckout(); return; } setVistaTel('checkout'); if (checkoutBloque) setSel(checkoutBloque.id); }}
               className={`flex-1 rounded-xl py-2.5 text-[12px] font-extrabold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all border-2 ${vistaTel === 'checkout' ? 'bg-[#00A89D] text-white border-[#00A89D] shadow-md' : 'bg-white text-[#00847A] border-[#00A89D]/40 hover:bg-[#00A89D]/5'}`}>🛒 Checkout{hayCheckout ? ' ✓' : ''}</button>
           </div>
-          <p className="text-[10px] text-[#6B6B6B] text-center -mt-0.5">{vistaTel === 'inicio' ? '👆 Arrastra los bloques (o usa ▲▼) para ordenar la página.' : 'Así se ve el checkout en la página. Tócalo para editar títulos, botón y sellos.'}</p>
+          <p className="text-[10px] text-[#6B6B6B] text-center -mt-0.5">{vistaTel === 'inicio' ? '👆 Arrastra un bloque de la izquierda al lienzo, o usa ⠿ ▲▼ para ordenar.' : 'Así se ve el checkout en la página. Tócalo para editar títulos, botón y sellos.'}</p>
 
-          <div className="rounded-[2rem] border-[6px] border-[#1A1A1A] bg-[#1A1A1A] shadow-xl overflow-hidden">
-          <div className="bg-white min-h-[200px] max-h-[min(80vh,720px)] overflow-y-auto">
+          <div className={marcoOut}>
+          <div className={marcoIn}>
             {vistaTel === 'inicio' ? (<>
             {bs.length === 0 ? (
               <div className="min-h-[60vh] flex flex-col items-center justify-center px-6 py-10 text-center">
                 <p className="text-[14px] font-extrabold text-[#3A3A3A] tracking-wide mb-4">AGREGA TU PRIMER BLOQUE AL EMBUDO</p>
                 <Mas idx={0} grande />
-                <p className="text-[11px] text-[#9A9A9A] mt-4 max-w-[220px]">Toca el <b className="text-[#00A89D]">+</b>, o arrastra un bloque desde la izquierda, para empezar a construir esta versión.</p>
+                <p className="text-[11px] text-[#9A9A9A] mt-4 max-w-[220px]">Toca el <b className="text-[#00A89D]">+</b>, o arrastra un bloque desde la izquierda, para empezar a construir.</p>
               </div>
             ) : (<>
             <Mas idx={0} />
@@ -537,6 +514,87 @@ export default function EditorBloques({
               )
             )}
           </div>
+          </div>
+        </div>
+
+        {/* ── Columna 3: PROPIEDADES del bloque + Estructura + Tips ── */}
+        <div className="lg:w-72 lg:shrink-0 lg:sticky lg:top-2 lg:max-h-[86vh] overflow-y-auto space-y-3">
+          {/* Tabs Contenido / Diseño / Avanzado */}
+          <div className="bg-white border border-[#E8E8E8] rounded-2xl overflow-hidden">
+            <div className="flex border-b border-[#E8E8E8]">
+              {(['contenido', 'diseno', 'avanzado'] as const).map(t => (
+                <button key={t} type="button" onClick={() => setPanelTab(t)}
+                  className={`flex-1 py-2.5 text-[12px] font-semibold ${panelTab === t ? 'text-[#00A89D] border-b-2 border-[#00A89D]' : 'text-[#9A9A9A] hover:text-[#6B6B6B]'}`}>
+                  {t === 'diseno' ? 'Diseño' : t === 'avanzado' ? 'Avanzado' : 'Contenido'}
+                </button>
+              ))}
+            </div>
+            <div className="p-3">
+              {!selBloque ? (
+                <div className="text-center py-8 text-[#9A9A9A]">
+                  <div className="text-3xl mb-1">👆</div>
+                  <div className="text-[13px] font-semibold text-[#6B6B6B]">Selecciona un bloque</div>
+                  <div className="text-[11px] mt-0.5">Toca un bloque en el lienzo para editar su contenido y configuración.</div>
+                </div>
+              ) : (<>
+                <div className="flex items-center gap-2 mb-3">
+                  <b className="text-[13px] flex-1 truncate">{nombreTipo(selBloque.tipo)}</b>
+                </div>
+                {panelTab === 'contenido' && <div className="space-y-3 max-h-[52vh] overflow-y-auto pr-0.5">{editorBloque(selBloque)}</div>}
+                {panelTab === 'diseno' && <div className="space-y-3">{controlEspacio(selBloque)}</div>}
+                {panelTab === 'avanzado' && (
+                  <div className="space-y-2 text-[12px]">
+                    <label className="flex items-center gap-2"><input type="checkbox" checked={selBloque.visible !== false} onChange={e => upd(selBloque.id, { visible: e.target.checked })} /> Mostrar este bloque en la página</label>
+                    <p className="text-[10px] text-[#9A9A9A]">Tipo de bloque: <b>{selBloque.tipo}</b></p>
+                  </div>
+                )}
+              </>)}
+            </div>
+          </div>
+
+          {/* Acciones rápidas */}
+          {selBloque && (
+            <div className="bg-white border border-[#E8E8E8] rounded-2xl p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-2">Acciones rápidas</p>
+              <div className="space-y-1.5">
+                <button type="button" onClick={() => duplicar(selBloque.id)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-[#E8E8E8] text-[13px] hover:bg-[#F5F5F5]">⧉ Duplicar bloque</button>
+                <button type="button" onClick={() => borrar(selBloque.id)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-[#F3C3CB] text-[#C1121F] text-[13px] hover:bg-[#FDEEF0]">🗑 Eliminar bloque</button>
+                <div className="flex gap-1.5">
+                  <button type="button" onClick={() => mover(selBloque.id, -1)} className="flex-1 px-2 py-2 rounded-lg border border-[#E8E8E8] text-[13px] hover:bg-[#F5F5F5]">↑ Arriba</button>
+                  <button type="button" onClick={() => mover(selBloque.id, 1)} className="flex-1 px-2 py-2 rounded-lg border border-[#E8E8E8] text-[13px] hover:bg-[#F5F5F5]">↓ Abajo</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Estructura del embudo */}
+          <div className="bg-white border border-[#E8E8E8] rounded-2xl p-3">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-2">Estructura del embudo</p>
+            {bs.length === 0 ? (
+              <p className="text-[11px] text-[#9A9A9A]">Aún no hay bloques. Arrastra uno desde la izquierda.</p>
+            ) : (
+              <div className="space-y-1">
+                {bs.map(b => {
+                  const m = metaTipo(b.tipo);
+                  const esChk = b.tipo === 'checkout' || b.tipo === 'checkout_pro';
+                  return (
+                    <button key={b.id} type="button"
+                      onClick={() => { setSel(b.id); setVistaTel(esChk ? 'checkout' : 'inicio'); }}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[12px] text-left ${sel === b.id ? 'bg-[#00A89D]/10 text-[#00847A] font-semibold' : 'hover:bg-[#F5F5F5]'} ${b.visible === false ? 'opacity-50' : ''}`}>
+                      <span className="text-sm shrink-0">{m.ic}</span>
+                      <span className="truncate flex-1">{m.label}</span>
+                      {b.visible === false && <span className="text-[9px] text-[#9A9A9A]">oculto</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Tips */}
+          <div className="bg-[#FFFBEB] border border-[#FDE68A] rounded-2xl p-3">
+            <p className="text-[12px] font-bold text-[#92700E] mb-0.5">💡 Tips</p>
+            <p className="text-[11px] text-[#92700E]/90 leading-snug">Arrastra los bloques desde el panel izquierdo al lienzo. Usa los botones + para agregar nuevas secciones. Toca un bloque para editarlo aquí a la derecha.</p>
           </div>
         </div>
       </div>

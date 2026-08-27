@@ -4,9 +4,10 @@
  * Comprime una foto EN EL NAVEGADOR antes de subirla.
  *
  * - Redimensiona el lado más largo a `maxLado` px (sin recortar: conserva la forma).
- * - La re-codifica en WebP (mucho más liviano que JPG/PNG, y conserva transparencia).
+ * - La re-codifica en JPG (liviano y compatible con TODO: web y encabezados de
+ *   plantillas de WhatsApp, que NO soportan WebP y rechazan la entrega).
  * - Si el resultado NO pesa menos que el original, devuelve el original intacto.
- * - Videos, GIF (animados) y SVG se devuelven SIN TOCAR.
+ * - Videos, GIF (animados), PNG con transparencia y SVG se devuelven SIN TOCAR.
  *
  * No depende de ningún servicio externo ni del optimizador de Vercel: la foto que
  * queda guardada ya es la liviana, así que se ve igual pero carga más rápido.
@@ -19,10 +20,13 @@ export async function comprimirImagen(
   const calidad = opts.calidad ?? 0.82;   // 0–1; 0.82 se ve idéntico y pesa mucho menos
 
   // Solo mapas de bits comprimibles. Lo demás (video, gif animado, svg) se deja igual.
+  // El PNG se respeta tal cual: puede tener transparencia (logos), y pasarlo a JPG
+  // le pondría fondo negro. Igual WhatsApp acepta PNG en el encabezado.
   if (
     typeof window === 'undefined' ||
     !file.type.startsWith('image/') ||
     file.type === 'image/gif' ||
+    file.type === 'image/png' ||
     file.type === 'image/svg+xml'
   ) {
     return file;
@@ -46,15 +50,17 @@ export async function comprimirImagen(
     ctx.drawImage(bitmap, 0, 0, w, h);
     bitmap.close?.();
 
+    // JPG: compatible con web Y con los encabezados de plantillas de WhatsApp
+    // (WebP hace que Meta acepte el envío pero NO entregue el mensaje).
     const blob: Blob | null = await new Promise((res) =>
-      canvas.toBlob(res, 'image/webp', calidad),
+      canvas.toBlob(res, 'image/jpeg', calidad),
     );
 
     // Si no logró bajar el peso, mejor dejar la original tal cual.
     if (!blob || blob.size >= file.size) return file;
 
     const base = file.name.replace(/\.[^.]+$/, '') || 'foto';
-    return new File([blob], `${base}.webp`, { type: 'image/webp' });
+    return new File([blob], `${base}.jpg`, { type: 'image/jpeg' });
   } catch {
     return file; // ante cualquier duda, la original intacta
   }

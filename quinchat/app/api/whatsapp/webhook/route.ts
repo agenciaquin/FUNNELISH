@@ -610,6 +610,26 @@ export async function POST(req: NextRequest) {
       if (rankNuevo >= rankActual) {
         await sb.from('messages').update({ status: estado }).eq('whatsapp_id', wamid);
       }
+
+      // Rastreo de campañas de remarketing: subir el estado del envío (sin bajarlo).
+      // enviado(1) → entregado(2) → leído(3); fallido queda aparte.
+      try {
+        const RANK_RMK: Record<string, number> = { fallido: 0, enviado: 1, entregado: 2, leido: 3, respondido: 4 };
+        const nuevoEstado = estado === 'delivered' ? 'entregado'
+          : estado === 'read' ? 'leido'
+          : estado === 'failed' ? 'fallido' : 'enviado';
+        const { data: env } = await sb.from('remarketing_envios').select('estado').eq('wamid', wamid).maybeSingle();
+        if (env) {
+          const rApenas = RANK_RMK[env.estado as string] ?? -1;
+          const rNvo    = RANK_RMK[nuevoEstado] ?? -1;
+          if (rNvo > rApenas) {
+            const patch: Record<string, any> = { estado: nuevoEstado };
+            if (nuevoEstado === 'entregado') patch.entregado_at = new Date().toISOString();
+            if (nuevoEstado === 'leido')     patch.leido_at     = new Date().toISOString();
+            await sb.from('remarketing_envios').update(patch).eq('wamid', wamid);
+          }
+        }
+      } catch { /* no bloquear */ }
       // Si un mensaje SÍ se entregó/leyó, el cliente es alcanzable: quitar la bandera.
       if ((estado === 'delivered' || estado === 'read') && msg?.conversation_id) {
         try { await sb.from('conversations').update({ entrega_fallida: false }).eq('id', msg.conversation_id); }
@@ -625,6 +645,21 @@ export async function POST(req: NextRequest) {
   const contactName   = value.contacts?.[0]?.profile?.name ?? 'Desconocido';
   // Todo lo que el bot ha aprendido y fue aprobado — se suma a sus instrucciones
   const memoriaBot    = await bloqueDeMemoria();
+
+  // Si quien escribe recibió una campaña de remarketing (últimos 30 días),
+  // marcarla como "respondió" — es la señal comercial que importa.
+  try {
+    const froms = [...new Set((value.messages ?? [])
+      .map((m: any) => String(m.from || '').replace(/\D/g, '')).filter(Boolean))];
+    const hace30 = new Date(Date.now() - 30 * 86400000).toISOString();
+    for (const tel of froms) {
+      // Solo cuenta como "respondió" si el mensaje SÍ se entregó (entregado_at).
+      // Si no, sería un falso positivo (un chat normal marcaría la campaña).
+      await supabase.from('remarketing_envios')
+        .update({ estado: 'respondido', respondido_at: new Date().toISOString() })
+        .eq('telefono', tel).is('respondido_at', null).not('entregado_at', 'is', null).gte('enviado_at', hace30);
+    }
+  } catch { /* no bloquear */ }
 
   // ── Marcar el chat con la línea por la que entró ───────────────────────────
   // Así aparece en la bandeja correcta (Chat Ventas / Chat Funnel), sin importar
