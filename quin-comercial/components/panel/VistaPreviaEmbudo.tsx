@@ -40,8 +40,14 @@ const opImg   = (o: string | Opcion) => (typeof o === 'string' ? undefined : o.i
  * Marco de celular que muestra cómo se verá la página con los datos que se
  * están editando. Dos pestañas: la página de Inicio y la de Checkout.
  */
-export default function VistaPreviaEmbudo({ d }: { d: Draft }) {
-  const [modo, setModo] = useState<'inicio' | 'checkout'>('inicio');
+export default function VistaPreviaEmbudo({ d, onEditarInicio, modoInicial = 'inicio' }: {
+  d: Draft;
+  // Si viene, el botón "🏠 Inicio" NAVEGA a editar la página (bloques) en vez de
+  // solo cambiar la vista previa. Se usa en modo checkout para alternar.
+  onEditarInicio?: () => void;
+  modoInicial?: 'inicio' | 'checkout';
+}) {
+  const [modo, setModo] = useState<'inicio' | 'checkout'>(modoInicial);
   const frases = (d.frases?.length ? d.frases : [d.titulo]).filter(Boolean);
   const [fraseIdx, setFraseIdx] = useState(0);
   const [imgIdx, setImgIdx]     = useState(0);
@@ -66,7 +72,7 @@ export default function VistaPreviaEmbudo({ d }: { d: Draft }) {
     <div className="mx-auto w-full max-w-[340px]">
       {/* Selector de pantalla */}
       <div className="flex gap-1 mb-2 p-1 bg-[#F0F0F0] rounded-xl">
-        <button onClick={() => setModo('inicio')}   className={tab(modo === 'inicio')}>🏠 Inicio</button>
+        <button onClick={() => { if (onEditarInicio) { onEditarInicio(); return; } setModo('inicio'); }} className={tab(modo === 'inicio' && !onEditarInicio)}>🏠 Inicio</button>
         <button onClick={() => setModo('checkout')} className={tab(modo === 'checkout')}>🛒 Checkout</button>
       </div>
 

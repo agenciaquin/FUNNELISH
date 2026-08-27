@@ -2,13 +2,15 @@
 // que desplegar. Sirve para confirmar, desde /api/version, que el `vercel --prod`
 // SÍ quedó en vivo (si el número que ves en la web coincide con el último, los
 // cambios ya están activos para TODOS los bots de los clientes).
-export const VERSION = 'v156';
+export const VERSION = 'v158';
 
 // Fecha aproximada de esta versión (referencia para ti, no afecta nada).
 export const VERSION_FECHA = '2026-08-24';
 
 // Resumen corto de lo último que entró en esta versión.
 export const VERSION_CAMBIOS = [
+  'Editor · en modo checkout, el botón "🏠 Inicio" del teléfono ahora TE LLEVA a editar la página de inicio (armar bloques), y "🛒 Checkout" te muestra el checkout — así te mueves entre los dos con esos mismos botones, sin el enlace aparte de "Volver a Inicio". (Junto con las pestañas verdes del centro de v156, tienes navegación clara Inicio ↔ Checkout.)',
+  'Checkout · nuevo botón "📥 Agregar del catálogo": abre un buscador con tus productos del catálogo y, al elegir uno, crea un PRODUCTO COMPLETO en el checkout trayendo TODO lo del catálogo — sus COLORES con foto, TALLAS, GÉNERO y cualquier otra variable, más el nombre y la foto. El precio sale del embudo (los catálogos no guardan precio) y queda editable. Distinto al "Traer de Catálogos" de cada producto (ese solo mete colores). Aditivo.',
   'Editor · las pestañas PÁGINA DE INICIO y CHECKOUT ahora funcionan como pestañas de verdad: al entrar al CHECKOUT ya NO desaparece la barra ni toca darle "Volver a Inicio" — ves las dos pestañas verdes (Página de inicio | Checkout) y alternas de un clic. Página de inicio muestra el armado por bloques; Checkout muestra los productos del checkout. Limpio, sin perderte.',
   'Editor · al editar el CHECKOUT (pestaña 🛒 del teléfono) ya NO aparece la sección "Lo básico" (dirección, nombre, precio general, titular/frases, página activa): eso es de la página, no del checkout. En modo checkout ahora solo se ven los "Productos del checkout" (productos, colores, tallas y precio que elige el cliente), como debe ser. La sección "Lo básico" sigue estando en el modo normal (Contenido y ajustes). No toca el envío del pedido ni las confirmaciones.',
   'Checkout · el producto ahora se llama "PRODUCTO CON VARIABLES"; nuevo botón "⚡ + Producto con variables (color + talla)" que agrega de una un producto con selector de COLOR (con foto) + TALLA. Y "📥 Traer de Catálogos" trae MÁS del catálogo elegido: además de los COLORES con su foto, ahora trae las TALLAS (de la columna del catálogo, o de las que tenga cada color) y el NOMBRE del producto. Se unen sin duplicar con lo que ya tenías. Aditivo: no borra lo existente. (Stock y precios del catálogo: siguiente paso.)',

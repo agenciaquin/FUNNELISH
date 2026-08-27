@@ -8,7 +8,7 @@ import EditorBloques from './EditorBloques';
 import ConfirmacionModal from './ConfirmacionModal';
 import PapeleraEmbudos from './PapeleraEmbudos';
 import { type BloqueLayout } from '@/lib/funnel-layout';
-import { esVideo, acentoDe } from '@/lib/funnels';
+import { esVideo, acentoDe, type OpcionSelector, type SelectorVariante } from '@/lib/funnels';
 import { createBrowserSupabaseClient } from '@/lib/supabase';
 
 /**
@@ -227,6 +227,11 @@ export default function EmbudosPanel() {
   // Importador de catálogos en el producto "unidad" (traer colores + fotos ya creados)
   const [impPicker, setImpPicker]   = useState<number | null>(null);
   const [impBusca, setImpBusca]     = useState('');
+  // Variables del catálogo (id → nombre / con_color) para "Agregar del catálogo".
+  const [variablesCat, setVariablesCat] = useState<Record<string, { nombre: string; con_color: boolean }>>({});
+  // Selector "Agregar del catálogo": trae un producto completo (colores+foto, tallas, género…).
+  const [catPicker, setCatPicker] = useState(false);
+  const [catBusca, setCatBusca]   = useState('');
   // Dominio con el que se arman los enlaces: el propio del cliente si conectó
   // uno (Mi dominio); si no, el genérico de la plataforma.
   const [baseDominio, setBaseDominio] = useState('pedido.klixmant.shop');
@@ -248,7 +253,58 @@ export default function EmbudosPanel() {
         setEscuderias([...new Set(lista)] as string[]);
       })
       .catch(() => {});
+    // Variables del catálogo (para saber cuál columna es Color/Talla/Género al importar).
+    fetch('/api/catalogos/variables', { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : []))
+      .then(d => {
+        const map: Record<string, { nombre: string; con_color: boolean }> = {};
+        (Array.isArray(d) ? d : []).forEach((v: any) => {
+          if (v?.id) map[String(v.id)] = { nombre: String(v.nombre ?? '').trim(), con_color: !!v.con_color };
+        });
+        setVariablesCat(map);
+      })
+      .catch(() => {});
   }, []);
+
+  /** Crea un producto de checkout COMPLETO desde un catálogo: colores (con foto),
+   *  tallas, género y demás variables, más el nombre y la foto. El precio sale
+   *  del embudo (los catálogos no guardan precio) y queda editable. */
+  function agregarDesdeCatalogo(c: any) {
+    const familia = String(c?.familia ?? '').trim();
+    const colores: OpcionSelector[] = ((c?.catalogo_colores ?? []) as any[])
+      .map(x => ({ valor: String(x?.color ?? '').trim(), imagen: x?.url_imagen || undefined }))
+      .filter(o => o.valor);
+    const columnas: any[] = Array.isArray(c?.columnas) ? c.columnas : [];
+    const sels: SelectorVariante[] = [];
+    // COLOR primero (con las fotos del catálogo).
+    const colCol = columnas.find(col => col && variablesCat[String(col.vid)]?.con_color);
+    if (colores.length) {
+      const nombreColor = colCol ? (variablesCat[String(colCol.vid)]?.nombre || 'COLOR') : 'COLOR';
+      sels.push({ etiqueta: nombreColor.toUpperCase(), opciones: colores });
+    }
+    // Resto de variables (Talla, Género, etc.) desde las columnas.
+    for (const col of columnas) {
+      const vi = col ? variablesCat[String(col.vid)] : null;
+      if (!vi || vi.con_color) continue;
+      const ops = (Array.isArray(col.vals) ? col.vals : [])
+        .map((v: any) => String(v?.nm ?? '').trim()).filter(Boolean)
+        .map((valor: string) => ({ valor }));
+      if (ops.length) sels.push({ etiqueta: (vi.nombre || 'OPCIÓN').toUpperCase(), opciones: ops });
+    }
+    // Respaldo: si no salió ninguna talla, usa las del embudo.
+    if (!sels.some(s => /talla/i.test(s.etiqueta))) {
+      const t = (actual.tallas ?? []).map(x => ({ valor: x }));
+      if (t.length) sels.push({ etiqueta: 'TALLA', opciones: t });
+    }
+    if (!sels.length) sels.push({ etiqueta: 'TALLA', opciones: (actual.tallas ?? []).map(x => ({ valor: x })) });
+    const imagen = colores.find(o => o.imagen)?.imagen;
+    set('variantes', [...actual.variantes, {
+      id: `v${Date.now()}`, nombre: familia || 'PRODUCTO',
+      precio: actual.precio, precioAntes: actual.precio_antes ?? undefined,
+      imagen, selectores: sels.slice(0, 6),
+    }]);
+    setCatPicker(false); setCatBusca('');
+  }
 
   /** Dirección pública del embudo, lista para pegar en un anuncio. */
   const enlaceDe = (slug: string) => `https://${baseDominio}/${slug}`;
@@ -1577,8 +1633,53 @@ export default function EmbudosPanel() {
                   }])}
                   className="text-xs text-[#6D28D9] font-semibold hover:underline"
                 >⚡ + Producto con variables (color + talla)</button>
+                <button
+                  onClick={() => { setCatBusca(''); setCatPicker(true); }}
+                  className="text-xs text-white bg-[#00A89D] hover:bg-[#00847A] font-semibold rounded-lg px-2.5 py-1.5"
+                >📥 Agregar del catálogo</button>
               </div>
             </div>
+
+            {/* Selector "Agregar del catálogo": elige un producto y trae TODO (colores+foto, tallas, género…) */}
+            {catPicker && (
+              <div className="rounded-xl border-2 border-[#00A89D] bg-[#F3FBFA] p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-[12px] font-bold text-[#00847A]">📥 Elige un producto del catálogo — se trae con sus colores, fotos, tallas y demás variables.</p>
+                  <button onClick={() => setCatPicker(false)} className="text-[#DC2626] text-[13px] px-1.5">✕</button>
+                </div>
+                <input value={catBusca} onChange={e => setCatBusca(e.target.value)} placeholder="🔍 Buscar producto por nombre…"
+                  className="w-full px-2.5 py-1.5 rounded-lg border border-[#E0E0E0] text-[12px]" />
+                <div className="max-h-64 overflow-y-auto rounded-lg border border-[#E8E8E8] bg-white divide-y divide-[#F4F4F4]">
+                  {catalogosFull
+                    .filter((c: any) => String(c?.familia ?? '').toLowerCase().includes(catBusca.toLowerCase()))
+                    .map((c: any, k: number) => {
+                      const familia = String(c?.familia ?? '').trim();
+                      const cols = (c?.catalogo_colores ?? []) as any[];
+                      const foto = cols.find((x: any) => x?.url_imagen)?.url_imagen;
+                      const nCol = cols.filter((x: any) => String(x?.color ?? '').trim()).length;
+                      const nVars = (Array.isArray(c?.columnas) ? c.columnas : []).length;
+                      return (
+                        <button key={`${familia}-${k}`} onClick={() => agregarDesdeCatalogo(c)}
+                          className="w-full flex items-center gap-2.5 px-2.5 py-2 text-left hover:bg-[#F0FBFA]">
+                          {foto
+                            // eslint-disable-next-line @next/next/no-img-element
+                            ? <img src={foto} alt="" className="w-9 h-9 rounded object-cover shrink-0" />
+                            : <span className="w-9 h-9 rounded bg-[#EEE] grid place-items-center text-[13px] shrink-0">📦</span>}
+                          <span className="flex-1 min-w-0">
+                            <span className="block text-[12.5px] font-semibold text-[#0D0D0D] truncate">{familia || '(sin nombre)'}</span>
+                            <span className="block text-[10px] text-[#9A9A9A]">{nCol} colores · {nVars} variables</span>
+                          </span>
+                          <span className="text-[11px] font-bold text-[#00A89D] shrink-0">Traer →</span>
+                        </button>
+                      );
+                    })}
+                  {catalogosFull.filter((c: any) => String(c?.familia ?? '').toLowerCase().includes(catBusca.toLowerCase())).length === 0 && (
+                    <p className="text-[11px] text-[#9A9A9A] px-2.5 py-3 text-center">No hay productos que coincidan.</p>
+                  )}
+                </div>
+                <p className="text-[10px] text-[#8A9793]">El precio sale del embudo (los catálogos no guardan precio) y lo puedes cambiar después.</p>
+              </div>
+            )}
             <p className="text-[10px] text-[#6B6B6B] leading-snug">
               Cada uno es una opción que el cliente puede escoger. Si no agregas ninguno,
               se muestra un solo producto con el precio de arriba.
@@ -2572,7 +2673,9 @@ export default function EmbudosPanel() {
               En "Crear de cero" no va: el editor de bloques trae su propia previa. */}
           {tabEditor === 'plantilla' && (
           <div className={`lg:w-[340px] lg:shrink-0 lg:sticky lg:top-6 ${verPreview ? '' : 'hidden lg:block'}`}>
-            <VistaPreviaEmbudo d={actual} />
+            <VistaPreviaEmbudo d={actual}
+              modoInicial={checkoutModo ? 'checkout' : 'inicio'}
+              onEditarInicio={checkoutModo ? () => { setCheckoutModo(false); setTabEditor('cero'); } : undefined} />
           </div>
           )}
         </div>{/* fin lg:flex */}
