@@ -107,6 +107,19 @@ const vacio = (): Embudo => ({
 
 const pesos = (n: number) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
 
+// ── Una sola versión de la página ────────────────────────────────────────────
+// Antes había dos versiones (ACTUAL publicada + NUEVA borrador). Ahora hay una
+// sola. Al abrir un embudo: si el borrador (layout_borrador) trae bloques armados,
+// ese contenido pasa a ser la página única (`layout`), que es la que se publica y
+// la que lee la página pública. Si el borrador está vacío, se conserva `layout`
+// tal cual para no dejar la página en blanco. El borrador se limpia. Reversible:
+// no se toca nada en la BD hasta que el usuario da Guardar.
+function migrarBorrador<T extends { layout?: any; layout_borrador?: any }>(e: T): T {
+  const bor = e.layout_borrador;
+  const tieneBorrador = Array.isArray(bor) && bor.length > 0;
+  return { ...e, layout: tieneBorrador ? bor : e.layout, layout_borrador: null };
+}
+
 // ── Portar embudos entre apps ────────────────────────────────────────────────
 // Un "código de embudo" lleva TODA la estructura adentro (texto, fotos, precios,
 // productos, diseño), sin datos de la cuenta (WhatsApp, píxeles, IDs de anuncio,
@@ -166,9 +179,6 @@ export default function EmbudosPanel() {
   // Dos formas de armar el embudo: 'plantilla' = formulario recomendado (clásico);
   // 'cero' = editor por bloques (arrastrar, con checkout).
   const [tabEditor, setTabEditor] = useState<'plantilla' | 'cero'>('cero');
-  // Cuál versión de la PÁGINA se está editando: 'actual' (la publicada) o 'nueva'
-  // (borrador en blanco que se arma aparte, sin dañar la actual).
-  const [versionEditando, setVersionEditando] = useState<'actual' | 'nueva'>('actual');
   // Modo "Editar checkout": abre el formulario mostrando solo lo del checkout (oculta Fotos).
   const [checkoutModo, setCheckoutModo] = useState(false);
   const abrirCheckout = () => { setCheckoutModo(true); setTabEditor('plantilla'); };
@@ -841,7 +851,7 @@ export default function EmbudosPanel() {
               </p>
             </div>
             <button
-              onClick={() => { historial.current = []; futuro.current = []; setPasosDeshacer(0); setPasosRehacer(0); setActual(vacio()); setSlugOriginal(null); setTabEditor('cero'); setVersionEditando('actual'); setCheckoutModo(false); setVista('editar'); setAviso(null); }}
+              onClick={() => { historial.current = []; futuro.current = []; setPasosDeshacer(0); setPasosRehacer(0); setActual(vacio()); setSlugOriginal(null); setTabEditor('cero'); setCheckoutModo(false); setVista('editar'); setAviso(null); }}
               className="px-4 py-2.5 rounded-xl bg-[#00A89D] text-white text-sm font-semibold hover:bg-[#00847A]"
             >+ Nuevo embudo</button>
           </header>
@@ -1000,7 +1010,11 @@ export default function EmbudosPanel() {
                       className="px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-xs hover:bg-[#F5F5F5]"
                     >Ver</a>
                     <button
-                      onClick={() => { historial.current = []; futuro.current = []; setPasosDeshacer(0); setPasosRehacer(0); setActual({ ...vacio(), ...e, catalogoId: (e as any).catalogo_id ?? null }); setSlugOriginal(e.slug); setTabEditor('cero'); setVersionEditando('actual'); setCheckoutModo(false); setVista('editar'); setAviso(null); }}
+                      onClick={() => { historial.current = []; futuro.current = []; setPasosDeshacer(0); setPasosRehacer(0);
+                        // Una sola versión: si hay un borrador con bloques armados, ese pasa a ser la página
+                        // única (lo que el usuario venía construyendo); si el borrador está vacío se conserva
+                        // la página publicada tal cual, para no dejarla en blanco. El borrador se limpia.
+                        setActual(migrarBorrador({ ...vacio(), ...e, catalogoId: (e as any).catalogo_id ?? null })); setSlugOriginal(e.slug); setTabEditor('cero'); setCheckoutModo(false); setVista('editar'); setAviso(null); }}
                       className="px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-xs hover:bg-[#F5F5F5]"
                     >Editar</button>
                     <button
@@ -1225,30 +1239,6 @@ export default function EmbudosPanel() {
           </div>
         </div>
 
-        {/* ── Versión de la PÁGINA: ACTUAL (publicada) vs NUEVA (borrador en blanco) ──
-            Deja construir una versión nueva aparte SIN dañar la actual. */}
-        <div className="mb-4">
-          <div className="inline-flex rounded-xl border border-[#E8E8E8] bg-white p-1 shadow-sm">
-            <button type="button"
-              onClick={() => setVersionEditando('actual')}
-              title="La versión que está publicada ahora mismo"
-              className={`px-4 py-2 rounded-lg text-[13px] font-bold transition-colors ${versionEditando === 'actual' ? 'bg-[#00A89D] text-white shadow' : 'text-[#6B6B6B] hover:bg-[#F5F5F5]'}`}>
-              📄 VERSIÓN ACTUAL
-            </button>
-            <button type="button"
-              onClick={() => { setVersionEditando('nueva'); setTabEditor('cero'); setCheckoutModo(false); }}
-              title="Arma una versión nueva en blanco, sin tocar la actual"
-              className={`px-4 py-2 rounded-lg text-[13px] font-bold transition-colors ${versionEditando === 'nueva' ? 'bg-[#00A89D] text-white shadow' : 'text-[#6B6B6B] hover:bg-[#F5F5F5]'}`}>
-              ✨ VERSIÓN NUEVA
-            </button>
-          </div>
-          {versionEditando === 'nueva' && (
-            <p className="text-[11px] text-[#8A5000] bg-[#FFF6EA] border border-[#F6D4A6] rounded-lg px-3 py-2 mt-2 max-w-xl">
-              ✍️ Estás armando una <b>versión nueva en blanco</b>. No toca la versión actual ni la página publicada; se guarda aparte al tocar <b>Guardar</b>. Cuando quieras que esta sea la que se muestra, me dices y la publicamos.
-            </p>
-          )}
-        </div>
-
         {/* ── CABECERA del editor: solo lo esencial ──
             Dirección + Nombre + switch Prendido/Apagado. Todo lo demás del
             embudo se edita tocando cada bloque en el teléfono (abajo). */}
@@ -1301,7 +1291,7 @@ export default function EmbudosPanel() {
 
         {/* Cambia entre ARMAR LA PÁGINA (bloques) y CONTENIDO Y AJUSTES.
             En modo checkout se oculta (el regreso se hace con el botón del banner). */}
-        {!checkoutModo && versionEditando === 'actual' && (
+        {!checkoutModo && (
           <button type="button" onClick={() => setTabEditor(tabEditor === 'cero' ? 'plantilla' : 'cero')}
             className="w-full mb-4 rounded-2xl border-2 border-[#00A89D]/30 bg-[#E9F7F5] px-4 py-3 text-left hover:bg-[#DDF3F0] transition-colors">
             {tabEditor === 'cero'
@@ -1328,13 +1318,12 @@ export default function EmbudosPanel() {
         <div className="space-y-5">
           {tabEditor === 'cero' && (
             <EditorBloques
-              key={versionEditando}
               d={actual}
               onCampo={(campo, valor) => set(campo as keyof Embudo, valor)}
               subir={async (f) => { try { return await subirArchivo(f, actual.slug || 'embudo'); } catch { return null; } }}
-              layout={versionEditando === 'nueva' ? (actual.layout_borrador ?? []) : actual.layout}
-              onLayout={(bs) => set(versionEditando === 'nueva' ? 'layout_borrador' : 'layout', bs)}
-              permitirVacio={versionEditando === 'nueva'}
+              layout={actual.layout}
+              onLayout={(bs) => set('layout', bs)}
+              permitirVacio={false}
               onAbrirContenido={() => { setCheckoutModo(false); setTabEditor('plantilla'); }}
               onAbrirCheckout={abrirCheckout}
               onGuardar={guardar}
