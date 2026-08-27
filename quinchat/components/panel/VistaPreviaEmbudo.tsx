@@ -402,7 +402,9 @@ function renderPreviewBloque(
 
     case 'portada':
       if (p.modo === 'carrusel') {
-        const elegidas = (Array.isArray(p.fotos) && p.fotos.length ? p.fotos : (d.imagenes || [])).filter(Boolean);
+        const galeriaC = (d.imagenes || []).filter(Boolean);
+        const selC = (Array.isArray(p.fotos) ? p.fotos : []).filter((u: string) => galeriaC.includes(u));
+        const elegidas = (selC.length ? selC : galeriaC).filter(Boolean);
         const idx = elegidas.length ? imgIdx % elegidas.length : 0;
         return (
           <div>

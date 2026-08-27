@@ -272,7 +272,11 @@ function renderBloque(
 
     case 'portada':
       if (p.modo === 'carrusel') {
-        const elegidas = (Array.isArray(p.fotos) && p.fotos.length ? p.fotos : (f.imagenes || [])).filter(Boolean);
+        // Solo fotos que EXISTEN en la galería de este embudo (evita fotos viejas que
+        // quedaron pegadas al duplicar). Si ninguna es válida, usa toda la galería.
+        const galeria = (f.imagenes || []).filter(Boolean);
+        const sel = (Array.isArray(p.fotos) ? p.fotos : []).filter((u: string) => galeria.includes(u));
+        const elegidas = sel.length ? sel : galeria;
         if (elegidas.length) return <Galeria imagenes={elegidas} alt={f.producto} segundos={2} />;
       }
       if (p.modo === 'collage') {

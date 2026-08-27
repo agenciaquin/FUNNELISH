@@ -1290,11 +1290,16 @@ export default function EmbudosPanel() {
             />
           )}
           {tabEditor === 'plantilla' && (<>
-          {/* Aviso de modo checkout (cuando se entró por la pestaña Checkout del teléfono) */}
+          {/* Pestañas PÁGINA DE INICIO / CHECKOUT: alternan de un clic (mismas del modo bloques) */}
           {checkoutModo && (
-            <div className="rounded-2xl border-2 border-[#00A89D]/30 bg-[#E9F7F5] px-4 py-3 flex items-center gap-3 flex-wrap">
-              <p className="text-[13px] font-bold text-[#00847A] flex-1 min-w-[220px]">🛒 Editando el CHECKOUT · aquí armas los productos, colores, tallas y precio que el cliente elige.</p>
-              <button type="button" onClick={() => { setCheckoutModo(false); setTabEditor('cero'); }} className="shrink-0 text-[13px] font-bold text-[#00847A] hover:underline">🏠 Volver a Inicio (armar la página)</button>
+            <div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => { setCheckoutModo(false); setTabEditor('cero'); }}
+                  className="flex-1 rounded-xl py-2.5 text-[12px] font-extrabold uppercase tracking-wide flex items-center justify-center gap-1.5 border-2 bg-white text-[#00847A] border-[#00A89D]/40 hover:bg-[#00A89D]/5 transition-all">🛍️ Página de inicio</button>
+                <button type="button"
+                  className="flex-1 rounded-xl py-2.5 text-[12px] font-extrabold uppercase tracking-wide flex items-center justify-center gap-1.5 border-2 bg-[#00A89D] text-white border-[#00A89D] shadow-md cursor-default">🛒 Checkout</button>
+              </div>
+              <p className="text-[11px] text-[#6B6B6B] mt-1.5">🛒 Aquí armas los productos, colores, tallas y precio que el cliente elige. Toca <b>Página de inicio</b> para volver a armar la página.</p>
             </div>
           )}
           {/* Básico (se oculta en modo checkout: ahí solo van los Productos del checkout) */}
