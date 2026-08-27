@@ -9,10 +9,26 @@ import { DEPARTAMENTOS, ciudadesDe } from '@/lib/colombia';
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
 
+// Ajuste de un campo FIJO del formulario (renombrar / ocultar).
+export interface CampoFijoCfg { label?: string; oculto?: boolean }
+// Campo PERSONALIZADO que el dueño agrega al checkout.
+export type TipoCampoExtra = 'texto' | 'notas' | 'telefono' | 'email' | 'selector' | 'checkbox' | 'fecha';
+export interface CampoExtra {
+  id: string;
+  label: string;
+  tipo: TipoCampoExtra;
+  requerido?: boolean;
+  placeholder?: string;
+  opciones?: string[]; // para 'selector'
+}
+
 export interface CheckoutConfig {
   titulo?: string; subtitulo?: string; tituloDatos?: string;
   textoBoton?: string; colorBoton?: string;
   sellos?: { emoji?: string; texto?: string }[]; mostrarSellos?: boolean;
+  // Nuevos (Etapa 2): renombrar/ocultar campos fijos y agregar campos propios.
+  camposFijos?: Record<string, CampoFijoCfg>;
+  camposExtra?: CampoExtra[];
 }
 
 interface Props {
@@ -21,7 +37,14 @@ interface Props {
   config?: CheckoutConfig;
 }
 
-export default function FormularioPedido({ funnel, utms }: Props) {
+// Único campo fijo que se puede OCULTAR sin romper el pedido: el correo (los demás
+// son obligatorios en /api/pedidos). Renombrar sí se permite en todos.
+const CAMPOS_OCULTABLES = new Set(['correo']);
+
+export default function FormularioPedido({ funnel, utms, config }: Props) {
+  const cfg: CheckoutConfig = config ?? {};
+  const camposFijosCfg: Record<string, CampoFijoCfg> = cfg.camposFijos ?? {};
+  const camposExtra: CampoExtra[] = Array.isArray(cfg.camposExtra) ? cfg.camposExtra : [];
   const router = useRouter();
   const acento = acentoDe(funnel.color);
 
@@ -93,6 +116,12 @@ export default function FormularioPedido({ funnel, utms }: Props) {
   });
   // Cuando la ciudad del cliente no está en la lista del departamento, escribe la suya.
   const [ciudadOtra, setCiudadOtra] = useState(false);
+  // Valores de los campos personalizados del checkout (por id de campo).
+  const [extras, setExtras] = useState<Record<string, string>>({});
+  const setExtra = (id: string, valor: string) => {
+    setExtras(e => ({ ...e, [id]: valor }));
+    if (errores[`extra-${id}`]) setErrores(er => ({ ...er, [`extra-${id}`]: '' }));
+  };
 
   const variante = useMemo(
     () => variantes.find(v => v.id === varianteId) ?? variantes[0],
@@ -224,6 +253,8 @@ export default function FormularioPedido({ funnel, utms }: Props) {
       direccion: 'dirección', barrio: 'barrio', municipio: 'municipio', departamento: 'departamento',
     };
     for (const [campo, texto] of Object.entries(nombres)) {
+      // No pedir un campo que el dueño ocultó (ej. el correo).
+      if (CAMPOS_OCULTABLES.has(campo) && camposFijosCfg[campo]?.oculto) continue;
       if (!String((datos as any)[campo] ?? '').trim()) f.push(texto);
     }
     return f.slice(0, 3);
@@ -307,10 +338,15 @@ export default function FormularioPedido({ funnel, utms }: Props) {
       });
     }
 
+    // Campos personalizados marcados como obligatorios por el dueño.
+    camposExtra.forEach(f => {
+      if (f.requerido && !String(extras[f.id] ?? '').trim()) e[`extra-${f.id}`] = `Completa ${f.label.toLowerCase()}`;
+    });
+
     setErrores(e);
     if (Object.keys(e).length > 0) {
       // La talla y el color se piden primero: están arriba de todo
-      const orden = ['talla', ...CAMPOS.map(c => c.id as string)];
+      const orden = ['talla', ...CAMPOS.map(c => c.id as string), ...camposExtra.map(f => `extra-${f.id}`)];
       const primero = orden.find(k => e[k]) ?? Object.keys(e)[0];
       señalar(primero);
       // Desde aquí el botón lo sigue: llena el dato y cierra sin bajar de nuevo
@@ -393,6 +429,10 @@ export default function FormularioPedido({ funnel, utms }: Props) {
       fbp: cookie('_fbp'),
       fbc: cookie('_fbc'),
       ...datos,
+      // Campos personalizados del checkout → [{label, valor}] (solo los llenos).
+      extras: camposExtra
+        .map(f => ({ label: f.label, valor: String(extras[f.id] ?? '').trim() }))
+        .filter(x => x.valor),
       utms,
       referrer: typeof document !== 'undefined' ? document.referrer : '',
     });
@@ -432,7 +472,7 @@ export default function FormularioPedido({ funnel, utms }: Props) {
   // Los campos se declaran como datos y se dibujan en línea. Si se hiciera con
   // un componente definido aquí dentro, React lo recrearía en cada tecla y el
   // cursor saldría del campo tras cada letra.
-  const CAMPOS: { id: keyof typeof datos; label: string; tipo?: string; placeholder?: string }[] = [
+  const CAMPOS_BASE: { id: keyof typeof datos; label: string; tipo?: string; placeholder?: string }[] = [
     { id: 'nombre',       label: 'NOMBRE' },
     { id: 'apellidos',    label: 'APELLIDOS' },
     { id: 'whatsapp',     label: 'WHATSAPP', tipo: 'tel', placeholder: '3001234567' },
@@ -442,6 +482,11 @@ export default function FormularioPedido({ funnel, utms }: Props) {
     { id: 'municipio',    label: 'MUNICIPIO' },
     { id: 'departamento', label: 'DEPARTAMENTO' },
   ];
+  // Aplica los ajustes del dueño: renombrar (todos) y ocultar (solo el correo,
+  // que es el único campo fijo no obligatorio en el pedido).
+  const CAMPOS = CAMPOS_BASE
+    .filter(c => !(CAMPOS_OCULTABLES.has(c.id) && camposFijosCfg[c.id]?.oculto))
+    .map(c => ({ ...c, label: camposFijosCfg[c.id]?.label?.trim() || c.label }));
 
   return (
     <div>
@@ -835,6 +880,47 @@ export default function FormularioPedido({ funnel, utms }: Props) {
               <p className="text-[12px] font-semibold text-[#C1121F] mt-1">⚠️ {errores[c.id]}</p>
             )}
           </div>
+          );
+        })}
+
+        {/* Campos personalizados que agregó el dueño (texto, notas, teléfono, etc.) */}
+        {camposExtra.map(f => {
+          const err = errores[`extra-${f.id}`];
+          const cls = `w-full px-4 py-3 rounded-lg border text-[16px] outline-none transition-colors ${
+            err ? 'border-[#C1121F] bg-[#FEF2F2]' : 'border-[#C9C9C9] focus:border-[#0D8A3E]'
+          } ${señalando === `extra-${f.id}` ? 'sacudir' : ''}`;
+          const val = extras[f.id] ?? '';
+          return (
+            <div key={f.id} data-campo={`extra-${f.id}`}>
+              {f.tipo !== 'checkbox' && (
+                <label className="block font-bold text-[15px] mb-1.5">
+                  {f.label} {f.requerido && <span className="text-[#C1121F]">*</span>}
+                </label>
+              )}
+              {f.tipo === 'notas' ? (
+                <textarea value={val} onChange={e => setExtra(f.id, e.target.value)} placeholder={f.placeholder} rows={3} className={cls} />
+              ) : f.tipo === 'selector' ? (
+                <select value={val} onChange={e => setExtra(f.id, e.target.value)} className={`${cls} bg-white`}>
+                  <option value="">— Elige una opción —</option>
+                  {(f.opciones ?? []).map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : f.tipo === 'checkbox' ? (
+                <label className="flex items-center gap-2 text-[15px] font-semibold">
+                  <input type="checkbox" checked={val === 'Sí'} onChange={e => setExtra(f.id, e.target.checked ? 'Sí' : '')} className="w-5 h-5" />
+                  {f.label} {f.requerido && <span className="text-[#C1121F]">*</span>}
+                </label>
+              ) : (
+                <input
+                  type={f.tipo === 'telefono' ? 'tel' : f.tipo === 'email' ? 'email' : f.tipo === 'fecha' ? 'date' : 'text'}
+                  inputMode={f.tipo === 'telefono' ? 'numeric' : undefined}
+                  value={val}
+                  onChange={e => setExtra(f.id, e.target.value)}
+                  placeholder={f.placeholder}
+                  className={cls}
+                />
+              )}
+              {err && <p className="text-[12px] font-semibold text-[#C1121F] mt-1">⚠️ {err}</p>}
+            </div>
           );
         })}
       </div>

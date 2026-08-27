@@ -113,6 +113,13 @@ export async function POST(req: NextRequest) {
         amount: Number(b.precio ?? 0),
         image: String(b.imagen ?? '').trim() || undefined,
       }],
+      // Campos personalizados del checkout (opcionales): [{label, valor}] → se
+      // muestran como líneas "Etiqueta: valor" en el mensaje del pedido.
+      extras: Array.isArray(b.extras)
+        ? b.extras
+            .map((x: any) => ({ label: String(x?.label ?? '').trim(), valor: String(x?.valor ?? '').trim() }))
+            .filter((x: any) => x.label && x.valor)
+        : undefined,
       // Foto del producto elegido en la página; respaldo para la plantilla de WhatsApp
       imagen: String(b.imagen ?? '').trim() || undefined,
       // "Arma tu pack": fotos de cada buzo, para armar el collage x2 en el servidor

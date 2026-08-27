@@ -29,8 +29,9 @@ function buildMensaje(data: {
   talla: string;
   producto: string;
   valor: string;
+  extras?: string; // líneas "Etiqueta: valor" de los campos personalizados del checkout
 }): string {
-  return [
+  const lineas = [
     'Hola 😊 te saluda Lilibeth. Tu pedido ya está listo para despacho 🚚✨ Por favor confirma que estos datos estén correctos:',
     `Nombre: ${data.nombre}`,
     `Teléfono: ${data.telefono}`,
@@ -41,10 +42,14 @@ function buildMensaje(data: {
     lineaTalla(data.talla),
     `Nombre del Producto: ${data.producto}`,
     `Valor a pagar: ${data.valor}`,
+  ];
+  if (data.extras && data.extras.trim()) lineas.push(data.extras.trim());
+  lineas.push(
     '✅ Si todo está correcto responde: CONFIRMO',
     '✏️ Si deseas corregir algún dato, escríbelo en este chat.',
     '🚚 Una vez confirmado, tu pedido será despachado en las próximas 24 horas.',
-  ].join('\n');
+  );
+  return lineas.join('\n');
 }
 
 /** Texto que replica el cuerpo del template de Meta (para mostrar en QuinChat) */
@@ -59,8 +64,9 @@ function buildMensajeTemplate(data: {
   talla: string;
   producto: string;
   valor: string;
+  extras?: string; // líneas "Etiqueta: valor" de los campos personalizados del checkout
 }): string {
-  return [
+  const lineas = [
     `Hola ${data.saludo} 😊 te saludo de klixmant Tu pedido ya está listo para despacho 🚚`,
     `Nombre: ${data.nombre}`,
     `Teléfono: ${data.telefono}`,
@@ -71,10 +77,14 @@ function buildMensajeTemplate(data: {
     lineaTalla(data.talla),
     `Producto: ${data.producto}`,
     `Valor a pagar: ${data.valor}`,
+  ];
+  if (data.extras && data.extras.trim()) lineas.push(data.extras.trim());
+  lineas.push(
     '✅ Si todo está correcto responde: CONFIRMO',
     '✏️ Si deseas corregir algún dato, escríbelo en este chat.',
     '🚚 Una vez confirmado, tu pedido será despachado en las próximas 24 horas.',
-  ].join('\n');
+  );
+  return lineas.join('\n');
 }
 
 // ── Whitelist de prueba (solo estos números reciben WA mientras el bot está en desarrollo) ──
@@ -317,6 +327,15 @@ export async function procesarPedidoFunnelish(req: NextRequest, base?: BaseLinea
   const departamento = String(body.state            ?? body.shipping_state   ?? '—').trim();
   const correo       = String(body.optin_email      ?? 'Gerenciaquin7@gmail.com').trim() || 'Gerenciaquin7@gmail.com';
 
+  // Campos personalizados del checkout (opcionales): llegan como [{label, valor}]
+  // y se muestran como líneas "Etiqueta: valor" en el mensaje del pedido. Si no
+  // hay ninguno, no cambia nada (retrocompatible).
+  const extrasTexto = (Array.isArray(body.extras) ? body.extras : [])
+    .map((x: any) => ({ label: String(x?.label ?? '').trim(), valor: String(x?.valor ?? '').trim() }))
+    .filter((x: any) => x.label && x.valor)
+    .map((x: any) => `${x.label}: ${x.valor}`)
+    .join('\n');
+
   const product        = Array.isArray(body.products) ? body.products[0] : null;
   // Foto que mandó la propia página de venta (respaldo si el catálogo no la tiene)
   const imagenPagina   = String(product?.image ?? body.imagen ?? '').trim();
@@ -366,7 +385,7 @@ export async function procesarPedidoFunnelish(req: NextRequest, base?: BaseLinea
   }
   const nombreImagenPrincipal = packProductos[0] ?? productoNombre;
 
-  const mensaje = buildMensaje({ nombre, telefono: tel10, direccion, ciudad, departamento, correo, talla, producto: productoNombre, valor });
+  const mensaje = buildMensaje({ nombre, telefono: tel10, direccion, ciudad, departamento, correo, talla, producto: productoNombre, valor, extras: extrasTexto });
 
   const supabase = base?.tenantId ? supabaseTenant(base.tenantId) : createServerSupabaseClient();
 
@@ -687,7 +706,7 @@ export async function procesarPedidoFunnelish(req: NextRequest, base?: BaseLinea
       ? buildMensajeTemplate({
           saludo: firstName || nombre,
           nombre, telefono: tel10, direccion, ciudad, departamento,
-          correo, talla, producto: productoNombre, valor,
+          correo, talla, producto: productoNombre, valor, extras: extrasTexto,
         })
       : mensaje;
 
