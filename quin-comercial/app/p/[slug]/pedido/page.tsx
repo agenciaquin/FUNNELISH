@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const f = await obtenerFunnel(slug);
-  return { title: `Pedido — ${f?.producto ?? 'Klixmant'}` };
+  return { title: `Pedido — ${f?.producto ?? 'Tienda'}` };
 }
 
 export default async function PaginaPedido({

@@ -17,6 +17,7 @@ import { bloquesARenderizar, nuevoIdBloque, CATALOGO_BLOQUES } from '@/lib/bloqu
 import EditorBloqueLateral from './EditorBloqueLateral';
 import { createBrowserSupabaseClient } from '@/lib/supabase';
 import { marcarSinGuardar, confirmarSalida, haySinGuardar } from '@/lib/panel/cambios';
+import { comprimirImagen } from '@/lib/imagen-comprimir';
 
 /**
  * Sube un archivo y devuelve su enlace público.
@@ -25,6 +26,9 @@ import { marcarSinGuardar, confirmarSalida, haySinGuardar } from '@/lib/panel/ca
  *   así no chocan con el tope de ~4.5 MB de las funciones de Vercel.
  */
 async function subirArchivo(file: File, slug: string): Promise<string | null> {
+  // Comprime la foto en el navegador ANTES de subir (videos/gif quedan intactos).
+  file = await comprimirImagen(file);
+
   const grande = file.size > 4 * 1024 * 1024;
   const esVid  = file.type.startsWith('video/');
 

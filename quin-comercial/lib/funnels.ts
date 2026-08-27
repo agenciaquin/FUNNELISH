@@ -137,6 +137,7 @@ export interface Funnel {
   modo_confirmacion?: string | null;
   ocultar_boton2?: boolean;   // oculta el SEGUNDO botón "COMPRAR" (el de abajo) en la página
   catalogo_id?: string | null; // producto del catálogo al que está vinculado (stock en vivo)
+  pie_empresa?: string | null; // nombre de la empresa que se muestra en el pie de página
   creado_at: string;
 }
 

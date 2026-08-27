@@ -91,6 +91,8 @@ interface Embudo {
   ocultar_boton2?: boolean;
   // Producto del catálogo al que está vinculado (para obedecer su stock en vivo).
   catalogoId?: string | null;
+  // Nombre de la empresa que se muestra en el pie de la página (cada cliente el suyo).
+  pie_empresa?: string | null;
 }
 
 const vacio = (): Embudo => ({
@@ -103,6 +105,7 @@ const vacio = (): Embudo => ({
   pixel_tiktok: null, pixel_tiktok_token: null,
   audio_url: null, video_url: null, color: null, miniatura_url: null, anuncios: null,
   layout: null, layout_borrador: null, modo_publicado: null, modo_confirmacion: null, ocultar_boton2: false,
+  pie_empresa: null,
 });
 
 const pesos = (n: number) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
@@ -1368,6 +1371,13 @@ export default function EmbudosPanel() {
               <div>
                 <label className={label}>Precio tachado</label>
                 <input type="number" value={actual.precio_antes ?? ''} onChange={e => set('precio_antes', e.target.value ? Number(e.target.value) : null)} className={input} />
+              </div>
+              <div className="md:col-span-2">
+                <label className={label}>Nombre de tu empresa (pie de página)</label>
+                <input value={actual.pie_empresa ?? ''} onChange={e => set('pie_empresa', e.target.value)} maxLength={80} placeholder="Tu Empresa SAS" className={input} />
+                <p className="text-[10px] text-[#6B6B6B] mt-1">
+                  Aparece abajo de la página así: <b>{(actual.pie_empresa?.trim() ? actual.pie_empresa.trim() + ' · ' : '')}Pago contra entrega en toda Colombia</b>. Si lo dejas vacío, solo se muestra “Pago contra entrega en toda Colombia”.
+                </p>
               </div>
             </div>
             <div>
