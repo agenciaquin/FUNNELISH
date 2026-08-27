@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { normalizarOpciones, acentoDe, varianteAgotada, opcionAgotada } from '@/lib/funnels';
 import type { Funnel, VarianteFunnel } from '@/lib/funnels';
 import ArmarPackSelector, { type PackSalida } from './ArmarPackSelector';
+import { DEPARTAMENTOS, ciudadesDe } from '@/lib/colombia';
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
 
@@ -90,6 +91,8 @@ export default function FormularioPedido({ funnel, utms }: Props) {
     nombre: '', apellidos: '', whatsapp: '', correo: '',
     direccion: '', barrio: '', municipio: '', departamento: '',
   });
+  // Cuando la ciudad del cliente no está en la lista del departamento, escribe la suya.
+  const [ciudadOtra, setCiudadOtra] = useState(false);
 
   const variante = useMemo(
     () => variantes.find(v => v.id === varianteId) ?? variantes[0],
@@ -755,33 +758,85 @@ export default function FormularioPedido({ funnel, utms }: Props) {
       </p>
 
       <div className="px-3 space-y-4">
-        {CAMPOS.map(c => (
+        {CAMPOS.map(c => {
+          const baseCls = `w-full px-4 py-3 rounded-lg border text-[16px] outline-none transition-colors ${
+            errores[c.id] ? 'border-[#C1121F] bg-[#FEF2F2]' : 'border-[#C9C9C9] focus:border-[#0D8A3E]'
+          } ${señalando === c.id ? 'sacudir' : ''}`;
+          return (
           <div key={c.id} data-campo={c.id}>
             <label className="block font-bold text-[15px] mb-1.5">
               {c.label} <span className="text-[#C1121F]">*</span>
             </label>
-            <input
-              type={c.tipo ?? 'text'}
-              inputMode={c.id === 'whatsapp' ? 'numeric' : undefined}
-              autoComplete={
-                c.id === 'nombre' ? 'given-name' :
-                c.id === 'apellidos' ? 'family-name' :
-                c.id === 'whatsapp' ? 'tel' :
-                c.id === 'correo' ? 'email' :
-                c.id === 'direccion' ? 'street-address' : 'off'
+            {c.id === 'departamento' ? (
+              // Departamento: desplegable oficial de Colombia. Al cambiarlo se
+              // reinicia la ciudad (para que coincida con el nuevo departamento).
+              <select
+                value={datos.departamento}
+                onChange={e => { const dep = e.target.value; setDatos(d => ({ ...d, departamento: dep, municipio: '' })); setCiudadOtra(false); if (errores.departamento) setErrores(er => ({ ...er, departamento: '' })); }}
+                className={`${baseCls} bg-white`}
+              >
+                <option value="">— Elige tu departamento —</option>
+                {DEPARTAMENTOS.map(dep => <option key={dep} value={dep}>{dep}</option>)}
+              </select>
+            ) : c.id === 'municipio' ? (() => {
+              // Ciudad: desplegable con los municipios del departamento elegido.
+              // Si la ciudad no está en la lista, "Otra ciudad" abre un campo libre
+              // (así ningún pedido queda bloqueado).
+              const ciudades = ciudadesDe(datos.departamento);
+              // Sin departamento aún: guiar en vez de dejar un campo de texto suelto.
+              if (!datos.departamento) {
+                return (
+                  <select disabled value="" className={`${baseCls} bg-white`}>
+                    <option value="">Primero elige el departamento</option>
+                  </select>
+                );
               }
-              value={datos[c.id]}
-              onChange={e => set(c.id, e.target.value)}
-              placeholder={c.placeholder}
-              className={`w-full px-4 py-3 rounded-lg border text-[16px] outline-none transition-colors ${
-                errores[c.id] ? 'border-[#C1121F] bg-[#FEF2F2]' : 'border-[#C9C9C9] focus:border-[#0D8A3E]'
-              } ${señalando === c.id ? 'sacudir' : ''}`}
-            />
+              const usarLista = ciudades.length > 0 && !ciudadOtra;
+              if (usarLista) {
+                const val = ciudades.includes(datos.municipio) ? datos.municipio : '';
+                return (
+                  <select
+                    value={val}
+                    onChange={e => { const v = e.target.value; if (v === '__otra__') { setCiudadOtra(true); set('municipio', ''); } else set('municipio', v); }}
+                    className={`${baseCls} bg-white`}
+                  >
+                    <option value="">{datos.departamento ? '— Elige tu ciudad —' : 'Primero elige el departamento'}</option>
+                    {ciudades.map(ci => <option key={ci} value={ci}>{ci}</option>)}
+                    <option value="__otra__">✏️ Otra ciudad (escribir)</option>
+                  </select>
+                );
+              }
+              return (
+                <>
+                  <input type="text" value={datos.municipio} onChange={e => set('municipio', e.target.value)} placeholder="Escribe tu ciudad" className={baseCls} />
+                  {ciudades.length > 0 && (
+                    <button type="button" onClick={() => { setCiudadOtra(false); set('municipio', ''); }} className="text-[12px] text-[#0D8A3E] font-semibold mt-1">← Volver a la lista de ciudades</button>
+                  )}
+                </>
+              );
+            })() : (
+              <input
+                type={c.tipo ?? 'text'}
+                inputMode={c.id === 'whatsapp' ? 'numeric' : undefined}
+                autoComplete={
+                  c.id === 'nombre' ? 'given-name' :
+                  c.id === 'apellidos' ? 'family-name' :
+                  c.id === 'whatsapp' ? 'tel' :
+                  c.id === 'correo' ? 'email' :
+                  c.id === 'direccion' ? 'street-address' : 'off'
+                }
+                value={datos[c.id]}
+                onChange={e => set(c.id, e.target.value)}
+                placeholder={c.placeholder}
+                className={baseCls}
+              />
+            )}
             {errores[c.id] && (
               <p className="text-[12px] font-semibold text-[#C1121F] mt-1">⚠️ {errores[c.id]}</p>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Botón principal, justo después de los datos */}
