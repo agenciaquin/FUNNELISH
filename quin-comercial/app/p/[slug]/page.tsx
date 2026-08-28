@@ -21,7 +21,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params;
   const f = await obtenerFunnel(slug);
   return {
-    title: f?.producto ?? 'Klixmant',
+    title: f?.producto ?? 'Tienda',
     description: f?.titulo ?? 'Compra contra entrega en toda Colombia',
   };
 }
@@ -145,7 +145,9 @@ export default async function PaginaVenta({
       {!f.ocultar_boton2 && <Boton />}
 
       <footer className="text-center text-[11px] text-[#9A9A9A] py-6 px-4 pb-20">
-        Pago contra entrega en toda Colombia
+        {f.pie_empresa?.trim()
+          ? `${f.pie_empresa.trim()} · Pago contra entrega en toda Colombia`
+          : 'Pago contra entrega en toda Colombia'}
       </footer>
 
       <PersonasComprando base={f.personas_comprando} />

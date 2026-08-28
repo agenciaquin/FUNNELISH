@@ -136,6 +136,10 @@ export async function POST(req: NextRequest) {
       ocultar_boton2:     b.ocultar_boton2 === true,
       // Producto del catálogo al que está vinculado (stock en vivo). null = sin vínculo.
       catalogo_id:        b.catalogoId ? String(b.catalogoId) : null,
+      // Nombre de la empresa que aparece en el pie de la página (cada cliente el suyo).
+      pie_empresa:        String(b.pie_empresa ?? '').trim() || null,
+      // Config de los campos del checkout (renombrar/ocultar + campos personalizados).
+      checkout_config:    (b.checkout_config && typeof b.checkout_config === 'object') ? b.checkout_config : null,
     };
 
     const supabase = createServerSupabaseClient();
@@ -174,8 +178,8 @@ export async function POST(req: NextRequest) {
 
     // Si la base todavía no tiene alguna columna nueva (tokens o audio), se guarda
     // sin ella en vez de perder todo el embudo, y se avisa qué falta.
-    if (error && /column .*(pixel_meta_token|pixel_tiktok_token|audio_url|video_url|color|miniatura_url|anuncios|bloques|layout|layout_borrador|modo_publicado|modo_confirmacion|ocultar_boton2|catalogo_id).* does not exist/i.test(error.message)) {
-      const { pixel_meta_token, pixel_tiktok_token, audio_url, video_url, color, miniatura_url, anuncios, bloques, layout, layout_borrador, modo_publicado, modo_confirmacion, ocultar_boton2, catalogo_id, ...sinNuevas } = fila;
+    if (error && /column .*(pixel_meta_token|pixel_tiktok_token|audio_url|video_url|color|miniatura_url|anuncios|bloques|layout|layout_borrador|modo_publicado|modo_confirmacion|ocultar_boton2|catalogo_id|pie_empresa|checkout_config).* does not exist/i.test(error.message)) {
+      const { pixel_meta_token, pixel_tiktok_token, audio_url, video_url, color, miniatura_url, anuncios, bloques, layout, layout_borrador, modo_publicado, modo_confirmacion, ocultar_boton2, catalogo_id, pie_empresa, checkout_config, ...sinNuevas } = fila;
       const reintento = existe?.id
         ? await supabase.from('funnels').update(sinNuevas).eq('id', existe.id).eq('tenant_id', tid)
         : await supabase.from('funnels').insert(sinNuevas);

@@ -5,10 +5,11 @@ import VistaPreviaEmbudo from './VistaPreviaEmbudo';
 import ArmarPackSelector from '../publico/ArmarPackSelector';
 import EditorPareja, { selectoresPolos } from './EditorPareja';
 import EditorBloques from './EditorBloques';
+import CheckoutCamposEditor from './CheckoutCamposEditor';
 import ConfirmacionModal from './ConfirmacionModal';
 import PapeleraEmbudos from './PapeleraEmbudos';
 import { type BloqueLayout } from '@/lib/funnel-layout';
-import { esVideo, acentoDe } from '@/lib/funnels';
+import { esVideo, acentoDe, type OpcionSelector, type SelectorVariante } from '@/lib/funnels';
 import { createBrowserSupabaseClient } from '@/lib/supabase';
 
 /**
@@ -91,6 +92,10 @@ interface Embudo {
   ocultar_boton2?: boolean;
   // Producto del catálogo al que está vinculado (para obedecer su stock en vivo).
   catalogoId?: string | null;
+  // Nombre de la empresa que se muestra en el pie de la página (cada cliente el suyo).
+  pie_empresa?: string | null;
+  // Config de los campos del checkout (renombrar/ocultar fijos + campos propios).
+  checkout_config?: any;
 }
 
 const vacio = (): Embudo => ({
@@ -103,9 +108,23 @@ const vacio = (): Embudo => ({
   pixel_tiktok: null, pixel_tiktok_token: null,
   audio_url: null, video_url: null, color: null, miniatura_url: null, anuncios: null,
   layout: null, layout_borrador: null, modo_publicado: null, modo_confirmacion: null, ocultar_boton2: false,
+  pie_empresa: null, checkout_config: null,
 });
 
 const pesos = (n: number) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
+
+// ── Una sola versión de la página ────────────────────────────────────────────
+// Antes había dos versiones (ACTUAL publicada + NUEVA borrador). Ahora hay una
+// sola. Al abrir un embudo: si el borrador (layout_borrador) trae bloques armados,
+// ese contenido pasa a ser la página única (`layout`), que es la que se publica y
+// la que lee la página pública. Si el borrador está vacío, se conserva `layout`
+// tal cual para no dejar la página en blanco. El borrador se limpia. Reversible:
+// no se toca nada en la BD hasta que el usuario da Guardar.
+function migrarBorrador<T extends { layout?: any; layout_borrador?: any }>(e: T): T {
+  const bor = e.layout_borrador;
+  const tieneBorrador = Array.isArray(bor) && bor.length > 0;
+  return { ...e, layout: tieneBorrador ? bor : e.layout, layout_borrador: null };
+}
 
 // ── Portar embudos entre apps ────────────────────────────────────────────────
 // Un "código de embudo" lleva TODA la estructura adentro (texto, fotos, precios,
@@ -166,9 +185,6 @@ export default function EmbudosPanel() {
   // Dos formas de armar el embudo: 'plantilla' = formulario recomendado (clásico);
   // 'cero' = editor por bloques (arrastrar, con checkout).
   const [tabEditor, setTabEditor] = useState<'plantilla' | 'cero'>('cero');
-  // Cuál versión de la PÁGINA se está editando: 'actual' (la publicada) o 'nueva'
-  // (borrador en blanco que se arma aparte, sin dañar la actual).
-  const [versionEditando, setVersionEditando] = useState<'actual' | 'nueva'>('actual');
   // Modo "Editar checkout": abre el formulario mostrando solo lo del checkout (oculta Fotos).
   const [checkoutModo, setCheckoutModo] = useState(false);
   const abrirCheckout = () => { setCheckoutModo(true); setTabEditor('plantilla'); };
@@ -227,6 +243,11 @@ export default function EmbudosPanel() {
   // Importador de catálogos en el producto "unidad" (traer colores + fotos ya creados)
   const [impPicker, setImpPicker]   = useState<number | null>(null);
   const [impBusca, setImpBusca]     = useState('');
+  // Variables del catálogo (id → nombre / con_color) para "Agregar del catálogo".
+  const [variablesCat, setVariablesCat] = useState<Record<string, { nombre: string; con_color: boolean }>>({});
+  // Selector "Agregar del catálogo": trae un producto completo (colores+foto, tallas, género…).
+  const [catPicker, setCatPicker] = useState(false);
+  const [catBusca, setCatBusca]   = useState('');
   // Dominio con el que se arman los enlaces: el propio del cliente si conectó
   // uno (Mi dominio); si no, el genérico de la plataforma.
   const [baseDominio, setBaseDominio] = useState('pedido.klixmant.shop');
@@ -248,7 +269,58 @@ export default function EmbudosPanel() {
         setEscuderias([...new Set(lista)] as string[]);
       })
       .catch(() => {});
+    // Variables del catálogo (para saber cuál columna es Color/Talla/Género al importar).
+    fetch('/api/catalogos/variables', { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : []))
+      .then(d => {
+        const map: Record<string, { nombre: string; con_color: boolean }> = {};
+        (Array.isArray(d) ? d : []).forEach((v: any) => {
+          if (v?.id) map[String(v.id)] = { nombre: String(v.nombre ?? '').trim(), con_color: !!v.con_color };
+        });
+        setVariablesCat(map);
+      })
+      .catch(() => {});
   }, []);
+
+  /** Crea un producto de checkout COMPLETO desde un catálogo: colores (con foto),
+   *  tallas, género y demás variables, más el nombre y la foto. El precio sale
+   *  del embudo (los catálogos no guardan precio) y queda editable. */
+  function agregarDesdeCatalogo(c: any) {
+    const familia = String(c?.familia ?? '').trim();
+    const colores: OpcionSelector[] = ((c?.catalogo_colores ?? []) as any[])
+      .map(x => ({ valor: String(x?.color ?? '').trim(), imagen: x?.url_imagen || undefined }))
+      .filter(o => o.valor);
+    const columnas: any[] = Array.isArray(c?.columnas) ? c.columnas : [];
+    const sels: SelectorVariante[] = [];
+    // COLOR primero (con las fotos del catálogo).
+    const colCol = columnas.find(col => col && variablesCat[String(col.vid)]?.con_color);
+    if (colores.length) {
+      const nombreColor = colCol ? (variablesCat[String(colCol.vid)]?.nombre || 'COLOR') : 'COLOR';
+      sels.push({ etiqueta: nombreColor.toUpperCase(), opciones: colores });
+    }
+    // Resto de variables (Talla, Género, etc.) desde las columnas.
+    for (const col of columnas) {
+      const vi = col ? variablesCat[String(col.vid)] : null;
+      if (!vi || vi.con_color) continue;
+      const ops = (Array.isArray(col.vals) ? col.vals : [])
+        .map((v: any) => String(v?.nm ?? '').trim()).filter(Boolean)
+        .map((valor: string) => ({ valor }));
+      if (ops.length) sels.push({ etiqueta: (vi.nombre || 'OPCIÓN').toUpperCase(), opciones: ops });
+    }
+    // Respaldo: si no salió ninguna talla, usa las del embudo.
+    if (!sels.some(s => /talla/i.test(s.etiqueta))) {
+      const t = (actual.tallas ?? []).map(x => ({ valor: x }));
+      if (t.length) sels.push({ etiqueta: 'TALLA', opciones: t });
+    }
+    if (!sels.length) sels.push({ etiqueta: 'TALLA', opciones: (actual.tallas ?? []).map(x => ({ valor: x })) });
+    const imagen = colores.find(o => o.imagen)?.imagen;
+    set('variantes', [...actual.variantes, {
+      id: `v${Date.now()}`, nombre: familia || 'PRODUCTO',
+      precio: actual.precio, precioAntes: actual.precio_antes ?? undefined,
+      imagen, selectores: sels.slice(0, 6),
+    }]);
+    setCatPicker(false); setCatBusca('');
+  }
 
   /** Dirección pública del embudo, lista para pegar en un anuncio. */
   const enlaceDe = (slug: string) => `https://${baseDominio}/${slug}`;
@@ -785,7 +857,7 @@ export default function EmbudosPanel() {
               </p>
             </div>
             <button
-              onClick={() => { historial.current = []; futuro.current = []; setPasosDeshacer(0); setPasosRehacer(0); setActual(vacio()); setSlugOriginal(null); setTabEditor('cero'); setVersionEditando('actual'); setCheckoutModo(false); setVista('editar'); setAviso(null); }}
+              onClick={() => { historial.current = []; futuro.current = []; setPasosDeshacer(0); setPasosRehacer(0); setActual(vacio()); setSlugOriginal(null); setTabEditor('cero'); setCheckoutModo(false); setVista('editar'); setAviso(null); }}
               className="px-4 py-2.5 rounded-xl bg-[#00A89D] text-white text-sm font-semibold hover:bg-[#00847A]"
             >+ Nuevo embudo</button>
           </header>
@@ -944,7 +1016,11 @@ export default function EmbudosPanel() {
                       className="px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-xs hover:bg-[#F5F5F5]"
                     >Ver</a>
                     <button
-                      onClick={() => { historial.current = []; futuro.current = []; setPasosDeshacer(0); setPasosRehacer(0); setActual({ ...vacio(), ...e, catalogoId: (e as any).catalogo_id ?? null }); setSlugOriginal(e.slug); setTabEditor('cero'); setVersionEditando('actual'); setCheckoutModo(false); setVista('editar'); setAviso(null); }}
+                      onClick={() => { historial.current = []; futuro.current = []; setPasosDeshacer(0); setPasosRehacer(0);
+                        // Una sola versión: si hay un borrador con bloques armados, ese pasa a ser la página
+                        // única (lo que el usuario venía construyendo); si el borrador está vacío se conserva
+                        // la página publicada tal cual, para no dejarla en blanco. El borrador se limpia.
+                        setActual(migrarBorrador({ ...vacio(), ...e, catalogoId: (e as any).catalogo_id ?? null })); setSlugOriginal(e.slug); setTabEditor('cero'); setCheckoutModo(false); setVista('editar'); setAviso(null); }}
                       className="px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-xs hover:bg-[#F5F5F5]"
                     >Editar</button>
                     <button
@@ -1169,30 +1245,6 @@ export default function EmbudosPanel() {
           </div>
         </div>
 
-        {/* ── Versión de la PÁGINA: ACTUAL (publicada) vs NUEVA (borrador en blanco) ──
-            Deja construir una versión nueva aparte SIN dañar la actual. */}
-        <div className="mb-4">
-          <div className="inline-flex rounded-xl border border-[#E8E8E8] bg-white p-1 shadow-sm">
-            <button type="button"
-              onClick={() => setVersionEditando('actual')}
-              title="La versión que está publicada ahora mismo"
-              className={`px-4 py-2 rounded-lg text-[13px] font-bold transition-colors ${versionEditando === 'actual' ? 'bg-[#00A89D] text-white shadow' : 'text-[#6B6B6B] hover:bg-[#F5F5F5]'}`}>
-              📄 VERSIÓN ACTUAL
-            </button>
-            <button type="button"
-              onClick={() => { setVersionEditando('nueva'); setTabEditor('cero'); setCheckoutModo(false); }}
-              title="Arma una versión nueva en blanco, sin tocar la actual"
-              className={`px-4 py-2 rounded-lg text-[13px] font-bold transition-colors ${versionEditando === 'nueva' ? 'bg-[#00A89D] text-white shadow' : 'text-[#6B6B6B] hover:bg-[#F5F5F5]'}`}>
-              ✨ VERSIÓN NUEVA
-            </button>
-          </div>
-          {versionEditando === 'nueva' && (
-            <p className="text-[11px] text-[#8A5000] bg-[#FFF6EA] border border-[#F6D4A6] rounded-lg px-3 py-2 mt-2 max-w-xl">
-              ✍️ Estás armando una <b>versión nueva en blanco</b>. No toca la versión actual ni la página publicada; se guarda aparte al tocar <b>Guardar</b>. Cuando quieras que esta sea la que se muestra, me dices y la publicamos.
-            </p>
-          )}
-        </div>
-
         {/* ── CABECERA del editor: solo lo esencial ──
             Dirección + Nombre + switch Prendido/Apagado. Todo lo demás del
             embudo se edita tocando cada bloque en el teléfono (abajo). */}
@@ -1245,7 +1297,7 @@ export default function EmbudosPanel() {
 
         {/* Cambia entre ARMAR LA PÁGINA (bloques) y CONTENIDO Y AJUSTES.
             En modo checkout se oculta (el regreso se hace con el botón del banner). */}
-        {!checkoutModo && versionEditando === 'actual' && (
+        {!checkoutModo && (
           <button type="button" onClick={() => setTabEditor(tabEditor === 'cero' ? 'plantilla' : 'cero')}
             className="w-full mb-4 rounded-2xl border-2 border-[#00A89D]/30 bg-[#E9F7F5] px-4 py-3 text-left hover:bg-[#DDF3F0] transition-colors">
             {tabEditor === 'cero'
@@ -1272,13 +1324,12 @@ export default function EmbudosPanel() {
         <div className="space-y-5">
           {tabEditor === 'cero' && (
             <EditorBloques
-              key={versionEditando}
               d={actual}
               onCampo={(campo, valor) => set(campo as keyof Embudo, valor)}
               subir={async (f) => { try { return await subirArchivo(f, actual.slug || 'embudo'); } catch { return null; } }}
-              layout={versionEditando === 'nueva' ? (actual.layout_borrador ?? []) : actual.layout}
-              onLayout={(bs) => set(versionEditando === 'nueva' ? 'layout_borrador' : 'layout', bs)}
-              permitirVacio={versionEditando === 'nueva'}
+              layout={actual.layout}
+              onLayout={(bs) => set('layout', bs)}
+              permitirVacio={false}
               onAbrirContenido={() => { setCheckoutModo(false); setTabEditor('plantilla'); }}
               onAbrirCheckout={abrirCheckout}
               onGuardar={guardar}
@@ -1290,14 +1341,20 @@ export default function EmbudosPanel() {
             />
           )}
           {tabEditor === 'plantilla' && (<>
-          {/* Aviso de modo checkout (cuando se entró por la pestaña Checkout del teléfono) */}
+          {/* Pestañas PÁGINA DE INICIO / CHECKOUT: alternan de un clic (mismas del modo bloques) */}
           {checkoutModo && (
-            <div className="rounded-2xl border-2 border-[#00A89D]/30 bg-[#E9F7F5] px-4 py-3 flex items-center gap-3 flex-wrap">
-              <p className="text-[13px] font-bold text-[#00847A] flex-1 min-w-[220px]">🛒 Editando el CHECKOUT · aquí armas los productos, colores, tallas y precio que el cliente elige.</p>
-              <button type="button" onClick={() => { setCheckoutModo(false); setTabEditor('cero'); }} className="shrink-0 text-[13px] font-bold text-[#00847A] hover:underline">🏠 Volver a Inicio (armar la página)</button>
+            <div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => { setCheckoutModo(false); setTabEditor('cero'); }}
+                  className="flex-1 rounded-xl py-2.5 text-[12px] font-extrabold uppercase tracking-wide flex items-center justify-center gap-1.5 border-2 bg-white text-[#00847A] border-[#00A89D]/40 hover:bg-[#00A89D]/5 transition-all">🛍️ Página de inicio</button>
+                <button type="button"
+                  className="flex-1 rounded-xl py-2.5 text-[12px] font-extrabold uppercase tracking-wide flex items-center justify-center gap-1.5 border-2 bg-[#00A89D] text-white border-[#00A89D] shadow-md cursor-default">🛒 Checkout</button>
+              </div>
+              <p className="text-[11px] text-[#6B6B6B] mt-1.5">🛒 Aquí armas los productos, colores, tallas y precio que el cliente elige. Toca <b>Página de inicio</b> para volver a armar la página.</p>
             </div>
           )}
-          {/* Básico */}
+          {/* Básico (se oculta en modo checkout: ahí solo van los Productos del checkout) */}
+          {!checkoutModo && (
           <section className="bg-white rounded-2xl border border-[#E8E8E8] p-4 space-y-3">
             <h2 className="text-sm font-bold">Lo básico</h2>
             <div className="grid md:grid-cols-2 gap-3">
@@ -1317,6 +1374,13 @@ export default function EmbudosPanel() {
               <div>
                 <label className={label}>Precio tachado</label>
                 <input type="number" value={actual.precio_antes ?? ''} onChange={e => set('precio_antes', e.target.value ? Number(e.target.value) : null)} className={input} />
+              </div>
+              <div className="md:col-span-2">
+                <label className={label}>Nombre de tu empresa (pie de página)</label>
+                <input value={actual.pie_empresa ?? ''} onChange={e => set('pie_empresa', e.target.value)} maxLength={80} placeholder="Tu Empresa SAS" className={input} />
+                <p className="text-[10px] text-[#6B6B6B] mt-1">
+                  Aparece abajo de la página así: <b>{(actual.pie_empresa?.trim() ? actual.pie_empresa.trim() + ' · ' : '')}Pago contra entrega en toda Colombia</b>. Si lo dejas vacío, solo se muestra “Pago contra entrega en toda Colombia”.
+                </p>
               </div>
             </div>
             <div>
@@ -1384,6 +1448,7 @@ export default function EmbudosPanel() {
               Ocultar el segundo botón &quot;COMPRAR&quot; (el de abajo de la página)
             </label>
           </section>
+          )}
 
           {/* Fotos (se oculta en modo checkout) */}
           {!checkoutModo && (
@@ -1546,6 +1611,13 @@ export default function EmbudosPanel() {
           </section>
           )}
 
+          {/* Campos del formulario del checkout: renombrar/ocultar + campos propios */}
+          <section className="bg-white rounded-2xl border border-[#E8E8E8] p-4 space-y-3">
+            <h2 className="text-sm font-bold">Datos que pide el checkout</h2>
+            <p className="text-[12px] text-[#6B6B6B] -mt-1">Renombra u oculta los campos del formulario, o agrega campos propios (teléfono, notas, punto de referencia…). Se muestran en el checkout y llegan en el pedido.</p>
+            <CheckoutCamposEditor config={actual.checkout_config} onChange={cfg => set('checkout_config', cfg)} />
+          </section>
+
           {/* Variantes */}
           <section className="bg-white rounded-2xl border border-[#E8E8E8] p-4 space-y-3">
             <div className="flex items-center justify-between">
@@ -1570,8 +1642,53 @@ export default function EmbudosPanel() {
                   }])}
                   className="text-xs text-[#6D28D9] font-semibold hover:underline"
                 >⚡ + Producto con variables (color + talla)</button>
+                <button
+                  onClick={() => { setCatBusca(''); setCatPicker(true); }}
+                  className="text-xs text-white bg-[#00A89D] hover:bg-[#00847A] font-semibold rounded-lg px-2.5 py-1.5"
+                >📥 Agregar del catálogo</button>
               </div>
             </div>
+
+            {/* Selector "Agregar del catálogo": elige un producto y trae TODO (colores+foto, tallas, género…) */}
+            {catPicker && (
+              <div className="rounded-xl border-2 border-[#00A89D] bg-[#F3FBFA] p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-[12px] font-bold text-[#00847A]">📥 Elige un producto del catálogo — se trae con sus colores, fotos, tallas y demás variables.</p>
+                  <button onClick={() => setCatPicker(false)} className="text-[#DC2626] text-[13px] px-1.5">✕</button>
+                </div>
+                <input value={catBusca} onChange={e => setCatBusca(e.target.value)} placeholder="🔍 Buscar producto por nombre…"
+                  className="w-full px-2.5 py-1.5 rounded-lg border border-[#E0E0E0] text-[12px]" />
+                <div className="max-h-64 overflow-y-auto rounded-lg border border-[#E8E8E8] bg-white divide-y divide-[#F4F4F4]">
+                  {catalogosFull
+                    .filter((c: any) => String(c?.familia ?? '').toLowerCase().includes(catBusca.toLowerCase()))
+                    .map((c: any, k: number) => {
+                      const familia = String(c?.familia ?? '').trim();
+                      const cols = (c?.catalogo_colores ?? []) as any[];
+                      const foto = cols.find((x: any) => x?.url_imagen)?.url_imagen;
+                      const nCol = cols.filter((x: any) => String(x?.color ?? '').trim()).length;
+                      const nVars = (Array.isArray(c?.columnas) ? c.columnas : []).length;
+                      return (
+                        <button key={`${familia}-${k}`} onClick={() => agregarDesdeCatalogo(c)}
+                          className="w-full flex items-center gap-2.5 px-2.5 py-2 text-left hover:bg-[#F0FBFA]">
+                          {foto
+                            // eslint-disable-next-line @next/next/no-img-element
+                            ? <img src={foto} alt="" className="w-9 h-9 rounded object-cover shrink-0" />
+                            : <span className="w-9 h-9 rounded bg-[#EEE] grid place-items-center text-[13px] shrink-0">📦</span>}
+                          <span className="flex-1 min-w-0">
+                            <span className="block text-[12.5px] font-semibold text-[#0D0D0D] truncate">{familia || '(sin nombre)'}</span>
+                            <span className="block text-[10px] text-[#9A9A9A]">{nCol} colores · {nVars} variables</span>
+                          </span>
+                          <span className="text-[11px] font-bold text-[#00A89D] shrink-0">Traer →</span>
+                        </button>
+                      );
+                    })}
+                  {catalogosFull.filter((c: any) => String(c?.familia ?? '').toLowerCase().includes(catBusca.toLowerCase())).length === 0 && (
+                    <p className="text-[11px] text-[#9A9A9A] px-2.5 py-3 text-center">No hay productos que coincidan.</p>
+                  )}
+                </div>
+                <p className="text-[10px] text-[#8A9793]">El precio sale del embudo (los catálogos no guardan precio) y lo puedes cambiar después.</p>
+              </div>
+            )}
             <p className="text-[10px] text-[#6B6B6B] leading-snug">
               Cada uno es una opción que el cliente puede escoger. Si no agregas ninguno,
               se muestra un solo producto con el precio de arriba.
@@ -1734,6 +1851,11 @@ export default function EmbudosPanel() {
                         className="w-6 h-6 rounded-md text-[13px] text-[#00847A] hover:bg-[#00A89D]/15 disabled:opacity-30 disabled:cursor-not-allowed"
                       >↓</button>
                       <button
+                        onClick={() => { const copia = { ...(JSON.parse(JSON.stringify(v))), id: `v${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}` }; const vs = [...actual.variantes]; vs.splice(i + 1, 0, copia); set('variantes', vs); }}
+                        title="Duplicar este producto (copia independiente)"
+                        className="text-[11px] text-[#00847A] hover:underline ml-1"
+                      >⧉ Duplicar</button>
+                      <button
                         onClick={() => set('variantes', actual.variantes.filter((_, j) => j !== i))}
                         className="text-[11px] text-[#DC2626] hover:underline ml-1"
                       >🗑 Quitar</button>
@@ -1741,39 +1863,44 @@ export default function EmbudosPanel() {
                   </div>
 
                   <div className="p-3 space-y-3">
-                  {/* Cabecera del producto */}
-                  <div className="flex items-center gap-2">
-                    {v.imagen ? (
-                      <button
-                        onClick={() => { varianteDestino.current = i; refVariante.current?.click(); }}
-                        title="Cambiar foto"
-                        className="shrink-0"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={v.imagen} alt="" className="w-14 h-14 rounded object-cover" />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => { varianteDestino.current = i; refVariante.current?.click(); }}
-                        className="w-14 h-14 rounded border-2 border-dashed border-[#C9C9C9] text-[10px] text-[#6B6B6B] shrink-0 hover:border-[#00A89D]"
-                      >+ Foto</button>
-                    )}
-                    <input
-                      value={v.nombre}
-                      onChange={e => cambiar({ nombre: e.target.value })}
-                      placeholder="NACIONAL VERDE 2026"
-                      className={`${input} flex-1`}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[10px] text-[#6B6B6B] mb-0.5">Precio</label>
-                      <input type="number" value={v.precio} onChange={e => cambiar({ precio: Number(e.target.value) })} className={input} />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-[#6B6B6B] mb-0.5">Precio tachado</label>
-                      <input type="number" value={v.precioAntes ?? ''} onChange={e => cambiar({ precioAntes: e.target.value ? Number(e.target.value) : undefined })} className={input} />
+                  {/* Bloque de producto (estilo mockup): foto de portada + nombre + precio antiguo/promoción */}
+                  <div className="rounded-xl border border-[#E8E8E8] bg-[#F7F7F5] p-3">
+                    <div className="flex items-start gap-3">
+                      {v.imagen ? (
+                        <button
+                          onClick={() => { varianteDestino.current = i; refVariante.current?.click(); }}
+                          title="Cambiar foto de portada"
+                          className="shrink-0"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={v.imagen} alt="" className="w-[72px] h-[72px] rounded-lg object-cover border border-[#E0E0E0]" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => { varianteDestino.current = i; refVariante.current?.click(); }}
+                          className="w-[72px] h-[72px] rounded-lg bg-[#1A1A1A] text-white text-[9px] font-bold leading-tight grid place-items-center text-center px-1 shrink-0 hover:opacity-90"
+                        >SUBIR FOTO PORTADA</button>
+                      )}
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <input
+                          value={v.nombre}
+                          onChange={e => cambiar({ nombre: e.target.value })}
+                          placeholder="NOMBRE DEL PRODUCTO"
+                          className={`${input} font-bold`}
+                        />
+                        <div className="flex gap-2">
+                          <div className="flex-1">
+                            <label className="block text-[9px] font-bold text-[#B0212F] uppercase mb-0.5">Precio antiguo (tachado)</label>
+                            <input type="number" value={v.precioAntes ?? ''} onChange={e => cambiar({ precioAntes: e.target.value ? Number(e.target.value) : undefined })} placeholder="195000"
+                              className="w-full text-sm rounded-md px-2 py-1.5 border border-[#E23744]/40 bg-[#FDECEE] text-[#B0212F] font-bold line-through outline-none" />
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-[9px] font-bold text-[#0D8A3E] uppercase mb-0.5">Precio en promoción</label>
+                            <input type="number" value={v.precio} onChange={e => cambiar({ precio: Number(e.target.value) })} placeholder="110000"
+                              className="w-full text-sm rounded-md px-2 py-1.5 border border-[#1E9E5A]/40 bg-[#EAF7EF] text-[#0D8A3E] font-extrabold outline-none" />
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -1824,28 +1951,34 @@ export default function EmbudosPanel() {
 
                     return (
                       <div className="border-t border-[#EEE] pt-2.5 space-y-3">
-                        {/* Colores */}
+                        {/* Colores (variables) — tabla estilo mockup: FOTO + COLOR por fila */}
                         <div>
-                          <p className="text-[11px] font-bold text-[#0D0D0D] mb-1.5">🎨 Colores (cada uno con su foto)</p>
-                          <div className="space-y-1.5">
+                          <p className="text-[11px] font-bold text-[#0D0D0D] mb-1.5">🎨 Variables del producto <span className="font-normal text-[#9A9A9A]">(cada color con su foto)</span></p>
+                          <div className="rounded-xl border border-[#E0E0E0] overflow-hidden">
+                            <div className="grid grid-cols-[46px_1fr_36px] gap-2 items-center px-2 py-1.5 bg-[#F0EFEA] text-[9px] font-extrabold uppercase tracking-wide text-[#6B6B6B]">
+                              <span className="text-center">Foto</span><span>Color / variable</span><span></span>
+                            </div>
+                            {colores.length === 0 && (
+                              <p className="text-[11px] text-[#9A9A9A] px-3 py-3 text-center">Aún no hay colores. Agrega uno o tráelo del catálogo.</p>
+                            )}
                             {colores.map((c: any, ci: number) => (
-                              <div key={ci} className="flex items-center gap-2">
+                              <div key={ci} className="grid grid-cols-[46px_1fr_36px] gap-2 items-center px-2 py-1.5 border-t border-[#EEE]">
                                 {c.imagen ? (
-                                  <button onClick={() => { opcionDestino.current = { v: i, s: 0, o: ci }; refOpcion.current?.click(); }} className="shrink-0">
+                                  <button onClick={() => { opcionDestino.current = { v: i, s: 0, o: ci }; refOpcion.current?.click(); }} className="shrink-0 mx-auto" title="Cambiar foto">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img src={c.imagen} alt="" className="w-10 h-10 rounded object-cover" />
+                                    <img src={c.imagen} alt="" className="w-10 h-10 rounded-lg object-cover border border-[#E0E0E0]" />
                                   </button>
                                 ) : (
                                   <button
                                     onClick={() => { escribir(colores, tallas); opcionDestino.current = { v: i, s: 0, o: ci }; refOpcion.current?.click(); }}
-                                    className="w-10 h-10 rounded border border-dashed border-[#C9C9C9] text-[9px] text-[#6B6B6B] shrink-0 hover:border-[#00A89D]"
-                                  >+ Foto</button>
+                                    className="w-10 h-10 rounded-lg bg-[#1A1A1A] text-white text-[8px] font-bold leading-tight grid place-items-center text-center px-0.5 shrink-0 mx-auto hover:opacity-90"
+                                  >+ FOTO</button>
                                 )}
                                 <input
                                   value={c.valor}
                                   onChange={e => { const cs = [...colores]; cs[ci] = { ...c, valor: e.target.value }; escribir(cs, tallas); }}
                                   placeholder="Ej: NEGRO"
-                                  className={`${input} flex-1`}
+                                  className={`${input} font-semibold`}
                                 />
                                 <button onClick={() => escribir(colores.filter((_: any, j: number) => j !== ci), tallas)}
                                   className="w-8 h-8 rounded text-[#DC2626] hover:bg-[#FEE2E2] shrink-0">✕</button>
@@ -2565,7 +2698,9 @@ export default function EmbudosPanel() {
               En "Crear de cero" no va: el editor de bloques trae su propia previa. */}
           {tabEditor === 'plantilla' && (
           <div className={`lg:w-[340px] lg:shrink-0 lg:sticky lg:top-6 ${verPreview ? '' : 'hidden lg:block'}`}>
-            <VistaPreviaEmbudo d={actual} />
+            <VistaPreviaEmbudo d={actual}
+              modoInicial={checkoutModo ? 'checkout' : 'inicio'}
+              onEditarInicio={checkoutModo ? () => { setCheckoutModo(false); setTabEditor('cero'); } : undefined} />
           </div>
           )}
         </div>{/* fin lg:flex */}

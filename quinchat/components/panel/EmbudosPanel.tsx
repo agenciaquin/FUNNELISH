@@ -17,6 +17,7 @@ import { bloquesARenderizar, nuevoIdBloque, CATALOGO_BLOQUES } from '@/lib/bloqu
 import EditorBloqueLateral from './EditorBloqueLateral';
 import { createBrowserSupabaseClient } from '@/lib/supabase';
 import { marcarSinGuardar, confirmarSalida, haySinGuardar } from '@/lib/panel/cambios';
+import { comprimirImagen } from '@/lib/imagen-comprimir';
 
 /**
  * Sube un archivo y devuelve su enlace público.
@@ -25,6 +26,9 @@ import { marcarSinGuardar, confirmarSalida, haySinGuardar } from '@/lib/panel/ca
  *   así no chocan con el tope de ~4.5 MB de las funciones de Vercel.
  */
 async function subirArchivo(file: File, slug: string): Promise<string | null> {
+  // Comprime la foto en el navegador ANTES de subir (videos/gif quedan intactos).
+  file = await comprimirImagen(file);
+
   const grande = file.size > 4 * 1024 * 1024;
   const esVid  = file.type.startsWith('video/');
 
@@ -95,6 +99,7 @@ interface Embudo {
   anuncios: string | null;
   layout: LayoutEmbudo | null;
   insignia: Insignia | null;
+  confirmacion_modo?: string | null; // 'bot' | 'agente' | 'humano'
 }
 
 const vacio = (): Embudo => ({
@@ -130,6 +135,26 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
   const [bloqueSelId, setBloqueSelId] = useState<string | null>(null); // bloque seleccionado en el teléfono
   const [verContenido, setVerContenido] = useState(false); // mostrar el formulario completo (oculto por defecto)
   const [checkoutModo, setCheckoutModo] = useState(false);  // pestaña Checkout: solo "Productos del checkout"
+  const [pixelDe, setPixelDe] = useState<Embudo | null>(null); // embudo cuyo modal de píxel está abierto
+  const [modoGuardando, setModoGuardando] = useState<string | null>(null); // slug cuyo modo se está guardando
+
+  // Guarda ajustes rápidos (píxeles / modo de confirmación) de un embudo desde la
+  // lista, sin abrir el editor. Actualiza también la copia local para reflejarlo ya.
+  async function guardarAjustes(slug: string, cambios: Partial<Embudo>): Promise<boolean> {
+    try {
+      const res = await fetch('/api/funnels/ajustes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug, ...cambios }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setAviso(d.error || 'No se pudo guardar.'); return false; }
+      setEmbudos(prev => prev.map(e => (e.slug === slug ? { ...e, ...cambios } : e)));
+      return true;
+    } catch {
+      setAviso('Error de conexión al guardar.');
+      return false;
+    }
+  }
 
   const refGaleria  = useRef<HTMLInputElement>(null);
   const refBanner   = useRef<HTMLInputElement>(null);
@@ -702,9 +727,33 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
                     <p className="text-[11px] text-[#6B6B6B] truncate">
                       pedido.klixmant.shop/{e.slug} · {pesos(e.precio)}
                     </p>
+                    {/* Confirmación: decide si el bot responde al cliente o lo hace un humano */}
+                    <div className="flex items-center gap-1 mt-1">
+                      <span className="text-[10px] font-bold text-[#6B6B6B] shrink-0">💬 Confirmación:</span>
+                      <select
+                        value={e.confirmacion_modo || 'bot'}
+                        disabled={modoGuardando === e.slug}
+                        onChange={async (ev) => {
+                          const modo = ev.target.value;
+                          setModoGuardando(e.slug);
+                          await guardarAjustes(e.slug, { confirmacion_modo: modo });
+                          setModoGuardando(null);
+                        }}
+                        className="text-[11px] rounded-md border border-[#E0E0E0] px-1.5 py-1 bg-white max-w-[240px] disabled:opacity-50"
+                      >
+                        <option value="bot">Por defecto (bot confirma)</option>
+                        <option value="agente">Confirmación con agente (bot cierra la venta)</option>
+                        <option value="humano">Solo enviar y apagar bot (confirma un humano)</option>
+                      </select>
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => setPixelDe(e)}
+                      title="Pegar el píxel y token de Meta / TikTok sin abrir el editor"
+                      className="px-3 py-1.5 rounded-lg border border-[#7C3AED]/40 text-[#7C3AED] text-xs hover:bg-[#7C3AED]/10 font-semibold"
+                    >📊 Píxel y token</button>
                     <button
                       onClick={() => copiarEnlace(e.slug)}
                       title="Copiar el enlace para compartirlo"
@@ -744,6 +793,18 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
           )}
         </div>
         {statsDe && <EmbudoStatsModal slug={statsDe.slug} producto={statsDe.producto} onClose={() => setStatsDe(null)} />}
+
+        {pixelDe && (
+          <PixelModal
+            embudo={pixelDe}
+            onClose={() => setPixelDe(null)}
+            onGuardar={async (campos) => {
+              const ok = await guardarAjustes(pixelDe.slug, campos);
+              if (ok) setPixelDe(null);
+              return ok;
+            }}
+          />
+        )}
 
         {papeleraOpen && (
           <EmbudosPapelera onClose={() => setPapeleraOpen(false)} onCambio={cargar} />
@@ -2074,6 +2135,80 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
             />
           </div>
         </div>{/* fin lg:flex */}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Ventana para copiar/pegar el píxel y el token de Meta y TikTok de un embudo,
+ * sin abrir el editor completo. Guarda solo esos campos.
+ */
+function PixelModal({
+  embudo, onClose, onGuardar,
+}: {
+  embudo: Embudo;
+  onClose: () => void;
+  onGuardar: (campos: Partial<Embudo>) => Promise<boolean>;
+}) {
+  const [pMeta, setPMeta] = useState(embudo.pixel_meta ?? '');
+  const [tMeta, setTMeta] = useState(embudo.pixel_meta_token ?? '');
+  const [pTk, setPTk] = useState(embudo.pixel_tiktok ?? '');
+  const [tTk, setTTk] = useState(embudo.pixel_tiktok_token ?? '');
+  const [guardando, setGuardando] = useState(false);
+
+  const campo = 'w-full px-3 py-2 rounded-lg border border-[#E0E0E0] text-sm';
+
+  async function guardar() {
+    setGuardando(true);
+    await onGuardar({
+      pixel_meta: pMeta.trim() || null,
+      pixel_meta_token: tMeta.trim() || null,
+      pixel_tiktok: pTk.trim() || null,
+      pixel_tiktok_token: tTk.trim() || null,
+    });
+    setGuardando(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-5 space-y-4" onClick={e => e.stopPropagation()}>
+        <div>
+          <h3 className="text-lg font-extrabold text-[#0D0D0D] flex items-center gap-2">📊 Píxel y token</h3>
+          <p className="text-[12px] text-[#6B6B6B] uppercase font-bold">{embudo.producto}</p>
+        </div>
+
+        <section className="rounded-xl border border-[#E8E8E8] p-3 space-y-2">
+          <p className="text-[13px] font-bold text-[#1877F2]">📘 Meta (Facebook e Instagram)</p>
+          <div>
+            <label className="block text-[11px] font-bold text-[#0D0D0D] mb-1">Identificador del píxel</label>
+            <input value={pMeta} onChange={e => setPMeta(e.target.value)} className={campo} placeholder="1100793867918663" />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-[#0D0D0D] mb-1">Token de la API de conversiones</label>
+            <input value={tMeta} onChange={e => setTMeta(e.target.value)} className={campo} placeholder="EAAQ..." />
+            <p className="text-[10px] text-[#9A9A9A] mt-1">Con este token las ventas se le informan a Meta desde el servidor (llegan aunque el cliente bloquee cookies).</p>
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-[#E8E8E8] p-3 space-y-2">
+          <p className="text-[13px] font-bold text-[#0D0D0D]">🎵 TikTok</p>
+          <div>
+            <label className="block text-[11px] font-bold text-[#0D0D0D] mb-1">Identificador del píxel</label>
+            <input value={pTk} onChange={e => setPTk(e.target.value)} className={campo} placeholder="C6BD9A5MP..." />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-[#0D0D0D] mb-1">Token de eventos (opcional)</label>
+            <input value={tTk} onChange={e => setTTk(e.target.value)} className={campo} placeholder="(opcional)" />
+          </div>
+        </section>
+
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-[#E8E8E8] text-sm text-[#6B6B6B] hover:bg-[#F5F5F5]">Cancelar</button>
+          <button onClick={guardar} disabled={guardando} className="flex-1 py-2.5 rounded-xl bg-[#00A89D] text-white text-sm font-semibold hover:bg-[#00847A] disabled:opacity-50">
+            {guardando ? 'Guardando…' : 'Guardar'}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -51,10 +51,11 @@ export default function Galeria({
                 onClick={e => { const v = e.currentTarget; if (v.muted) { v.muted = false; v.play().catch(() => {}); } }}
               />
             ) : (
-              // Imagen ORIGINAL (sin transformar) para que se vea COMPLETA y nítida,
-              // sin ningún recorte de la compresión. La galería es la foto principal.
+              // Foto optimizada (WebP, redimensionada sin recortar) para que cargue
+              // rápido en celular. La primera va "eager" (es lo primero que se ve).
               // eslint-disable-next-line @next/next/no-img-element
-              <img key={idx} src={src} alt={alt} className={clase} loading={idx === 0 ? 'eager' : 'lazy'} />
+              <img key={idx} src={imgOptim(src, 1080)} alt={alt} className={clase}
+                loading={idx === 0 ? 'eager' : 'lazy'} fetchPriority={idx === 0 ? 'high' : 'auto'} decoding="async" />
             );
           })}
         </div>
@@ -102,7 +103,7 @@ export default function Galeria({
                 <div className="w-full aspect-square bg-black flex items-center justify-center text-white text-lg">▶</div>
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={src} alt="" className="w-full aspect-square object-contain bg-[#F2F2F2]" loading="lazy" />
+                <img src={imgOptim(src, 200)} alt="" className="w-full aspect-square object-contain bg-[#F2F2F2]" loading="lazy" decoding="async" />
               )}
             </button>
           ))}

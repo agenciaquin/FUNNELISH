@@ -116,10 +116,8 @@ export function esVideo(url: string | null | undefined): boolean {
  * cachea el resultado). Videos y URLs externas se devuelven sin tocar.
  */
 export function imgOptim(url: string | null | undefined, _ancho = 800, _calidad = 62): string {
-  // DESACTIVADO: la transformación de Supabase (render/image) estaba RECORTANDO
-  // las fotos anchas (collages), cortándolas en la galería, banner y miniaturas.
-  // Servimos la imagen ORIGINAL completa. El ahorro de datos real estaba en los
-  // VIDEOS (que se comprimen aparte), no en estas fotos.
+  // Servimos la imagen ORIGINAL. (La optimización con /_next/image rompía las fotos
+  // en producción, así que se dejó desactivada). El ahorro real está en los videos.
   return String(url ?? '');
 }
 

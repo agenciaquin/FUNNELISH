@@ -159,7 +159,9 @@ export default function LayoutRender({
       })}
 
       <footer className="text-center text-[11px] text-[#9A9A9A] py-6 px-4 pb-20">
-        Klixmant SAS · Pago contra entrega en toda Colombia
+        {f.pie_empresa?.trim()
+          ? `${f.pie_empresa.trim()} · Pago contra entrega en toda Colombia`
+          : 'Pago contra entrega en toda Colombia'}
       </footer>
 
       {/* "Ventas en vivo": flotante, se saca del flujo (uno por bloque ventas). */}

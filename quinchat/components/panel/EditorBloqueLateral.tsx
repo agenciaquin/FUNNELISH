@@ -769,8 +769,9 @@ export default function EditorBloqueLateral({
       {/* Media (portada/banner/imagen): subir, modo y tamaño */}
       {esMedia && (
         <div className="space-y-3">
-          {/* Subir archivo */}
-          {onSubirArchivo && (
+          {/* Subir archivo — se oculta en Portada modo Carrusel (ahí las fotos salen
+              del carrusel de abajo, no de este "Archivo"). */}
+          {onSubirArchivo && !(bloque.tipo === 'portada' && p.modo === 'carrusel') && (
             <div>
               <label className="block text-[11px] font-bold text-[#0D0D0D] mb-1 uppercase">Archivo</label>
               {/* Recuadro grande para subir o arrastrar */}

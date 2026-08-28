@@ -610,6 +610,26 @@ export async function POST(req: NextRequest) {
       if (rankNuevo >= rankActual) {
         await sb.from('messages').update({ status: estado }).eq('whatsapp_id', wamid);
       }
+
+      // Rastreo de campañas de remarketing: subir el estado del envío (sin bajarlo).
+      // enviado(1) → entregado(2) → leído(3); fallido queda aparte.
+      try {
+        const RANK_RMK: Record<string, number> = { fallido: 0, enviado: 1, entregado: 2, leido: 3, respondido: 4 };
+        const nuevoEstado = estado === 'delivered' ? 'entregado'
+          : estado === 'read' ? 'leido'
+          : estado === 'failed' ? 'fallido' : 'enviado';
+        const { data: env } = await sb.from('remarketing_envios').select('estado').eq('wamid', wamid).maybeSingle();
+        if (env) {
+          const rApenas = RANK_RMK[env.estado as string] ?? -1;
+          const rNvo    = RANK_RMK[nuevoEstado] ?? -1;
+          if (rNvo > rApenas) {
+            const patch: Record<string, any> = { estado: nuevoEstado };
+            if (nuevoEstado === 'entregado') patch.entregado_at = new Date().toISOString();
+            if (nuevoEstado === 'leido')     patch.leido_at     = new Date().toISOString();
+            await sb.from('remarketing_envios').update(patch).eq('wamid', wamid);
+          }
+        }
+      } catch { /* no bloquear */ }
       // Si un mensaje SÍ se entregó/leyó, el cliente es alcanzable: quitar la bandera.
       if ((estado === 'delivered' || estado === 'read') && msg?.conversation_id) {
         try { await sb.from('conversations').update({ entrega_fallida: false }).eq('id', msg.conversation_id); }
@@ -625,6 +645,21 @@ export async function POST(req: NextRequest) {
   const contactName   = value.contacts?.[0]?.profile?.name ?? 'Desconocido';
   // Todo lo que el bot ha aprendido y fue aprobado — se suma a sus instrucciones
   const memoriaBot    = await bloqueDeMemoria();
+
+  // Si quien escribe recibió una campaña de remarketing (últimos 30 días),
+  // marcarla como "respondió" — es la señal comercial que importa.
+  try {
+    const froms = [...new Set((value.messages ?? [])
+      .map((m: any) => String(m.from || '').replace(/\D/g, '')).filter(Boolean))];
+    const hace30 = new Date(Date.now() - 30 * 86400000).toISOString();
+    for (const tel of froms) {
+      // Solo cuenta como "respondió" si el mensaje SÍ se entregó (entregado_at).
+      // Si no, sería un falso positivo (un chat normal marcaría la campaña).
+      await supabase.from('remarketing_envios')
+        .update({ estado: 'respondido', respondido_at: new Date().toISOString() })
+        .eq('telefono', tel).is('respondido_at', null).not('entregado_at', 'is', null).gte('enviado_at', hace30);
+    }
+  } catch { /* no bloquear */ }
 
   // ── Marcar el chat con la línea por la que entró ───────────────────────────
   // Así aparece en la bandeja correcta (Chat Ventas / Chat Funnel), sin importar
@@ -2456,6 +2491,40 @@ export async function POST(req: NextRequest) {
         await saveAndSend(supabase, from, confirmMsg, 'text', wamid);
         continue;
       }
+    }
+
+    // ── GUARDA: cambio de MODELO/MARCA o cliente que INSISTE ────────────────────
+    // Esta lógica solo cambia el COLOR dentro de la MISMA familia. Si el cliente
+    // nombra OTRA marca/modelo (Mercedes cuando su pedido es Red Bull), o insiste
+    // en que le mandas lo equivocado, NO adivinamos ni repetimos el color errado:
+    // pasamos a un humano. (Antes el bot mandaba "Rojo Red Bull" cuando pedían
+    // "Rojo de Mercedes" y dañaba la venta.)
+    const MARCAS_MODELO = [
+      'mercedes', 'ferrari', 'red bull', 'redbull', 'red bul', 'mclaren', 'mc laren',
+      'alpine', 'aston martin', 'aston', 'williams', 'racing bulls', 'haas', 'sauber', 'audi', 'renault',
+      'honda', 'yamaha', 'suzuki', 'ktm', 'kawasaki', 'bmw', 'ducati', 'pulsar', 'apache', 'boxer', 'nkd',
+      'nacional', 'junior', 'millonarios', 'america', 'tolima', 'medellin', 'cali', 'colombia', 'argentina',
+      'real madrid', 'barcelona', 'boca', 'river',
+    ];
+    // Se comparan SIN espacios para que "red bull" y "REDBULL" cuenten como lo mismo.
+    const sinEsp = (s: string) => s.toLowerCase().replace(/\s+/g, '');
+    const prodActualLow  = sinEsp(pendingPedido.producto ?? '');
+    const marcaMencionada = MARCAS_MODELO.find(m => textLower.includes(m));
+    const marcaEsDistinta = !!marcaMencionada && !prodActualLow.includes(sinEsp(marcaMencionada));
+    const insisteCorreccion = [
+      'ese no es', 'no es ese', 'no es el', 'ese no', 'te dije', 'ya te dije',
+      'sigues enviando', 'me sigues enviando', 'sigue enviando', 'sigues mandando',
+      'me sigues mandando', 'no es lo que', 'no era', 'no ese', 'equivocad', 'otra vez el',
+    ].some(w => textLower.includes(w));
+
+    if (marcaEsDistinta || insisteCorreccion) {
+      const msg = marcaEsDistinta
+        ? `¡Claro! 😊 Para dejártelo en *${(marcaMencionada ?? '').toUpperCase()}* te paso con un asesor y te lo confirmamos exacto en un momentico 🙌`
+        : `Disculpa la confusión 🙏 te paso con un asesor para dejar tu pedido tal cual lo quieres 😊`;
+      const wamid = await sendTextMessage(from, msg);
+      await saveAndSend(supabase, from, msg, 'text', wamid);
+      await marcarHumanoYNotificar(supabase, from);
+      continue;
     }
 
     if (colorChangeIntent || (lastBotAskedColor && mentionedColor)) {
