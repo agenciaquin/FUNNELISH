@@ -487,8 +487,8 @@ export default function FormularioPedido({ funnel, utms, config }: Props) {
     { id: 'correo',       label: 'CORREO ELECTRÓNICO', tipo: 'email' },
     { id: 'direccion',    label: 'DIRECCIÓN', placeholder: 'Calle 15 # 20-30' },
     { id: 'barrio',       label: 'BARRIO' },
-    { id: 'municipio',    label: 'MUNICIPIO' },
     { id: 'departamento', label: 'DEPARTAMENTO' },
+    { id: 'municipio',    label: 'MUNICIPIO' },
   ];
   // Aplica los ajustes del dueño: renombrar (todos) y ocultar (solo el correo,
   // que es el único campo fijo no obligatorio en el pedido).
