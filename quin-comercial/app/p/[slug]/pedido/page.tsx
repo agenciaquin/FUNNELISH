@@ -32,6 +32,9 @@ export default async function PaginaPedido({
     if (typeof v === 'string' && v) utms[k] = v;
   }
 
+  const bloqueCheckout = (Array.isArray((f as any).layout) ? (f as any).layout : [])
+    .find((b: any) => b?.tipo === 'checkout' || b?.tipo === 'checkout_pro') ?? null;
+
   return (
     <main className="min-h-screen bg-white max-w-lg mx-auto">
       <Pixeles
@@ -46,7 +49,9 @@ export default async function PaginaPedido({
         <Medio url={f.imagen_banner} alt={f.producto} className="w-full" />
       )}
 
-      <FormularioPedido funnel={f} utms={utms} />
+      {/* La configuración del checkout vive en su bloque dentro del layout: una
+          sola fuente de verdad para la página y para esta dirección aparte. */}
+      <FormularioPedido funnel={f} utms={utms} config={bloqueCheckout?.props as any} />
 
       <PersonasComprando base={f.personas_comprando} />
     </main>

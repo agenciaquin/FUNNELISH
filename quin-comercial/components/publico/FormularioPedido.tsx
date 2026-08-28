@@ -1,10 +1,14 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
 import { normalizarOpciones, acentoDe, varianteAgotada, opcionAgotada } from '@/lib/funnels';
 import type { Funnel, VarianteFunnel } from '@/lib/funnels';
 import ArmarPackSelector, { type PackSalida } from './ArmarPackSelector';
+import {
+  normalizarBloquesCk, camposDelCheckout, resumenDelPedido,
+  type BloqueCk, type CampoCk,
+} from '@/lib/checkout-bloques';
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
 
@@ -20,19 +24,24 @@ interface Props {
   config?: CheckoutConfig;
 }
 
-export default function FormularioPedido({ funnel, utms }: Props) {
+export default function FormularioPedido({ funnel, utms, config }: Props) {
   const router = useRouter();
   const acento = acentoDe(funnel.color);
 
-  // Checkout FIJO (versión anterior): títulos, sellos y botón fijos.
-  // La prop `config` queda aceptada pero sin efecto (retrocompatible).
-  const cTitulo        = '';
-  const cSubtitulo     = '';
+  // ── Checkout por BLOQUES (opcional) ───────────────────────────────────────
+  // Si este embudo tiene bloques armados, mandan ellos: qué se muestra, en qué
+  // orden y con qué texto. Si NO tiene, se dibuja el checkout de siempre, igual
+  // que antes. Un embudo que ya está vendiendo no cambia solo.
+  const bloques: BloqueCk[] | null = normalizarBloquesCk((config as any)?.bloques);
+
+  // Qué datos se le piden al cliente lo decide `camposDelCheckout`: sin bloques,
+  // los de siempre; con bloques, los que estén armados. De aquí salen los campos
+  // que se dibujan, los que se validan y los que se avisan como faltantes.
+  const CAMPOS: CampoCk[] = camposDelCheckout(bloques);
+
   const cTituloDatos   = '✅ DATOS PARA EL ENVÍO:';
   const cTextoBoton    = 'COMPLETAR MI PEDIDO';
   const cColorBoton    = acento.boton;
-  const cSellos: { emoji?: string; texto?: string }[] = [];
-  const cMostrarSellos = false;
 
   const variantes: VarianteFunnel[] = funnel.variantes.length > 0
     ? funnel.variantes
@@ -220,8 +229,10 @@ export default function FormularioPedido({ funnel, utms }: Props) {
       nombre: 'nombre', apellidos: 'apellidos', whatsapp: 'WhatsApp', correo: 'correo',
       direccion: 'dirección', barrio: 'barrio', municipio: 'municipio', departamento: 'departamento',
     };
-    for (const [campo, texto] of Object.entries(nombres)) {
-      if (!String((datos as any)[campo] ?? '').trim()) f.push(texto);
+    // Solo cuenta como "falta" un dato que se está pidiendo y es obligatorio.
+    for (const c of CAMPOS) {
+      if (!c.obligatorio) continue;
+      if (!String((datos as any)[c.id] ?? '').trim()) f.push(nombres[c.id] ?? c.label.toLowerCase());
     }
     return f.slice(0, 3);
   })();
@@ -276,17 +287,25 @@ export default function FormularioPedido({ funnel, utms }: Props) {
       señalar('talla');
       return false;
     }
-    if (!datos.nombre.trim())     e.nombre = 'Escribe tu nombre';
-    if (!datos.apellidos.trim())  e.apellidos = 'Escribe tus apellidos';
-
-    // Celular colombiano: 10 dígitos que empiezan por 3. Evita pedidos sin WhatsApp.
-    const tel = datos.whatsapp.replace(/\D/g, '').replace(/^57/, '');
-    if (!/^3\d{9}$/.test(tel)) e.whatsapp = 'Debe ser un celular de 10 dígitos que empiece por 3';
-
-    if (!datos.direccion.trim()) e.direccion = 'Escribe tu dirección';
-    if (!datos.barrio.trim())    e.barrio = 'Escribe tu barrio';
-    if (!datos.municipio.trim()) e.municipio = 'Escribe tu municipio';
-    if (!datos.departamento.trim()) e.departamento = 'Escribe tu departamento';
+    // Solo se exige lo que el checkout de verdad está pidiendo. Un campo que no
+    // se muestra no puede bloquear la compra.
+    const FALTA: Record<string, string> = {
+      nombre: 'Escribe tu nombre', apellidos: 'Escribe tus apellidos',
+      correo: 'Escribe tu correo', direccion: 'Escribe tu dirección',
+      barrio: 'Escribe tu barrio', municipio: 'Escribe tu municipio',
+      departamento: 'Escribe tu departamento',
+    };
+    for (const c of CAMPOS) {
+      if (c.id === 'whatsapp') {
+        // Celular colombiano: 10 dígitos que empiezan por 3. Evita pedidos sin WhatsApp.
+        const tel = datos.whatsapp.replace(/\D/g, '').replace(/^57/, '');
+        if (c.obligatorio || datos.whatsapp.trim()) {
+          if (!/^3\d{9}$/.test(tel)) e.whatsapp = 'Debe ser un celular de 10 dígitos que empiece por 3';
+        }
+        continue;
+      }
+      if (c.obligatorio && !String(datos[c.id] ?? '').trim()) e[c.id] = FALTA[c.id] ?? 'Completa este dato';
+    }
 
     // Elecciones del producto obligatorias. Con "arma tu pack" se valida que los
     // dos buzos estén completos; si no, las elecciones normales.
@@ -426,31 +445,35 @@ export default function FormularioPedido({ funnel, utms }: Props) {
     }
   }
 
-  // Los campos se declaran como datos y se dibujan en línea. Si se hiciera con
-  // un componente definido aquí dentro, React lo recrearía en cada tecla y el
-  // cursor saldría del campo tras cada letra.
-  const CAMPOS: { id: keyof typeof datos; label: string; tipo?: string; placeholder?: string }[] = [
-    { id: 'nombre',       label: 'NOMBRE' },
-    { id: 'apellidos',    label: 'APELLIDOS' },
-    { id: 'whatsapp',     label: 'WHATSAPP', tipo: 'tel', placeholder: '3001234567' },
-    { id: 'correo',       label: 'CORREO ELECTRÓNICO', tipo: 'email' },
-    { id: 'direccion',    label: 'DIRECCIÓN', placeholder: 'Calle 15 # 20-30' },
-    { id: 'barrio',       label: 'BARRIO' },
-    { id: 'municipio',    label: 'MUNICIPIO' },
-    { id: 'departamento', label: 'DEPARTAMENTO' },
-  ];
+  // ── Trozos del checkout ────────────────────────────────────────────────────
+  // Cada trozo se escribe UNA sola vez. El checkout de siempre los muestra en el
+  // orden fijo de siempre; el checkout por bloques los ordena como estén armados.
 
-  return (
-    <div>
-      {/* Encabezado editable del checkout (opcional) */}
-      {(cTitulo || cSubtitulo) && (
-        <div className="px-3 pt-4 text-center">
-          {cTitulo && <h2 className="font-extrabold text-xl leading-tight">{cTitulo}</h2>}
-          {cSubtitulo && <p className="text-[13px] text-[#6B6B6B] mt-1">{cSubtitulo}</p>}
-        </div>
+  const campoInput = (c: CampoCk) => (
+    <div key={c.id} data-campo={c.id}>
+      <label className="block font-bold text-[15px] mb-1.5">
+        {c.label}{c.obligatorio && <span className="text-[#C1121F]"> *</span>}
+      </label>
+      <input
+        type={c.tipo ?? 'text'}
+        inputMode={c.id === 'whatsapp' ? 'numeric' : undefined}
+        autoComplete={c.auto ?? 'off'}
+        value={datos[c.id]}
+        onChange={e => set(c.id, e.target.value)}
+        placeholder={c.placeholder}
+        className={`w-full px-4 py-3 rounded-lg border text-[16px] outline-none transition-colors ${
+          errores[c.id] ? 'border-[#C1121F] bg-[#FEF2F2]' : 'border-[#C9C9C9] focus:border-[#0D8A3E]'
+        } ${señalando === c.id ? 'sacudir' : ''}`}
+      />
+      {errores[c.id] && (
+        <p className="text-[12px] font-semibold text-[#C1121F] mt-1">⚠️ {errores[c.id]}</p>
       )}
-      {/* Selección de producto */}
-      <h2 className="text-center font-extrabold text-lg py-3">ELIGE COLOR Y TALLA ⬇️</h2>
+    </div>
+  );
+
+  const secVariantes = (titulo: string) => (
+    <>
+      {!!titulo && <h2 className="text-center font-extrabold text-lg py-3">{titulo}</h2>}
 
       <div className="px-3 space-y-2">
         {variantes.map(v => {
@@ -746,70 +769,46 @@ export default function FormularioPedido({ funnel, utms }: Props) {
           );
         })}
       </div>
+    </>
+  );
 
-      {/* Datos de envío */}
-      <div ref={datosRef} className="scroll-mt-2" />
-      <h2 className="font-extrabold text-lg px-3 pt-6 pb-1">{cTituloDatos}</h2>
-      <p className="px-3 text-[12px] italic text-[#6B6B6B] mb-4">
-        Sus datos están protegidos y solo se usan para gestionar su pedido.
-      </p>
+  const secBoton = (texto: string, color: string, forma: string) => (
+    <button
+      ref={botonRef}
+      onClick={enviar}
+      disabled={enviando}
+      style={{ background: color || acento.boton }}
+      className={`boton-compra relative overflow-hidden block w-[calc(100%-1.5rem)] mx-3 mt-6 mb-4 ${forma === 'cuadrado' ? 'rounded-none' : forma === 'redondeado' ? 'rounded-xl' : 'rounded-full'} hover:opacity-90 disabled:opacity-60 text-white text-center font-extrabold text-xl py-4 transition-opacity`}
+    >
+      {enviando ? 'ENVIANDO…' : (texto || 'COMPLETAR MI PEDIDO')}
+    </button>
+  );
 
-      <div className="px-3 space-y-4">
-        {CAMPOS.map(c => (
-          <div key={c.id} data-campo={c.id}>
-            <label className="block font-bold text-[15px] mb-1.5">
-              {c.label} <span className="text-[#C1121F]">*</span>
-            </label>
-            <input
-              type={c.tipo ?? 'text'}
-              inputMode={c.id === 'whatsapp' ? 'numeric' : undefined}
-              autoComplete={
-                c.id === 'nombre' ? 'given-name' :
-                c.id === 'apellidos' ? 'family-name' :
-                c.id === 'whatsapp' ? 'tel' :
-                c.id === 'correo' ? 'email' :
-                c.id === 'direccion' ? 'street-address' : 'off'
-              }
-              value={datos[c.id]}
-              onChange={e => set(c.id, e.target.value)}
-              placeholder={c.placeholder}
-              className={`w-full px-4 py-3 rounded-lg border text-[16px] outline-none transition-colors ${
-                errores[c.id] ? 'border-[#C1121F] bg-[#FEF2F2]' : 'border-[#C9C9C9] focus:border-[#0D8A3E]'
-              } ${señalando === c.id ? 'sacudir' : ''}`}
-            />
-            {errores[c.id] && (
-              <p className="text-[12px] font-semibold text-[#C1121F] mt-1">⚠️ {errores[c.id]}</p>
-            )}
-          </div>
-        ))}
-      </div>
+  const secSellos = (items: { emoji?: string; texto?: string }[]) => (
+    <div className="flex flex-wrap justify-center gap-2 px-3 mb-2">
+      {items.map((x, i) => (
+        <span key={i} className="inline-flex items-center gap-1.5 text-[12px] font-semibold bg-[#F2F1EE] rounded-full px-3 py-1.5">
+          <span>{x.emoji || '✅'}</span>{x.texto}
+        </span>
+      ))}
+    </div>
+  );
 
-      {/* Botón principal, justo después de los datos */}
-      <button
-        ref={botonRef}
-        onClick={enviar}
-        disabled={enviando}
-        style={{ background: cColorBoton }}
-        className="boton-compra relative overflow-hidden block w-[calc(100%-1.5rem)] mx-3 mt-6 mb-4 rounded-full hover:opacity-90 disabled:opacity-60 text-white text-center font-extrabold text-xl py-4 transition-opacity"
-      >
-        {enviando ? 'ENVIANDO…' : cTextoBoton}
-      </button>
+  const secPago = (texto: string, color: string) => (
+    <div className="mx-3 mt-3 border border-[#E0E0E0] rounded-lg px-4 py-3 flex items-center gap-2">
+      <span className="w-4 h-4 rounded-full shrink-0" style={{ background: color || '#F97316' }} />
+      <span className="font-bold text-[#6B6B6B] text-[15px]">{texto || 'CONTRA ENTREGA'}</span>
+    </div>
+  );
 
-      {/* Sellos de confianza (opcional) */}
-      {cMostrarSellos && (
-        <div className="flex flex-wrap justify-center gap-2 px-3 mb-2">
-          {cSellos.map((s, i) => (
-            <span key={i} className="inline-flex items-center gap-1.5 text-[12px] font-semibold bg-[#F2F1EE] rounded-full px-3 py-1.5">
-              <span>{s.emoji || '✅'}</span>{s.texto}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Resumen con la foto y la talla de cada prenda */}
-      <div className="mx-3 border border-[#E0E0E0] rounded-lg overflow-hidden">
+  // El resumen: los TEXTOS los pone el dueño; los NÚMEROS salen del producto.
+  const secResumen = (L: { producto: string; precio: string; total: string; envio: string; textoEnvio: string }) => {
+    const R = resumenDelPedido(variante, { textoEnvio: L.textoEnvio });
+    return (
+      <>
+        <div className="mx-3 border border-[#E0E0E0] rounded-lg overflow-hidden">
         <div className="flex justify-between px-4 py-2.5 bg-[#FAFAFA] font-bold text-[13px]">
-          <span>PRODUCTO</span><span>PRECIO</span>
+          <span>{L.producto}</span><span>{L.precio}</span>
         </div>
 
         <div className="px-4 py-3 border-t border-[#EEE]">
@@ -888,25 +887,115 @@ export default function FormularioPedido({ funnel, utms }: Props) {
           )}
         </div>
 
+        {R.envio && (
+          <div className="flex justify-between px-4 py-2 border-t border-[#EEE] text-[14px]">
+            <span>{L.envio}</span><span className="font-bold">{R.envio}</span>
+          </div>
+        )}
         <div className="flex justify-between px-4 py-3 border-t border-[#EEE] font-bold">
-          <span>Total</span><span>{pesos(variante.precio)}</span>
+          <span>{L.total}</span><span>{R.total == null ? '—' : pesos(R.total)}</span>
         </div>
       </div>
+      </>
+    );
+  };
 
-      <div className="mx-3 mt-3 border border-[#E0E0E0] rounded-lg px-4 py-3 flex items-center gap-2">
-        <span className="w-4 h-4 rounded-full bg-[#F97316] shrink-0" />
-        <span className="font-bold text-[#6B6B6B] text-[15px]">CONTRA ENTREGA</span>
-      </div>
+  const RES_FIJO = { producto: 'PRODUCTO', precio: 'PRECIO', total: 'Total', envio: 'Envío', textoEnvio: '' };
 
-      <p className="text-center text-[12px] text-[#6B6B6B] py-6 px-6">
-        Pagas cuando recibes. Te escribimos por WhatsApp para confirmar tu pedido.
-      </p>
+  // Texto y color del botón: los manda su bloque si el checkout está armado.
+  const bBoton  = bloques?.find(b => b.tipo === 'boton' && b.visible !== false) ?? null;
+  const btnTexto   = String(bBoton?.props?.texto ?? '') || cTextoBoton;
+  const btnColor   = String(bBoton?.props?.color ?? '') || cColorBoton;
+  const btnFlotante = bloques ? (bBoton ? bBoton.props?.flotante !== false : false) : true;
+
+  // El primer dato del cliente es el ancla a la que la página lleva sola al
+  // cliente cuando termina de elegir color y talla.
+  const primerCampoId = bloques?.find(x => x.tipo === 'campo' && x.visible !== false)?.id ?? null;
+
+  /** Dibuja un bloque del checkout armado. Lo que no se reconoce, no se dibuja. */
+  const trozo = (b: BloqueCk) => {
+    const P: any = b.props ?? {};
+    const alin = P.align === 'center' ? 'text-center' : P.align === 'right' ? 'text-right' : 'text-left';
+    switch (b.tipo) {
+      case 'variantes': return secVariantes(String(P.titulo ?? ''));
+      case 'campo': {
+        const c = CAMPOS.find(x => x.id === P.campo);
+        if (!c) return null;
+        return (
+          <div ref={b.id === primerCampoId ? datosRef : undefined} className="px-3 py-2 scroll-mt-2">
+            {campoInput(c)}
+          </div>
+        );
+      }
+      case 'titulo':
+        return <h2 className={`font-extrabold px-3 pt-6 pb-1 ${alin}`} style={{ fontSize: Number(P.size) || 18, color: P.color || undefined }}>{P.texto}</h2>;
+      case 'texto':
+        return <p className={`px-3 mb-2 ${alin} ${P.italica ? 'italic' : ''}`} style={{ fontSize: Number(P.size) || 12, color: P.color || '#6B6B6B' }}>{P.texto}</p>;
+      case 'espaciador':
+        return <div style={{ height: Math.max(0, Number(P.alto) || 0) }} />;
+      case 'producto': {
+        const R = resumenDelPedido(variante);
+        const foto = variante.imagen || funnel.imagenes?.[0] || null;
+        return (
+          <div className="mx-3 mt-3 border border-[#E0E0E0] rounded-lg p-3 flex items-center gap-3">
+            {P.mostrarFoto !== false && foto && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={foto} alt="" className="w-16 h-16 rounded object-cover shrink-0" loading="lazy" />
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="font-extrabold text-[15px] leading-tight truncate">{R.nombre || funnel.producto}</p>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[12px]">
+                {R.precioAntes != null && (
+                  <span className="text-[#6B6B6B]">{P.etiquetaNormal || 'PRECIO NORMAL'} <s className="text-[#C1121F]">{pesos(R.precioAntes)}</s></span>
+                )}
+                <span className="font-bold text-[#0D8A3E]">{P.etiquetaOferta || 'PRECIO EN PROMOCIÓN'} {R.precio == null ? '—' : pesos(R.precio)}</span>
+              </div>
+            </div>
+          </div>
+        );
+      }
+      case 'resumen': return secResumen({
+        producto: String(P.etiquetaProducto ?? '') || 'PRODUCTO',
+        precio: String(P.etiquetaPrecio ?? '') || 'PRECIO',
+        total: String(P.etiquetaTotal ?? '') || 'Total',
+        envio: String(P.etiquetaEnvio ?? '') || 'Envío',
+        textoEnvio: String(P.textoEnvio ?? ''),
+      });
+      case 'sellos': return secSellos(Array.isArray(P.items) ? P.items : []);
+      case 'pago':   return secPago(String(P.texto ?? ''), String(P.color ?? ''));
+      case 'boton':  return secBoton(btnTexto, btnColor, String(P.forma ?? 'pill'));
+      default: return null;
+    }
+  };
+
+  return (
+    <div>
+      {bloques ? (
+        bloques.filter(b => b.visible !== false).map(b => (
+          <Fragment key={b.id}>{trozo(b)}</Fragment>
+        ))
+      ) : (<>
+        {/* Checkout de siempre: mismo orden y mismos textos de toda la vida. */}
+        {secVariantes('ELIGE COLOR Y TALLA ⬇️')}
+        <div ref={datosRef} className="scroll-mt-2" />
+        <h2 className="font-extrabold text-lg px-3 pt-6 pb-1">{cTituloDatos}</h2>
+        <p className="px-3 text-[12px] italic text-[#6B6B6B] mb-4">
+          Sus datos están protegidos y solo se usan para gestionar su pedido.
+        </p>
+        <div className="px-3 space-y-4">{CAMPOS.map(campoInput)}</div>
+        {secBoton(cTextoBoton, cColorBoton, 'pill')}
+        {secResumen(RES_FIJO)}
+        {secPago('CONTRA ENTREGA', '#F97316')}
+        <p className="text-center text-[12px] text-[#6B6B6B] py-6 px-6">
+          Pagas cuando recibes. Te escribimos por WhatsApp para confirmar tu pedido.
+        </p>
+      </>)}
 
       {/* Espacio para que la barra flotante no tape el final */}
-      {botonFlotante && <div className="h-24" />}
+      {botonFlotante && btnFlotante && <div className="h-24" />}
 
       {/* Botón que acompaña al cliente hasta que termina */}
-      {botonFlotante && (
+      {botonFlotante && btnFlotante && (
         <div className="fixed bottom-0 left-0 right-0 z-40 px-3 pb-3 pt-2 bg-gradient-to-t from-white via-white to-transparent">
           <div className="max-w-lg mx-auto">
             {faltantes.length > 0 && (
@@ -917,10 +1006,10 @@ export default function FormularioPedido({ funnel, utms }: Props) {
             <button
               onClick={enviar}
               disabled={enviando}
-              style={{ background: cColorBoton }}
+              style={{ background: btnColor }}
               className="w-full rounded-full hover:opacity-90 disabled:opacity-60 text-white text-center font-extrabold text-lg py-3.5 shadow-lg transition-opacity"
             >
-              {enviando ? 'ENVIANDO…' : cTextoBoton}
+              {enviando ? 'ENVIANDO…' : btnTexto}
             </button>
           </div>
         </div>

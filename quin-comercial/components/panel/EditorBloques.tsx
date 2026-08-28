@@ -6,6 +6,11 @@ import { construirLayoutDesdeFunnel, layoutEmbudoQueConvierte, type BloqueLayout
 import MiniBarraTexto from './MiniBarraTexto';
 import SelectorColor from './SelectorColor';
 import { estiloTexto, estiloEspacio, botonVariante, VARIANTES_BOTON, ANIMACIONES, FONTS_LISTA, claseAnim } from '@/lib/bloque-estilo';
+import {
+  CK_TIPOS, CK_TIPO_LABEL, CAMPOS_PEDIDO, CAMPO_INFO, AVISO_CAMPO, AVISO_TIPO,
+  bloquesPorDefecto, nuevoBloqueCk, normalizarBloquesCk, camposDelCheckout,
+  problemasDelCheckout, resumenDelPedido, type BloqueCk,
+} from '@/lib/checkout-bloques';
 
 const pesos = (n: number) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
 const nid = (t: string) => `${t}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
@@ -196,6 +201,11 @@ export default function EditorBloques({
   const [dragFoto, setDragFoto] = useState<number | null>(null);
   // Redimensionar un bloque arrastrando sus esquinas (alto/ancho).
   const [rz, setRz] = useState<null | { id: string; corner: string; startX: number; startY: number; startH: number; startW: number; contW: number; props: any }>(null);
+  // ── Checkout por bloques ──
+  const [selCk, setSelCk] = useState<string | null>(null);
+  const [dragCk, setDragCk] = useState<{ tipo: string; campo?: string } | null>(null);
+  const [dragCkId, setDragCkId] = useState<string | null>(null);
+  const [overCk, setOverCk] = useState<number | null>(null);
 
   const set = (nv: BloqueLayout[]) => onLayout(nv);
   const upd = (id: string, patch: any) => set(bs.map(b => (b.id === id ? { ...b, ...patch } : b)));
@@ -212,6 +222,52 @@ export default function EditorBloques({
   const checkoutBloque = bs.find(b => b.tipo === 'checkout' || b.tipo === 'checkout_pro') || null;
   // Agrega el checkout completo (catálogo + formulario + comprar ahora) al final.
   const agregarCheckout = () => { const nb = nuevoBloque('checkout'); if (!hayCheckout) set([...bs, nb]); setVistaTel('checkout'); setSel(hayCheckout ? (checkoutBloque?.id ?? null) : nb.id); };
+  // ── Bloques del CHECKOUT ──────────────────────────────────────────────────
+  // Viven dentro del propio bloque de checkout (props.bloques). Si no existen,
+  // el embudo sigue mostrando el checkout de siempre: no se toca nada solo.
+  const ckBloques: BloqueCk[] | null = normalizarBloquesCk((checkoutBloque?.props as any)?.bloques);
+  const ckLista: BloqueCk[] = ckBloques ?? [];
+  const setCk = (nv: BloqueCk[] | null) => {
+    if (!checkoutBloque) return;
+    const P: any = { ...(checkoutBloque.props ?? {}) };
+    if (nv && nv.length) P.bloques = nv; else delete P.bloques;
+    upd(checkoutBloque.id, { props: P });
+  };
+  const updCk = (id: string, props: any) => setCk(ckLista.map(x => (x.id === id ? { ...x, props: { ...(x.props ?? {}), ...props } } : x)));
+  const ocultarCk = (id: string, oculto: boolean) => setCk(ckLista.map(x => (x.id === id ? { ...x, visible: oculto ? false : undefined } : x)));
+  const borrarCk = (id: string) => { setCk(ckLista.filter(x => x.id !== id)); if (selCk === id) setSelCk(null); };
+  const moverCk = (id: string, dir: -1 | 1) => {
+    const i = ckLista.findIndex(x => x.id === id), j = i + dir;
+    if (i < 0 || j < 0 || j >= ckLista.length) return;
+    const a2 = [...ckLista]; [a2[i], a2[j]] = [a2[j], a2[i]]; setCk(a2);
+  };
+  const duplicarCk = (id: string) => {
+    const i = ckLista.findIndex(x => x.id === id); if (i < 0) return;
+    const c = nuevoBloqueCk(ckLista[i].tipo); c.props = { ...(ckLista[i].props ?? {}) };
+    const a2 = [...ckLista]; a2.splice(i + 1, 0, c); setCk(a2); setSelCk(c.id);
+  };
+  const insertarCk = (idx: number, tipo: string, campo?: any) => {
+    const nb = nuevoBloqueCk(tipo, campo);
+    const a2 = [...ckLista]; a2.splice(idx, 0, nb); setCk(a2); setSelCk(nb.id);
+  };
+  const soltarCkEn = (idx: number) => {
+    if (dragCk) { insertarCk(idx, dragCk.tipo, dragCk.campo); setDragCk(null); setOverCk(null); return; }
+    if (dragCkId) {
+      const from = ckLista.findIndex(x => x.id === dragCkId);
+      if (from >= 0) { const a2 = [...ckLista]; const [m] = a2.splice(from, 1); a2.splice(from < idx ? idx - 1 : idx, 0, m); setCk(a2); }
+      setDragCkId(null); setOverCk(null);
+    }
+  };
+  /** Activa el checkout editable copiando, tal cual, el que ya se ve hoy. */
+  const activarCkBloques = () => { setCk(bloquesPorDefecto()); setSelCk(null); };
+  const volverCkFijo = () => { setCk(null); setSelCk(null); };
+  const ckProblemas = problemasDelCheckout(ckBloques);
+  /** Qué se pierde si se borra este bloque. Se puede borrar todo, pero avisado. */
+  const avisoCk = (b: BloqueCk): string | null => {
+    if (b.tipo === 'campo') return AVISO_CAMPO[(b.props?.campo ?? '') as keyof typeof AVISO_CAMPO] ?? null;
+    return AVISO_TIPO[b.tipo] ?? null;
+  };
+
   const soltarEn = (idx: number) => {
     if (dragTipo) { insertar(idx, dragTipo); setDragTipo(null); setOverIdx(null); return; }
     if (dragId) {
@@ -316,12 +372,379 @@ export default function EditorBloques({
     return it ? `${it.icono} ${it.label}` : t;
   };
 
+  // ── CHECKOUT POR BLOQUES: paleta, lienzo y propiedades ─────────────────────
+  const selCkBloque = ckLista.find(b => b.id === selCk) || null;
+  const ckCats = [...new Set(CK_TIPOS.map(t => t.cat))];
+  const ckUnicoUsado = (t: string) => !!CK_TIPOS.find(x => x.tipo === t)?.unico && ckLista.some(b => b.tipo === t);
+  const camposLibres = CAMPOS_PEDIDO.filter(c => !ckLista.some(b => b.tipo === 'campo' && b.props?.campo === c));
+
+  const paletaCheckout = () => (
+    <div className="lg:w-52 lg:shrink-0 lg:sticky lg:top-2 lg:max-h-[82vh] overflow-y-auto bg-white border border-[#E8E8E8] rounded-2xl p-2">
+      <p className="text-[9px] font-bold uppercase tracking-wide text-[#9A9A9A] px-1 mb-1">Bloques del checkout</p>
+      {!ckBloques ? (
+        <p className="text-[11px] text-[#6B6B6B] px-1 py-2 leading-snug">Activa el checkout editable en el teléfono para poder arrastrar bloques aquí.</p>
+      ) : ckCats.map(cat => (
+        <div key={cat} className="mb-2">
+          <p className="text-[9px] font-bold uppercase tracking-wide text-[#00847A] px-1 mb-1">{cat}</p>
+          {cat === 'Datos del cliente' ? (
+            <div className="space-y-1">
+              {camposLibres.length === 0 && <p className="text-[10px] text-[#9A9A9A] px-1">Ya están todos los datos puestos.</p>}
+              {camposLibres.map(c => (
+                <button key={c} type="button" draggable
+                  onDragStart={() => setDragCk({ tipo: 'campo', campo: c })}
+                  onDragEnd={() => { setDragCk(null); setOverCk(null); }}
+                  onClick={() => insertarCk(ckLista.length, 'campo', c)}
+                  className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] text-left border border-[#EEE] hover:bg-[#F5F5F5] cursor-grab active:cursor-grabbing">
+                  <span className="shrink-0">✏️</span><span className="truncate">{CAMPO_INFO[c].label}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {CK_TIPOS.filter(t => t.cat === cat).map(t => {
+                const ya = ckUnicoUsado(t.tipo);
+                return (
+                  <button key={t.tipo} type="button" draggable={!ya} disabled={ya}
+                    onDragStart={() => setDragCk({ tipo: t.tipo })}
+                    onDragEnd={() => { setDragCk(null); setOverCk(null); }}
+                    onClick={() => { if (!ya) insertarCk(ckLista.length, t.tipo); }}
+                    title={ya ? 'Este bloque solo puede ir una vez' : 'Arrástralo al teléfono o tócalo para agregarlo abajo'}
+                    className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] text-left border ${ya ? 'opacity-40 border-[#EEE] cursor-default' : 'border-[#EEE] hover:bg-[#F5F5F5] cursor-grab active:cursor-grabbing'}`}>
+                    <span className="shrink-0">{t.icono}</span><span className="truncate">{t.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ))}
+      {ckBloques && (
+        <button type="button" onClick={() => { if (confirm('Vuelve al checkout de siempre. Se pierde lo que armaste con bloques. ¿Seguro?')) volverCkFijo(); }}
+          className="w-full mt-1 px-2 py-2 rounded-lg text-[10.5px] font-semibold border border-[#F3C3CB] text-[#C1121F] hover:bg-[#FDEEF0]">↩︎ Volver al checkout de siempre</button>
+      )}
+    </div>
+  );
+
+  // Punto de inserción entre bloques del checkout
+  const MasCk = ({ idx }: { idx: number }) => {
+    const activo = !!dragCk || !!dragCkId;
+    const resaltado = overCk === idx && activo;
+    return (
+      <div onDragOver={e => { if (activo) { e.preventDefault(); setOverCk(idx); } }}
+        onDragLeave={() => setOverCk(o => (o === idx ? null : o))}
+        onDrop={() => soltarCkEn(idx)}
+        className={`relative flex justify-center transition-all ${activo ? 'py-2' : 'py-0.5 group'} ${resaltado ? 'bg-[#00A89D]/10' : ''}`}>
+        <span className={`w-5 h-5 rounded-full text-white text-sm leading-none flex items-center justify-center shadow ${activo ? 'bg-[#00847A] scale-110' : 'bg-[#00A89D] opacity-0 group-hover:opacity-70'}`}>+</span>
+      </div>
+    );
+  };
+
+  /** Vista de un bloque del checkout dentro del teléfono. */
+  const vistaCk = (b: BloqueCk) => {
+    const P: any = b.props ?? {};
+    const vs: any[] = d.variantes ?? [];
+    const v0: any = vs[0] || null;
+    const R = resumenDelPedido({ nombre: v0?.nombre || d.producto, precio: (typeof v0?.precio === 'number' ? v0.precio : d.precio), precioAntes: v0?.precioAntes ?? d.precio_antes }, { textoEnvio: P.textoEnvio });
+    const img0: string | null = v0?.imagen || d.imagenes?.[0] || null;
+    const alin = P.align === 'center' ? 'text-center' : P.align === 'right' ? 'text-right' : 'text-left';
+    const chip = 'text-[10px] border border-[#DDD] rounded-md px-2 py-1 bg-white flex items-center gap-1';
+    const norm = (ops: any[]) => (ops ?? []).map((o: any) => (typeof o === 'string' ? { valor: o } : o)).filter((o: any) => o?.valor);
+    switch (b.tipo) {
+      case 'titulo':
+        return <div className={`font-extrabold px-3 pt-4 pb-1 ${alin}`} style={{ fontSize: Math.min(22, Number(P.size) || 18), color: P.color || undefined }}>{P.texto || 'Título'}</div>;
+      case 'texto':
+        return <div className={`px-3 py-1 ${alin} ${P.italica ? 'italic' : ''}`} style={{ fontSize: Number(P.size) || 12, color: P.color || '#6B6B6B' }}>{P.texto || 'Texto'}</div>;
+      case 'espaciador':
+        return <div style={{ height: Math.max(4, Number(P.alto) || 16) }} className="bg-[repeating-linear-gradient(45deg,#F7F7F7,#F7F7F7_6px,#fff_6px,#fff_12px)]" />;
+      case 'producto':
+        return (
+          <div className="mx-3 my-2 flex items-center gap-2 rounded-xl border border-[#E8E8E8] p-2">
+            {P.mostrarFoto !== false && (img0
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={img0} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0" />
+              : <div className="w-12 h-12 rounded-lg bg-[#F2F1EE] grid place-items-center text-lg shrink-0">📦</div>)}
+            <div className="min-w-0">
+              <div className="text-[11px] font-bold truncate">{R.nombre || 'Tu producto'}</div>
+              <div className="text-[10px] text-[#6B6B6B]">
+                {R.precioAntes != null && <><span>{P.etiquetaNormal || 'PRECIO NORMAL'} </span><s className="text-[#C1121F]">{pesos(R.precioAntes)}</s> · </>}
+                <span className="font-extrabold" style={{ color: acento.texto }}>{R.precio == null ? '—' : pesos(R.precio)}</span>
+              </div>
+            </div>
+          </div>
+        );
+      case 'variantes': {
+        const selectores: any[] = Array.isArray(v0?.selectores) ? v0.selectores : [];
+        const tieneTalla = selectores.some(x => /talla/i.test(x?.etiqueta || ''));
+        const tallas0: string[] = (!tieneTalla && Array.isArray(v0?.tallas) && v0.tallas.length) ? v0.tallas : (!tieneTalla && Array.isArray(d.tallas) ? d.tallas : []);
+        return (
+          <div className="px-3 py-2 space-y-2">
+            {!!P.titulo && <div className="text-center font-extrabold text-[12px]">{P.titulo}</div>}
+            {selectores.map((x: any, si: number) => {
+              const ops = norm(x.opciones).slice(0, 8);
+              if (!ops.length) return null;
+              return (
+                <div key={si}>
+                  <div className="text-[9px] font-extrabold tracking-wide">{(x.etiqueta || 'OPCIÓN').toUpperCase()}</div>
+                  <div className="flex gap-1 flex-wrap mt-1">{ops.map((o: any, k: number) => <span key={k} className={chip}>{o.valor}</span>)}</div>
+                </div>
+              );
+            })}
+            {tallas0.length > 0 && (
+              <div><div className="text-[9px] font-extrabold tracking-wide">TALLA</div>
+                <div className="flex gap-1 flex-wrap mt-1">{tallas0.slice(0, 8).map((t, k) => <span key={k} className={chip}>{t}</span>)}</div></div>
+            )}
+            {selectores.length === 0 && tallas0.length === 0 && (
+              <div className="text-[10px] text-[#B45309] bg-[#FEF6E7] rounded-lg px-2 py-1.5">Este producto todavía no tiene colores ni tallas. Se ponen en “Editar productos”.</div>
+            )}
+          </div>
+        );
+      }
+      case 'campo': {
+        const info = CAMPO_INFO[(P.campo ?? 'nombre') as keyof typeof CAMPO_INFO];
+        return (
+          <div className="px-3 py-1.5">
+            <div className="text-[9px] font-extrabold tracking-wide">{P.etiqueta || info?.label}{P.obligatorio !== false && <span className="text-[#C1121F]"> *</span>}</div>
+            <div className="h-7 rounded-lg bg-white border border-[#E8E8E8] flex items-center px-2 text-[10px] text-[#B5B5B5] mt-1">{P.placeholder || info?.placeholder || ''}</div>
+          </div>
+        );
+      }
+      case 'resumen':
+        return (
+          <div className="mx-3 my-2 border border-[#E0E0E0] rounded-lg overflow-hidden text-[10px]">
+            <div className="flex justify-between px-3 py-1.5 bg-[#FAFAFA] font-bold"><span>{P.etiquetaProducto || 'PRODUCTO'}</span><span>{P.etiquetaPrecio || 'PRECIO'}</span></div>
+            <div className="flex justify-between px-3 py-1.5 border-t border-[#EEE]"><span className="truncate">{R.nombre || 'Tu producto'}</span><span className="font-bold">{R.precio == null ? '—' : pesos(R.precio)}</span></div>
+            {R.envio && <div className="flex justify-between px-3 py-1.5 border-t border-[#EEE]"><span>{P.etiquetaEnvio || 'Envío'}</span><span className="font-bold">{R.envio}</span></div>}
+            <div className="flex justify-between px-3 py-1.5 border-t border-[#EEE] font-bold"><span>{P.etiquetaTotal || 'Total'}</span><span>{R.total == null ? '—' : pesos(R.total)}</span></div>
+          </div>
+        );
+      case 'sellos':
+        return (
+          <div className="flex flex-wrap justify-center gap-1.5 px-3 py-2">
+            {(Array.isArray(P.items) ? P.items : []).map((x: any, i: number) => (
+              <span key={i} className="inline-flex items-center gap-1 text-[10px] font-semibold bg-[#F2F1EE] rounded-full px-2 py-1"><span>{x.emoji || '✅'}</span>{x.texto}</span>
+            ))}
+          </div>
+        );
+      case 'pago':
+        return (
+          <div className="mx-3 my-2 border border-[#E0E0E0] rounded-lg px-3 py-2 flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full shrink-0" style={{ background: P.color || '#F97316' }} />
+            <span className="font-bold text-[#6B6B6B] text-[11px]">{P.texto || 'CONTRA ENTREGA'}</span>
+          </div>
+        );
+      case 'boton':
+        return (
+          <div className="px-3 py-2">
+            <div className={`text-white text-center font-extrabold text-[12px] py-2.5 ${P.forma === 'cuadrado' ? 'rounded-none' : P.forma === 'redondeado' ? 'rounded-xl' : 'rounded-full'}`} style={{ background: P.color || acento.boton }}>{P.texto || 'COMPLETAR MI PEDIDO'}</div>
+          </div>
+        );
+      default:
+        return <div className="px-3 py-2 text-[10px] text-[#9A9A9A]">Bloque desconocido: {b.tipo}</div>;
+    }
+  };
+
+  /** Panel de propiedades del bloque de checkout elegido. */
+  const propsCheckout = () => {
+    const btnV = 'w-full py-2 rounded-xl border border-[#E8E8E8] text-[12px] font-semibold hover:bg-[#F5F5F5]';
+    if (!checkoutBloque) {
+      return <div className="bg-white border border-dashed border-[#E8E8E8] rounded-2xl p-8 text-center text-[#9A9A9A] text-[13px]">Esta página todavía no tiene checkout.</div>;
+    }
+    if (!ckBloques) {
+      return (
+        <div className="bg-white border border-[#E8E8E8] rounded-2xl p-4 space-y-3">
+          <p className="text-[13px] font-bold">Checkout de siempre</p>
+          <p className="text-[12px] text-[#6B6B6B] leading-snug">Ahora mismo este embudo usa el checkout fijo: el que ya está vendiendo. No cambia nada hasta que tú lo actives.</p>
+          <button onClick={activarCkBloques} className="w-full py-2.5 rounded-xl bg-[#00A89D] text-white text-sm font-bold hover:bg-[#00847A]">✨ Hacerlo editable por bloques</button>
+          <p className="text-[11px] text-[#9A9A9A] leading-snug">Empieza igualito a como se ve hoy: mismos textos, mismo orden. Desde ahí mueves, renombras y quitas lo que quieras.</p>
+          {onAbrirCheckout && <button onClick={onAbrirCheckout} className={btnV}>✏️ Editar productos, colores y precios</button>}
+        </div>
+      );
+    }
+    if (!selCkBloque) {
+      return (
+        <div className="bg-white border border-[#E8E8E8] rounded-2xl p-4 space-y-3">
+          <p className="text-[13px] font-bold">Checkout editable</p>
+          <p className="text-[12px] text-[#6B6B6B]">👉 Toca un bloque del teléfono para editarlo, o arrastra uno de la izquierda.</p>
+          {ckProblemas.length > 0 && (
+            <div className="rounded-xl border border-[#F3C3CB] bg-[#FDEEF0] p-2.5 space-y-1">
+              <p className="text-[11px] font-extrabold text-[#C1121F]">⚠️ Ojo con esto</p>
+              {ckProblemas.map((t, i) => <p key={i} className="text-[11px] text-[#C1121F] leading-snug">· {t}</p>)}
+            </div>
+          )}
+          {onAbrirCheckout && <button onClick={onAbrirCheckout} className={btnV}>✏️ Editar productos, colores y precios</button>}
+        </div>
+      );
+    }
+    const b = selCkBloque, P: any = b.props ?? {};
+    const up = (patch: any) => updCk(b.id, patch);
+    const aviso = avisoCk(b);
+    const campoTxt = (label: string, key: string, ph?: string) => (
+      <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">{label}</span>
+        <input className={inp} value={P[key] ?? ''} placeholder={ph} onChange={e => up({ [key]: e.target.value })} /></label>
+    );
+    return (
+      <div className="bg-white border border-[#E8E8E8] rounded-2xl overflow-hidden">
+        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[#E8E8E8]">
+          <button onClick={() => setSelCk(null)} className="text-[12px] font-semibold text-[#00847A] hover:underline">← Volver</button>
+          <b className="text-[13px] flex-1 truncate text-right">{CK_TIPO_LABEL(b.tipo)}</b>
+        </div>
+        <div className="p-3 space-y-3">
+          <button onClick={() => setSelCk(null)} className="w-full py-2.5 rounded-xl bg-[#00A89D] text-white text-sm font-bold hover:bg-[#00847A]">💾 Guardar cambios</button>
+          <div className="flex gap-2">
+            <button onClick={() => duplicarCk(b.id)} className="flex-1 py-2 rounded-xl border border-[#E8E8E8] text-[13px] font-semibold hover:bg-[#F5F5F5]">⧉ Duplicar</button>
+            <button onClick={() => { if (!aviso || confirm(`${aviso}\n\n¿Lo borro igual?`)) borrarCk(b.id); }}
+              className="flex-1 py-2 rounded-xl border border-[#F3C3CB] text-[#C1121F] text-[13px] font-semibold hover:bg-[#FDEEF0]">🗑 Borrar</button>
+          </div>
+          {aviso && <p className="text-[11px] text-[#C1121F] bg-[#FDEEF0] border border-[#F3C3CB] rounded-lg px-2.5 py-2 leading-snug">⚠️ {aviso}</p>}
+        </div>
+        <div className="px-3 pb-3 space-y-3 max-h-[60vh] overflow-y-auto border-t border-[#F0F0F0] pt-3">
+          {b.tipo === 'campo' && (<>
+            <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Qué dato pide</span>
+              <select className={inp} value={P.campo ?? 'nombre'} onChange={e => { const c = e.target.value as any; up({ campo: c, etiqueta: CAMPO_INFO[c as keyof typeof CAMPO_INFO].label, placeholder: CAMPO_INFO[c as keyof typeof CAMPO_INFO].placeholder ?? '' }); }}>
+                {CAMPOS_PEDIDO.map(c => <option key={c} value={c}>{CAMPO_INFO[c].label}</option>)}
+              </select></label>
+            <p className="text-[10.5px] text-[#6B6B6B] leading-snug">Cambiar el nombre cambia lo que ve el cliente, no el dato que llega en el pedido.</p>
+            {campoTxt('Cómo se llama en pantalla', 'etiqueta')}
+            {campoTxt('Texto de ayuda dentro del campo', 'placeholder', 'Ej: María')}
+            <button onClick={() => up({ obligatorio: P.obligatorio === false })} className="flex items-center gap-2 text-[12px] font-semibold">
+              <span className={`w-4 h-4 rounded border grid place-items-center text-[10px] text-white ${P.obligatorio !== false ? 'bg-[#00A89D] border-[#00A89D]' : 'bg-white border-[#D5D1C8]'}`}>{P.obligatorio !== false ? '✓' : ''}</span>
+              Obligatorio (no deja comprar sin llenarlo)
+            </button>
+          </>)}
+          {(b.tipo === 'titulo' || b.tipo === 'texto') && (<>
+            <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Texto</span>
+              <textarea className={`${inp} min-h-[70px]`} value={P.texto ?? ''} onChange={e => up({ texto: e.target.value })} /></label>
+            <div className="flex gap-2 items-end">
+              <label className="flex-1"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Tamaño</span>
+                <input type="number" min={9} max={40} className={inp} value={Number(P.size) || (b.tipo === 'titulo' ? 18 : 12)} onChange={e => up({ size: Number(e.target.value) })} /></label>
+              <label className="flex-1"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Alineación</span>
+                <select className={inp} value={P.align ?? 'left'} onChange={e => up({ align: e.target.value })}>
+                  <option value="left">Izquierda</option><option value="center">Centro</option><option value="right">Derecha</option>
+                </select></label>
+            </div>
+            <div><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Color</span>
+              <SelectorColor value={P.color ?? ''} onChange={(v: string) => up({ color: v })} permitirVacio /></div>
+            {b.tipo === 'texto' && (
+              <button onClick={() => up({ italica: !P.italica })} className="flex items-center gap-2 text-[12px] font-semibold">
+                <span className={`w-4 h-4 rounded border grid place-items-center text-[10px] text-white ${P.italica ? 'bg-[#00A89D] border-[#00A89D]' : 'bg-white border-[#D5D1C8]'}`}>{P.italica ? '✓' : ''}</span>Cursiva
+              </button>
+            )}
+          </>)}
+          {b.tipo === 'espaciador' && (
+            <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Alto (px)</span>
+              <input type="number" min={4} max={120} className={inp} value={Number(P.alto) || 16} onChange={e => up({ alto: Number(e.target.value) })} /></label>
+          )}
+          {b.tipo === 'variantes' && (<>
+            {campoTxt('Título encima de los colores', 'titulo')}
+            <p className="text-[10.5px] text-[#6B6B6B] leading-snug">Los colores, tallas y precios de este bloque salen del producto. Se editan en “Editar productos”.</p>
+            {onAbrirCheckout && <button onClick={onAbrirCheckout} className={btnV}>✏️ Editar productos, colores y precios</button>}
+          </>)}
+          {b.tipo === 'producto' && (<>
+            <button onClick={() => up({ mostrarFoto: P.mostrarFoto === false })} className="flex items-center gap-2 text-[12px] font-semibold">
+              <span className={`w-4 h-4 rounded border grid place-items-center text-[10px] text-white ${P.mostrarFoto !== false ? 'bg-[#00A89D] border-[#00A89D]' : 'bg-white border-[#D5D1C8]'}`}>{P.mostrarFoto !== false ? '✓' : ''}</span>Mostrar la foto
+            </button>
+            {campoTxt('Etiqueta del precio de antes', 'etiquetaNormal')}
+            {campoTxt('Etiqueta del precio de hoy', 'etiquetaOferta')}
+          </>)}
+          {b.tipo === 'resumen' && (<>
+            {campoTxt('Título de la columna del producto', 'etiquetaProducto')}
+            {campoTxt('Título de la columna del precio', 'etiquetaPrecio')}
+            {campoTxt('Cómo se llama el total', 'etiquetaTotal')}
+            {campoTxt('Cómo se llama la línea del envío', 'etiquetaEnvio')}
+            {campoTxt('Qué dice el envío (vacío = no se muestra)', 'textoEnvio', 'GRATIS')}
+            <p className="text-[10.5px] text-[#6B6B6B] leading-snug">El total lo calcula el sistema con el precio del producto: no se escribe a mano. La línea del envío es solo un texto y no suma ni resta.</p>
+          </>)}
+          {b.tipo === 'pago' && (<>
+            {campoTxt('Texto', 'texto')}
+            <div><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Color del punto</span>
+              <SelectorColor value={P.color ?? '#F97316'} onChange={(v: string) => up({ color: v })} /></div>
+          </>)}
+          {b.tipo === 'boton' && (<>
+            {campoTxt('Qué dice el botón', 'texto')}
+            <div><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Color</span>
+              <SelectorColor value={P.color ?? ''} onChange={(v: string) => up({ color: v })} permitirVacio /></div>
+            <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Forma</span>
+              <select className={inp} value={P.forma ?? 'pill'} onChange={e => up({ forma: e.target.value })}>
+                <option value="pill">Redondo</option><option value="redondeado">Esquinas suaves</option><option value="cuadrado">Cuadrado</option>
+              </select></label>
+            <button onClick={() => up({ flotante: P.flotante === false })} className="flex items-center gap-2 text-[12px] font-semibold">
+              <span className={`w-4 h-4 rounded border grid place-items-center text-[10px] text-white ${P.flotante !== false ? 'bg-[#00A89D] border-[#00A89D]' : 'bg-white border-[#D5D1C8]'}`}>{P.flotante !== false ? '✓' : ''}</span>
+              Que siga al cliente al bajar
+            </button>
+          </>)}
+          {b.tipo === 'sellos' && (<>
+            {(Array.isArray(P.items) ? P.items : []).map((x: any, i: number) => (
+              <div key={i} className="flex gap-1.5 items-center">
+                <input className={`${inp} w-14 text-center`} value={x.emoji ?? ''} onChange={e => { const it = [...P.items]; it[i] = { ...it[i], emoji: e.target.value }; up({ items: it }); }} />
+                <input className={inp} value={x.texto ?? ''} onChange={e => { const it = [...P.items]; it[i] = { ...it[i], texto: e.target.value }; up({ items: it }); }} />
+                <button onClick={() => up({ items: P.items.filter((_: any, k: number) => k !== i) })} className="text-[#C1121F] px-1">✕</button>
+              </div>
+            ))}
+            <button onClick={() => up({ items: [...(P.items ?? []), { emoji: '✅', texto: 'Nuevo sello' }] })} className={btnV}>+ Agregar sello</button>
+          </>)}
+        </div>
+      </div>
+    );
+  };
+
+  /** El teléfono en la pestaña CHECKOUT. */
+  const lienzoCheckout = () => {
+    if (!checkoutBloque) return (
+      <div className="p-6 text-center">
+        <div className="text-4xl mb-2">🛒</div>
+        <p className="text-[13px] text-[#6B6B6B] mb-3">Esta página todavía no tiene checkout.<br />Actívalo para recibir los pedidos.</p>
+        <button onClick={agregarCheckout} className="rounded-xl py-2.5 px-5 bg-[#00A89D] text-white text-sm font-bold hover:bg-[#007A72]">🛒 Activar checkout</button>
+      </div>
+    );
+    if (!ckBloques) return (
+      <div onClick={() => setSel(checkoutBloque.id)} className="cursor-pointer">
+        {vistaBloque(checkoutBloque)}
+        <div className="p-3 border-t border-[#EEE] text-center">
+          <p className="text-[11px] text-[#6B6B6B] mb-2">Así se ve hoy. Para moverlo, renombrarlo o quitarle cosas, hazlo editable.</p>
+          <button onClick={e => { e.stopPropagation(); activarCkBloques(); }} className="rounded-xl py-2 px-4 bg-[#00A89D] text-white text-[12px] font-bold hover:bg-[#007A72]">✨ Hacerlo editable por bloques</button>
+        </div>
+      </div>
+    );
+    return (
+      <div className="py-1">
+        <MasCk idx={0} />
+        {ckLista.map((b, i) => {
+          const oculto = b.visible === false;
+          return (
+            <Fragment key={b.id}>
+              <div className={`group/ck relative ${selCk === b.id ? 'ring-2 ring-[#00A89D] ring-inset' : ''} ${dragCkId === b.id ? 'opacity-40' : ''}`}>
+                <div className={`absolute -top-3 right-2 z-20 items-center gap-0.5 bg-white border border-[#00A89D]/40 rounded-lg px-1 py-0.5 shadow ${selCk === b.id ? 'flex' : 'hidden group-hover/ck:flex'}`}>
+                  <span draggable onDragStart={() => setDragCkId(b.id)} onDragEnd={() => { setDragCkId(null); setOverCk(null); }}
+                    className="text-xs px-1 cursor-grab active:cursor-grabbing text-[#9A9A9A]" title="Arrastra para mover">⠿</span>
+                  <button onClick={e => { e.stopPropagation(); moverCk(b.id, -1); }} disabled={i === 0} className="text-xs px-0.5 disabled:opacity-25" title="Subir">↑</button>
+                  <button onClick={e => { e.stopPropagation(); moverCk(b.id, 1); }} disabled={i === ckLista.length - 1} className="text-xs px-0.5 disabled:opacity-25" title="Bajar">↓</button>
+                  <button onClick={e => { e.stopPropagation(); duplicarCk(b.id); }} className="text-xs px-0.5" title="Duplicar">⧉</button>
+                  <button onClick={e => { e.stopPropagation(); ocultarCk(b.id, !oculto); }} className="text-xs px-0.5" title={oculto ? 'Mostrar' : 'Ocultar'}>{oculto ? '🙈' : '👁'}</button>
+                  <button onClick={e => { e.stopPropagation(); const av = avisoCk(b); if (!av || confirm(`${av}\n\n¿Lo borro igual?`)) borrarCk(b.id); }} className="text-xs px-0.5 text-[#DC2626]" title="Borrar">🗑</button>
+                </div>
+                <div onClick={() => setSelCk(b.id)} className={`cursor-pointer ${oculto ? 'opacity-40 grayscale' : ''}`}>
+                  {oculto && <div className="absolute top-1 left-1 z-10 text-[9px] bg-[#0D0D0D]/70 text-white rounded px-1.5 py-0.5">oculto</div>}
+                  {vistaCk(b)}
+                </div>
+              </div>
+              <MasCk idx={i + 1} />
+            </Fragment>
+          );
+        })}
+        {ckLista.length === 0 && (
+          <div className="p-6 text-center text-[12px] text-[#9A9A9A]">Checkout vacío. Arrastra bloques desde la izquierda.<br />Así como está, el cliente no puede comprar.</div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[11px] text-[#6B6B6B] text-center">Arma tu página bloque por bloque: <b>toca un bloque en el teléfono</b> para editarlo aquí en el centro; con su barra lo mueves ⠿↑↓, lo ocultas 👁, lo duplicas ⧉ o lo borras 🗑. Para agregar, arrastra un elemento de la izquierda o toca un <b className="text-[#00A89D]">+</b>.</p>
 
       <div className="lg:flex lg:gap-3 lg:items-start lg:justify-center space-y-3 lg:space-y-0">
-        {/* ── Columna 1: Paleta (con desplegable: Botón dinámico / Estructura) ── */}
+        {/* ── Columna 1: Paleta (la del checkout cuando esa pestaña está abierta) ── */}
+        {vistaTel === 'checkout' ? paletaCheckout() : (
         <div className={`${paleta === 'estructura' ? 'lg:w-64' : 'lg:w-44'} lg:shrink-0 lg:sticky lg:top-2 lg:max-h-[82vh] overflow-y-auto bg-white border border-[#E8E8E8] rounded-2xl p-2`}>
           {/* Desplegable: elige qué paleta abrir para usar sus herramientas */}
           <label className="block text-[9px] font-bold uppercase tracking-wide text-[#9A9A9A] px-1 mb-1">Paleta de herramientas</label>
@@ -408,9 +831,11 @@ export default function EditorBloques({
           )}
         </div>
 
+        )}
+
         {/* ── Columna 2: Editor del bloque seleccionado ── */}
         <div className="flex-1 min-w-0 lg:max-w-[420px] lg:sticky lg:top-2">
-          {selBloque ? (
+          {vistaTel === 'checkout' ? propsCheckout() : selBloque ? (
             <div className="bg-white border border-[#E8E8E8] rounded-2xl overflow-hidden">
               <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[#E8E8E8]">
                 <button onClick={() => setSel(null)} className="text-[12px] font-semibold text-[#00847A] hover:underline">← Volver</button>
@@ -473,10 +898,10 @@ export default function EditorBloques({
               onClick={() => { setVistaTel('inicio'); if (selBloque && (selBloque.tipo === 'checkout' || selBloque.tipo === 'checkout_pro')) setSel(null); }}
               className={`flex-1 rounded-xl py-2.5 text-[12px] font-extrabold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all border-2 ${vistaTel === 'inicio' ? 'bg-[#00A89D] text-white border-[#00A89D] shadow-md' : 'bg-white text-[#00847A] border-[#00A89D]/40 hover:bg-[#00A89D]/5'}`}>🛍️ Página de inicio</button>
             <button type="button"
-              onClick={() => { if (onAbrirCheckout) { onAbrirCheckout(); return; } setVistaTel('checkout'); if (checkoutBloque) setSel(checkoutBloque.id); }}
+              onClick={() => { setVistaTel('checkout'); setSel(null); }}
               className={`flex-1 rounded-xl py-2.5 text-[12px] font-extrabold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all border-2 ${vistaTel === 'checkout' ? 'bg-[#00A89D] text-white border-[#00A89D] shadow-md' : 'bg-white text-[#00847A] border-[#00A89D]/40 hover:bg-[#00A89D]/5'}`}>🛒 Checkout{hayCheckout ? ' ✓' : ''}</button>
           </div>
-          <p className="text-[10px] text-[#6B6B6B] text-center -mt-0.5">{vistaTel === 'inicio' ? '👆 Arrastra los bloques (o usa ▲▼) para ordenar la página.' : 'Así se ve el checkout en la página. Tócalo para editar títulos, botón y sellos.'}</p>
+          <p className="text-[10px] text-[#6B6B6B] text-center -mt-0.5">{vistaTel === 'inicio' ? '👆 Arrastra los bloques (o usa ▲▼) para ordenar la página.' : ckBloques ? '👆 Toca un bloque del checkout para editarlo; arrastra ⠿ o usa ▲▼ para ordenarlo.' : 'Así se ve el checkout hoy. Hazlo editable para moverlo y renombrarlo.'}</p>
 
           <div className="rounded-[2rem] border-[6px] border-[#1A1A1A] bg-[#1A1A1A] shadow-xl overflow-hidden">
           <div className="bg-white min-h-[200px] max-h-[min(80vh,720px)] overflow-y-auto">
@@ -523,18 +948,8 @@ export default function EditorBloques({
             })}
             </>)}
             </>) : (
-              // Pestaña Checkout: muestra el checkout (o un botón para activarlo).
-              checkoutBloque ? (
-                <div onClick={() => setSel(checkoutBloque.id)} className={`cursor-pointer ${sel === checkoutBloque.id ? 'ring-2 ring-[#00A89D] ring-inset' : ''}`}>
-                  {vistaBloque(checkoutBloque)}
-                </div>
-              ) : (
-                <div className="p-6 text-center">
-                  <div className="text-4xl mb-2">🛒</div>
-                  <p className="text-[13px] text-[#6B6B6B] mb-3">Esta página todavía no tiene checkout.<br />Actívalo para recibir los pedidos.</p>
-                  <button onClick={agregarCheckout} className="rounded-xl py-2.5 px-5 bg-[#00A89D] text-white text-sm font-bold hover:bg-[#007A72]">🛒 Activar checkout</button>
-                </div>
-              )
+              // Pestaña Checkout: se arma bloque por bloque, igual que la página.
+              lienzoCheckout()
             )}
           </div>
           </div>
