@@ -8,8 +8,9 @@ import SelectorColor from './SelectorColor';
 import {
   CK_PALETA_CATS, CK_META, CAMPO_INFO, CAMPOS_PEDIDO, TIPOS_EXTRA,
   AVISO_CAMPO, AVISO_TIPO, bloquesDesdeConfig, nuevoBloqueCk, normalizarBloquesCk,
-  camposDelCheckout, extrasDelCheckout, problemasDelCheckout, resumenDelPedido,
-  type BloqueCk as BloqueCk2, type CampoPedido,
+  camposDelCheckout, problemasDelCheckout, resumenDelPedido,
+  camposDelBloque, campoFijo, campoPropio,
+  type BloqueCk as BloqueCk2, type CampoPedido, type CampoForm,
 } from '@/lib/checkout-bloques';
 import { estiloTexto, estiloEspacio, botonVariante, VARIANTES_BOTON, ANIMACIONES, FONTS_LISTA, claseAnim } from '@/lib/bloque-estilo';
 
@@ -211,10 +212,15 @@ export default function EditorBloques({
   const [buscarPal, setBuscarPal] = useState('');
   // ── Checkout por bloques: se arma igual que la página ──
   const [selCk, setSelCk] = useState<string | null>(null);
-  const [dragCk, setDragCk] = useState<{ tipo: string; campo?: CampoPedido } | null>(null);
+  const [dragCk, setDragCk] = useState<{ tipo: string } | null>(null);
   const [dragCkId, setDragCkId] = useState<string | null>(null);
   const [overCk, setOverCk] = useState<number | null>(null);
   const [buscarCk, setBuscarCk] = useState('');
+  // Editar el nombre de un dato del formulario (con aceptar / cancelar).
+  const [editKey, setEditKey] = useState<string | null>(null);
+  const [editVal, setEditVal] = useState('');
+  const [campoAbierto, setCampoAbierto] = useState<string | null>(null);
+  const [addAbierto, setAddAbierto] = useState(false);
 
   const set = (nv: BloqueLayout[]) => onLayout(nv);
   const upd = (id: string, patch: any) => set(bs.map(b => (b.id === id ? { ...b, ...patch } : b)));
@@ -266,13 +272,13 @@ export default function EditorBloques({
     if (c.tipo === 'campo_extra') c.props.id = `extra-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
     const a2 = [...ckLista]; a2.splice(i + 1, 0, c); setCk(a2); setSelCk(c.id);
   };
-  const insertarCk = (idx: number, tipo: string, campo?: CampoPedido) => {
-    const nb = nuevoBloqueCk(tipo, campo);
+  const insertarCk = (idx: number, tipo: string) => {
+    const nb = nuevoBloqueCk(tipo);
     const a2 = [...ckLista]; a2.splice(idx, 0, nb); setCk(a2); setSelCk(nb.id);
     setDragCk(null); setOverCk(null);
   };
   const soltarCkEn = (idx: number) => {
-    if (dragCk) { insertarCk(idx, dragCk.tipo, dragCk.campo); return; }
+    if (dragCk) { insertarCk(idx, dragCk.tipo); return; }
     if (dragCkId) {
       const from = ckLista.findIndex(x => x.id === dragCkId);
       if (from >= 0) { const a2 = [...ckLista]; const [m] = a2.splice(from, 1); a2.splice(from < idx ? idx - 1 : idx, 0, m); setCk(a2); }
@@ -281,11 +287,26 @@ export default function EditorBloques({
   };
   const ckProblemas = problemasDelCheckout(ckLista);
   /** Qué se pierde al borrar este bloque. Se puede borrar todo, pero avisado. */
-  const avisoCk = (b: BloqueCk2): string | null => {
-    if (b.tipo === 'campo') return AVISO_CAMPO[(b.props?.campo ?? '') as CampoPedido] ?? null;
-    if (b.tipo === 'campo_extra') return `Si borras "${String(b.props?.label ?? 'este campo')}", ese dato deja de llegar en los pedidos nuevos.`;
-    return AVISO_TIPO[b.tipo] ?? null;
+  const avisoCk = (b: BloqueCk2): string | null => AVISO_TIPO[b.tipo] ?? null;
+  /** Qué se pierde al quitar UN dato del formulario. */
+  const avisoCampo = (c: CampoForm): string | null =>
+    c.campo ? (AVISO_CAMPO[c.campo] ?? null)
+            : `Si lo quitas, "${String(c.label ?? 'ese dato').trim() || 'ese dato'}" deja de llegar en los pedidos nuevos.`;
+  // ── Campos del módulo FORMULARIO ──
+  const setCampos = (idBloque: string, campos: CampoForm[]) => updCk(idBloque, { campos });
+  const updCampo = (idBloque: string, key: string, patch: Partial<CampoForm>) =>
+    setCampos(idBloque, camposDelBloque(ckLista.find(x => x.id === idBloque)).map(c => (c.key === key ? { ...c, ...patch } : c)));
+  const quitarCampo = (idBloque: string, key: string) =>
+    setCampos(idBloque, camposDelBloque(ckLista.find(x => x.id === idBloque)).filter(c => c.key !== key));
+  const moverCampo = (idBloque: string, key: string, dir: -1 | 1) => {
+    const cs = camposDelBloque(ckLista.find(x => x.id === idBloque));
+    const i = cs.findIndex(c => c.key === key), j = i + dir;
+    if (i < 0 || j < 0 || j >= cs.length) return;
+    const a2 = [...cs]; [a2[i], a2[j]] = [a2[j], a2[i]]; setCampos(idBloque, a2);
   };
+  const agregarCampo = (idBloque: string, c: CampoForm) =>
+    setCampos(idBloque, [...camposDelBloque(ckLista.find(x => x.id === idBloque)), c]);
+
   const enCk = vistaTel === 'checkout' && !!checkoutBloque;
 
   const soltarEn = (idx: number) => {
@@ -419,7 +440,6 @@ export default function EditorBloques({
     const it = CK_PALETA_CATS.flatMap(c => c.items).find(x => x.tipo === t);
     return !!it?.unico && ckLista.some(b => b.tipo === t);
   };
-  const ckCampoUsado = (c?: CampoPedido) => !!c && ckLista.some(b => b.tipo === 'campo' && b.props?.campo === c);
 
   // Punto de inserción entre bloques del checkout (igual que el de la página).
   const MasCk = ({ idx }: { idx: number }) => {
@@ -443,7 +463,7 @@ export default function EditorBloques({
     return (
       <div className="lg:w-56 lg:shrink-0 lg:sticky lg:top-2 lg:max-h-[86vh] overflow-y-auto bg-white border border-[#E8E8E8] rounded-2xl p-3">
         <div className="text-[13px] font-extrabold text-[#0D0D0D] mb-0.5">Bloques del checkout</div>
-        <p className="text-[10px] text-[#9A9A9A] mb-2">Arrastra al lienzo, o toca para agregarlo al final. Los que ya están salen en gris: para volver a habilitarlos, quítalos del checkout con 🗑.</p>
+        <p className="text-[10px] text-[#9A9A9A] mb-2">Arrastra al lienzo, o toca para agregarlo al final. Los datos del cliente van dentro del bloque <b>Formulario</b>: tócalo en el lienzo para agregar, renombrar o quitar cada uno.</p>
         <div className="relative mb-2">
           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#9A9A9A] text-[12px]">🔍</span>
           <input value={buscarCk} onChange={e => setBuscarCk(e.target.value)} placeholder="Buscar bloque…"
@@ -455,13 +475,13 @@ export default function EditorBloques({
             <p className="text-[9px] font-bold uppercase tracking-wide text-[#9A9A9A] px-0.5 mb-1">{c.cat}</p>
             <div className="grid grid-cols-2 gap-1.5">
               {c.items.map(it => {
-                const ya = it.tipo === 'campo' ? ckCampoUsado(it.campo) : ckUnicoUsado(it.tipo);
+                const ya = ckUnicoUsado(it.tipo);
                 return (
-                  <button key={it.label + (it.campo ?? '')} type="button"
+                  <button key={it.tipo + it.label} type="button"
                     draggable={!ya} disabled={ya}
-                    onDragStart={() => { if (!ya) { setDragCk({ tipo: it.tipo, campo: it.campo }); setSelCk(null); } }}
+                    onDragStart={() => { if (!ya) { setDragCk({ tipo: it.tipo }); setSelCk(null); } }}
                     onDragEnd={() => { setDragCk(null); setOverCk(null); }}
-                    onClick={() => { if (!ya) insertarCk(ckLista.length, it.tipo, it.campo); }}
+                    onClick={() => { if (!ya) insertarCk(ckLista.length, it.tipo); }}
                     title={ya ? 'Ya está en el checkout' : `Arrastra al lienzo, o toca para agregarlo al final: ${it.label}`}
                     className={`relative flex flex-col items-center justify-center gap-1 px-1.5 py-2.5 rounded-xl border text-center transition-colors ${
                       ya ? 'border-[#EEE] opacity-45 cursor-default'
@@ -549,24 +569,29 @@ export default function EditorBloques({
           </div>
         );
       }
-      case 'campo': {
-        const info = CAMPO_INFO[(P.campo ?? 'nombre') as CampoPedido];
-        const esLista = P.campo === 'departamento' || P.campo === 'municipio';
+      case 'formulario': {
+        const cs = camposDelBloque(b).filter(c => c.visible !== false);
+        if (!cs.length) return <div className="px-3 py-3 text-[10px] text-[#C1121F]">El formulario quedó sin datos: el pedido llegaría vacío. Tócalo para agregar.</div>;
         return (
-          <div className="px-3 py-1.5">
-            <div className={lbl}>{P.etiqueta || info?.label}{P.obligatorio !== false && <span className="text-[#C1121F]"> *</span>}</div>
-            {caja(esLista ? (P.campo === 'departamento' ? '— Elige tu departamento —' : '— Elige tu ciudad —') : (P.placeholder || info?.placeholder || ''))}
-          </div>
-        );
-      }
-      case 'campo_extra': {
-        const nom = String(P.label ?? '').trim();
-        return (
-          <div className="px-3 py-1.5">
-            <div className={lbl}>{nom || <span className="text-[#C1121F]">SIN NOMBRE — no se le muestra al cliente</span>}{P.requerido && <span className="text-[#C1121F]"> *</span>}</div>
-            {P.tipoCampo === 'checkbox'
-              ? <div className="text-[10px] text-[#6B6B6B] mt-1">☐ {nom}</div>
-              : caja(P.tipoCampo === 'selector' ? '— Elige una opción —' : (P.placeholder || ''))}
+          <div className="px-3 py-1.5 space-y-2">
+            {cs.map(c => {
+              const nom = String(c.label ?? '').trim();
+              const ph = c.campo === 'departamento' ? '— Elige tu departamento —'
+                : c.campo === 'municipio' ? '— Elige tu ciudad —'
+                : (!c.campo && c.tipo === 'selector') ? '— Elige una opción —'
+                : (c.placeholder || (c.campo ? (CAMPO_INFO[c.campo]?.placeholder ?? '') : ''));
+              return (
+                <div key={c.key}>
+                  <div className={lbl}>
+                    {nom || <span className="text-[#C1121F]">SIN NOMBRE — no se le muestra al cliente</span>}
+                    {c.obligatorio && <span className="text-[#C1121F]"> *</span>}
+                  </div>
+                  {(!c.campo && c.tipo === 'checkbox')
+                    ? <div className="text-[10px] text-[#6B6B6B] mt-1">☐ {nom}</div>
+                    : caja(ph)}
+                </div>
+              );
+            })}
           </div>
         );
       }
@@ -664,34 +689,109 @@ export default function EditorBloques({
     );
     return (
       <>
-        {b.tipo === 'campo' && (<>
-          <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Qué dato pide</span>
-            <select className={inp} value={P.campo ?? 'nombre'}
-              onChange={e => { const c = e.target.value as CampoPedido; up({ campo: c, etiqueta: CAMPO_INFO[c].label, placeholder: CAMPO_INFO[c].placeholder ?? '' }); }}>
-              {CAMPOS_PEDIDO.map(c => <option key={c} value={c} disabled={ckCampoUsado(c) && P.campo !== c}>{CAMPO_INFO[c].label}</option>)}
-            </select></label>
-          <p className="text-[10.5px] text-[#6B6B6B] leading-snug">Cambiar el nombre cambia lo que ve el cliente, no el dato que llega en el pedido.</p>
-          {campoTxt('Cómo se llama en pantalla', 'etiqueta')}
-          {(P.campo !== 'departamento' && P.campo !== 'municipio') && campoTxt('Texto de ayuda dentro del campo', 'placeholder', 'Ej: María')}
-          {check('Obligatorio (no deja comprar sin llenarlo)', P.obligatorio !== false, () => up({ obligatorio: P.obligatorio === false }))}
-        </>)}
+        {b.tipo === 'formulario' && (() => {
+          const cs = camposDelBloque(b);
+          const libres = CAMPOS_PEDIDO.filter(x => !cs.some(c => c.campo === x));
+          return (
+            <>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A]">Datos que pide el formulario</p>
+              <div className="space-y-1">
+                {cs.length === 0 && <p className="text-[11px] text-[#C1121F]">Sin datos, el pedido llega vacío. Agrega al menos nombre, whatsapp y dirección.</p>}
+                {cs.map((c, i) => {
+                  const nom = String(c.label ?? '').trim();
+                  const oculto = c.visible === false;
+                  const abierto = campoAbierto === c.key;
+                  const editando = editKey === c.key;
+                  return (
+                    <div key={c.key} className={`rounded-xl border ${abierto ? 'border-[#00A89D]' : 'border-[#E8E8E8]'} ${oculto ? 'opacity-55' : ''}`}>
+                      <div className="flex items-center gap-1 px-2 py-1.5">
+                        <button type="button" title={oculto ? 'Mostrar en el checkout' : 'Quitar del checkout (sin borrarlo)'}
+                          onClick={() => updCampo(b.id, c.key, { visible: oculto ? true : false })}
+                          className="text-[13px] shrink-0">{oculto ? '🙈' : '👁'}</button>
+                        {editando ? (
+                          <>
+                            <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') { updCampo(b.id, c.key, { label: editVal }); setEditKey(null); } if (e.key === 'Escape') setEditKey(null); }}
+                              className="flex-1 min-w-0 text-[12px] border border-[#00A89D] rounded px-2 py-1" />
+                            <button type="button" title="Aceptar" onClick={() => { updCampo(b.id, c.key, { label: editVal }); setEditKey(null); }}
+                              className="px-1.5 py-1 rounded-lg bg-[#00A89D] text-white text-[11px] font-bold shrink-0">✓</button>
+                            <button type="button" title="Cancelar" onClick={() => setEditKey(null)}
+                              className="px-1.5 py-1 rounded-lg border border-[#E8E8E8] text-[#6B6B6B] text-[11px] font-bold shrink-0">✕</button>
+                          </>
+                        ) : (
+                          <>
+                            <button type="button" onClick={() => setCampoAbierto(abierto ? null : c.key)}
+                              className="flex-1 min-w-0 text-left text-[12px] font-semibold truncate">
+                              {nom || <span className="text-[#C1121F]">sin nombre</span>}
+                              {c.obligatorio && <span className="text-[#C1121F]"> *</span>}
+                              {!c.campo && <span className="text-[9px] text-[#00847A] ml-1">propio</span>}
+                            </button>
+                            <button type="button" title="Cambiar el nombre" onClick={() => { setEditKey(c.key); setEditVal(nom); }}
+                              className="px-1 text-[12px] text-[#6B6B6B] hover:text-[#00847A] shrink-0">✏️</button>
+                            <button type="button" title="Subir" disabled={i === 0} onClick={() => moverCampo(b.id, c.key, -1)}
+                              className="px-0.5 text-[11px] disabled:opacity-25 shrink-0">↑</button>
+                            <button type="button" title="Bajar" disabled={i === cs.length - 1} onClick={() => moverCampo(b.id, c.key, 1)}
+                              className="px-0.5 text-[11px] disabled:opacity-25 shrink-0">↓</button>
+                            <button type="button" title="Quitar del formulario"
+                              onClick={() => { const av = avisoCampo(c); if (!av || confirm(`${av}\n\n¿Lo quito igual?`)) quitarCampo(b.id, c.key); }}
+                              className="px-1 text-[12px] text-[#DC2626] shrink-0">🗑</button>
+                          </>
+                        )}
+                      </div>
+                      {abierto && !editando && (
+                        <div className="px-2 pb-2 pt-1 space-y-2 border-t border-[#F0F0F0]">
+                          <button type="button" onClick={() => updCampo(b.id, c.key, { obligatorio: !c.obligatorio })}
+                            className="flex items-center gap-2 text-[11.5px] font-semibold">
+                            <span className={`w-4 h-4 rounded border grid place-items-center text-[10px] text-white shrink-0 ${c.obligatorio ? 'bg-[#00A89D] border-[#00A89D]' : 'bg-white border-[#D5D1C8]'}`}>{c.obligatorio ? '✓' : ''}</span>
+                            Obligatorio (no deja comprar sin llenarlo)
+                          </button>
+                          {!c.campo && (
+                            <label className="block"><span className="block text-[9.5px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Tipo</span>
+                              <select className={inp} value={c.tipo ?? 'texto'} onChange={e => updCampo(b.id, c.key, { tipo: e.target.value as any })}>
+                                {TIPOS_EXTRA.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
+                              </select></label>
+                          )}
+                          {!c.campo && c.tipo === 'selector' && (
+                            <label className="block"><span className="block text-[9.5px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Opciones (una por línea)</span>
+                              <textarea className={`${inp} min-h-[60px]`} value={(c.opciones ?? []).join('\n')}
+                                onChange={e => updCampo(b.id, c.key, { opciones: e.target.value.split('\n').map(x => x.trim()).filter(Boolean) })} /></label>
+                          )}
+                          {c.campo !== 'departamento' && c.campo !== 'municipio' && (c.campo || (c.tipo !== 'checkbox' && c.tipo !== 'selector')) && (
+                            <label className="block"><span className="block text-[9.5px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Texto de ayuda dentro del campo</span>
+                              <input className={inp} value={c.placeholder ?? ''} onChange={e => updCampo(b.id, c.key, { placeholder: e.target.value })} /></label>
+                          )}
+                          <p className="text-[10px] text-[#9A9A9A] leading-snug">
+                            {c.campo ? 'Cambiar el nombre cambia lo que ve el cliente, no el dato que llega en el pedido.' : 'Este dato llega en el pedido junto a los demás.'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
 
-        {b.tipo === 'campo_extra' && (<>
-          {campoTxt('Cómo se llama', 'label', 'Ej: Punto de referencia')}
-          {!String(P.label ?? '').trim() && <p className="text-[11px] text-[#C1121F]">Sin nombre no se le muestra al cliente.</p>}
-          <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Tipo</span>
-            <select className={inp} value={P.tipoCampo ?? 'texto'} onChange={e => up({ tipoCampo: e.target.value })}>
-              {TIPOS_EXTRA.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
-            </select></label>
-          {P.tipoCampo !== 'checkbox' && P.tipoCampo !== 'selector' && campoTxt('Texto de ayuda', 'placeholder')}
-          {P.tipoCampo === 'selector' && (
-            <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Opciones (una por línea)</span>
-              <textarea className={`${inp} min-h-[70px]`} value={(P.opciones ?? []).join('\n')}
-                onChange={e => up({ opciones: e.target.value.split('\n').map(x => x.trim()).filter(Boolean) })} /></label>
-          )}
-          {check('Obligatorio', P.requerido === true, () => up({ requerido: !P.requerido }))}
-          <p className="text-[10px] text-[#9A9A9A] leading-snug">Este dato llega en el pedido junto a los demás.</p>
-        </>)}
+              <div className="pt-1 space-y-1.5">
+                <button type="button" onClick={() => setAddAbierto(!addAbierto)}
+                  className="w-full py-2 rounded-xl border border-[#00A89D] text-[#00847A] text-[12px] font-bold hover:bg-[#00A89D]/5">+ Agregar un dato</button>
+                {addAbierto && (
+                  <div className="rounded-xl border border-[#E8E8E8] p-2 space-y-1">
+                    <p className="text-[9.5px] font-bold uppercase tracking-wide text-[#9A9A9A]">Datos del pedido</p>
+                    {libres.length === 0 && <p className="text-[10.5px] text-[#9A9A9A]">Ya están todos puestos.</p>}
+                    {libres.map(x => (
+                      <button key={x} type="button"
+                        onClick={() => { agregarCampo(b.id, campoFijo(x)); setAddAbierto(false); }}
+                        className="w-full text-left px-2 py-1.5 rounded-lg text-[12px] hover:bg-[#F5F5F5]">✏️ {CAMPO_INFO[x].label}</button>
+                    ))}
+                    <div className="h-px bg-[#F0F0F0] my-1" />
+                    <button type="button"
+                      onClick={() => { const n = campoPropio(); agregarCampo(b.id, n); setCampoAbierto(n.key); setEditKey(n.key); setEditVal(n.label); setAddAbierto(false); }}
+                      className="w-full text-left px-2 py-1.5 rounded-lg text-[12px] font-semibold text-[#00847A] hover:bg-[#00A89D]/5">➕ Campo nuevo (lo inventas tú)</button>
+                  </div>
+                )}
+              </div>
+            </>
+          );
+        })()}
 
         {(b.tipo === 'titulo' || b.tipo === 'texto') && (<>
           <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Texto</span>
@@ -814,7 +914,7 @@ export default function EditorBloques({
         {enCk ? paletaCk() : (
         <div className="lg:w-56 lg:shrink-0 lg:sticky lg:top-2 lg:max-h-[86vh] overflow-y-auto bg-white border border-[#E8E8E8] rounded-2xl p-3">
           <div className="text-[13px] font-extrabold text-[#0D0D0D] mb-0.5">Bloques</div>
-          <p className="text-[10px] text-[#9A9A9A] mb-2">Arrastra al lienzo, o toca para agregarlo al final. Los que ya están salen en gris: para volver a habilitarlos, quítalos del checkout con 🗑.</p>
+          <p className="text-[10px] text-[#9A9A9A] mb-2">Arrastra al lienzo, o toca para agregarlo al final. Los datos del cliente van dentro del bloque <b>Formulario</b>: tócalo en el lienzo para agregar, renombrar o quitar cada uno.</p>
           <div className="relative mb-2">
             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#9A9A9A] text-[12px]">🔍</span>
             <input value={buscarPal} onChange={e => setBuscarPal(e.target.value)} placeholder="Buscar bloque…"

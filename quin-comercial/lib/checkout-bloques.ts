@@ -72,18 +72,15 @@ export const AVISO_TIPO: Record<string, string> = {
 };
 
 // ── Paleta del checkout (mismas categorías y forma que la de la página) ──────
-export type CkItem = { tipo: string; label: string; ic: string; campo?: CampoPedido; unico?: boolean };
+export type CkItem = { tipo: string; label: string; ic: string; unico?: boolean };
 export const CK_PALETA_CATS: { cat: string; items: CkItem[] }[] = [
   { cat: 'Producto', items: [
     { tipo: 'producto',  label: 'Resumen arriba', ic: '🧾', unico: true },
     { tipo: 'variantes', label: 'Color y talla',  ic: '🎽', unico: true },
     { tipo: 'resumen',   label: 'Resumen del pedido', ic: '📦', unico: true },
   ] },
-  { cat: 'Datos del cliente', items: CAMPOS_PEDIDO.map(c => ({
-    tipo: 'campo', campo: c, label: CAMPO_INFO[c].label.replace(' ELECTRÓNICO', ''), ic: '✏️',
-  })) },
-  { cat: 'Campo propio', items: [
-    { tipo: 'campo_extra', label: 'Campo personalizado', ic: '➕' },
+  { cat: 'Datos del cliente', items: [
+    { tipo: 'formulario', label: 'Formulario', ic: '📋', unico: true },
   ] },
   { cat: 'Texto', items: [
     { tipo: 'titulo',     label: 'Título', ic: '🔠' },
@@ -99,12 +96,48 @@ export const CK_PALETA_CATS: { cat: string; items: CkItem[] }[] = [
   ] },
 ];
 
+/**
+ * UN campo del formulario. Es el mismo molde para los datos de siempre
+ * (`campo` con uno de los 8 del pedido) y para los que inventa el dueño
+ * (sin `campo`: su `key` es el id con el que viaja en el pedido).
+ */
+export type CampoForm = {
+  key: string;
+  campo?: CampoPedido;
+  label: string;
+  placeholder?: string;
+  obligatorio?: boolean;
+  visible?: boolean;          // false = no se le muestra al cliente
+  tipo?: TipoExtra;           // solo para los campos propios
+  opciones?: string[];        // solo para el tipo "selector"
+};
+
+let _k = 0;
+const kid = () => `extra-${Date.now().toString(36)}${(_k++).toString(36)}${Math.random().toString(36).slice(2, 4)}`;
+
+/** Un dato de los de siempre, listo para meter al formulario. */
+export function campoFijo(campo: CampoPedido): CampoForm {
+  return {
+    key: campo, campo, label: CAMPO_INFO[campo].label,
+    placeholder: CAMPO_INFO[campo].placeholder ?? '',
+    obligatorio: OBLIGATORIO_POR_DEFECTO[campo], visible: true,
+  };
+}
+/** Un dato que inventa el dueño. */
+export function campoPropio(): CampoForm {
+  return { key: kid(), label: 'Nuevo campo', tipo: 'texto', obligatorio: false, visible: true, placeholder: '', opciones: [] };
+}
+/** Los campos de un bloque de formulario (o una lista vacía). */
+export function camposDelBloque(b: BloqueCk | null | undefined): CampoForm[] {
+  const c = b?.props?.campos;
+  return Array.isArray(c) ? c.filter((x: any) => x && typeof x === 'object' && typeof x.key === 'string') : [];
+}
+
 export const CK_META = (b: BloqueCk): { ic: string; label: string } => {
-  if (b.tipo === 'campo') {
-    const c = b.props?.campo as CampoPedido;
-    return { ic: '✏️', label: String(b.props?.etiqueta ?? '').trim() || CAMPO_INFO[c]?.label || 'Dato' };
+  if (b.tipo === 'formulario') {
+    const n = camposDelBloque(b).filter(c => c.visible !== false).length;
+    return { ic: '📋', label: `Formulario · ${n} dato${n === 1 ? '' : 's'}` };
   }
-  if (b.tipo === 'campo_extra') return { ic: '➕', label: String(b.props?.label ?? '').trim() || 'Campo propio' };
   for (const c of CK_PALETA_CATS) {
     const it = c.items.find(x => x.tipo === b.tipo);
     if (it) return { ic: it.ic, label: it.label };
@@ -116,7 +149,7 @@ let _n = 0;
 const nid = (t: string) => `ck-${t}-${Date.now().toString(36)}${(_n++).toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 
 /** Un bloque nuevo con sus valores por defecto. */
-export function nuevoBloqueCk(tipo: string, campo?: CampoPedido): BloqueCk {
+export function nuevoBloqueCk(tipo: string): BloqueCk {
   const b: BloqueCk = { id: nid(tipo), tipo, props: {} };
   if (tipo === 'titulo')     b.props = { texto: 'ESCRIBE TU TÍTULO', size: 18, color: '', align: 'left' };
   if (tipo === 'texto')      b.props = { texto: 'Escribe aquí tu texto…', size: 12, color: '#6B6B6B', align: 'left', italica: true };
@@ -127,11 +160,7 @@ export function nuevoBloqueCk(tipo: string, campo?: CampoPedido): BloqueCk {
   if (tipo === 'sellos')     b.props = { items: [{ emoji: '🚚', texto: 'Envío a todo el país' }, { emoji: '🔒', texto: 'Compra 100% segura' }, { emoji: '✅', texto: 'Satisfacción garantizada' }] };
   if (tipo === 'pago')       b.props = { texto: 'CONTRA ENTREGA', color: '#F97316' };
   if (tipo === 'boton')      b.props = { texto: 'COMPLETAR MI PEDIDO', color: '', forma: 'pill', flotante: true };
-  if (tipo === 'campo_extra') b.props = { id: nid('extra').slice(3), label: 'Nuevo campo', tipoCampo: 'texto', requerido: false, placeholder: '', opciones: [] };
-  if (tipo === 'campo') {
-    const c: CampoPedido = (campo && (CAMPOS_PEDIDO as readonly string[]).includes(campo)) ? campo : 'nombre';
-    b.props = { campo: c, etiqueta: CAMPO_INFO[c].label, placeholder: CAMPO_INFO[c].placeholder ?? '', obligatorio: OBLIGATORIO_POR_DEFECTO[c] };
-  }
+  if (tipo === 'formulario') b.props = { campos: CAMPOS_PEDIDO.map(c => campoFijo(c)) };
   return b;
 }
 
@@ -160,23 +189,25 @@ export function bloquesDesdeConfig(cfg: any): BloqueCk[] {
   nota.props = { texto: 'Sus datos están protegidos y solo se usan para gestionar su pedido.', size: 12, color: '#6B6B6B', align: 'left', italica: true };
   out.push(nota);
 
-  for (const id of CAMPOS_PEDIDO) {
-    const b = nuevoBloqueCk('campo', id);
+  // El formulario: los 8 de siempre (con lo que el dueño haya renombrado u
+  // ocultado) y detrás los campos propios, en su orden.
+  const campos: CampoForm[] = CAMPOS_PEDIDO.map(id => {
+    const base = campoFijo(id);
     const f = fijos[id] ?? {};
-    if (String(f.label ?? '').trim()) b.props!.etiqueta = String(f.label).trim();
-    // Solo el correo se podía ocultar: se respeta como bloque oculto, no borrado.
-    if (id === 'correo' && f.oculto) b.visible = false;
-    out.push(b);
-  }
-
+    if (String(f.label ?? '').trim()) base.label = String(f.label).trim();
+    if (id === 'correo' && f.oculto) base.visible = false;
+    return base;
+  });
   for (const e of extras) {
-    const b = nuevoBloqueCk('campo_extra');
-    b.props = {
-      id: e.id, label: e.label, tipoCampo: e.tipo, requerido: !!e.requerido,
+    campos.push({
+      key: e.id, label: e.label, tipo: e.tipo, requerido: undefined as any,
+      obligatorio: !!e.requerido, visible: true,
       placeholder: e.placeholder ?? '', opciones: Array.isArray(e.opciones) ? e.opciones : [],
-    };
-    out.push(b);
+    } as CampoForm);
   }
+  const form = nuevoBloqueCk('formulario');
+  form.props = { campos };
+  out.push(form);
 
   out.push(nuevoBloqueCk('boton'));
   out.push(nuevoBloqueCk('resumen'));
@@ -192,15 +223,53 @@ export function bloquesDesdeConfig(cfg: any): BloqueCk[] {
 /** Lee lo guardado sin inventar: si no es una lista de bloques, no hay bloques. */
 export function normalizarBloquesCk(valor: any): BloqueCk[] | null {
   if (!Array.isArray(valor)) return null;
-  const out = valor
+  const crudos = valor
     .filter(b => b && typeof b === 'object' && typeof b.tipo === 'string')
     .map((b, i) => ({
       id: typeof b.id === 'string' && b.id ? b.id : `ck-${b.tipo}-${i}`,
       tipo: String(b.tipo),
       visible: b.visible === false ? false : undefined,
       props: (b.props && typeof b.props === 'object') ? b.props : {},
-    }));
-  return out.length ? out : null;
+    })) as BloqueCk[];
+  if (!crudos.length) return null;
+
+  // Compatibilidad: en la versión anterior cada dato era un bloque suelto
+  // (`campo` / `campo_extra`). Se juntan en UN formulario, donde estaba el
+  // primero, sin perder nada de lo que el dueño ya había configurado.
+  if (!crudos.some(b => b.tipo === 'campo' || b.tipo === 'campo_extra')) return crudos;
+  const campos: CampoForm[] = [];
+  const out: BloqueCk[] = [];
+  let puesto = false;
+  for (const b of crudos) {
+    if (b.tipo === 'campo') {
+      const id = String(b.props?.campo ?? '') as CampoPedido;
+      if (!(CAMPOS_PEDIDO as readonly string[]).includes(id)) continue;
+      const c = campoFijo(id);
+      const P: any = b.props ?? {};
+      if (String(P.etiqueta ?? '').trim()) c.label = String(P.etiqueta).trim();
+      if (P.placeholder !== undefined) c.placeholder = String(P.placeholder);
+      if (P.obligatorio !== undefined) c.obligatorio = P.obligatorio !== false;
+      if (b.visible === false) c.visible = false;
+      campos.push(c);
+    } else if (b.tipo === 'campo_extra') {
+      const key = String(b.props?.id ?? '').trim() || kid();
+      campos.push({
+        key, label: String(b.props?.label ?? '').trim(),
+        tipo: (b.props?.tipoCampo as TipoExtra) ?? 'texto',
+        obligatorio: b.props?.requerido === true,
+        visible: b.visible !== false,
+        placeholder: String(b.props?.placeholder ?? ''),
+        opciones: Array.isArray(b.props?.opciones) ? b.props.opciones : [],
+      });
+    } else {
+      out.push(b);
+      continue;
+    }
+    if (!puesto) { out.push({ id: 'ck-formulario-mig', tipo: 'formulario', props: {} }); puesto = true; }
+  }
+  const form = out.find(b => b.id === 'ck-formulario-mig');
+  if (form) form.props = { campos };
+  return out;
 }
 
 export type CampoCk = {
@@ -214,24 +283,28 @@ export type CampoCk = {
  * Con bloques: solo los que estén puestos y visibles, en su orden.
  */
 export function camposDelCheckout(bloques: BloqueCk[] | null | undefined, cfg?: any): CampoCk[] {
-  if (bloques && bloques.length) {
+  const form = bloques?.find(b => b.tipo === 'formulario' && b.visible !== false);
+  if (form) {
     const vistos = new Set<string>();
     const out: CampoCk[] = [];
-    for (const b of bloques) {
-      if (b.tipo !== 'campo' || b.visible === false) continue;
-      const id = String(b.props?.campo ?? '') as CampoPedido;
+    for (const c of camposDelBloque(form)) {
+      if (c.visible === false || !c.campo) continue;
+      const id = c.campo;
       if (!(CAMPOS_PEDIDO as readonly string[]).includes(id) || vistos.has(id)) continue;
       vistos.add(id);
       const info = CAMPO_INFO[id];
-      const etiqueta = String(b.props?.etiqueta ?? '').trim();
       out.push({
-        id, label: etiqueta || info.label, tipo: info.tipo, auto: info.auto,
-        placeholder: String(b.props?.placeholder ?? info.placeholder ?? '') || undefined,
-        obligatorio: b.props?.obligatorio === undefined ? OBLIGATORIO_POR_DEFECTO[id] : b.props.obligatorio !== false,
+        id, label: String(c.label ?? '').trim() || info.label, tipo: info.tipo, auto: info.auto,
+        placeholder: String(c.placeholder ?? info.placeholder ?? '') || undefined,
+        obligatorio: c.obligatorio === undefined ? OBLIGATORIO_POR_DEFECTO[id] : c.obligatorio !== false,
       });
     }
     return out;
   }
+  // Sin bloque de formulario: el checkout de siempre, con lo que el dueño haya
+  // renombrado u ocultado. Si hay bloques pero ninguno es el formulario, es que
+  // lo quitó a propósito: no se pide ningún dato (y el panel se lo avisa).
+  if (bloques && bloques.length) return [];
   const c = (cfg && typeof cfg === 'object') ? cfg : {};
   const fijos: Record<string, { label?: string; oculto?: boolean }> = c.camposFijos ?? {};
   return CAMPOS_PEDIDO
@@ -245,26 +318,28 @@ export function camposDelCheckout(bloques: BloqueCk[] | null | undefined, cfg?: 
 
 /** LOS CAMPOS PROPIOS del checkout, en su orden. Misma regla que los fijos. */
 export function extrasDelCheckout(bloques: BloqueCk[] | null | undefined, cfg?: any): CampoExtra[] {
-  if (bloques && bloques.length) {
+  const form = bloques?.find(b => b.tipo === 'formulario' && b.visible !== false);
+  if (form) {
     const vistos = new Set<string>();
     const out: CampoExtra[] = [];
-    for (const b of bloques) {
-      if (b.tipo !== 'campo_extra' || b.visible === false) continue;
-      const id = String(b.props?.id ?? '').trim();
-      const label = String(b.props?.label ?? '').trim();
+    for (const c of camposDelBloque(form)) {
+      if (c.visible === false || c.campo) continue;
+      const id = String(c.key ?? '').trim();
+      const label = String(c.label ?? '').trim();
       if (!id || !label || vistos.has(id)) continue;   // sin nombre no se pide
       vistos.add(id);
-      const tipo = String(b.props?.tipoCampo ?? 'texto') as TipoExtra;
+      const tipo = String(c.tipo ?? 'texto') as TipoExtra;
       out.push({
         id, label,
         tipo: (TIPOS_EXTRA.some(t => t.v === tipo) ? tipo : 'texto'),
-        requerido: b.props?.requerido === true,
-        placeholder: String(b.props?.placeholder ?? '') || undefined,
-        opciones: Array.isArray(b.props?.opciones) ? b.props.opciones.filter((o: any) => String(o).trim()) : [],
+        requerido: c.obligatorio === true,
+        placeholder: String(c.placeholder ?? '') || undefined,
+        opciones: Array.isArray(c.opciones) ? c.opciones.filter(o => String(o).trim()) : [],
       });
     }
     return out;
   }
+  if (bloques && bloques.length) return [];
   const c = (cfg && typeof cfg === 'object') ? cfg : {};
   return Array.isArray(c.camposExtra) ? c.camposExtra : [];
 }
@@ -274,12 +349,14 @@ export function problemasDelCheckout(bloques: BloqueCk[] | null | undefined): st
   if (!bloques || !bloques.length) return [];
   const vivos = bloques.filter(b => b.visible !== false);
   const p: string[] = [];
+  if (!vivos.some(b => b.tipo === 'formulario')) p.push('No está el formulario: el pedido llegaría sin los datos del cliente.');
   if (!vivos.some(b => b.tipo === 'boton')) p.push('No hay botón: el cliente no tiene cómo enviar el pedido.');
   if (!vivos.some(b => b.tipo === 'variantes')) p.push('No está el bloque de color y talla: el pedido llega sin saber qué enviar.');
   const puestos = camposDelCheckout(bloques).map(c => c.id);
   const faltan = (['nombre', 'whatsapp', 'direccion', 'departamento', 'municipio'] as CampoPedido[]).filter(c => !puestos.includes(c));
   if (faltan.length) p.push(`Faltan datos para poder despachar: ${faltan.join(', ')}.`);
-  const sinNombre = bloques.filter(b => b.tipo === 'campo_extra' && b.visible !== false && !String(b.props?.label ?? '').trim()).length;
+  const form = vivos.find(b => b.tipo === 'formulario');
+  const sinNombre = camposDelBloque(form).filter(c => !c.campo && c.visible !== false && !String(c.label ?? '').trim()).length;
   if (sinNombre) p.push(`Hay ${sinNombre} campo(s) propio(s) sin nombre: no se le muestran al cliente.`);
   return p;
 }

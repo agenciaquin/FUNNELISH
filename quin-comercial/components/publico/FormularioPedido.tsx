@@ -7,7 +7,7 @@ import type { Funnel, VarianteFunnel } from '@/lib/funnels';
 import ArmarPackSelector, { type PackSalida } from './ArmarPackSelector';
 import { DEPARTAMENTOS, ciudadesDe } from '@/lib/colombia';
 import {
-  normalizarBloquesCk, camposDelCheckout, extrasDelCheckout, resumenDelPedido,
+  normalizarBloquesCk, camposDelCheckout, extrasDelCheckout, resumenDelPedido, camposDelBloque,
   type BloqueCk, type CampoCk,
 } from '@/lib/checkout-bloques';
 
@@ -1110,27 +1110,28 @@ export default function FormularioPedido({ funnel, utms, config }: Props) {
   const btnColor    = String(bBoton?.props?.color ?? '') || cColorBoton;
   const btnFlotante = bloques ? (bBoton ? bBoton.props?.flotante !== false : false) : true;
 
-  // El primer dato del cliente es el ancla a la que la página lleva sola al
-  // cliente cuando termina de elegir color y talla.
-  const primerDatoId = bloques?.find(b => (b.tipo === 'campo' || b.tipo === 'campo_extra') && b.visible !== false)?.id ?? null;
 
   /** Dibuja un bloque del checkout armado. Lo que no se reconoce, no se dibuja. */
   const trozo = (b: BloqueCk) => {
     const P: any = b.props ?? {};
     const alin = P.align === 'center' ? 'text-center' : P.align === 'right' ? 'text-right' : 'text-left';
-    const ancla = b.id === primerDatoId;
     switch (b.tipo) {
       case 'producto':  return secProducto();
       case 'variantes': return secVariantes(String(P.titulo ?? ''));
-      case 'campo': {
-        const c = CAMPOS.find(x => x.id === P.campo);
-        if (!c) return null;
-        return <div ref={ancla ? datosRef : undefined} className="px-3 py-2 scroll-mt-2">{campoInput(c)}</div>;
-      }
-      case 'campo_extra': {
-        const f = camposExtra.find(x => x.id === P.id);
-        if (!f) return null;
-        return <div ref={ancla ? datosRef : undefined} className="px-3 py-2 scroll-mt-2">{extraInput(f)}</div>;
+      case 'formulario': {
+        // Los datos se dibujan en el orden en que quedaron dentro del módulo.
+        return (
+          <div ref={datosRef} className="px-3 space-y-4 scroll-mt-2">
+            {camposDelBloque(b).map(c => {
+              if (c.campo) {
+                const f = CAMPOS.find(x => x.id === c.campo);
+                return f ? <Fragment key={f.id}>{campoInput(f)}</Fragment> : null;
+              }
+              const e = camposExtra.find(x => x.id === c.key);
+              return e ? <Fragment key={e.id}>{extraInput(e)}</Fragment> : null;
+            })}
+          </div>
+        );
       }
       case 'titulo':
         return <h2 className={`font-extrabold px-3 pt-6 pb-1 ${alin}`} style={{ fontSize: Number(P.size) || 18, color: P.color || undefined }}>{P.texto}</h2>;
