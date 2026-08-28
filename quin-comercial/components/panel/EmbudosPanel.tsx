@@ -1851,6 +1851,11 @@ export default function EmbudosPanel() {
                         className="w-6 h-6 rounded-md text-[13px] text-[#00847A] hover:bg-[#00A89D]/15 disabled:opacity-30 disabled:cursor-not-allowed"
                       >↓</button>
                       <button
+                        onClick={() => { const copia = { ...(JSON.parse(JSON.stringify(v))), id: `v${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}` }; const vs = [...actual.variantes]; vs.splice(i + 1, 0, copia); set('variantes', vs); }}
+                        title="Duplicar este producto (copia independiente)"
+                        className="text-[11px] text-[#00847A] hover:underline ml-1"
+                      >⧉ Duplicar</button>
+                      <button
                         onClick={() => set('variantes', actual.variantes.filter((_, j) => j !== i))}
                         className="text-[11px] text-[#DC2626] hover:underline ml-1"
                       >🗑 Quitar</button>
@@ -1858,39 +1863,44 @@ export default function EmbudosPanel() {
                   </div>
 
                   <div className="p-3 space-y-3">
-                  {/* Cabecera del producto */}
-                  <div className="flex items-center gap-2">
-                    {v.imagen ? (
-                      <button
-                        onClick={() => { varianteDestino.current = i; refVariante.current?.click(); }}
-                        title="Cambiar foto"
-                        className="shrink-0"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={v.imagen} alt="" className="w-14 h-14 rounded object-cover" />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => { varianteDestino.current = i; refVariante.current?.click(); }}
-                        className="w-14 h-14 rounded border-2 border-dashed border-[#C9C9C9] text-[10px] text-[#6B6B6B] shrink-0 hover:border-[#00A89D]"
-                      >+ Foto</button>
-                    )}
-                    <input
-                      value={v.nombre}
-                      onChange={e => cambiar({ nombre: e.target.value })}
-                      placeholder="NACIONAL VERDE 2026"
-                      className={`${input} flex-1`}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[10px] text-[#6B6B6B] mb-0.5">Precio</label>
-                      <input type="number" value={v.precio} onChange={e => cambiar({ precio: Number(e.target.value) })} className={input} />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-[#6B6B6B] mb-0.5">Precio tachado</label>
-                      <input type="number" value={v.precioAntes ?? ''} onChange={e => cambiar({ precioAntes: e.target.value ? Number(e.target.value) : undefined })} className={input} />
+                  {/* Bloque de producto (estilo mockup): foto de portada + nombre + precio antiguo/promoción */}
+                  <div className="rounded-xl border border-[#E8E8E8] bg-[#F7F7F5] p-3">
+                    <div className="flex items-start gap-3">
+                      {v.imagen ? (
+                        <button
+                          onClick={() => { varianteDestino.current = i; refVariante.current?.click(); }}
+                          title="Cambiar foto de portada"
+                          className="shrink-0"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={v.imagen} alt="" className="w-[72px] h-[72px] rounded-lg object-cover border border-[#E0E0E0]" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => { varianteDestino.current = i; refVariante.current?.click(); }}
+                          className="w-[72px] h-[72px] rounded-lg bg-[#1A1A1A] text-white text-[9px] font-bold leading-tight grid place-items-center text-center px-1 shrink-0 hover:opacity-90"
+                        >SUBIR FOTO PORTADA</button>
+                      )}
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <input
+                          value={v.nombre}
+                          onChange={e => cambiar({ nombre: e.target.value })}
+                          placeholder="NOMBRE DEL PRODUCTO"
+                          className={`${input} font-bold`}
+                        />
+                        <div className="flex gap-2">
+                          <div className="flex-1">
+                            <label className="block text-[9px] font-bold text-[#B0212F] uppercase mb-0.5">Precio antiguo (tachado)</label>
+                            <input type="number" value={v.precioAntes ?? ''} onChange={e => cambiar({ precioAntes: e.target.value ? Number(e.target.value) : undefined })} placeholder="195000"
+                              className="w-full text-sm rounded-md px-2 py-1.5 border border-[#E23744]/40 bg-[#FDECEE] text-[#B0212F] font-bold line-through outline-none" />
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-[9px] font-bold text-[#0D8A3E] uppercase mb-0.5">Precio en promoción</label>
+                            <input type="number" value={v.precio} onChange={e => cambiar({ precio: Number(e.target.value) })} placeholder="110000"
+                              className="w-full text-sm rounded-md px-2 py-1.5 border border-[#1E9E5A]/40 bg-[#EAF7EF] text-[#0D8A3E] font-extrabold outline-none" />
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
