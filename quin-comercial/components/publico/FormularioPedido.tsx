@@ -29,6 +29,8 @@ export interface CheckoutConfig {
   // Nuevos (Etapa 2): renombrar/ocultar campos fijos y agregar campos propios.
   camposFijos?: Record<string, CampoFijoCfg>;
   camposExtra?: CampoExtra[];
+  // Muestra color/talla como desplegables (▼) en vez de botones.
+  variablesDesplegable?: boolean;
 }
 
 interface Props {
@@ -47,6 +49,8 @@ export default function FormularioPedido({ funnel, utms, config }: Props) {
   const cfg: CheckoutConfig = ((funnel as any).checkout_config as CheckoutConfig) ?? config ?? {};
   const camposFijosCfg: Record<string, CampoFijoCfg> = cfg.camposFijos ?? {};
   const camposExtra: CampoExtra[] = Array.isArray(cfg.camposExtra) ? cfg.camposExtra : [];
+  // Modo "desplegable": muestra color/talla como listas (▼) en vez de botones.
+  const variablesDesplegable = (cfg as any).variablesDesplegable === true;
   const router = useRouter();
   const acento = acentoDe(funnel.color);
 
@@ -729,6 +733,16 @@ export default function FormularioPedido({ funnel, utms, config }: Props) {
                                   </div>
                                 )}
 
+                                {variablesDesplegable ? (
+                                  <select
+                                    value={elecciones[idx] ?? ''}
+                                    onChange={e => { const val = e.target.value; setElecciones(prev => { const c = [...prev]; c[idx] = val; return c; }); setErrores(er => ({ ...er, talla: '' })); setSeñalando(null); setAbiertoManual(null); }}
+                                    className="flex-1 px-3 py-2.5 rounded-lg border border-[#C9C9C9] text-[14px] font-semibold bg-white outline-none focus:border-[#0D8A3E]"
+                                  >
+                                    <option value="">{s.etiqueta?.trim() ? `— Elige ${s.etiqueta.toLowerCase()} —` : '— Elige —'}</option>
+                                    {ops.map(op => { const oa = opcionAgotada(op); return <option key={op.valor} value={op.valor} disabled={oa}>{op.valor}{oa ? ' · agotado' : ''}</option>; })}
+                                  </select>
+                                ) : (
                                 <div className="flex flex-wrap gap-1.5 flex-1 justify-center">
                                   {ops.map((op, oi) => {
                                     // Los botones se mueven en cascada cuando:
@@ -770,6 +784,7 @@ export default function FormularioPedido({ funnel, utms, config }: Props) {
                                     );
                                   })}
                                 </div>
+                                )}
                               </div>
                             </div>
                           );

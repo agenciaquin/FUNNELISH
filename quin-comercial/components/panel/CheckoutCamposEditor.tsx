@@ -45,6 +45,12 @@ export default function CheckoutCamposEditor({ config, onChange }: {
 
   return (
     <div className="space-y-3">
+      {/* Cómo se muestran color/talla al cliente */}
+      <label className="flex items-center gap-2 rounded-xl border border-[#E8E8E8] p-3 bg-white cursor-pointer">
+        <input type="checkbox" checked={cfg.variablesDesplegable === true} onChange={e => onChange({ ...cfg, variablesDesplegable: e.target.checked })} className="w-4 h-4" />
+        <span className="text-[12px]"><b>Mostrar color y talla como desplegable (▼)</b> — en vez de botones. El color elegido muestra su foto al lado.</span>
+      </label>
+
       {/* Renombrar / ocultar los campos fijos */}
       <div className="rounded-xl border border-[#E8E8E8] p-3 bg-white space-y-2">
         <div className="text-[11px] font-bold uppercase tracking-wide text-[#9A9A9A]">Campos del formulario (renombrar)</div>
