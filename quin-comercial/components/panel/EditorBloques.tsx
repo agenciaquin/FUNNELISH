@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import { acentoDe, esVideo } from '@/lib/funnels';
 import { construirLayoutDesdeFunnel, layoutEmbudoQueConvierte, type BloqueLayout } from '@/lib/funnel-layout';
 import MiniBarraTexto from './MiniBarraTexto';
 import SelectorColor from './SelectorColor';
-import CheckoutCamposEditor from './CheckoutCamposEditor';
 import {
   CK_PALETA_CATS, CK_META, CAMPO_INFO, CAMPOS_PEDIDO, TIPOS_EXTRA,
   AVISO_CAMPO, AVISO_TIPO, bloquesDesdeConfig, nuevoBloqueCk, normalizarBloquesCk,
@@ -238,7 +237,13 @@ export default function EditorBloques({
   // Si no hay bloques, el checkout se comporta exactamente como hoy.
   const ckCfg: any = d.checkout_config ?? {};
   const ckBloques: BloqueCk2[] | null = normalizarBloquesCk(ckCfg.bloques);
-  const ckLista: BloqueCk2[] = ckBloques ?? [];
+  // Si todavía no están guardados, se derivan de la configuración del embudo
+  // (queda EXACTAMENTE igual a como se ve hoy) y se guardan al primer cambio.
+  // useMemo: sin esto los ids se regenerarían en cada render y no se podría
+  // seleccionar ni arrastrar ningún bloque.
+  const ckFirma = JSON.stringify([ckCfg.camposFijos ?? null, ckCfg.camposExtra ?? null, ckCfg.bloqueProducto ?? null, ckCfg.variablesDesplegable ?? null]);
+  const ckDerivados = useMemo(() => bloquesDesdeConfig(ckCfg), [ckFirma]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ckLista: BloqueCk2[] = ckBloques ?? ckDerivados;
   const setCk = (nv: BloqueCk2[] | null) => {
     const c = { ...ckCfg };
     if (nv && nv.length) c.bloques = nv; else delete c.bloques;
@@ -274,17 +279,14 @@ export default function EditorBloques({
       setDragCkId(null); setOverCk(null);
     }
   };
-  /** Activa el checkout editable copiando, tal cual, lo que este embudo ya tiene. */
-  const activarCk = () => { setCk(bloquesDesdeConfig(ckCfg)); setSelCk(null); };
-  const volverCkFijo = () => { setCk(null); setSelCk(null); };
-  const ckProblemas = problemasDelCheckout(ckBloques);
+  const ckProblemas = problemasDelCheckout(ckLista);
   /** Qué se pierde al borrar este bloque. Se puede borrar todo, pero avisado. */
   const avisoCk = (b: BloqueCk2): string | null => {
     if (b.tipo === 'campo') return AVISO_CAMPO[(b.props?.campo ?? '') as CampoPedido] ?? null;
     if (b.tipo === 'campo_extra') return `Si borras "${String(b.props?.label ?? 'este campo')}", ese dato deja de llegar en los pedidos nuevos.`;
     return AVISO_TIPO[b.tipo] ?? null;
   };
-  const enCk = vistaTel === 'checkout' && !!ckBloques;
+  const enCk = vistaTel === 'checkout' && !!checkoutBloque;
 
   const soltarEn = (idx: number) => {
     if (dragTipo) { insertar(idx, dragTipo); setDragTipo(null); setOverIdx(null); return; }
@@ -441,7 +443,7 @@ export default function EditorBloques({
     return (
       <div className="lg:w-56 lg:shrink-0 lg:sticky lg:top-2 lg:max-h-[86vh] overflow-y-auto bg-white border border-[#E8E8E8] rounded-2xl p-3">
         <div className="text-[13px] font-extrabold text-[#0D0D0D] mb-0.5">Bloques del checkout</div>
-        <p className="text-[10px] text-[#9A9A9A] mb-2">Arrastra y suelta los bloques al lienzo.</p>
+        <p className="text-[10px] text-[#9A9A9A] mb-2">Arrastra al lienzo, o toca para agregarlo al final. Los que ya están salen en gris: para volver a habilitarlos, quítalos del checkout con 🗑.</p>
         <div className="relative mb-2">
           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#9A9A9A] text-[12px]">🔍</span>
           <input value={buscarCk} onChange={e => setBuscarCk(e.target.value)} placeholder="Buscar bloque…"
@@ -473,8 +475,8 @@ export default function EditorBloques({
           </div>
         ))}
         <button type="button"
-          onClick={() => { if (confirm('Vuelve al checkout de siempre. Se pierde el orden que armaste con bloques (los campos y sus nombres se conservan). ¿Seguro?')) volverCkFijo(); }}
-          className="w-full mt-1 px-2 py-2 rounded-lg text-[10.5px] font-semibold border border-[#F3C3CB] text-[#C1121F] hover:bg-[#FDEEF0]">↩︎ Volver al checkout de siempre</button>
+          onClick={() => { if (confirm('Deja el checkout como viene por defecto: todos los datos, en el orden de siempre. Se pierde el orden que armaste. ¿Seguro?')) setCk(bloquesDesdeConfig(ckCfg)); }}
+          className="w-full mt-1 px-2 py-2 rounded-lg text-[10.5px] font-semibold border border-[#E8E8E8] text-[#6B6B6B] hover:bg-[#F5F5F5]">↺ Restablecer el checkout</button>
       </div>
     );
   };
@@ -610,16 +612,6 @@ export default function EditorBloques({
         <div className="text-4xl mb-2">🛒</div>
         <p className="text-[13px] text-[#6B6B6B] mb-3">Esta página todavía no tiene checkout.<br />Actívalo para recibir los pedidos.</p>
         <button onClick={agregarCheckout} className="rounded-xl py-2.5 px-5 bg-[#00A89D] text-white text-sm font-bold hover:bg-[#007A72]">🛒 Activar checkout</button>
-      </div>
-    );
-    if (!ckBloques) return (
-      <div>
-        <div onClick={() => setSel(checkoutBloque.id)} className="cursor-pointer">{vistaBloque(checkoutBloque)}</div>
-        <div className="p-3 border-t border-[#EEE] text-center bg-[#FAFAFA]">
-          <p className="text-[11px] text-[#6B6B6B] mb-2">Así se ve hoy. Para moverlo, renombrarlo o quitarle cosas bloque por bloque, hazlo editable.</p>
-          <button onClick={activarCk} className="rounded-xl py-2 px-4 bg-[#00A89D] text-white text-[12px] font-bold hover:bg-[#007A72]">✨ Hacerlo editable por bloques</button>
-          <p className="text-[10px] text-[#9A9A9A] mt-1.5">Arranca igualito a como está hoy. Nada cambia hasta que tú lo muevas.</p>
-        </div>
       </div>
     );
     return (
@@ -822,7 +814,7 @@ export default function EditorBloques({
         {enCk ? paletaCk() : (
         <div className="lg:w-56 lg:shrink-0 lg:sticky lg:top-2 lg:max-h-[86vh] overflow-y-auto bg-white border border-[#E8E8E8] rounded-2xl p-3">
           <div className="text-[13px] font-extrabold text-[#0D0D0D] mb-0.5">Bloques</div>
-          <p className="text-[10px] text-[#9A9A9A] mb-2">Arrastra y suelta los bloques al lienzo.</p>
+          <p className="text-[10px] text-[#9A9A9A] mb-2">Arrastra al lienzo, o toca para agregarlo al final. Los que ya están salen en gris: para volver a habilitarlos, quítalos del checkout con 🗑.</p>
           <div className="relative mb-2">
             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#9A9A9A] text-[12px]">🔍</span>
             <input value={buscarPal} onChange={e => setBuscarPal(e.target.value)} placeholder="Buscar bloque…"
@@ -887,7 +879,7 @@ export default function EditorBloques({
               onClick={() => { setVistaTel('checkout'); setSel(null); }}
               className={`flex-1 rounded-xl py-2.5 text-[12px] font-extrabold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all border-2 ${vistaTel === 'checkout' ? 'bg-[#00A89D] text-white border-[#00A89D] shadow-md' : 'bg-white text-[#00847A] border-[#00A89D]/40 hover:bg-[#00A89D]/5'}`}>🛒 Checkout{hayCheckout ? ' ✓' : ''}</button>
           </div>
-          <p className="text-[10px] text-[#6B6B6B] text-center -mt-0.5">{vistaTel === 'inicio' ? '👆 Arrastra un bloque de la izquierda al lienzo, o usa ⠿ ▲▼ para ordenar.' : enCk ? '👆 Arrastra los bloques del checkout, o usa ⠿ ▲▼ para ordenarlo.' : 'Así se ve el checkout hoy. Hazlo editable para armarlo bloque por bloque.'}</p>
+          <p className="text-[10px] text-[#6B6B6B] text-center -mt-0.5">{vistaTel === 'inicio' ? '👆 Arrastra un bloque de la izquierda al lienzo, o usa ⠿ ▲▼ para ordenar.' : '👆 Toca un bloque del checkout para editarlo, arrástralo de la izquierda o usa ⠿ ▲▼ para ordenarlo.'}</p>
 
           <div className={marcoOut}>
           <div className={marcoIn}>
@@ -2007,9 +1999,7 @@ export default function EditorBloques({
         <div className="space-y-3 text-[12px] text-[#6B6B6B]">
           <button onClick={() => onAbrirContenido?.()} className="w-full rounded-xl py-2.5 bg-[#00A89D] text-white text-sm font-bold hover:bg-[#00847A]">✏️ Editar Productos del checkout (colores, tallas, precio, packs, traer del catálogo)</button>
           {/* Mismos campos que en "Productos del checkout" (una sola fuente: el embudo). */}
-          {ckBloques
-            ? <p className="text-[11px] text-[#6B6B6B] leading-snug">Este checkout se arma <b>bloque por bloque</b>: toca la pestaña <b>🛒 Checkout</b> de arriba para mover, renombrar o quitar cada dato.</p>
-            : <CheckoutCamposEditor config={d.checkout_config} onChange={cfg => onCampo('checkout_config', cfg)} />}
+          <p className="text-[11px] text-[#6B6B6B] leading-snug">Los datos que pide el checkout se arman <b>bloque por bloque</b>: toca la pestaña <b>🛒 Checkout</b> de arriba para agregar, mover, renombrar o quitar cada uno.</p>
         </div>
       );
     }
