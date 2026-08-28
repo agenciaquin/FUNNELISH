@@ -45,6 +45,12 @@ export default function CheckoutCamposEditor({ config, onChange }: {
 
   return (
     <div className="space-y-3">
+      {/* Bloque de producto arriba del checkout (foto + precios) */}
+      <label className="flex items-center gap-2 rounded-xl border border-[#E8E8E8] p-3 bg-white cursor-pointer">
+        <input type="checkbox" checked={cfg.bloqueProducto !== false} onChange={e => onChange({ ...cfg, bloqueProducto: e.target.checked })} className="w-4 h-4" />
+        <span className="text-[12px]"><b>Mostrar bloque de producto arriba</b> — foto de portada, nombre y precio antiguo tachado + precio en promoción.</span>
+      </label>
+
       {/* Cómo se muestran color/talla al cliente */}
       <label className="flex items-center gap-2 rounded-xl border border-[#E8E8E8] p-3 bg-white cursor-pointer">
         <input type="checkbox" checked={cfg.variablesDesplegable === true} onChange={e => onChange({ ...cfg, variablesDesplegable: e.target.checked })} className="w-4 h-4" />

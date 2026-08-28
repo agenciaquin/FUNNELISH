@@ -2,13 +2,14 @@
 // que desplegar. Sirve para confirmar, desde /api/version, que el `vercel --prod`
 // SÍ quedó en vivo (si el número que ves en la web coincide con el último, los
 // cambios ya están activos para TODOS los bots de los clientes).
-export const VERSION = 'v165';
+export const VERSION = 'v166';
 
 // Fecha aproximada de esta versión (referencia para ti, no afecta nada).
 export const VERSION_FECHA = '2026-08-28';
 
 // Resumen corto de lo último que entró en esta versión.
 export const VERSION_CAMBIOS = [
+  'Checkout · ahora arriba del formulario aparece el BLOQUE DE PRODUCTO (como el mockup): foto de portada, nombre del producto, y precio antiguo tachado (rojo) + precio en promoción (verde). Se activa/desactiva con el interruptor "Mostrar bloque de producto arriba" en "Datos que pide el checkout" (viene activado). Solo es visual, no cambia el pedido ni las confirmaciones.',
   'Checkout · nuevo modo "Mostrar color y talla como desplegable (▼)" (interruptor en "Datos que pide el checkout"). Al activarlo, el cliente elige color y talla en listas desplegables (como el mockup) en vez de botones, y el color elegido muestra su foto al lado. Es opcional y aditivo: los embudos que no lo activen quedan igual con los botones de siempre. No cambia el envío del pedido ni las confirmaciones. (Primera parte del rediseño visual del checkout que ve el cliente.)',
   'Checkout · los campos personalizados y el renombrar/ocultar ahora salen TAMBIÉN en la pantalla "Productos del checkout" (donde entras por el botón CHECKOUT), no solo en el editor de bloques. Se guardan en un solo lugar (el embudo), así que edites donde edites es lo mismo. Nueva sección "Datos que pide el checkout". Necesita correr el SQL sql/funnel-checkout-config.sql.',
   'Checkout · CAMPOS PERSONALIZADOS: en el editor del bloque checkout ahora puedes RENOMBRAR los campos del formulario (nombre, apellidos, WhatsApp, dirección, ciudad…), OCULTAR el correo, y AGREGAR campos propios (texto, notas, teléfono, correo, selector/desplegable, casilla sí/no, fecha) con la opción de marcarlos obligatorios. Esos campos se muestran en el checkout, llegan en el pedido y aparecen en la confirmación de WhatsApp como líneas “Etiqueta: valor”. 100% retrocompatible: los embudos que no usan campos nuevos quedan idénticos, y no cambia la lógica de envío del pedido. (Etapa 2 de la mejora del checkout.)',

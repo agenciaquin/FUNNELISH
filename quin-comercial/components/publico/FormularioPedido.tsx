@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { normalizarOpciones, acentoDe, varianteAgotada, opcionAgotada } from '@/lib/funnels';
+import { normalizarOpciones, acentoDe, varianteAgotada, opcionAgotada, esVideo as esVideoUrl } from '@/lib/funnels';
 import type { Funnel, VarianteFunnel } from '@/lib/funnels';
 import ArmarPackSelector, { type PackSalida } from './ArmarPackSelector';
 import { DEPARTAMENTOS, ciudadesDe } from '@/lib/colombia';
@@ -51,6 +51,8 @@ export default function FormularioPedido({ funnel, utms, config }: Props) {
   const camposExtra: CampoExtra[] = Array.isArray(cfg.camposExtra) ? cfg.camposExtra : [];
   // Modo "desplegable": muestra color/talla como listas (▼) en vez de botones.
   const variablesDesplegable = (cfg as any).variablesDesplegable === true;
+  // Bloque de producto arriba del checkout (foto + precios). Por defecto se muestra.
+  const mostrarBloqueProducto = (cfg as any).bloqueProducto !== false;
   const router = useRouter();
   const acento = acentoDe(funnel.color);
 
@@ -503,6 +505,33 @@ export default function FormularioPedido({ funnel, utms, config }: Props) {
           {cSubtitulo && <p className="text-[13px] text-[#6B6B6B] mt-1">{cSubtitulo}</p>}
         </div>
       )}
+
+      {/* Bloque de producto: foto + nombre + precio antiguo/promoción (estilo mockup) */}
+      {mostrarBloqueProducto && (funnel.imagenes?.[0] || funnel.producto) && (
+        <div className="mx-3 mt-3 rounded-2xl border border-[#E8E8E8] bg-white shadow-sm overflow-hidden">
+          <div className="flex items-stretch gap-3 p-3">
+            {funnel.imagenes?.[0] ? (
+              esVideoUrl(funnel.imagenes[0])
+                // eslint-disable-next-line jsx-a11y/media-has-caption
+                ? <video src={funnel.imagenes[0]} muted playsInline className="w-24 h-24 object-cover rounded-xl shrink-0 bg-black" />
+                // eslint-disable-next-line @next/next/no-img-element
+                : <img src={funnel.imagenes[0]} alt={funnel.producto} className="w-24 h-24 object-cover rounded-xl shrink-0" loading="lazy" />
+            ) : (
+              <div className="w-24 h-24 rounded-xl shrink-0 bg-[#F2F1EE] grid place-items-center text-3xl">📦</div>
+            )}
+            <div className="flex-1 min-w-0 flex flex-col justify-center">
+              <div className="font-extrabold text-[16px] leading-tight break-words">{funnel.producto}</div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {funnel.precio_antes ? (
+                  <span className="text-[12px] font-bold text-white bg-[#E23744] rounded px-2 py-0.5 line-through">{pesos(funnel.precio_antes)}</span>
+                ) : null}
+                <span className="text-[14px] font-extrabold text-white rounded px-2.5 py-0.5" style={{ background: acento.boton }}>{pesos(funnel.precio)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Selección de producto */}
       <h2 className="text-center font-extrabold text-lg py-3">ELIGE COLOR Y TALLA ⬇️</h2>
 
