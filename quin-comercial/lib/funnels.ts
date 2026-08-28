@@ -138,6 +138,8 @@ export interface Funnel {
   ocultar_boton2?: boolean;   // oculta el SEGUNDO botón "COMPRAR" (el de abajo) en la página
   catalogo_id?: string | null; // producto del catálogo al que está vinculado (stock en vivo)
   pie_empresa?: string | null; // nombre de la empresa que se muestra en el pie de página
+  // Config de los CAMPOS del checkout (renombrar/ocultar fijos + campos propios).
+  checkout_config?: any;
   creado_at: string;
 }
 
@@ -172,6 +174,7 @@ export async function obtenerFunnel(slug: string): Promise<Funnel | null> {
       tallas:          parseLista(data.tallas),
       variantes:       parseJSON<VarianteFunnel[]>(data.variantes, []),
       bloques:         parseJSON<BloqueEmbudo[]>(data.bloques, []),
+      checkout_config: parseJSON<any>(data.checkout_config, null),
     } as Funnel;
 
     // ── Stock EN VIVO del catálogo ──

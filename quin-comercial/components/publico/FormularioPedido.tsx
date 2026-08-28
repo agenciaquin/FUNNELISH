@@ -42,7 +42,9 @@ interface Props {
 const CAMPOS_OCULTABLES = new Set(['correo']);
 
 export default function FormularioPedido({ funnel, utms, config }: Props) {
-  const cfg: CheckoutConfig = config ?? {};
+  // La config de campos vive en el embudo (funnel.checkout_config); el prop `config`
+  // queda como respaldo por compatibilidad.
+  const cfg: CheckoutConfig = ((funnel as any).checkout_config as CheckoutConfig) ?? config ?? {};
   const camposFijosCfg: Record<string, CampoFijoCfg> = cfg.camposFijos ?? {};
   const camposExtra: CampoExtra[] = Array.isArray(cfg.camposExtra) ? cfg.camposExtra : [];
   const router = useRouter();

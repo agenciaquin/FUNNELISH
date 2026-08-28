@@ -5,6 +5,7 @@ import VistaPreviaEmbudo from './VistaPreviaEmbudo';
 import ArmarPackSelector from '../publico/ArmarPackSelector';
 import EditorPareja, { selectoresPolos } from './EditorPareja';
 import EditorBloques from './EditorBloques';
+import CheckoutCamposEditor from './CheckoutCamposEditor';
 import ConfirmacionModal from './ConfirmacionModal';
 import PapeleraEmbudos from './PapeleraEmbudos';
 import { type BloqueLayout } from '@/lib/funnel-layout';
@@ -93,6 +94,8 @@ interface Embudo {
   catalogoId?: string | null;
   // Nombre de la empresa que se muestra en el pie de la página (cada cliente el suyo).
   pie_empresa?: string | null;
+  // Config de los campos del checkout (renombrar/ocultar fijos + campos propios).
+  checkout_config?: any;
 }
 
 const vacio = (): Embudo => ({
@@ -105,7 +108,7 @@ const vacio = (): Embudo => ({
   pixel_tiktok: null, pixel_tiktok_token: null,
   audio_url: null, video_url: null, color: null, miniatura_url: null, anuncios: null,
   layout: null, layout_borrador: null, modo_publicado: null, modo_confirmacion: null, ocultar_boton2: false,
-  pie_empresa: null,
+  pie_empresa: null, checkout_config: null,
 });
 
 const pesos = (n: number) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
@@ -1607,6 +1610,13 @@ export default function EmbudosPanel() {
             </div>
           </section>
           )}
+
+          {/* Campos del formulario del checkout: renombrar/ocultar + campos propios */}
+          <section className="bg-white rounded-2xl border border-[#E8E8E8] p-4 space-y-3">
+            <h2 className="text-sm font-bold">Datos que pide el checkout</h2>
+            <p className="text-[12px] text-[#6B6B6B] -mt-1">Renombra u oculta los campos del formulario, o agrega campos propios (teléfono, notas, punto de referencia…). Se muestran en el checkout y llegan en el pedido.</p>
+            <CheckoutCamposEditor config={actual.checkout_config} onChange={cfg => set('checkout_config', cfg)} />
+          </section>
 
           {/* Variantes */}
           <section className="bg-white rounded-2xl border border-[#E8E8E8] p-4 space-y-3">

@@ -5,6 +5,7 @@ import { acentoDe, esVideo } from '@/lib/funnels';
 import { construirLayoutDesdeFunnel, layoutEmbudoQueConvierte, type BloqueLayout } from '@/lib/funnel-layout';
 import MiniBarraTexto from './MiniBarraTexto';
 import SelectorColor from './SelectorColor';
+import CheckoutCamposEditor from './CheckoutCamposEditor';
 import { estiloTexto, estiloEspacio, botonVariante, VARIANTES_BOTON, ANIMACIONES, FONTS_LISTA, claseAnim } from '@/lib/bloque-estilo';
 
 const pesos = (n: number) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
@@ -1492,88 +1493,11 @@ export default function EditorBloques({
       );
     }
     if (b.tipo === 'checkout' || b.tipo === 'checkout_pro') {
-      const P = b.props ?? {};
-      const setP = (patch: any) => upd(b.id, { props: { ...P, ...patch } });
-      const cFijos: Record<string, any> = P.camposFijos ?? {};
-      const setFijo = (id: string, patch: any) => setP({ camposFijos: { ...cFijos, [id]: { ...(cFijos[id] ?? {}), ...patch } } });
-      const FIJOS: { id: string; def: string; ocultable?: boolean }[] = [
-        { id: 'nombre', def: 'NOMBRE' }, { id: 'apellidos', def: 'APELLIDOS' },
-        { id: 'whatsapp', def: 'WHATSAPP' }, { id: 'correo', def: 'CORREO ELECTRÓNICO', ocultable: true },
-        { id: 'direccion', def: 'DIRECCIÓN' }, { id: 'barrio', def: 'BARRIO' },
-        { id: 'municipio', def: 'MUNICIPIO (CIUDAD)' }, { id: 'departamento', def: 'DEPARTAMENTO' },
-      ];
-      const cExtra: any[] = Array.isArray(P.camposExtra) ? P.camposExtra : [];
-      const setExtras = (nv: any[]) => setP({ camposExtra: nv });
-      const addExtra = () => setExtras([...cExtra, { id: nid('campo'), label: 'Nuevo campo', tipo: 'texto', requerido: false }]);
-      const updE = (i: number, patch: any) => setExtras(cExtra.map((x, j) => (j === i ? { ...x, ...patch } : x)));
-      const delE = (i: number) => setExtras(cExtra.filter((_, j) => j !== i));
-      const moveE = (i: number, dir: -1 | 1) => { const j = i + dir; if (j < 0 || j >= cExtra.length) return; const a = [...cExtra]; [a[i], a[j]] = [a[j], a[i]]; setExtras(a); };
-      const TIPOS: { v: string; l: string }[] = [
-        { v: 'texto', l: 'Texto corto' }, { v: 'notas', l: 'Notas (texto largo)' },
-        { v: 'telefono', l: 'Teléfono' }, { v: 'email', l: 'Correo' },
-        { v: 'selector', l: 'Selector (desplegable)' }, { v: 'checkbox', l: 'Casilla (sí/no)' },
-        { v: 'fecha', l: 'Fecha' },
-      ];
       return (
         <div className="space-y-3 text-[12px] text-[#6B6B6B]">
           <button onClick={() => onAbrirContenido?.()} className="w-full rounded-xl py-2.5 bg-[#00A89D] text-white text-sm font-bold hover:bg-[#00847A]">✏️ Editar Productos del checkout (colores, tallas, precio, packs, traer del catálogo)</button>
-
-          {/* Renombrar / ocultar los campos fijos del formulario */}
-          <div className="rounded-xl border border-[#E8E8E8] p-2.5 bg-white space-y-2">
-            <div className="text-[11px] font-bold uppercase tracking-wide text-[#9A9A9A]">Campos del formulario (renombrar)</div>
-            {FIJOS.map(f => (
-              <div key={f.id} className="flex items-center gap-2">
-                <input
-                  value={cFijos[f.id]?.label ?? ''}
-                  onChange={e => setFijo(f.id, { label: e.target.value })}
-                  placeholder={f.def}
-                  className="flex-1 text-[12px] border border-[#E8E8E8] rounded px-2 py-1.5"
-                />
-                {f.ocultable ? (
-                  <label className="flex items-center gap-1 text-[11px] shrink-0" title="Ocultar este campo en el checkout">
-                    <input type="checkbox" checked={cFijos[f.id]?.oculto === true} onChange={e => setFijo(f.id, { oculto: e.target.checked })} /> ocultar
-                  </label>
-                ) : <span className="w-[52px] shrink-0" />}
-              </div>
-            ))}
-            <p className="text-[10px] text-[#9A9A9A]">Deja vacío para usar el nombre por defecto. Solo el Correo se puede ocultar (los demás son obligatorios para el pedido).</p>
-          </div>
-
-          {/* Campos personalizados que se agregan al formulario */}
-          <div className="rounded-xl border border-[#E8E8E8] p-2.5 bg-white space-y-2">
-            <div className="text-[11px] font-bold uppercase tracking-wide text-[#9A9A9A]">Campos personalizados</div>
-            {cExtra.length === 0 && <p className="text-[11px] text-[#9A9A9A]">Agrega campos extra (texto, teléfono, notas, selector…). Se muestran en el checkout y llegan en el pedido/confirmación.</p>}
-            {cExtra.map((f, i) => (
-              <div key={f.id ?? i} className="rounded-lg border border-[#EEE] p-2 space-y-1.5 bg-[#FAFAF8]">
-                <div className="flex items-center gap-1">
-                  <input value={f.label ?? ''} onChange={e => updE(i, { label: e.target.value })} placeholder="Nombre del campo (ej. Punto de referencia)" className="flex-1 text-[12px] border border-[#E8E8E8] rounded px-2 py-1.5" />
-                  <button onClick={() => moveE(i, -1)} disabled={i === 0} className="text-[12px] px-1 disabled:opacity-25" title="Subir">↑</button>
-                  <button onClick={() => moveE(i, 1)} disabled={i === cExtra.length - 1} className="text-[12px] px-1 disabled:opacity-25" title="Bajar">↓</button>
-                  <button onClick={() => delE(i)} className="text-[12px] px-1 text-[#DC2626]" title="Eliminar">🗑</button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <select value={f.tipo ?? 'texto'} onChange={e => updE(i, { tipo: e.target.value })} className="flex-1 text-[12px] border border-[#E8E8E8] rounded px-2 py-1.5 bg-white">
-                    {TIPOS.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
-                  </select>
-                  <label className="flex items-center gap-1 text-[11px] shrink-0"><input type="checkbox" checked={f.requerido === true} onChange={e => updE(i, { requerido: e.target.checked })} /> obligatorio</label>
-                </div>
-                {f.tipo === 'selector' && (
-                  <textarea
-                    value={Array.isArray(f.opciones) ? f.opciones.join('\n') : ''}
-                    onChange={e => updE(i, { opciones: e.target.value.split('\n').map(s => s.trim()).filter(Boolean) })}
-                    rows={3} placeholder={'Una opción por línea…\nOpción A\nOpción B'}
-                    className="w-full text-[12px] border border-[#E8E8E8] rounded px-2 py-1.5"
-                  />
-                )}
-                {f.tipo !== 'selector' && f.tipo !== 'checkbox' && (
-                  <input value={f.placeholder ?? ''} onChange={e => updE(i, { placeholder: e.target.value })} placeholder="Texto de ayuda (opcional)" className="w-full text-[12px] border border-[#E8E8E8] rounded px-2 py-1.5" />
-                )}
-              </div>
-            ))}
-            <button onClick={addExtra} className="w-full text-[12px] text-[#00A89D] font-semibold border border-dashed border-[#00A89D]/40 rounded-lg py-1.5 hover:bg-[#00A89D]/5">+ Agregar campo personalizado</button>
-          </div>
-
-          <p className="text-[11px] text-[#9A9A9A]">Los campos personalizados aparecen en la confirmación de WhatsApp como líneas “Etiqueta: valor”. No cambian la lógica del pedido.</p>
+          {/* Mismos campos que en "Productos del checkout" (una sola fuente: el embudo). */}
+          <CheckoutCamposEditor config={d.checkout_config} onChange={cfg => onCampo('checkout_config', cfg)} />
         </div>
       );
     }

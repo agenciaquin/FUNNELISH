@@ -2493,6 +2493,40 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── GUARDA: cambio de MODELO/MARCA o cliente que INSISTE ────────────────────
+    // Esta lógica solo cambia el COLOR dentro de la MISMA familia. Si el cliente
+    // nombra OTRA marca/modelo (Mercedes cuando su pedido es Red Bull), o insiste
+    // en que le mandas lo equivocado, NO adivinamos ni repetimos el color errado:
+    // pasamos a un humano. (Antes el bot mandaba "Rojo Red Bull" cuando pedían
+    // "Rojo de Mercedes" y dañaba la venta.)
+    const MARCAS_MODELO = [
+      'mercedes', 'ferrari', 'red bull', 'redbull', 'red bul', 'mclaren', 'mc laren',
+      'alpine', 'aston martin', 'aston', 'williams', 'racing bulls', 'haas', 'sauber', 'audi', 'renault',
+      'honda', 'yamaha', 'suzuki', 'ktm', 'kawasaki', 'bmw', 'ducati', 'pulsar', 'apache', 'boxer', 'nkd',
+      'nacional', 'junior', 'millonarios', 'america', 'tolima', 'medellin', 'cali', 'colombia', 'argentina',
+      'real madrid', 'barcelona', 'boca', 'river',
+    ];
+    // Se comparan SIN espacios para que "red bull" y "REDBULL" cuenten como lo mismo.
+    const sinEsp = (s: string) => s.toLowerCase().replace(/\s+/g, '');
+    const prodActualLow  = sinEsp(pendingPedido.producto ?? '');
+    const marcaMencionada = MARCAS_MODELO.find(m => textLower.includes(m));
+    const marcaEsDistinta = !!marcaMencionada && !prodActualLow.includes(sinEsp(marcaMencionada));
+    const insisteCorreccion = [
+      'ese no es', 'no es ese', 'no es el', 'ese no', 'te dije', 'ya te dije',
+      'sigues enviando', 'me sigues enviando', 'sigue enviando', 'sigues mandando',
+      'me sigues mandando', 'no es lo que', 'no era', 'no ese', 'equivocad', 'otra vez el',
+    ].some(w => textLower.includes(w));
+
+    if (marcaEsDistinta || insisteCorreccion) {
+      const msg = marcaEsDistinta
+        ? `¡Claro! 😊 Para dejártelo en *${(marcaMencionada ?? '').toUpperCase()}* te paso con un asesor y te lo confirmamos exacto en un momentico 🙌`
+        : `Disculpa la confusión 🙏 te paso con un asesor para dejar tu pedido tal cual lo quieres 😊`;
+      const wamid = await sendTextMessage(from, msg);
+      await saveAndSend(supabase, from, msg, 'text', wamid);
+      await marcarHumanoYNotificar(supabase, from);
+      continue;
+    }
+
     if (colorChangeIntent || (lastBotAskedColor && mentionedColor)) {
       // Buscar el catálogo del producto en la DB
       const catalogResult = await findColorVariantInDB(supabase, pendingPedido.producto, mentionedColor);
