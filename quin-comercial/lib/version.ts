@@ -2,13 +2,14 @@
 // que desplegar. Sirve para confirmar, desde /api/version, que el `vercel --prod`
 // SÍ quedó en vivo (si el número que ves en la web coincide con el último, los
 // cambios ya están activos para TODOS los bots de los clientes).
-export const VERSION = 'v169';
+export const VERSION = 'v170';
 
 // Fecha aproximada de esta versión (referencia para ti, no afecta nada).
 export const VERSION_FECHA = '2026-08-28';
 
 // Resumen corto de lo último que entró en esta versión.
 export const VERSION_CAMBIOS = [
+  'CHECKOUT EDITABLE POR BLOQUES, igual que la página de inicio. Tocas la pestaña 🛒 CHECKOUT y quedan las mismas tres columnas: los bloques del checkout a la izquierda, el teléfono en el centro y las propiedades a la derecha, con ESTRUCTURA DEL CHECKOUT (cada bloque con su 👁 y su 🗑). Se arrastran y se ordenan con ⠿ ▲▼, se ocultan, se duplican y se borran uno por uno: el resumen del producto arriba, el bloque de color y talla, CADA dato del cliente (nombre, apellidos, whatsapp, correo, dirección, barrio, departamento, ciudad), los campos propios, títulos y párrafos, el resumen del pedido, los sellos, la forma de pago y el botón. Cada dato se renombra (cambia lo que ve el cliente, no el dato que llega en el pedido), se le cambia el texto de ayuda y se marca obligatorio o no. IMPORTANTE: ningún embudo cambia solo. Sigue con el checkout de siempre hasta que toques “✨ Hacerlo editable por bloques”, y al hacerlo arranca EXACTAMENTE igual a como está hoy, respetando lo que ya tuvieras renombrado, oculto o agregado (comprobado: el HTML sale idéntico). Se puede devolver. Al borrar algo que rompe el pedido (dirección, whatsapp, el botón, un campo propio) sale un aviso en rojo con lo que se pierde, y el panel avisa si el checkout quedó sin con qué vender. El total del resumen lo calcula el sistema con el precio del producto: no se escribe a mano. Mientras el checkout esté armado por bloques, el editor viejo de “Datos que pide el checkout” queda apagado, para no tener la misma decisión en dos sitios.',
   'Checkout · en el formulario, el DEPARTAMENTO ahora va ARRIBA del Municipio (así el cliente elige primero el departamento y luego se filtra la ciudad). Orden más lógico.',
   'Editor · los colores de cada producto ahora se ven como una TABLA (estilo mockup): encabezado FOTO / COLOR y cada color en su fila con su foto. Mismos botones de siempre (+ Agregar color, Traer de Catálogos) y la misma lógica; solo cambió cómo se ve. (Nota: el precio y las tallas siguen siendo por producto — para precio/stock por color se usa "Traer de Catálogos", que trae el stock real de cada color.)',
   'Editor · el editor de "Productos del checkout" ahora muestra cada producto como un BLOQUE tipo mockup: foto de portada grande, nombre, y precio antiguo (en rojo, tachado) + precio en promoción (en verde). Y se agregó el botón "⧉ Duplicar" en cada producto (crea una copia independiente para editarla aparte). Solo cambia cómo se ve/edita en el panel; no toca la venta ni las confirmaciones.',

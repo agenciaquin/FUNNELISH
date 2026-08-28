@@ -1,11 +1,15 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
 import { normalizarOpciones, acentoDe, varianteAgotada, opcionAgotada, esVideo as esVideoUrl } from '@/lib/funnels';
 import type { Funnel, VarianteFunnel } from '@/lib/funnels';
 import ArmarPackSelector, { type PackSalida } from './ArmarPackSelector';
 import { DEPARTAMENTOS, ciudadesDe } from '@/lib/colombia';
+import {
+  normalizarBloquesCk, camposDelCheckout, extrasDelCheckout, resumenDelPedido,
+  type BloqueCk, type CampoCk,
+} from '@/lib/checkout-bloques';
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
 
@@ -47,12 +51,26 @@ export default function FormularioPedido({ funnel, utms, config }: Props) {
   // La config de campos vive en el embudo (funnel.checkout_config); el prop `config`
   // queda como respaldo por compatibilidad.
   const cfg: CheckoutConfig = ((funnel as any).checkout_config as CheckoutConfig) ?? config ?? {};
-  const camposFijosCfg: Record<string, CampoFijoCfg> = cfg.camposFijos ?? {};
-  const camposExtra: CampoExtra[] = Array.isArray(cfg.camposExtra) ? cfg.camposExtra : [];
+  // ── CHECKOUT POR BLOQUES ──────────────────────────────────────────────────
+  // Si este embudo tiene el checkout armado por bloques, ellos mandan: qué se
+  // muestra, en qué orden y con qué texto. Si no, todo sigue exactamente igual.
+  const bloques: BloqueCk[] | null = normalizarBloquesCk((cfg as any).bloques);
+
+  // De una sola fuente salen los datos que se dibujan, los que se validan y los
+  // que se avisan como faltantes.
+  const CAMPOS: CampoCk[] = camposDelCheckout(bloques, cfg);
+  const camposExtra: CampoExtra[] = extrasDelCheckout(bloques, cfg) as CampoExtra[];
+
+  const bVariantes = bloques?.find(b => b.tipo === 'variantes' && b.visible !== false) ?? null;
+  const bBoton     = bloques?.find(b => b.tipo === 'boton' && b.visible !== false) ?? null;
   // Modo "desplegable": muestra color/talla como listas (▼) en vez de botones.
-  const variablesDesplegable = (cfg as any).variablesDesplegable === true;
+  const variablesDesplegable = bloques
+    ? bVariantes?.props?.desplegable === true
+    : (cfg as any).variablesDesplegable === true;
   // Bloque de producto arriba del checkout (foto + precios). Por defecto se muestra.
-  const mostrarBloqueProducto = (cfg as any).bloqueProducto !== false;
+  const mostrarBloqueProducto = bloques
+    ? bloques.some(b => b.tipo === 'producto' && b.visible !== false)
+    : (cfg as any).bloqueProducto !== false;
   const router = useRouter();
   const acento = acentoDe(funnel.color);
 
@@ -260,10 +278,13 @@ export default function FormularioPedido({ funnel, utms, config }: Props) {
       nombre: 'nombre', apellidos: 'apellidos', whatsapp: 'WhatsApp', correo: 'correo',
       direccion: 'dirección', barrio: 'barrio', municipio: 'municipio', departamento: 'departamento',
     };
-    for (const [campo, texto] of Object.entries(nombres)) {
-      // No pedir un campo que el dueño ocultó (ej. el correo).
-      if (CAMPOS_OCULTABLES.has(campo) && camposFijosCfg[campo]?.oculto) continue;
-      if (!String((datos as any)[campo] ?? '').trim()) f.push(texto);
+    // Solo cuenta como "falta" un dato que se está pidiendo y es obligatorio.
+    for (const c of CAMPOS) {
+      if (!c.obligatorio) continue;
+      if (!String((datos as any)[c.id] ?? '').trim()) f.push(nombres[c.id] ?? c.label.toLowerCase());
+    }
+    for (const x of camposExtra) {
+      if (x.requerido && !String((extras as any)[x.id] ?? '').trim()) f.push(x.label.toLowerCase());
     }
     return f.slice(0, 3);
   })();
@@ -318,17 +339,25 @@ export default function FormularioPedido({ funnel, utms, config }: Props) {
       señalar('talla');
       return false;
     }
-    if (!datos.nombre.trim())     e.nombre = 'Escribe tu nombre';
-    if (!datos.apellidos.trim())  e.apellidos = 'Escribe tus apellidos';
-
-    // Celular colombiano: 10 dígitos que empiezan por 3. Evita pedidos sin WhatsApp.
-    const tel = datos.whatsapp.replace(/\D/g, '').replace(/^57/, '');
-    if (!/^3\d{9}$/.test(tel)) e.whatsapp = 'Debe ser un celular de 10 dígitos que empiece por 3';
-
-    if (!datos.direccion.trim()) e.direccion = 'Escribe tu dirección';
-    if (!datos.barrio.trim())    e.barrio = 'Escribe tu barrio';
-    if (!datos.municipio.trim()) e.municipio = 'Escribe tu municipio';
-    if (!datos.departamento.trim()) e.departamento = 'Escribe tu departamento';
+    // Solo se exige lo que el checkout está pidiendo de verdad: un dato que no
+    // se muestra no puede bloquear la compra.
+    const FALTA: Record<string, string> = {
+      nombre: 'Escribe tu nombre', apellidos: 'Escribe tus apellidos',
+      correo: 'Escribe tu correo', direccion: 'Escribe tu dirección',
+      barrio: 'Escribe tu barrio', municipio: 'Escribe tu municipio',
+      departamento: 'Escribe tu departamento',
+    };
+    for (const c of CAMPOS) {
+      if (c.id === 'whatsapp') {
+        // Celular colombiano: 10 dígitos que empiezan por 3. Evita pedidos sin WhatsApp.
+        const tel = datos.whatsapp.replace(/\D/g, '').replace(/^57/, '');
+        if (c.obligatorio || datos.whatsapp.trim()) {
+          if (!/^3\d{9}$/.test(tel)) e.whatsapp = 'Debe ser un celular de 10 dígitos que empiece por 3';
+        }
+        continue;
+      }
+      if (c.obligatorio && !String(datos[c.id] ?? '').trim()) e[c.id] = FALTA[c.id] ?? 'Completa este dato';
+    }
 
     // Elecciones del producto obligatorias. Con "arma tu pack" se valida que los
     // dos buzos estén completos; si no, las elecciones normales.
@@ -480,34 +509,135 @@ export default function FormularioPedido({ funnel, utms, config }: Props) {
   // Los campos se declaran como datos y se dibujan en línea. Si se hiciera con
   // un componente definido aquí dentro, React lo recrearía en cada tecla y el
   // cursor saldría del campo tras cada letra.
-  const CAMPOS_BASE: { id: keyof typeof datos; label: string; tipo?: string; placeholder?: string }[] = [
-    { id: 'nombre',       label: 'NOMBRE' },
-    { id: 'apellidos',    label: 'APELLIDOS' },
-    { id: 'whatsapp',     label: 'WHATSAPP', tipo: 'tel', placeholder: '3001234567' },
-    { id: 'correo',       label: 'CORREO ELECTRÓNICO', tipo: 'email' },
-    { id: 'direccion',    label: 'DIRECCIÓN', placeholder: 'Calle 15 # 20-30' },
-    { id: 'barrio',       label: 'BARRIO' },
-    { id: 'departamento', label: 'DEPARTAMENTO' },
-    { id: 'municipio',    label: 'MUNICIPIO' },
-  ];
-  // Aplica los ajustes del dueño: renombrar (todos) y ocultar (solo el correo,
-  // que es el único campo fijo no obligatorio en el pedido).
-  const CAMPOS = CAMPOS_BASE
-    .filter(c => !(CAMPOS_OCULTABLES.has(c.id) && camposFijosCfg[c.id]?.oculto))
-    .map(c => ({ ...c, label: camposFijosCfg[c.id]?.label?.trim() || c.label }));
+  // ── TROZOS DEL CHECKOUT ────────────────────────────────────────────────────
+  // Cada trozo se escribe UNA sola vez. Sin bloques se muestran en el orden de
+  // siempre; con bloques, en el orden en que quedaron armados.
 
-  return (
-    <div>
-      {/* Encabezado editable del checkout (opcional) */}
-      {(cTitulo || cSubtitulo) && (
-        <div className="px-3 pt-4 text-center">
-          {cTitulo && <h2 className="font-extrabold text-xl leading-tight">{cTitulo}</h2>}
-          {cSubtitulo && <p className="text-[13px] text-[#6B6B6B] mt-1">{cSubtitulo}</p>}
-        </div>
-      )}
+  const campoInput = (c: CampoCk) => {
 
-      {/* Bloque de producto: foto + nombre + precio antiguo/promoción (estilo mockup) */}
-      {mostrarBloqueProducto && (funnel.imagenes?.[0] || funnel.producto) && (
+          const baseCls = `w-full px-4 py-3 rounded-lg border text-[16px] outline-none transition-colors ${
+            errores[c.id] ? 'border-[#C1121F] bg-[#FEF2F2]' : 'border-[#C9C9C9] focus:border-[#0D8A3E]'
+          } ${señalando === c.id ? 'sacudir' : ''}`;
+          return (
+          <div key={c.id} data-campo={c.id}>
+            <label className="block font-bold text-[15px] mb-1.5">
+              {c.label} <span className="text-[#C1121F]">*</span>
+            </label>
+            {c.id === 'departamento' ? (
+              // Departamento: desplegable oficial de Colombia. Al cambiarlo se
+              // reinicia la ciudad (para que coincida con el nuevo departamento).
+              <select
+                value={datos.departamento}
+                onChange={e => { const dep = e.target.value; setDatos(d => ({ ...d, departamento: dep, municipio: '' })); setCiudadOtra(false); if (errores.departamento) setErrores(er => ({ ...er, departamento: '' })); }}
+                className={`${baseCls} bg-white`}
+              >
+                <option value="">— Elige tu departamento —</option>
+                {DEPARTAMENTOS.map(dep => <option key={dep} value={dep}>{dep}</option>)}
+              </select>
+            ) : c.id === 'municipio' ? (() => {
+              // Ciudad: desplegable con los municipios del departamento elegido.
+              // Si la ciudad no está en la lista, "Otra ciudad" abre un campo libre
+              // (así ningún pedido queda bloqueado).
+              const ciudades = ciudadesDe(datos.departamento);
+              // Sin departamento aún: guiar en vez de dejar un campo de texto suelto.
+              if (!datos.departamento) {
+                return (
+                  <select disabled value="" className={`${baseCls} bg-white`}>
+                    <option value="">Primero elige el departamento</option>
+                  </select>
+                );
+              }
+              const usarLista = ciudades.length > 0 && !ciudadOtra;
+              if (usarLista) {
+                const val = ciudades.includes(datos.municipio) ? datos.municipio : '';
+                return (
+                  <select
+                    value={val}
+                    onChange={e => { const v = e.target.value; if (v === '__otra__') { setCiudadOtra(true); set('municipio', ''); } else set('municipio', v); }}
+                    className={`${baseCls} bg-white`}
+                  >
+                    <option value="">{datos.departamento ? '— Elige tu ciudad —' : 'Primero elige el departamento'}</option>
+                    {ciudades.map(ci => <option key={ci} value={ci}>{ci}</option>)}
+                    <option value="__otra__">✏️ Otra ciudad (escribir)</option>
+                  </select>
+                );
+              }
+              return (
+                <>
+                  <input type="text" value={datos.municipio} onChange={e => set('municipio', e.target.value)} placeholder="Escribe tu ciudad" className={baseCls} />
+                  {ciudades.length > 0 && (
+                    <button type="button" onClick={() => { setCiudadOtra(false); set('municipio', ''); }} className="text-[12px] text-[#0D8A3E] font-semibold mt-1">← Volver a la lista de ciudades</button>
+                  )}
+                </>
+              );
+            })() : (
+              <input
+                type={c.tipo ?? 'text'}
+                inputMode={c.id === 'whatsapp' ? 'numeric' : undefined}
+                autoComplete={
+                  c.id === 'nombre' ? 'given-name' :
+                  c.id === 'apellidos' ? 'family-name' :
+                  c.id === 'whatsapp' ? 'tel' :
+                  c.id === 'correo' ? 'email' :
+                  c.id === 'direccion' ? 'street-address' : 'off'
+                }
+                value={datos[c.id]}
+                onChange={e => set(c.id, e.target.value)}
+                placeholder={c.placeholder}
+                className={baseCls}
+              />
+            )}
+            {errores[c.id] && (
+              <p className="text-[12px] font-semibold text-[#C1121F] mt-1">⚠️ {errores[c.id]}</p>
+            )}
+          </div>
+          );
+  };
+
+  const extraInput = (f: CampoExtra) => {
+
+          const err = errores[`extra-${f.id}`];
+          const cls = `w-full px-4 py-3 rounded-lg border text-[16px] outline-none transition-colors ${
+            err ? 'border-[#C1121F] bg-[#FEF2F2]' : 'border-[#C9C9C9] focus:border-[#0D8A3E]'
+          } ${señalando === `extra-${f.id}` ? 'sacudir' : ''}`;
+          const val = extras[f.id] ?? '';
+          return (
+            <div key={f.id} data-campo={`extra-${f.id}`}>
+              {f.tipo !== 'checkbox' && (
+                <label className="block font-bold text-[15px] mb-1.5">
+                  {f.label} {f.requerido && <span className="text-[#C1121F]">*</span>}
+                </label>
+              )}
+              {f.tipo === 'notas' ? (
+                <textarea value={val} onChange={e => setExtra(f.id, e.target.value)} placeholder={f.placeholder} rows={3} className={cls} />
+              ) : f.tipo === 'selector' ? (
+                <select value={val} onChange={e => setExtra(f.id, e.target.value)} className={`${cls} bg-white`}>
+                  <option value="">— Elige una opción —</option>
+                  {(f.opciones ?? []).map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : f.tipo === 'checkbox' ? (
+                <label className="flex items-center gap-2 text-[15px] font-semibold">
+                  <input type="checkbox" checked={val === 'Sí'} onChange={e => setExtra(f.id, e.target.checked ? 'Sí' : '')} className="w-5 h-5" />
+                  {f.label} {f.requerido && <span className="text-[#C1121F]">*</span>}
+                </label>
+              ) : (
+                <input
+                  type={f.tipo === 'telefono' ? 'tel' : f.tipo === 'email' ? 'email' : f.tipo === 'fecha' ? 'date' : 'text'}
+                  inputMode={f.tipo === 'telefono' ? 'numeric' : undefined}
+                  value={val}
+                  onChange={e => setExtra(f.id, e.target.value)}
+                  placeholder={f.placeholder}
+                  className={cls}
+                />
+              )}
+              {err && <p className="text-[12px] font-semibold text-[#C1121F] mt-1">⚠️ {err}</p>}
+            </div>
+          );
+  };
+
+  const secProducto = () => (
+    <>
+{(funnel.imagenes?.[0] || funnel.producto) && (
         <div className="mx-3 mt-3 rounded-2xl border border-[#E8E8E8] bg-white shadow-sm overflow-hidden">
           <div className="flex items-stretch gap-3 p-3">
             {funnel.imagenes?.[0] ? (
@@ -531,9 +661,12 @@ export default function FormularioPedido({ funnel, utms, config }: Props) {
           </div>
         </div>
       )}
+    </>
+  );
 
-      {/* Selección de producto */}
-      <h2 className="text-center font-extrabold text-lg py-3">ELIGE COLOR Y TALLA ⬇️</h2>
+  const secVariantes = (titulo: string) => (
+    <>
+{!!titulo && <h2 className="text-center font-extrabold text-lg py-3">{titulo}</h2>}
 
       <div className="px-3 space-y-2">
         {variantes.map(v => {
@@ -840,163 +973,46 @@ export default function FormularioPedido({ funnel, utms, config }: Props) {
           );
         })}
       </div>
+    </>
+  );
 
-      {/* Datos de envío */}
-      <div ref={datosRef} className="scroll-mt-2" />
-      <h2 className="font-extrabold text-lg px-3 pt-6 pb-1">{cTituloDatos}</h2>
-      <p className="px-3 text-[12px] italic text-[#6B6B6B] mb-4">
-        Sus datos están protegidos y solo se usan para gestionar su pedido.
-      </p>
+  const secBoton = (texto: string, color: string, forma: string) => (
+    <button
+      ref={botonRef}
+      onClick={enviar}
+      disabled={enviando}
+      style={{ background: color || acento.boton }}
+      className={`boton-compra relative overflow-hidden block w-[calc(100%-1.5rem)] mx-3 mt-6 mb-4 ${forma === 'cuadrado' ? 'rounded-none' : forma === 'redondeado' ? 'rounded-xl' : 'rounded-full'} hover:opacity-90 disabled:opacity-60 text-white text-center font-extrabold text-xl py-4 transition-opacity`}
+    >
+      {enviando ? 'ENVIANDO…' : (texto || 'COMPLETAR MI PEDIDO')}
+    </button>
+  );
 
-      <div className="px-3 space-y-4">
-        {CAMPOS.map(c => {
-          const baseCls = `w-full px-4 py-3 rounded-lg border text-[16px] outline-none transition-colors ${
-            errores[c.id] ? 'border-[#C1121F] bg-[#FEF2F2]' : 'border-[#C9C9C9] focus:border-[#0D8A3E]'
-          } ${señalando === c.id ? 'sacudir' : ''}`;
-          return (
-          <div key={c.id} data-campo={c.id}>
-            <label className="block font-bold text-[15px] mb-1.5">
-              {c.label} <span className="text-[#C1121F]">*</span>
-            </label>
-            {c.id === 'departamento' ? (
-              // Departamento: desplegable oficial de Colombia. Al cambiarlo se
-              // reinicia la ciudad (para que coincida con el nuevo departamento).
-              <select
-                value={datos.departamento}
-                onChange={e => { const dep = e.target.value; setDatos(d => ({ ...d, departamento: dep, municipio: '' })); setCiudadOtra(false); if (errores.departamento) setErrores(er => ({ ...er, departamento: '' })); }}
-                className={`${baseCls} bg-white`}
-              >
-                <option value="">— Elige tu departamento —</option>
-                {DEPARTAMENTOS.map(dep => <option key={dep} value={dep}>{dep}</option>)}
-              </select>
-            ) : c.id === 'municipio' ? (() => {
-              // Ciudad: desplegable con los municipios del departamento elegido.
-              // Si la ciudad no está en la lista, "Otra ciudad" abre un campo libre
-              // (así ningún pedido queda bloqueado).
-              const ciudades = ciudadesDe(datos.departamento);
-              // Sin departamento aún: guiar en vez de dejar un campo de texto suelto.
-              if (!datos.departamento) {
-                return (
-                  <select disabled value="" className={`${baseCls} bg-white`}>
-                    <option value="">Primero elige el departamento</option>
-                  </select>
-                );
-              }
-              const usarLista = ciudades.length > 0 && !ciudadOtra;
-              if (usarLista) {
-                const val = ciudades.includes(datos.municipio) ? datos.municipio : '';
-                return (
-                  <select
-                    value={val}
-                    onChange={e => { const v = e.target.value; if (v === '__otra__') { setCiudadOtra(true); set('municipio', ''); } else set('municipio', v); }}
-                    className={`${baseCls} bg-white`}
-                  >
-                    <option value="">{datos.departamento ? '— Elige tu ciudad —' : 'Primero elige el departamento'}</option>
-                    {ciudades.map(ci => <option key={ci} value={ci}>{ci}</option>)}
-                    <option value="__otra__">✏️ Otra ciudad (escribir)</option>
-                  </select>
-                );
-              }
-              return (
-                <>
-                  <input type="text" value={datos.municipio} onChange={e => set('municipio', e.target.value)} placeholder="Escribe tu ciudad" className={baseCls} />
-                  {ciudades.length > 0 && (
-                    <button type="button" onClick={() => { setCiudadOtra(false); set('municipio', ''); }} className="text-[12px] text-[#0D8A3E] font-semibold mt-1">← Volver a la lista de ciudades</button>
-                  )}
-                </>
-              );
-            })() : (
-              <input
-                type={c.tipo ?? 'text'}
-                inputMode={c.id === 'whatsapp' ? 'numeric' : undefined}
-                autoComplete={
-                  c.id === 'nombre' ? 'given-name' :
-                  c.id === 'apellidos' ? 'family-name' :
-                  c.id === 'whatsapp' ? 'tel' :
-                  c.id === 'correo' ? 'email' :
-                  c.id === 'direccion' ? 'street-address' : 'off'
-                }
-                value={datos[c.id]}
-                onChange={e => set(c.id, e.target.value)}
-                placeholder={c.placeholder}
-                className={baseCls}
-              />
-            )}
-            {errores[c.id] && (
-              <p className="text-[12px] font-semibold text-[#C1121F] mt-1">⚠️ {errores[c.id]}</p>
-            )}
-          </div>
-          );
-        })}
+  const secSellos = (items: { emoji?: string; texto?: string }[]) => (
+    <div className="flex flex-wrap justify-center gap-2 px-3 mb-2">
+      {items.map((x, i) => (
+        <span key={i} className="inline-flex items-center gap-1.5 text-[12px] font-semibold bg-[#F2F1EE] rounded-full px-3 py-1.5">
+          <span>{x.emoji || '✅'}</span>{x.texto}
+        </span>
+      ))}
+    </div>
+  );
 
-        {/* Campos personalizados que agregó el dueño (texto, notas, teléfono, etc.) */}
-        {camposExtra.map(f => {
-          const err = errores[`extra-${f.id}`];
-          const cls = `w-full px-4 py-3 rounded-lg border text-[16px] outline-none transition-colors ${
-            err ? 'border-[#C1121F] bg-[#FEF2F2]' : 'border-[#C9C9C9] focus:border-[#0D8A3E]'
-          } ${señalando === `extra-${f.id}` ? 'sacudir' : ''}`;
-          const val = extras[f.id] ?? '';
-          return (
-            <div key={f.id} data-campo={`extra-${f.id}`}>
-              {f.tipo !== 'checkbox' && (
-                <label className="block font-bold text-[15px] mb-1.5">
-                  {f.label} {f.requerido && <span className="text-[#C1121F]">*</span>}
-                </label>
-              )}
-              {f.tipo === 'notas' ? (
-                <textarea value={val} onChange={e => setExtra(f.id, e.target.value)} placeholder={f.placeholder} rows={3} className={cls} />
-              ) : f.tipo === 'selector' ? (
-                <select value={val} onChange={e => setExtra(f.id, e.target.value)} className={`${cls} bg-white`}>
-                  <option value="">— Elige una opción —</option>
-                  {(f.opciones ?? []).map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
-              ) : f.tipo === 'checkbox' ? (
-                <label className="flex items-center gap-2 text-[15px] font-semibold">
-                  <input type="checkbox" checked={val === 'Sí'} onChange={e => setExtra(f.id, e.target.checked ? 'Sí' : '')} className="w-5 h-5" />
-                  {f.label} {f.requerido && <span className="text-[#C1121F]">*</span>}
-                </label>
-              ) : (
-                <input
-                  type={f.tipo === 'telefono' ? 'tel' : f.tipo === 'email' ? 'email' : f.tipo === 'fecha' ? 'date' : 'text'}
-                  inputMode={f.tipo === 'telefono' ? 'numeric' : undefined}
-                  value={val}
-                  onChange={e => setExtra(f.id, e.target.value)}
-                  placeholder={f.placeholder}
-                  className={cls}
-                />
-              )}
-              {err && <p className="text-[12px] font-semibold text-[#C1121F] mt-1">⚠️ {err}</p>}
-            </div>
-          );
-        })}
-      </div>
+  const secPago = (texto: string, color: string) => (
+    <div className="mx-3 mt-3 border border-[#E0E0E0] rounded-lg px-4 py-3 flex items-center gap-2">
+      <span className="w-4 h-4 rounded-full shrink-0" style={{ background: color || '#F97316' }} />
+      <span className="font-bold text-[#6B6B6B] text-[15px]">{texto || 'CONTRA ENTREGA'}</span>
+    </div>
+  );
 
-      {/* Botón principal, justo después de los datos */}
-      <button
-        ref={botonRef}
-        onClick={enviar}
-        disabled={enviando}
-        style={{ background: cColorBoton }}
-        className="boton-compra relative overflow-hidden block w-[calc(100%-1.5rem)] mx-3 mt-6 mb-4 rounded-full hover:opacity-90 disabled:opacity-60 text-white text-center font-extrabold text-xl py-4 transition-opacity"
-      >
-        {enviando ? 'ENVIANDO…' : cTextoBoton}
-      </button>
-
-      {/* Sellos de confianza (opcional) */}
-      {cMostrarSellos && (
-        <div className="flex flex-wrap justify-center gap-2 px-3 mb-2">
-          {cSellos.map((s, i) => (
-            <span key={i} className="inline-flex items-center gap-1.5 text-[12px] font-semibold bg-[#F2F1EE] rounded-full px-3 py-1.5">
-              <span>{s.emoji || '✅'}</span>{s.texto}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Resumen con la foto y la talla de cada prenda */}
-      <div className="mx-3 border border-[#E0E0E0] rounded-lg overflow-hidden">
+  // El resumen: los TEXTOS los pone el dueño; los NÚMEROS salen del producto.
+  const secResumen = (L: { producto: string; precio: string; total: string; envio: string; textoEnvio: string }) => {
+    const R = resumenDelPedido(variante, { textoEnvio: L.textoEnvio });
+    return (
+      <>
+<div className="mx-3 border border-[#E0E0E0] rounded-lg overflow-hidden">
         <div className="flex justify-between px-4 py-2.5 bg-[#FAFAFA] font-bold text-[13px]">
-          <span>PRODUCTO</span><span>PRECIO</span>
+          <span>{L.producto}</span><span>{L.precio}</span>
         </div>
 
         <div className="px-4 py-3 border-t border-[#EEE]">
@@ -1075,25 +1091,100 @@ export default function FormularioPedido({ funnel, utms, config }: Props) {
           )}
         </div>
 
+        {R.envio && (
+          <div className="flex justify-between px-4 py-2 border-t border-[#EEE] text-[14px]">
+            <span>{L.envio}</span><span className="font-bold">{R.envio}</span>
+          </div>
+        )}
         <div className="flex justify-between px-4 py-3 border-t border-[#EEE] font-bold">
-          <span>Total</span><span>{pesos(variante.precio)}</span>
+          <span>{L.total}</span><span>{R.total == null ? '—' : pesos(R.total)}</span>
         </div>
       </div>
+      </>
+    );
+  };
+  const RES_FIJO = { producto: 'PRODUCTO', precio: 'PRECIO', total: 'Total', envio: 'Envío', textoEnvio: '' };
 
-      <div className="mx-3 mt-3 border border-[#E0E0E0] rounded-lg px-4 py-3 flex items-center gap-2">
-        <span className="w-4 h-4 rounded-full bg-[#F97316] shrink-0" />
-        <span className="font-bold text-[#6B6B6B] text-[15px]">CONTRA ENTREGA</span>
-      </div>
+  // Texto y color del botón: los manda su bloque cuando el checkout está armado.
+  const btnTexto    = String(bBoton?.props?.texto ?? '') || cTextoBoton;
+  const btnColor    = String(bBoton?.props?.color ?? '') || cColorBoton;
+  const btnFlotante = bloques ? (bBoton ? bBoton.props?.flotante !== false : false) : true;
 
-      <p className="text-center text-[12px] text-[#6B6B6B] py-6 px-6">
-        Pagas cuando recibes. Te escribimos por WhatsApp para confirmar tu pedido.
-      </p>
+  // El primer dato del cliente es el ancla a la que la página lleva sola al
+  // cliente cuando termina de elegir color y talla.
+  const primerDatoId = bloques?.find(b => (b.tipo === 'campo' || b.tipo === 'campo_extra') && b.visible !== false)?.id ?? null;
 
-      {/* Espacio para que la barra flotante no tape el final */}
-      {botonFlotante && <div className="h-24" />}
+  /** Dibuja un bloque del checkout armado. Lo que no se reconoce, no se dibuja. */
+  const trozo = (b: BloqueCk) => {
+    const P: any = b.props ?? {};
+    const alin = P.align === 'center' ? 'text-center' : P.align === 'right' ? 'text-right' : 'text-left';
+    const ancla = b.id === primerDatoId;
+    switch (b.tipo) {
+      case 'producto':  return secProducto();
+      case 'variantes': return secVariantes(String(P.titulo ?? ''));
+      case 'campo': {
+        const c = CAMPOS.find(x => x.id === P.campo);
+        if (!c) return null;
+        return <div ref={ancla ? datosRef : undefined} className="px-3 py-2 scroll-mt-2">{campoInput(c)}</div>;
+      }
+      case 'campo_extra': {
+        const f = camposExtra.find(x => x.id === P.id);
+        if (!f) return null;
+        return <div ref={ancla ? datosRef : undefined} className="px-3 py-2 scroll-mt-2">{extraInput(f)}</div>;
+      }
+      case 'titulo':
+        return <h2 className={`font-extrabold px-3 pt-6 pb-1 ${alin}`} style={{ fontSize: Number(P.size) || 18, color: P.color || undefined }}>{P.texto}</h2>;
+      case 'texto':
+        return <p className={`px-3 mb-2 ${alin} ${P.italica ? 'italic' : ''}`} style={{ fontSize: Number(P.size) || 12, color: P.color || '#6B6B6B' }}>{P.texto}</p>;
+      case 'espaciador':
+        return <div style={{ height: Math.max(0, Number(P.alto) || 0) }} />;
+      case 'resumen': return secResumen({
+        producto: String(P.etiquetaProducto ?? '') || 'PRODUCTO',
+        precio: String(P.etiquetaPrecio ?? '') || 'PRECIO',
+        total: String(P.etiquetaTotal ?? '') || 'Total',
+        envio: String(P.etiquetaEnvio ?? '') || 'Envío',
+        textoEnvio: String(P.textoEnvio ?? ''),
+      });
+      case 'sellos': return secSellos(Array.isArray(P.items) ? P.items : []);
+      case 'pago':   return secPago(String(P.texto ?? ''), String(P.color ?? ''));
+      case 'boton':  return secBoton(btnTexto, btnColor, String(P.forma ?? 'pill'));
+      default: return null;
+    }
+  };
+
+  return (
+    <div>
+      {bloques ? (
+        bloques.filter(b => b.visible !== false).map(b => (
+          <Fragment key={b.id}>{trozo(b)}</Fragment>
+        ))
+      ) : (<>
+        {/* Checkout de siempre: mismo orden y mismos textos de toda la vida. */}
+        {mostrarBloqueProducto && secProducto()}
+        {secVariantes('ELIGE COLOR Y TALLA ⬇️')}
+        <div ref={datosRef} className="scroll-mt-2" />
+        <h2 className="font-extrabold text-lg px-3 pt-6 pb-1">{cTituloDatos}</h2>
+        <p className="px-3 text-[12px] italic text-[#6B6B6B] mb-4">
+          Sus datos están protegidos y solo se usan para gestionar su pedido.
+        </p>
+        <div className="px-3 space-y-4">
+          {CAMPOS.map(c => <Fragment key={c.id}>{campoInput(c)}</Fragment>)}
+          {camposExtra.map(f => <Fragment key={f.id}>{extraInput(f)}</Fragment>)}
+        </div>
+        {secBoton(cTextoBoton, cColorBoton, 'pill')}
+        {cMostrarSellos && secSellos(cSellos)}
+        {secResumen(RES_FIJO)}
+        {secPago('CONTRA ENTREGA', '#F97316')}
+        <p className="text-center text-[12px] text-[#6B6B6B] py-6 px-6">
+          Pagas cuando recibes. Te escribimos por WhatsApp para confirmar tu pedido.
+        </p>
+      </>)}
+
+{/* Espacio para que la barra flotante no tape el final */}
+      {botonFlotante && btnFlotante && <div className="h-24" />}
 
       {/* Botón que acompaña al cliente hasta que termina */}
-      {botonFlotante && (
+      {botonFlotante && btnFlotante && (
         <div className="fixed bottom-0 left-0 right-0 z-40 px-3 pb-3 pt-2 bg-gradient-to-t from-white via-white to-transparent">
           <div className="max-w-lg mx-auto">
             {faltantes.length > 0 && (
@@ -1104,10 +1195,10 @@ export default function FormularioPedido({ funnel, utms, config }: Props) {
             <button
               onClick={enviar}
               disabled={enviando}
-              style={{ background: cColorBoton }}
+              style={{ background: btnColor }}
               className="w-full rounded-full hover:opacity-90 disabled:opacity-60 text-white text-center font-extrabold text-lg py-3.5 shadow-lg transition-opacity"
             >
-              {enviando ? 'ENVIANDO…' : cTextoBoton}
+              {enviando ? 'ENVIANDO…' : btnTexto}
             </button>
           </div>
         </div>

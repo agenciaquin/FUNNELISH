@@ -1611,11 +1611,19 @@ export default function EmbudosPanel() {
           </section>
           )}
 
-          {/* Campos del formulario del checkout: renombrar/ocultar + campos propios */}
+          {/* Campos del formulario del checkout: renombrar/ocultar + campos propios.
+              Si el checkout ya se arma por bloques, MANDAN los bloques: este editor
+              se apaga para no tener la misma decisión escrita en dos sitios. */}
           <section className="bg-white rounded-2xl border border-[#E8E8E8] p-4 space-y-3">
             <h2 className="text-sm font-bold">Datos que pide el checkout</h2>
-            <p className="text-[12px] text-[#6B6B6B] -mt-1">Renombra u oculta los campos del formulario, o agrega campos propios (teléfono, notas, punto de referencia…). Se muestran en el checkout y llegan en el pedido.</p>
-            <CheckoutCamposEditor config={actual.checkout_config} onChange={cfg => set('checkout_config', cfg)} />
+            {Array.isArray((actual.checkout_config as any)?.bloques) && (actual.checkout_config as any).bloques.length ? (
+              <p className="text-[12px] text-[#6B6B6B] -mt-1">
+                Este checkout ya se arma <b>bloque por bloque</b> en el constructor. Los datos que pide, cómo se llaman y en qué orden van se editan allá, tocando la pestaña <b>🛒 Checkout</b>. Aquí no se toca nada para que no queden dos versiones distintas.
+              </p>
+            ) : (<>
+              <p className="text-[12px] text-[#6B6B6B] -mt-1">Renombra u oculta los campos del formulario, o agrega campos propios (teléfono, notas, punto de referencia…). Se muestran en el checkout y llegan en el pedido.</p>
+              <CheckoutCamposEditor config={actual.checkout_config} onChange={cfg => set('checkout_config', cfg)} />
+            </>)}
           </section>
 
           {/* Variantes */}

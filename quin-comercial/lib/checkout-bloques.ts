@@ -1,17 +1,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // CHECKOUT POR BLOQUES — única fuente de verdad.
 //
-// El checkout de siempre es FIJO: el orden y los textos están escritos dentro de
-// FormularioPedido. Aquí vive la versión por BLOQUES: una lista ordenada que
-// describe qué se muestra, en qué orden y con qué texto.
+// El checkout se arma igual que la página de inicio: una lista ordenada de
+// bloques. De aquí salen, para TODOS (panel, vista previa y página real):
+//   · qué se muestra y en qué orden,
+//   · qué datos se le piden al cliente y cuáles son obligatorios,
+//   · qué números salen en el resumen.
 //
 // Reglas que se respetan aquí:
-//  · Un embudo que NO tenga bloques sigue mostrando el checkout fijo, igual que
-//    siempre. Los bloques son opcionales y se activan a mano (`bloquesPorDefecto`).
-//  · Qué campos pide el formulario se decide en UN solo lugar (`camposDelCheckout`),
-//    y de ahí lo leen el panel, la vista previa y el formulario público.
-//  · Los números del resumen NO se editan: salen del producto (`resumenDelPedido`).
-//    Un total escrito a mano sería un número creíble y falso.
+//  · Un embudo SIN bloques se comporta exactamente como hoy. Los bloques se
+//    activan a mano y arrancan con lo que ese embudo ya tenía configurado
+//    (`bloquesDesdeConfig`), así nada cambia solo ni se pierde en silencio.
+//  · Un dato que el pedido no sabe guardar no se pide.
+//  · El total no se escribe a mano: sale del precio del producto.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type BloqueCk = {
@@ -21,14 +22,13 @@ export type BloqueCk = {
   props?: Record<string, any>;
 };
 
-/** Los 8 datos que el pedido sabe guardar. No hay campos inventados. */
+/** Los 8 datos fijos que el pedido sabe guardar, en el orden de siempre. */
 export const CAMPOS_PEDIDO = [
   'nombre', 'apellidos', 'whatsapp', 'correo',
-  'direccion', 'barrio', 'municipio', 'departamento',
+  'direccion', 'barrio', 'departamento', 'municipio',
 ] as const;
 export type CampoPedido = typeof CAMPOS_PEDIDO[number];
 
-/** Etiqueta, tipo de teclado y ayuda de cada dato, tal como se ve hoy. */
 export const CAMPO_INFO: Record<CampoPedido, { label: string; tipo?: string; placeholder?: string; auto?: string }> = {
   nombre:       { label: 'NOMBRE', auto: 'given-name' },
   apellidos:    { label: 'APELLIDOS', auto: 'family-name' },
@@ -36,58 +36,80 @@ export const CAMPO_INFO: Record<CampoPedido, { label: string; tipo?: string; pla
   correo:       { label: 'CORREO ELECTRÓNICO', tipo: 'email', auto: 'email' },
   direccion:    { label: 'DIRECCIÓN', placeholder: 'Calle 15 # 20-30', auto: 'street-address' },
   barrio:       { label: 'BARRIO' },
-  municipio:    { label: 'MUNICIPIO' },
   departamento: { label: 'DEPARTAMENTO' },
+  municipio:    { label: 'MUNICIPIO' },
 };
 
-/**
- * Hoy el checkout exige todos los datos MENOS el correo. Se conserva igual para
- * que activar los bloques no cambie lo que ya vive.
- */
+/** El correo es el único dato fijo que el pedido no exige. */
 export const OBLIGATORIO_POR_DEFECTO: Record<CampoPedido, boolean> = {
   nombre: true, apellidos: true, whatsapp: true, correo: false,
-  direccion: true, barrio: true, municipio: true, departamento: true,
+  direccion: true, barrio: true, departamento: true, municipio: true,
 };
 
-/**
- * Qué se pierde si se borra o se oculta cada cosa. Se muestra en rojo en el
- * panel: se puede borrar todo, pero nunca a ciegas.
- */
+/** Campos que el dueño inventa. Viajan al pedido como "extras". */
+export type TipoExtra = 'texto' | 'notas' | 'telefono' | 'email' | 'selector' | 'checkbox' | 'fecha';
+export type CampoExtra = { id: string; label: string; tipo: TipoExtra; requerido?: boolean; placeholder?: string; opciones?: string[] };
+export const TIPOS_EXTRA: { v: TipoExtra; l: string }[] = [
+  { v: 'texto', l: 'Texto corto' }, { v: 'notas', l: 'Notas (texto largo)' },
+  { v: 'telefono', l: 'Teléfono' }, { v: 'email', l: 'Correo' },
+  { v: 'selector', l: 'Selector (desplegable)' }, { v: 'checkbox', l: 'Casilla (sí/no)' },
+  { v: 'fecha', l: 'Fecha' },
+];
+
+/** Qué se pierde si se borra o se oculta. Se dice en pantalla, en rojo. */
 export const AVISO_CAMPO: Partial<Record<CampoPedido, string>> = {
   nombre:       'Sin NOMBRE el pedido llega sin saber a nombre de quién va.',
-  whatsapp:     'Sin WHATSAPP no hay por dónde confirmar el pedido ni recuperar el carrito. La transportadora tampoco puede llamar.',
+  whatsapp:     'Sin WHATSAPP no hay por dónde confirmar el pedido ni recuperar el carrito, y la transportadora no puede llamar.',
   direccion:    'Sin DIRECCIÓN el pedido llega sin a dónde despachar.',
-  municipio:    'Sin MUNICIPIO la guía no se puede generar.',
   departamento: 'Sin DEPARTAMENTO la guía no se puede generar.',
+  municipio:    'Sin MUNICIPIO la guía no se puede generar.',
   barrio:       'Sin BARRIO la entrega se vuelve más difícil en ciudades grandes.',
 };
-
-/** Aviso al quitar un bloque que no es un campo. */
 export const AVISO_TIPO: Record<string, string> = {
-  variantes: 'Sin este bloque el cliente no puede elegir color ni talla: el pedido llega sin saber qué prenda enviar.',
+  variantes: 'Sin este bloque el cliente no puede elegir color ni talla: el pedido llega sin saber qué enviar.',
   boton:     'Sin el botón el cliente no tiene cómo enviar el pedido.',
   resumen:   'El cliente compra sin ver el total antes de confirmar.',
 };
 
-export type CkTipo = { tipo: string; label: string; icono: string; cat: string; unico?: boolean };
-
-/** La paleta del checkout, por categorías. */
-export const CK_TIPOS: CkTipo[] = [
-  { tipo: 'producto',   label: 'Resumen del producto', icono: '🧾', cat: 'Producto', unico: true },
-  { tipo: 'variantes',  label: 'Elegir color y talla', icono: '🎽', cat: 'Producto', unico: true },
-  { tipo: 'resumen',    label: 'Resumen del pedido',   icono: '📦', cat: 'Producto', unico: true },
-  { tipo: 'campo',      label: 'Dato del cliente',     icono: '✏️', cat: 'Datos del cliente' },
-  { tipo: 'titulo',     label: 'Título',               icono: '🔠', cat: 'Texto' },
-  { tipo: 'texto',      label: 'Párrafo',              icono: '📝', cat: 'Texto' },
-  { tipo: 'espaciador', label: 'Espacio en blanco',    icono: '↕️', cat: 'Texto' },
-  { tipo: 'sellos',     label: 'Sellos de confianza',  icono: '🛡️', cat: 'Confianza' },
-  { tipo: 'pago',       label: 'Forma de pago',        icono: '💵', cat: 'Confianza', unico: true },
-  { tipo: 'boton',      label: 'Botón COMPLETAR PEDIDO', icono: '🟢', cat: 'Llamado a la acción', unico: true },
+// ── Paleta del checkout (mismas categorías y forma que la de la página) ──────
+export type CkItem = { tipo: string; label: string; ic: string; campo?: CampoPedido; unico?: boolean };
+export const CK_PALETA_CATS: { cat: string; items: CkItem[] }[] = [
+  { cat: 'Producto', items: [
+    { tipo: 'producto',  label: 'Resumen arriba', ic: '🧾', unico: true },
+    { tipo: 'variantes', label: 'Color y talla',  ic: '🎽', unico: true },
+    { tipo: 'resumen',   label: 'Resumen del pedido', ic: '📦', unico: true },
+  ] },
+  { cat: 'Datos del cliente', items: CAMPOS_PEDIDO.map(c => ({
+    tipo: 'campo', campo: c, label: CAMPO_INFO[c].label.replace(' ELECTRÓNICO', ''), ic: '✏️',
+  })) },
+  { cat: 'Campo propio', items: [
+    { tipo: 'campo_extra', label: 'Campo personalizado', ic: '➕' },
+  ] },
+  { cat: 'Texto', items: [
+    { tipo: 'titulo',     label: 'Título', ic: '🔠' },
+    { tipo: 'texto',      label: 'Párrafo', ic: '📝' },
+    { tipo: 'espaciador', label: 'Espaciador', ic: '↕️' },
+  ] },
+  { cat: 'Confianza', items: [
+    { tipo: 'sellos', label: 'Sellos', ic: '🛡️' },
+    { tipo: 'pago',   label: 'Forma de pago', ic: '💵', unico: true },
+  ] },
+  { cat: 'Llamado a la acción', items: [
+    { tipo: 'boton', label: 'Botón comprar', ic: '🟢', unico: true },
+  ] },
 ];
 
-export const CK_TIPO_LABEL = (t: string) => {
-  const it = CK_TIPOS.find(x => x.tipo === t);
-  return it ? `${it.icono} ${it.label}` : t;
+export const CK_META = (b: BloqueCk): { ic: string; label: string } => {
+  if (b.tipo === 'campo') {
+    const c = b.props?.campo as CampoPedido;
+    return { ic: '✏️', label: String(b.props?.etiqueta ?? '').trim() || CAMPO_INFO[c]?.label || 'Dato' };
+  }
+  if (b.tipo === 'campo_extra') return { ic: '➕', label: String(b.props?.label ?? '').trim() || 'Campo propio' };
+  for (const c of CK_PALETA_CATS) {
+    const it = c.items.find(x => x.tipo === b.tipo);
+    if (it) return { ic: it.ic, label: it.label };
+  }
+  return { ic: '🔲', label: b.tipo };
 };
 
 let _n = 0;
@@ -100,36 +122,71 @@ export function nuevoBloqueCk(tipo: string, campo?: CampoPedido): BloqueCk {
   if (tipo === 'texto')      b.props = { texto: 'Escribe aquí tu texto…', size: 12, color: '#6B6B6B', align: 'left', italica: true };
   if (tipo === 'espaciador') b.props = { alto: 16 };
   if (tipo === 'producto')   b.props = { mostrarFoto: true, etiquetaNormal: 'PRECIO NORMAL', etiquetaOferta: 'PRECIO EN PROMOCIÓN' };
-  if (tipo === 'variantes')  b.props = { titulo: 'ELIGE COLOR Y TALLA ⬇️' };
-  if (tipo === 'resumen')    b.props = { etiquetaProducto: 'PRODUCTO', etiquetaPrecio: 'PRECIO', etiquetaTotal: 'Total', textoEnvio: '' };
+  if (tipo === 'variantes')  b.props = { titulo: 'ELIGE COLOR Y TALLA ⬇️', desplegable: false };
+  if (tipo === 'resumen')    b.props = { etiquetaProducto: 'PRODUCTO', etiquetaPrecio: 'PRECIO', etiquetaTotal: 'Total', etiquetaEnvio: 'Envío', textoEnvio: '' };
   if (tipo === 'sellos')     b.props = { items: [{ emoji: '🚚', texto: 'Envío a todo el país' }, { emoji: '🔒', texto: 'Compra 100% segura' }, { emoji: '✅', texto: 'Satisfacción garantizada' }] };
   if (tipo === 'pago')       b.props = { texto: 'CONTRA ENTREGA', color: '#F97316' };
   if (tipo === 'boton')      b.props = { texto: 'COMPLETAR MI PEDIDO', color: '', forma: 'pill', flotante: true };
+  if (tipo === 'campo_extra') b.props = { id: nid('extra').slice(3), label: 'Nuevo campo', tipoCampo: 'texto', requerido: false, placeholder: '', opciones: [] };
   if (tipo === 'campo') {
-    const c = (campo && (CAMPOS_PEDIDO as readonly string[]).includes(campo)) ? campo : 'nombre';
-    const info = CAMPO_INFO[c as CampoPedido];
-    b.props = { campo: c, etiqueta: info.label, placeholder: info.placeholder ?? '', obligatorio: OBLIGATORIO_POR_DEFECTO[c as CampoPedido] };
+    const c: CampoPedido = (campo && (CAMPOS_PEDIDO as readonly string[]).includes(campo)) ? campo : 'nombre';
+    b.props = { campo: c, etiqueta: CAMPO_INFO[c].label, placeholder: CAMPO_INFO[c].placeholder ?? '', obligatorio: OBLIGATORIO_POR_DEFECTO[c] };
   }
   return b;
 }
 
 /**
- * El checkout de siempre, escrito como bloques. Es EXACTAMENTE el mismo orden y
- * los mismos textos que hoy ve el cliente: al activarlo no cambia nada en
- * pantalla, solo pasa a ser editable.
+ * El checkout de ESTE embudo, escrito como bloques: mismo orden y mismos textos
+ * que ya ve el cliente, respetando lo que el dueño hubiera renombrado, ocultado
+ * o agregado. Al activarlo, en pantalla no cambia nada.
  */
-export function bloquesPorDefecto(): BloqueCk[] {
-  const campos = CAMPOS_PEDIDO.map(c => nuevoBloqueCk('campo', c));
-  return [
-    nuevoBloqueCk('variantes'),
-    { ...nuevoBloqueCk('titulo'), props: { texto: '✅ DATOS PARA EL ENVÍO:', size: 18, color: '', align: 'left' } },
-    { ...nuevoBloqueCk('texto'), props: { texto: 'Sus datos están protegidos y solo se usan para gestionar su pedido.', size: 12, color: '#6B6B6B', align: 'left', italica: true } },
-    ...campos,
-    nuevoBloqueCk('boton'),
-    nuevoBloqueCk('resumen'),
-    nuevoBloqueCk('pago'),
-    { ...nuevoBloqueCk('texto'), props: { texto: 'Pagas cuando recibes. Te escribimos por WhatsApp para confirmar tu pedido.', size: 12, color: '#6B6B6B', align: 'center', italica: false } },
-  ];
+export function bloquesDesdeConfig(cfg: any): BloqueCk[] {
+  const c = (cfg && typeof cfg === 'object') ? cfg : {};
+  const fijos: Record<string, { label?: string; oculto?: boolean }> = c.camposFijos ?? {};
+  const extras: CampoExtra[] = Array.isArray(c.camposExtra) ? c.camposExtra : [];
+  const out: BloqueCk[] = [];
+
+  if (c.bloqueProducto !== false) out.push(nuevoBloqueCk('producto'));
+
+  const vars = nuevoBloqueCk('variantes');
+  vars.props = { ...vars.props, desplegable: c.variablesDesplegable === true };
+  out.push(vars);
+
+  const tit = nuevoBloqueCk('titulo');
+  tit.props = { texto: '✅ DATOS PARA EL ENVÍO:', size: 18, color: '', align: 'left' };
+  out.push(tit);
+
+  const nota = nuevoBloqueCk('texto');
+  nota.props = { texto: 'Sus datos están protegidos y solo se usan para gestionar su pedido.', size: 12, color: '#6B6B6B', align: 'left', italica: true };
+  out.push(nota);
+
+  for (const id of CAMPOS_PEDIDO) {
+    const b = nuevoBloqueCk('campo', id);
+    const f = fijos[id] ?? {};
+    if (String(f.label ?? '').trim()) b.props!.etiqueta = String(f.label).trim();
+    // Solo el correo se podía ocultar: se respeta como bloque oculto, no borrado.
+    if (id === 'correo' && f.oculto) b.visible = false;
+    out.push(b);
+  }
+
+  for (const e of extras) {
+    const b = nuevoBloqueCk('campo_extra');
+    b.props = {
+      id: e.id, label: e.label, tipoCampo: e.tipo, requerido: !!e.requerido,
+      placeholder: e.placeholder ?? '', opciones: Array.isArray(e.opciones) ? e.opciones : [],
+    };
+    out.push(b);
+  }
+
+  out.push(nuevoBloqueCk('boton'));
+  out.push(nuevoBloqueCk('resumen'));
+  out.push(nuevoBloqueCk('pago'));
+
+  const cierre = nuevoBloqueCk('texto');
+  cierre.props = { texto: 'Pagas cuando recibes. Te escribimos por WhatsApp para confirmar tu pedido.', size: 12, color: '#6B6B6B', align: 'center', italica: false };
+  out.push(cierre);
+
+  return out;
 }
 
 /** Lee lo guardado sin inventar: si no es una lista de bloques, no hay bloques. */
@@ -147,44 +204,69 @@ export function normalizarBloquesCk(valor: any): BloqueCk[] | null {
 }
 
 export type CampoCk = {
-  id: CampoPedido;
-  label: string;
-  tipo?: string;
-  placeholder?: string;
-  auto?: string;
-  obligatorio: boolean;
+  id: CampoPedido; label: string; tipo?: string;
+  placeholder?: string; auto?: string; obligatorio: boolean;
 };
 
 /**
- * QUÉ DATOS PIDE EL CHECKOUT. Única fuente de verdad: de aquí salen los campos
- * que se dibujan, los que se validan y los que se avisan como faltantes.
- * · Sin bloques → los 8 de siempre, todos obligatorios (checkout fijo).
- * · Con bloques → solo los campos que existen, visibles y en su orden.
- * Un campo repetido se cuenta una sola vez (el primero manda).
+ * QUÉ DATOS FIJOS PIDE EL CHECKOUT — única fuente de verdad.
+ * Sin bloques: los de siempre, con lo que el dueño haya renombrado u ocultado.
+ * Con bloques: solo los que estén puestos y visibles, en su orden.
  */
-export function camposDelCheckout(bloques: BloqueCk[] | null | undefined): CampoCk[] {
-  if (!bloques || !bloques.length) {
-    return CAMPOS_PEDIDO.map(id => ({ id, ...CAMPO_INFO[id], obligatorio: OBLIGATORIO_POR_DEFECTO[id] }));
+export function camposDelCheckout(bloques: BloqueCk[] | null | undefined, cfg?: any): CampoCk[] {
+  if (bloques && bloques.length) {
+    const vistos = new Set<string>();
+    const out: CampoCk[] = [];
+    for (const b of bloques) {
+      if (b.tipo !== 'campo' || b.visible === false) continue;
+      const id = String(b.props?.campo ?? '') as CampoPedido;
+      if (!(CAMPOS_PEDIDO as readonly string[]).includes(id) || vistos.has(id)) continue;
+      vistos.add(id);
+      const info = CAMPO_INFO[id];
+      const etiqueta = String(b.props?.etiqueta ?? '').trim();
+      out.push({
+        id, label: etiqueta || info.label, tipo: info.tipo, auto: info.auto,
+        placeholder: String(b.props?.placeholder ?? info.placeholder ?? '') || undefined,
+        obligatorio: b.props?.obligatorio === undefined ? OBLIGATORIO_POR_DEFECTO[id] : b.props.obligatorio !== false,
+      });
+    }
+    return out;
   }
-  const vistos = new Set<string>();
-  const out: CampoCk[] = [];
-  for (const b of bloques) {
-    if (b.tipo !== 'campo' || b.visible === false) continue;
-    const id = String(b.props?.campo ?? '') as CampoPedido;
-    if (!(CAMPOS_PEDIDO as readonly string[]).includes(id) || vistos.has(id)) continue;
-    vistos.add(id);
-    const info = CAMPO_INFO[id];
-    const etiqueta = String(b.props?.etiqueta ?? '').trim();
-    out.push({
-      id,
-      label: etiqueta || info.label,
-      tipo: info.tipo,
-      placeholder: String(b.props?.placeholder ?? info.placeholder ?? '') || undefined,
-      auto: info.auto,
-      obligatorio: b.props?.obligatorio === undefined ? OBLIGATORIO_POR_DEFECTO[id] : b.props.obligatorio !== false,
-    });
+  const c = (cfg && typeof cfg === 'object') ? cfg : {};
+  const fijos: Record<string, { label?: string; oculto?: boolean }> = c.camposFijos ?? {};
+  return CAMPOS_PEDIDO
+    .filter(id => !(id === 'correo' && fijos[id]?.oculto))
+    .map(id => ({
+      id, ...CAMPO_INFO[id],
+      label: String(fijos[id]?.label ?? '').trim() || CAMPO_INFO[id].label,
+      obligatorio: OBLIGATORIO_POR_DEFECTO[id],
+    }));
+}
+
+/** LOS CAMPOS PROPIOS del checkout, en su orden. Misma regla que los fijos. */
+export function extrasDelCheckout(bloques: BloqueCk[] | null | undefined, cfg?: any): CampoExtra[] {
+  if (bloques && bloques.length) {
+    const vistos = new Set<string>();
+    const out: CampoExtra[] = [];
+    for (const b of bloques) {
+      if (b.tipo !== 'campo_extra' || b.visible === false) continue;
+      const id = String(b.props?.id ?? '').trim();
+      const label = String(b.props?.label ?? '').trim();
+      if (!id || !label || vistos.has(id)) continue;   // sin nombre no se pide
+      vistos.add(id);
+      const tipo = String(b.props?.tipoCampo ?? 'texto') as TipoExtra;
+      out.push({
+        id, label,
+        tipo: (TIPOS_EXTRA.some(t => t.v === tipo) ? tipo : 'texto'),
+        requerido: b.props?.requerido === true,
+        placeholder: String(b.props?.placeholder ?? '') || undefined,
+        opciones: Array.isArray(b.props?.opciones) ? b.props.opciones.filter((o: any) => String(o).trim()) : [],
+      });
+    }
+    return out;
   }
-  return out;
+  const c = (cfg && typeof cfg === 'object') ? cfg : {};
+  return Array.isArray(c.camposExtra) ? c.camposExtra : [];
 }
 
 /** ¿El checkout tiene con qué vender? Lo que falte se dice en pantalla. */
@@ -193,19 +275,19 @@ export function problemasDelCheckout(bloques: BloqueCk[] | null | undefined): st
   const vivos = bloques.filter(b => b.visible !== false);
   const p: string[] = [];
   if (!vivos.some(b => b.tipo === 'boton')) p.push('No hay botón: el cliente no tiene cómo enviar el pedido.');
-  if (!vivos.some(b => b.tipo === 'variantes')) p.push('No está el bloque de color y talla: el pedido llega sin saber qué prenda enviar.');
-  const campos = camposDelCheckout(bloques).map(c => c.id);
-  const faltan = (['nombre', 'whatsapp', 'direccion', 'municipio', 'departamento'] as CampoPedido[])
-    .filter(c => !campos.includes(c));
+  if (!vivos.some(b => b.tipo === 'variantes')) p.push('No está el bloque de color y talla: el pedido llega sin saber qué enviar.');
+  const puestos = camposDelCheckout(bloques).map(c => c.id);
+  const faltan = (['nombre', 'whatsapp', 'direccion', 'departamento', 'municipio'] as CampoPedido[]).filter(c => !puestos.includes(c));
   if (faltan.length) p.push(`Faltan datos para poder despachar: ${faltan.join(', ')}.`);
+  const sinNombre = bloques.filter(b => b.tipo === 'campo_extra' && b.visible !== false && !String(b.props?.label ?? '').trim()).length;
+  if (sinNombre) p.push(`Hay ${sinNombre} campo(s) propio(s) sin nombre: no se le muestran al cliente.`);
   return p;
 }
 
 /**
  * LOS NÚMEROS DEL RESUMEN. Salen del producto elegido, nunca de un texto.
  * `envio` es una ETIQUETA que escribe el dueño (ej. "GRATIS"); no suma ni resta,
- * porque hoy el sistema no cobra envío. Si algún día lo cobra, se suma aquí y
- * en un solo sitio.
+ * porque hoy el sistema no cobra envío. Si algún día lo cobra, se suma aquí.
  */
 export function resumenDelPedido(
   variante: { nombre?: string; precio?: number | null; precioAntes?: number | null } | null | undefined,
@@ -216,8 +298,7 @@ export function resumenDelPedido(
   const envioTxt = String(opciones?.textoEnvio ?? '').trim();
   return {
     nombre: String(variante?.nombre ?? '').trim(),
-    precio,
-    precioAntes: antes,
+    precio, precioAntes: antes,
     envio: envioTxt || null,
     total: precio,           // el total es el precio del producto: no se edita
   };

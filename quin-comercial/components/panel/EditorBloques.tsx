@@ -6,6 +6,12 @@ import { construirLayoutDesdeFunnel, layoutEmbudoQueConvierte, type BloqueLayout
 import MiniBarraTexto from './MiniBarraTexto';
 import SelectorColor from './SelectorColor';
 import CheckoutCamposEditor from './CheckoutCamposEditor';
+import {
+  CK_PALETA_CATS, CK_META, CAMPO_INFO, CAMPOS_PEDIDO, TIPOS_EXTRA,
+  AVISO_CAMPO, AVISO_TIPO, bloquesDesdeConfig, nuevoBloqueCk, normalizarBloquesCk,
+  camposDelCheckout, extrasDelCheckout, problemasDelCheckout, resumenDelPedido,
+  type BloqueCk as BloqueCk2, type CampoPedido,
+} from '@/lib/checkout-bloques';
 import { estiloTexto, estiloEspacio, botonVariante, VARIANTES_BOTON, ANIMACIONES, FONTS_LISTA, claseAnim } from '@/lib/bloque-estilo';
 
 const pesos = (n: number) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
@@ -204,6 +210,12 @@ export default function EditorBloques({
   const [dispositivo, setDispositivo] = useState<'movil' | 'escritorio'>('movil');
   const [panelTab, setPanelTab] = useState<'contenido' | 'diseno' | 'avanzado'>('contenido');
   const [buscarPal, setBuscarPal] = useState('');
+  // ── Checkout por bloques: se arma igual que la página ──
+  const [selCk, setSelCk] = useState<string | null>(null);
+  const [dragCk, setDragCk] = useState<{ tipo: string; campo?: CampoPedido } | null>(null);
+  const [dragCkId, setDragCkId] = useState<string | null>(null);
+  const [overCk, setOverCk] = useState<number | null>(null);
+  const [buscarCk, setBuscarCk] = useState('');
 
   const set = (nv: BloqueLayout[]) => onLayout(nv);
   const upd = (id: string, patch: any) => set(bs.map(b => (b.id === id ? { ...b, ...patch } : b)));
@@ -220,6 +232,60 @@ export default function EditorBloques({
   const checkoutBloque = bs.find(b => b.tipo === 'checkout' || b.tipo === 'checkout_pro') || null;
   // Agrega el checkout completo (catálogo + formulario + comprar ahora) al final.
   const agregarCheckout = () => { const nb = nuevoBloque('checkout'); if (!hayCheckout) set([...bs, nb]); setVistaTel('checkout'); setSel(hayCheckout ? (checkoutBloque?.id ?? null) : nb.id); };
+  // ── BLOQUES DEL CHECKOUT ───────────────────────────────────────────────────
+  // Viven en la configuración del propio embudo (checkout_config.bloques), que
+  // es el mismo sitio donde ya vivían los campos renombrados y los propios.
+  // Si no hay bloques, el checkout se comporta exactamente como hoy.
+  const ckCfg: any = d.checkout_config ?? {};
+  const ckBloques: BloqueCk2[] | null = normalizarBloquesCk(ckCfg.bloques);
+  const ckLista: BloqueCk2[] = ckBloques ?? [];
+  const setCk = (nv: BloqueCk2[] | null) => {
+    const c = { ...ckCfg };
+    if (nv && nv.length) c.bloques = nv; else delete c.bloques;
+    onCampo('checkout_config', c);
+  };
+  const updCk = (id: string, props: any) => setCk(ckLista.map(x => (x.id === id ? { ...x, props: { ...(x.props ?? {}), ...props } } : x)));
+  const ocultarCk = (id: string, oculto: boolean) => setCk(ckLista.map(x => (x.id === id ? { ...x, visible: oculto ? false : undefined } : x)));
+  const borrarCk = (id: string) => { setCk(ckLista.filter(x => x.id !== id)); if (selCk === id) setSelCk(null); };
+  const moverCk = (id: string, dir: -1 | 1) => {
+    const i = ckLista.findIndex(x => x.id === id), j = i + dir;
+    if (i < 0 || j < 0 || j >= ckLista.length) return;
+    const a2 = [...ckLista]; [a2[i], a2[j]] = [a2[j], a2[i]]; setCk(a2);
+  };
+  const duplicarCk = (id: string) => {
+    const i = ckLista.findIndex(x => x.id === id); if (i < 0) return;
+    const c = nuevoBloqueCk(ckLista[i].tipo);
+    c.props = { ...(ckLista[i].props ?? {}) };
+    // Un campo propio duplicado necesita su propio id: si no, el pedido guardaría
+    // los dos en el mismo sitio y uno pisaría al otro.
+    if (c.tipo === 'campo_extra') c.props.id = `extra-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    const a2 = [...ckLista]; a2.splice(i + 1, 0, c); setCk(a2); setSelCk(c.id);
+  };
+  const insertarCk = (idx: number, tipo: string, campo?: CampoPedido) => {
+    const nb = nuevoBloqueCk(tipo, campo);
+    const a2 = [...ckLista]; a2.splice(idx, 0, nb); setCk(a2); setSelCk(nb.id);
+    setDragCk(null); setOverCk(null);
+  };
+  const soltarCkEn = (idx: number) => {
+    if (dragCk) { insertarCk(idx, dragCk.tipo, dragCk.campo); return; }
+    if (dragCkId) {
+      const from = ckLista.findIndex(x => x.id === dragCkId);
+      if (from >= 0) { const a2 = [...ckLista]; const [m] = a2.splice(from, 1); a2.splice(from < idx ? idx - 1 : idx, 0, m); setCk(a2); }
+      setDragCkId(null); setOverCk(null);
+    }
+  };
+  /** Activa el checkout editable copiando, tal cual, lo que este embudo ya tiene. */
+  const activarCk = () => { setCk(bloquesDesdeConfig(ckCfg)); setSelCk(null); };
+  const volverCkFijo = () => { setCk(null); setSelCk(null); };
+  const ckProblemas = problemasDelCheckout(ckBloques);
+  /** Qué se pierde al borrar este bloque. Se puede borrar todo, pero avisado. */
+  const avisoCk = (b: BloqueCk2): string | null => {
+    if (b.tipo === 'campo') return AVISO_CAMPO[(b.props?.campo ?? '') as CampoPedido] ?? null;
+    if (b.tipo === 'campo_extra') return `Si borras "${String(b.props?.label ?? 'este campo')}", ese dato deja de llegar en los pedidos nuevos.`;
+    return AVISO_TIPO[b.tipo] ?? null;
+  };
+  const enCk = vistaTel === 'checkout' && !!ckBloques;
+
   const soltarEn = (idx: number) => {
     if (dragTipo) { insertar(idx, dragTipo); setDragTipo(null); setOverIdx(null); return; }
     if (dragId) {
@@ -345,6 +411,370 @@ export default function EditorBloques({
     ? 'bg-white min-h-[200px] max-h-[min(80vh,720px)] overflow-y-auto'
     : 'bg-white rounded-xl min-h-[200px] max-h-[min(80vh,720px)] overflow-y-auto';
 
+  // ── CHECKOUT POR BLOQUES: paleta, lienzo, propiedades y estructura ─────────
+  const selCkBloque = ckLista.find(b => b.id === selCk) || null;
+  const ckUnicoUsado = (t: string) => {
+    const it = CK_PALETA_CATS.flatMap(c => c.items).find(x => x.tipo === t);
+    return !!it?.unico && ckLista.some(b => b.tipo === t);
+  };
+  const ckCampoUsado = (c?: CampoPedido) => !!c && ckLista.some(b => b.tipo === 'campo' && b.props?.campo === c);
+
+  // Punto de inserción entre bloques del checkout (igual que el de la página).
+  const MasCk = ({ idx }: { idx: number }) => {
+    const activo = !!dragCk || !!dragCkId;
+    const resaltado = overCk === idx && activo;
+    return (
+      <div onDragOver={e => { if (activo) { e.preventDefault(); setOverCk(idx); } }}
+        onDragLeave={() => setOverCk(o => (o === idx ? null : o))}
+        onDrop={() => soltarCkEn(idx)}
+        className={`relative flex justify-center transition-all ${activo ? 'py-2' : 'py-0.5 group'} ${resaltado ? 'bg-[#00A89D]/10' : ''}`}>
+        <span className={`w-6 h-6 rounded-full text-white text-base leading-none flex items-center justify-center shadow z-10 ${activo ? 'bg-[#00847A] scale-110' : 'bg-[#00A89D] opacity-0 group-hover:opacity-60'}`}>+</span>
+      </div>
+    );
+  };
+
+  const paletaCk = () => {
+    const q = buscarCk.trim().toLowerCase();
+    const cats = CK_PALETA_CATS
+      .map(c => ({ ...c, items: c.items.filter(it => !q || it.label.toLowerCase().includes(q)) }))
+      .filter(c => c.items.length);
+    return (
+      <div className="lg:w-56 lg:shrink-0 lg:sticky lg:top-2 lg:max-h-[86vh] overflow-y-auto bg-white border border-[#E8E8E8] rounded-2xl p-3">
+        <div className="text-[13px] font-extrabold text-[#0D0D0D] mb-0.5">Bloques del checkout</div>
+        <p className="text-[10px] text-[#9A9A9A] mb-2">Arrastra y suelta los bloques al lienzo.</p>
+        <div className="relative mb-2">
+          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#9A9A9A] text-[12px]">🔍</span>
+          <input value={buscarCk} onChange={e => setBuscarCk(e.target.value)} placeholder="Buscar bloque…"
+            className="w-full pl-7 pr-2 py-2 rounded-lg border border-[#E8E8E8] text-[12px] focus:border-[#00A89D] outline-none" />
+        </div>
+        {!cats.length && <p className="text-[11px] text-[#9A9A9A] px-1 py-3 text-center">Sin resultados.</p>}
+        {cats.map(c => (
+          <div key={c.cat} className="mb-2.5">
+            <p className="text-[9px] font-bold uppercase tracking-wide text-[#9A9A9A] px-0.5 mb-1">{c.cat}</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {c.items.map(it => {
+                const ya = it.tipo === 'campo' ? ckCampoUsado(it.campo) : ckUnicoUsado(it.tipo);
+                return (
+                  <button key={it.label + (it.campo ?? '')} type="button"
+                    draggable={!ya} disabled={ya}
+                    onDragStart={() => { if (!ya) { setDragCk({ tipo: it.tipo, campo: it.campo }); setSelCk(null); } }}
+                    onDragEnd={() => { setDragCk(null); setOverCk(null); }}
+                    onClick={() => { if (!ya) insertarCk(ckLista.length, it.tipo, it.campo); }}
+                    title={ya ? 'Ya está en el checkout' : `Arrastra al lienzo, o toca para agregarlo al final: ${it.label}`}
+                    className={`relative flex flex-col items-center justify-center gap-1 px-1.5 py-2.5 rounded-xl border text-center transition-colors ${
+                      ya ? 'border-[#EEE] opacity-45 cursor-default'
+                         : 'cursor-grab active:cursor-grabbing border-[#E8E8E8] hover:border-[#00A89D]/50 hover:bg-[#00A89D]/5'}`}>
+                    <span className="text-lg leading-none">{it.ic}</span>
+                    <span className="text-[10px] font-semibold text-[#4A4A4A] leading-tight">{it.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        <button type="button"
+          onClick={() => { if (confirm('Vuelve al checkout de siempre. Se pierde el orden que armaste con bloques (los campos y sus nombres se conservan). ¿Seguro?')) volverCkFijo(); }}
+          className="w-full mt-1 px-2 py-2 rounded-lg text-[10.5px] font-semibold border border-[#F3C3CB] text-[#C1121F] hover:bg-[#FDEEF0]">↩︎ Volver al checkout de siempre</button>
+      </div>
+    );
+  };
+
+  /** Vista de un bloque del checkout dentro del lienzo. */
+  const vistaCk = (b: BloqueCk2) => {
+    const P: any = b.props ?? {};
+    const vs: any[] = d.variantes ?? [];
+    const v0: any = vs[0] || null;
+    const R = resumenDelPedido(
+      { nombre: v0?.nombre || d.producto, precio: (typeof v0?.precio === 'number' ? v0.precio : d.precio), precioAntes: v0?.precioAntes ?? d.precio_antes },
+      { textoEnvio: P.textoEnvio },
+    );
+    const img0: string | null = v0?.imagen || d.imagenes?.[0] || null;
+    const alin = P.align === 'center' ? 'text-center' : P.align === 'right' ? 'text-right' : 'text-left';
+    const chip = 'text-[10px] border border-[#DDD] rounded-md px-2 py-1 bg-white flex items-center gap-1';
+    const lbl = 'text-[9px] font-extrabold tracking-wide text-[#0D0D0D]';
+    const norm = (ops: any[]) => (ops ?? []).map((o: any) => (typeof o === 'string' ? { valor: o } : o)).filter((o: any) => o?.valor);
+    const caja = (ph: string) => <div className="h-7 rounded-lg bg-white border border-[#E8E8E8] flex items-center px-2 text-[10px] text-[#B5B5B5] mt-1">{ph}</div>;
+    switch (b.tipo) {
+      case 'titulo':
+        return <div className={`font-extrabold px-3 pt-4 pb-1 ${alin}`} style={{ fontSize: Math.min(22, Number(P.size) || 18), color: P.color || undefined }}>{P.texto || 'Título'}</div>;
+      case 'texto':
+        return <div className={`px-3 py-1 ${alin} ${P.italica ? 'italic' : ''}`} style={{ fontSize: Number(P.size) || 12, color: P.color || '#6B6B6B' }}>{P.texto || 'Texto'}</div>;
+      case 'espaciador':
+        return <div style={{ height: Math.max(4, Number(P.alto) || 16) }} className="bg-[repeating-linear-gradient(45deg,#F7F7F7,#F7F7F7_6px,#fff_6px,#fff_12px)]" />;
+      case 'producto':
+        return (
+          <div className="mx-3 my-2 flex items-center gap-2 rounded-xl border border-[#E8E8E8] p-2">
+            {P.mostrarFoto !== false && (img0
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={img0} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0" />
+              : <div className="w-12 h-12 rounded-lg bg-[#F2F1EE] grid place-items-center text-lg shrink-0">📦</div>)}
+            <div className="min-w-0">
+              <div className="text-[11px] font-bold truncate">{R.nombre || 'Tu producto'}</div>
+              <div className="text-[10px] text-[#6B6B6B]">
+                {R.precioAntes != null && <><span>{P.etiquetaNormal || 'PRECIO NORMAL'} </span><s className="text-[#C1121F]">{pesos(R.precioAntes)}</s>{' · '}</>}
+                <span className="font-extrabold" style={{ color: acento.texto }}>{R.precio == null ? '—' : pesos(R.precio)}</span>
+              </div>
+            </div>
+          </div>
+        );
+      case 'variantes': {
+        const selectores: any[] = Array.isArray(v0?.selectores) ? v0.selectores : [];
+        const tieneTalla = selectores.some(x => /talla/i.test(x?.etiqueta || ''));
+        const tallas0: string[] = (!tieneTalla && Array.isArray(v0?.tallas) && v0.tallas.length) ? v0.tallas : (!tieneTalla && Array.isArray(d.tallas) ? d.tallas : []);
+        const nada = selectores.length === 0 && tallas0.length === 0;
+        return (
+          <div className="px-3 py-2 space-y-2">
+            {!!P.titulo && <div className="text-center font-extrabold text-[12px]">{P.titulo}</div>}
+            {selectores.map((x: any, si: number) => {
+              const ops = norm(x.opciones).slice(0, 8);
+              if (!ops.length) return null;
+              return (
+                <div key={si}>
+                  <div className={lbl}>{(x.etiqueta || 'OPCIÓN').toUpperCase()}</div>
+                  {P.desplegable
+                    ? caja(`— Elige ${(x.etiqueta || 'opción').toLowerCase()} —`)
+                    : <div className="flex gap-1 flex-wrap mt-1">{ops.map((o: any, k: number) => <span key={k} className={chip}>{o.valor}</span>)}</div>}
+                </div>
+              );
+            })}
+            {tallas0.length > 0 && (
+              <div><div className={lbl}>TALLA</div>
+                {P.desplegable ? caja('— Elige talla —')
+                  : <div className="flex gap-1 flex-wrap mt-1">{tallas0.slice(0, 8).map((t, k) => <span key={k} className={chip}>{t}</span>)}</div>}
+              </div>
+            )}
+            {nada && <div className="text-[10px] text-[#B45309] bg-[#FEF6E7] rounded-lg px-2 py-1.5">Este producto todavía no tiene colores ni tallas. Se ponen en “Editar productos del checkout”.</div>}
+          </div>
+        );
+      }
+      case 'campo': {
+        const info = CAMPO_INFO[(P.campo ?? 'nombre') as CampoPedido];
+        const esLista = P.campo === 'departamento' || P.campo === 'municipio';
+        return (
+          <div className="px-3 py-1.5">
+            <div className={lbl}>{P.etiqueta || info?.label}{P.obligatorio !== false && <span className="text-[#C1121F]"> *</span>}</div>
+            {caja(esLista ? (P.campo === 'departamento' ? '— Elige tu departamento —' : '— Elige tu ciudad —') : (P.placeholder || info?.placeholder || ''))}
+          </div>
+        );
+      }
+      case 'campo_extra': {
+        const nom = String(P.label ?? '').trim();
+        return (
+          <div className="px-3 py-1.5">
+            <div className={lbl}>{nom || <span className="text-[#C1121F]">SIN NOMBRE — no se le muestra al cliente</span>}{P.requerido && <span className="text-[#C1121F]"> *</span>}</div>
+            {P.tipoCampo === 'checkbox'
+              ? <div className="text-[10px] text-[#6B6B6B] mt-1">☐ {nom}</div>
+              : caja(P.tipoCampo === 'selector' ? '— Elige una opción —' : (P.placeholder || ''))}
+          </div>
+        );
+      }
+      case 'resumen':
+        return (
+          <div className="mx-3 my-2 border border-[#E0E0E0] rounded-lg overflow-hidden text-[10px]">
+            <div className="flex justify-between px-3 py-1.5 bg-[#FAFAFA] font-bold"><span>{P.etiquetaProducto || 'PRODUCTO'}</span><span>{P.etiquetaPrecio || 'PRECIO'}</span></div>
+            <div className="flex justify-between px-3 py-1.5 border-t border-[#EEE]"><span className="truncate">{R.nombre || 'Tu producto'}</span><span className="font-bold">{R.precio == null ? '—' : pesos(R.precio)}</span></div>
+            {R.envio && <div className="flex justify-between px-3 py-1.5 border-t border-[#EEE]"><span>{P.etiquetaEnvio || 'Envío'}</span><span className="font-bold">{R.envio}</span></div>}
+            <div className="flex justify-between px-3 py-1.5 border-t border-[#EEE] font-bold"><span>{P.etiquetaTotal || 'Total'}</span><span>{R.total == null ? '—' : pesos(R.total)}</span></div>
+          </div>
+        );
+      case 'sellos':
+        return (
+          <div className="flex flex-wrap justify-center gap-1.5 px-3 py-2">
+            {(Array.isArray(P.items) ? P.items : []).map((x: any, i: number) => (
+              <span key={i} className="inline-flex items-center gap-1 text-[10px] font-semibold bg-[#F2F1EE] rounded-full px-2 py-1"><span>{x.emoji || '✅'}</span>{x.texto}</span>
+            ))}
+          </div>
+        );
+      case 'pago':
+        return (
+          <div className="mx-3 my-2 border border-[#E0E0E0] rounded-lg px-3 py-2 flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full shrink-0" style={{ background: P.color || '#F97316' }} />
+            <span className="font-bold text-[#6B6B6B] text-[11px]">{P.texto || 'CONTRA ENTREGA'}</span>
+          </div>
+        );
+      case 'boton':
+        return (
+          <div className="px-3 py-2">
+            <div className={`text-white text-center font-extrabold text-[12px] py-2.5 ${P.forma === 'cuadrado' ? 'rounded-none' : P.forma === 'redondeado' ? 'rounded-xl' : 'rounded-full'}`} style={{ background: P.color || acento.boton }}>{P.texto || 'COMPLETAR MI PEDIDO'}</div>
+          </div>
+        );
+      default:
+        return <div className="px-3 py-2 text-[10px] text-[#9A9A9A]">Bloque desconocido: {b.tipo}</div>;
+    }
+  };
+
+  /** El lienzo en la pestaña CHECKOUT. */
+  const lienzoCk = () => {
+    if (!checkoutBloque) return (
+      <div className="p-6 text-center">
+        <div className="text-4xl mb-2">🛒</div>
+        <p className="text-[13px] text-[#6B6B6B] mb-3">Esta página todavía no tiene checkout.<br />Actívalo para recibir los pedidos.</p>
+        <button onClick={agregarCheckout} className="rounded-xl py-2.5 px-5 bg-[#00A89D] text-white text-sm font-bold hover:bg-[#007A72]">🛒 Activar checkout</button>
+      </div>
+    );
+    if (!ckBloques) return (
+      <div>
+        <div onClick={() => setSel(checkoutBloque.id)} className="cursor-pointer">{vistaBloque(checkoutBloque)}</div>
+        <div className="p-3 border-t border-[#EEE] text-center bg-[#FAFAFA]">
+          <p className="text-[11px] text-[#6B6B6B] mb-2">Así se ve hoy. Para moverlo, renombrarlo o quitarle cosas bloque por bloque, hazlo editable.</p>
+          <button onClick={activarCk} className="rounded-xl py-2 px-4 bg-[#00A89D] text-white text-[12px] font-bold hover:bg-[#007A72]">✨ Hacerlo editable por bloques</button>
+          <p className="text-[10px] text-[#9A9A9A] mt-1.5">Arranca igualito a como está hoy. Nada cambia hasta que tú lo muevas.</p>
+        </div>
+      </div>
+    );
+    return (
+      <div className="py-1">
+        <MasCk idx={0} />
+        {ckLista.map((b, i) => {
+          const oculto = b.visible === false;
+          return (
+            <Fragment key={b.id}>
+              <div className={`group/ck relative ${selCk === b.id ? 'ring-2 ring-[#00A89D] ring-inset' : ''} ${dragCkId === b.id ? 'opacity-40' : ''}`}>
+                <div className={`absolute -top-3 right-2 z-20 items-center gap-0.5 bg-white border border-[#00A89D]/40 rounded-lg px-1 py-0.5 shadow ${selCk === b.id ? 'flex' : 'hidden group-hover/ck:flex'}`}>
+                  <span draggable onDragStart={() => setDragCkId(b.id)} onDragEnd={() => { setDragCkId(null); setOverCk(null); }}
+                    className="text-xs px-1 cursor-grab active:cursor-grabbing text-[#9A9A9A]" title="Arrastra para mover">⠿</span>
+                  <button onClick={e => { e.stopPropagation(); moverCk(b.id, -1); }} disabled={i === 0} className="text-xs px-0.5 disabled:opacity-25" title="Subir">↑</button>
+                  <button onClick={e => { e.stopPropagation(); moverCk(b.id, 1); }} disabled={i === ckLista.length - 1} className="text-xs px-0.5 disabled:opacity-25" title="Bajar">↓</button>
+                  <button onClick={e => { e.stopPropagation(); duplicarCk(b.id); }} className="text-xs px-0.5" title="Duplicar">⧉</button>
+                  <button onClick={e => { e.stopPropagation(); ocultarCk(b.id, !oculto); }} className="text-xs px-0.5" title={oculto ? 'Mostrar' : 'Ocultar'}>{oculto ? '🙈' : '👁'}</button>
+                  <button onClick={e => { e.stopPropagation(); const av = avisoCk(b); if (!av || confirm(`${av}\n\n¿Lo borro igual?`)) borrarCk(b.id); }} className="text-xs px-0.5 text-[#DC2626]" title="Borrar">🗑</button>
+                </div>
+                <div onClick={() => setSelCk(b.id)} className={`cursor-pointer ${oculto ? 'opacity-40 grayscale' : ''}`}>
+                  {oculto && <div className="absolute top-1 left-1 z-10 text-[9px] bg-[#0D0D0D]/70 text-white rounded px-1.5 py-0.5">oculto</div>}
+                  {vistaCk(b)}
+                </div>
+              </div>
+              <MasCk idx={i + 1} />
+            </Fragment>
+          );
+        })}
+        {ckLista.length === 0 && (
+          <div className="p-6 text-center text-[12px] text-[#9A9A9A]">El checkout quedó vacío.<br />Arrastra bloques desde la izquierda: así como está, el cliente no puede comprar.</div>
+        )}
+      </div>
+    );
+  };
+
+  /** Propiedades del bloque de checkout elegido (pestaña Contenido). */
+  const propsCkContenido = () => {
+    const b = selCkBloque!;
+    const P: any = b.props ?? {};
+    const up = (patch: any) => updCk(b.id, patch);
+    const campoTxt = (label: string, key: string, ph?: string) => (
+      <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">{label}</span>
+        <input className={inp} value={P[key] ?? ''} placeholder={ph} onChange={e => up({ [key]: e.target.value })} /></label>
+    );
+    const check = (label: string, on: boolean, onClick: () => void) => (
+      <button type="button" onClick={onClick} className="flex items-center gap-2 text-[12px] font-semibold text-left">
+        <span className={`w-4 h-4 rounded border grid place-items-center text-[10px] text-white shrink-0 ${on ? 'bg-[#00A89D] border-[#00A89D]' : 'bg-white border-[#D5D1C8]'}`}>{on ? '✓' : ''}</span>
+        <span>{label}</span>
+      </button>
+    );
+    return (
+      <>
+        {b.tipo === 'campo' && (<>
+          <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Qué dato pide</span>
+            <select className={inp} value={P.campo ?? 'nombre'}
+              onChange={e => { const c = e.target.value as CampoPedido; up({ campo: c, etiqueta: CAMPO_INFO[c].label, placeholder: CAMPO_INFO[c].placeholder ?? '' }); }}>
+              {CAMPOS_PEDIDO.map(c => <option key={c} value={c} disabled={ckCampoUsado(c) && P.campo !== c}>{CAMPO_INFO[c].label}</option>)}
+            </select></label>
+          <p className="text-[10.5px] text-[#6B6B6B] leading-snug">Cambiar el nombre cambia lo que ve el cliente, no el dato que llega en el pedido.</p>
+          {campoTxt('Cómo se llama en pantalla', 'etiqueta')}
+          {(P.campo !== 'departamento' && P.campo !== 'municipio') && campoTxt('Texto de ayuda dentro del campo', 'placeholder', 'Ej: María')}
+          {check('Obligatorio (no deja comprar sin llenarlo)', P.obligatorio !== false, () => up({ obligatorio: P.obligatorio === false }))}
+        </>)}
+
+        {b.tipo === 'campo_extra' && (<>
+          {campoTxt('Cómo se llama', 'label', 'Ej: Punto de referencia')}
+          {!String(P.label ?? '').trim() && <p className="text-[11px] text-[#C1121F]">Sin nombre no se le muestra al cliente.</p>}
+          <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Tipo</span>
+            <select className={inp} value={P.tipoCampo ?? 'texto'} onChange={e => up({ tipoCampo: e.target.value })}>
+              {TIPOS_EXTRA.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
+            </select></label>
+          {P.tipoCampo !== 'checkbox' && P.tipoCampo !== 'selector' && campoTxt('Texto de ayuda', 'placeholder')}
+          {P.tipoCampo === 'selector' && (
+            <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Opciones (una por línea)</span>
+              <textarea className={`${inp} min-h-[70px]`} value={(P.opciones ?? []).join('\n')}
+                onChange={e => up({ opciones: e.target.value.split('\n').map(x => x.trim()).filter(Boolean) })} /></label>
+          )}
+          {check('Obligatorio', P.requerido === true, () => up({ requerido: !P.requerido }))}
+          <p className="text-[10px] text-[#9A9A9A] leading-snug">Este dato llega en el pedido junto a los demás.</p>
+        </>)}
+
+        {(b.tipo === 'titulo' || b.tipo === 'texto') && (<>
+          <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Texto</span>
+            <textarea className={`${inp} min-h-[70px]`} value={P.texto ?? ''} onChange={e => up({ texto: e.target.value })} /></label>
+          <div className="flex gap-2">
+            <label className="flex-1"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Tamaño</span>
+              <input type="number" min={9} max={40} className={inp} value={Number(P.size) || (b.tipo === 'titulo' ? 18 : 12)} onChange={e => up({ size: Number(e.target.value) })} /></label>
+            <label className="flex-1"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Alineación</span>
+              <select className={inp} value={P.align ?? 'left'} onChange={e => up({ align: e.target.value })}>
+                <option value="left">Izquierda</option><option value="center">Centro</option><option value="right">Derecha</option>
+              </select></label>
+          </div>
+          <div><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Color</span>
+            <SelectorColor value={P.color ?? ''} onChange={(v: string) => up({ color: v })} permitirVacio /></div>
+          {b.tipo === 'texto' && check('Cursiva', !!P.italica, () => up({ italica: !P.italica }))}
+        </>)}
+
+        {b.tipo === 'espaciador' && (
+          <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Alto (px)</span>
+            <input type="number" min={4} max={120} className={inp} value={Number(P.alto) || 16} onChange={e => up({ alto: Number(e.target.value) })} /></label>
+        )}
+
+        {b.tipo === 'variantes' && (<>
+          {campoTxt('Título encima de los colores', 'titulo')}
+          {check('Mostrar color y talla como desplegable (▼)', P.desplegable === true, () => up({ desplegable: !P.desplegable }))}
+          <p className="text-[10.5px] text-[#6B6B6B] leading-snug">Los colores, tallas y precios salen del producto.</p>
+          <button onClick={() => onAbrirContenido?.()} className="w-full rounded-xl py-2 border border-[#E8E8E8] text-[12px] font-semibold hover:bg-[#F5F5F5]">✏️ Editar productos del checkout</button>
+        </>)}
+
+        {b.tipo === 'producto' && (<>
+          {check('Mostrar la foto', P.mostrarFoto !== false, () => up({ mostrarFoto: P.mostrarFoto === false }))}
+          {campoTxt('Etiqueta del precio de antes', 'etiquetaNormal')}
+          {campoTxt('Etiqueta del precio de hoy', 'etiquetaOferta')}
+        </>)}
+
+        {b.tipo === 'resumen' && (<>
+          {campoTxt('Título de la columna del producto', 'etiquetaProducto')}
+          {campoTxt('Título de la columna del precio', 'etiquetaPrecio')}
+          {campoTxt('Cómo se llama el total', 'etiquetaTotal')}
+          {campoTxt('Cómo se llama la línea del envío', 'etiquetaEnvio')}
+          {campoTxt('Qué dice el envío (vacío = no se muestra)', 'textoEnvio', 'GRATIS')}
+          <p className="text-[10.5px] text-[#6B6B6B] leading-snug">El total lo calcula el sistema con el precio del producto: no se escribe a mano. La línea del envío es solo un texto y no suma ni resta.</p>
+        </>)}
+
+        {b.tipo === 'pago' && (<>
+          {campoTxt('Texto', 'texto')}
+          <div><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Color del punto</span>
+            <SelectorColor value={P.color ?? '#F97316'} onChange={(v: string) => up({ color: v })} /></div>
+        </>)}
+
+        {b.tipo === 'boton' && (<>
+          {campoTxt('Qué dice el botón', 'texto')}
+          <div><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Color</span>
+            <SelectorColor value={P.color ?? ''} onChange={(v: string) => up({ color: v })} permitirVacio /></div>
+          <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-1">Forma</span>
+            <select className={inp} value={P.forma ?? 'pill'} onChange={e => up({ forma: e.target.value })}>
+              <option value="pill">Redondo</option><option value="redondeado">Esquinas suaves</option><option value="cuadrado">Cuadrado</option>
+            </select></label>
+          {check('Que siga al cliente al bajar', P.flotante !== false, () => up({ flotante: P.flotante === false }))}
+        </>)}
+
+        {b.tipo === 'sellos' && (<>
+          {(Array.isArray(P.items) ? P.items : []).map((x: any, i: number) => (
+            <div key={i} className="flex gap-1.5 items-center">
+              <input className={`${inp} w-14 text-center`} value={x.emoji ?? ''} onChange={e => { const it = [...P.items]; it[i] = { ...it[i], emoji: e.target.value }; up({ items: it }); }} />
+              <input className={inp} value={x.texto ?? ''} onChange={e => { const it = [...P.items]; it[i] = { ...it[i], texto: e.target.value }; up({ items: it }); }} />
+              <button onClick={() => up({ items: P.items.filter((_: any, k: number) => k !== i) })} className="text-[#C1121F] px-1">✕</button>
+            </div>
+          ))}
+          <button onClick={() => up({ items: [...(P.items ?? []), { emoji: '✅', texto: 'Nuevo sello' }] })} className="w-full rounded-xl py-2 border border-[#E8E8E8] text-[12px] font-semibold hover:bg-[#F5F5F5]">+ Agregar sello</button>
+        </>)}
+      </>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-3">
       {/* ── ENCABEZADO: Constructor de Embudos ── */}
@@ -388,7 +818,8 @@ export default function EditorBloques({
       {/* ── 3 COLUMNAS: Paleta · Lienzo · Propiedades ── */}
       <div className="lg:flex lg:gap-3 lg:items-start space-y-3 lg:space-y-0">
 
-        {/* ── Columna 1: PALETA de bloques (por categorías, arrastrar y soltar) ── */}
+        {/* ── Columna 1: PALETA (la del checkout cuando esa pestaña está abierta) ── */}
+        {enCk ? paletaCk() : (
         <div className="lg:w-56 lg:shrink-0 lg:sticky lg:top-2 lg:max-h-[86vh] overflow-y-auto bg-white border border-[#E8E8E8] rounded-2xl p-3">
           <div className="text-[13px] font-extrabold text-[#0D0D0D] mb-0.5">Bloques</div>
           <p className="text-[10px] text-[#9A9A9A] mb-2">Arrastra y suelta los bloques al lienzo.</p>
@@ -443,6 +874,8 @@ export default function EditorBloques({
           )}
         </div>
 
+        )}
+
         {/* ── Columna 2: LIENZO (organiza y previsualiza) ── */}
         <div className="flex-1 min-w-0 flex flex-col gap-2.5 items-center">
           {/* Pestañas: PÁGINA DE INICIO / CHECKOUT */}
@@ -451,10 +884,10 @@ export default function EditorBloques({
               onClick={() => { setVistaTel('inicio'); if (selBloque && (selBloque.tipo === 'checkout' || selBloque.tipo === 'checkout_pro')) setSel(null); }}
               className={`flex-1 rounded-xl py-2.5 text-[12px] font-extrabold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all border-2 ${vistaTel === 'inicio' ? 'bg-[#00A89D] text-white border-[#00A89D] shadow-md' : 'bg-white text-[#00847A] border-[#00A89D]/40 hover:bg-[#00A89D]/5'}`}>🛍️ Página de inicio</button>
             <button type="button"
-              onClick={() => { if (onAbrirCheckout) { onAbrirCheckout(); return; } setVistaTel('checkout'); if (checkoutBloque) setSel(checkoutBloque.id); }}
+              onClick={() => { setVistaTel('checkout'); setSel(null); }}
               className={`flex-1 rounded-xl py-2.5 text-[12px] font-extrabold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all border-2 ${vistaTel === 'checkout' ? 'bg-[#00A89D] text-white border-[#00A89D] shadow-md' : 'bg-white text-[#00847A] border-[#00A89D]/40 hover:bg-[#00A89D]/5'}`}>🛒 Checkout{hayCheckout ? ' ✓' : ''}</button>
           </div>
-          <p className="text-[10px] text-[#6B6B6B] text-center -mt-0.5">{vistaTel === 'inicio' ? '👆 Arrastra un bloque de la izquierda al lienzo, o usa ⠿ ▲▼ para ordenar.' : 'Así se ve el checkout en la página. Tócalo para editar títulos, botón y sellos.'}</p>
+          <p className="text-[10px] text-[#6B6B6B] text-center -mt-0.5">{vistaTel === 'inicio' ? '👆 Arrastra un bloque de la izquierda al lienzo, o usa ⠿ ▲▼ para ordenar.' : enCk ? '👆 Arrastra los bloques del checkout, o usa ⠿ ▲▼ para ordenarlo.' : 'Así se ve el checkout hoy. Hazlo editable para armarlo bloque por bloque.'}</p>
 
           <div className={marcoOut}>
           <div className={marcoIn}>
@@ -501,18 +934,8 @@ export default function EditorBloques({
             })}
             </>)}
             </>) : (
-              // Pestaña Checkout: muestra el checkout (o un botón para activarlo).
-              checkoutBloque ? (
-                <div onClick={() => setSel(checkoutBloque.id)} className={`cursor-pointer ${sel === checkoutBloque.id ? 'ring-2 ring-[#00A89D] ring-inset' : ''}`}>
-                  {vistaBloque(checkoutBloque)}
-                </div>
-              ) : (
-                <div className="p-6 text-center">
-                  <div className="text-4xl mb-2">🛒</div>
-                  <p className="text-[13px] text-[#6B6B6B] mb-3">Esta página todavía no tiene checkout.<br />Actívalo para recibir los pedidos.</p>
-                  <button onClick={agregarCheckout} className="rounded-xl py-2.5 px-5 bg-[#00A89D] text-white text-sm font-bold hover:bg-[#007A72]">🛒 Activar checkout</button>
-                </div>
-              )
+              // Pestaña Checkout: se arma bloque por bloque, igual que la página.
+              lienzoCk()
             )}
           </div>
           </div>
@@ -531,7 +954,39 @@ export default function EditorBloques({
               ))}
             </div>
             <div className="p-3">
-              {!selBloque ? (
+              {enCk ? (
+                !selCkBloque ? (
+                  <div className="text-center py-8 text-[#9A9A9A]">
+                    <div className="text-3xl mb-1">👆</div>
+                    <div className="text-[13px] font-semibold text-[#6B6B6B]">Selecciona un bloque</div>
+                    <div className="text-[11px] mt-0.5">Toca un bloque del checkout para editar su contenido.</div>
+                    {ckProblemas.length > 0 && (
+                      <div className="mt-3 text-left rounded-xl border border-[#F3C3CB] bg-[#FDEEF0] p-2.5 space-y-1">
+                        <p className="text-[11px] font-extrabold text-[#C1121F]">⚠️ Ojo con esto</p>
+                        {ckProblemas.map((t, i) => <p key={i} className="text-[11px] text-[#C1121F] leading-snug">· {t}</p>)}
+                      </div>
+                    )}
+                  </div>
+                ) : (<>
+                  <div className="flex items-center gap-2 mb-3">
+                    <b className="text-[13px] flex-1 truncate">{CK_META(selCkBloque).ic} {CK_META(selCkBloque).label}</b>
+                  </div>
+                  {panelTab === 'contenido' && <div className="space-y-3 max-h-[52vh] overflow-y-auto pr-0.5">{propsCkContenido()}</div>}
+                  {panelTab === 'diseno' && (
+                    <div className="space-y-2 text-[12px] text-[#6B6B6B]">
+                      <p>El checkout se ve igual en toda la página: los colores y la letra salen del color del embudo, para que no queden dos estilos distintos.</p>
+                      <p className="text-[11px]">Lo que sí se ajusta por bloque (texto, tamaño, alineación, color del botón) está en <b>Contenido</b>.</p>
+                    </div>
+                  )}
+                  {panelTab === 'avanzado' && (
+                    <div className="space-y-2 text-[12px]">
+                      <label className="flex items-center gap-2"><input type="checkbox" checked={selCkBloque.visible !== false} onChange={e => ocultarCk(selCkBloque.id, !e.target.checked)} /> Mostrar este bloque en el checkout</label>
+                      {avisoCk(selCkBloque) && <p className="text-[11px] text-[#C1121F] bg-[#FDEEF0] border border-[#F3C3CB] rounded-lg px-2.5 py-2 leading-snug">⚠️ {avisoCk(selCkBloque)}</p>}
+                      <p className="text-[10px] text-[#9A9A9A]">Tipo de bloque: <b>{selCkBloque.tipo}</b></p>
+                    </div>
+                  )}
+                </>)
+              ) : !selBloque ? (
                 <div className="text-center py-8 text-[#9A9A9A]">
                   <div className="text-3xl mb-1">👆</div>
                   <div className="text-[13px] font-semibold text-[#6B6B6B]">Selecciona un bloque</div>
@@ -553,8 +1008,23 @@ export default function EditorBloques({
             </div>
           </div>
 
+          {/* Acciones rápidas del bloque de checkout */}
+          {enCk && selCkBloque && (
+            <div className="bg-white border border-[#E8E8E8] rounded-2xl p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-2">Acciones rápidas</p>
+              <div className="space-y-1.5">
+                <button type="button" onClick={() => duplicarCk(selCkBloque.id)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-[#E8E8E8] text-[13px] hover:bg-[#F5F5F5]">⧉ Duplicar bloque</button>
+                <button type="button" onClick={() => { const av = avisoCk(selCkBloque); if (!av || confirm(`${av}\n\n¿Lo borro igual?`)) borrarCk(selCkBloque.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-[#F3C3CB] text-[#C1121F] text-[13px] hover:bg-[#FDEEF0]">🗑 Eliminar bloque</button>
+                <div className="flex gap-1.5">
+                  <button type="button" onClick={() => moverCk(selCkBloque.id, -1)} className="flex-1 px-2 py-2 rounded-lg border border-[#E8E8E8] text-[13px] hover:bg-[#F5F5F5]">↑ Arriba</button>
+                  <button type="button" onClick={() => moverCk(selCkBloque.id, 1)} className="flex-1 px-2 py-2 rounded-lg border border-[#E8E8E8] text-[13px] hover:bg-[#F5F5F5]">↓ Abajo</button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Acciones rápidas */}
-          {selBloque && (
+          {!enCk && selBloque && (
             <div className="bg-white border border-[#E8E8E8] rounded-2xl p-3">
               <p className="text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-2">Acciones rápidas</p>
               <div className="space-y-1.5">
@@ -568,7 +1038,43 @@ export default function EditorBloques({
             </div>
           )}
 
+          {/* Estructura del checkout */}
+          {enCk && (
+            <div className="bg-white border border-[#E8E8E8] rounded-2xl p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-2">Estructura del checkout</p>
+              {ckLista.length === 0 ? (
+                <p className="text-[11px] text-[#9A9A9A]">El checkout quedó vacío. Arrastra un bloque desde la izquierda.</p>
+              ) : (
+                <div className="space-y-1">
+                  {ckLista.map(b => {
+                    const m = CK_META(b);
+                    return (
+                      <div key={b.id} className={`flex items-center gap-1 rounded-lg ${selCk === b.id ? 'bg-[#00A89D]/10' : 'hover:bg-[#F5F5F5]'} ${b.visible === false ? 'opacity-50' : ''}`}>
+                        <button type="button" onClick={() => setSelCk(b.id)}
+                          className={`flex items-center gap-2 px-2 py-1.5 text-[12px] text-left flex-1 min-w-0 ${selCk === b.id ? 'text-[#00847A] font-semibold' : ''}`}>
+                          <span className="text-sm shrink-0">{m.ic}</span>
+                          <span className="truncate flex-1">{m.label}</span>
+                        </button>
+                        <button type="button" title={b.visible === false ? 'Mostrar' : 'Ocultar'} onClick={() => ocultarCk(b.id, b.visible !== false)}
+                          className="px-1 text-[12px] text-[#9A9A9A] hover:text-[#0D0D0D]">{b.visible === false ? '🙈' : '👁'}</button>
+                        <button type="button" title="Borrar" onClick={() => { const av = avisoCk(b); if (!av || confirm(`${av}\n\n¿Lo borro igual?`)) borrarCk(b.id); }}
+                          className="px-1.5 text-[12px] text-[#DC2626]">🗑</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {ckProblemas.length > 0 && (
+                <div className="mt-2 rounded-xl border border-[#F3C3CB] bg-[#FDEEF0] p-2.5 space-y-1">
+                  <p className="text-[11px] font-extrabold text-[#C1121F]">⚠️ Ojo con esto</p>
+                  {ckProblemas.map((t, i) => <p key={i} className="text-[11px] text-[#C1121F] leading-snug">· {t}</p>)}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Estructura del embudo */}
+          {!enCk && (
           <div className="bg-white border border-[#E8E8E8] rounded-2xl p-3">
             <p className="text-[10px] font-bold uppercase tracking-wide text-[#9A9A9A] mb-2">Estructura del embudo</p>
             {bs.length === 0 ? (
@@ -592,10 +1098,14 @@ export default function EditorBloques({
             )}
           </div>
 
+          )}
+
           {/* Tips */}
           <div className="bg-[#FFFBEB] border border-[#FDE68A] rounded-2xl p-3">
             <p className="text-[12px] font-bold text-[#92700E] mb-0.5">💡 Tips</p>
-            <p className="text-[11px] text-[#92700E]/90 leading-snug">Arrastra los bloques desde el panel izquierdo al lienzo. Usa los botones + para agregar nuevas secciones. Toca un bloque para editarlo aquí a la derecha.</p>
+            <p className="text-[11px] text-[#92700E]/90 leading-snug">{enCk
+              ? 'Arrastra los bloques del checkout desde la izquierda. Cada dato del cliente es un bloque: se mueve, se renombra y se puede quitar. Lo que rompa el pedido te avisa antes.'
+              : 'Arrastra los bloques desde el panel izquierdo al lienzo. Usa los botones + para agregar nuevas secciones. Toca un bloque para editarlo aquí a la derecha.'}</p>
           </div>
         </div>
       </div>
@@ -1497,7 +2007,9 @@ export default function EditorBloques({
         <div className="space-y-3 text-[12px] text-[#6B6B6B]">
           <button onClick={() => onAbrirContenido?.()} className="w-full rounded-xl py-2.5 bg-[#00A89D] text-white text-sm font-bold hover:bg-[#00847A]">✏️ Editar Productos del checkout (colores, tallas, precio, packs, traer del catálogo)</button>
           {/* Mismos campos que en "Productos del checkout" (una sola fuente: el embudo). */}
-          <CheckoutCamposEditor config={d.checkout_config} onChange={cfg => onCampo('checkout_config', cfg)} />
+          {ckBloques
+            ? <p className="text-[11px] text-[#6B6B6B] leading-snug">Este checkout se arma <b>bloque por bloque</b>: toca la pestaña <b>🛒 Checkout</b> de arriba para mover, renombrar o quitar cada dato.</p>
+            : <CheckoutCamposEditor config={d.checkout_config} onChange={cfg => onCampo('checkout_config', cfg)} />}
         </div>
       );
     }
