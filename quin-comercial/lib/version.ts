@@ -2,13 +2,14 @@
 // que desplegar. Sirve para confirmar, desde /api/version, que el `vercel --prod`
 // SÍ quedó en vivo (si el número que ves en la web coincide con el último, los
 // cambios ya están activos para TODOS los bots de los clientes).
-export const VERSION = 'v167';
+export const VERSION = 'v168';
 
 // Fecha aproximada de esta versión (referencia para ti, no afecta nada).
 export const VERSION_FECHA = '2026-08-28';
 
 // Resumen corto de lo último que entró en esta versión.
 export const VERSION_CAMBIOS = [
+  'Editor · los colores de cada producto ahora se ven como una TABLA (estilo mockup): encabezado FOTO / COLOR y cada color en su fila con su foto. Mismos botones de siempre (+ Agregar color, Traer de Catálogos) y la misma lógica; solo cambió cómo se ve. (Nota: el precio y las tallas siguen siendo por producto — para precio/stock por color se usa "Traer de Catálogos", que trae el stock real de cada color.)',
   'Editor · el editor de "Productos del checkout" ahora muestra cada producto como un BLOQUE tipo mockup: foto de portada grande, nombre, y precio antiguo (en rojo, tachado) + precio en promoción (en verde). Y se agregó el botón "⧉ Duplicar" en cada producto (crea una copia independiente para editarla aparte). Solo cambia cómo se ve/edita en el panel; no toca la venta ni las confirmaciones.',
   'Checkout · ahora arriba del formulario aparece el BLOQUE DE PRODUCTO (como el mockup): foto de portada, nombre del producto, y precio antiguo tachado (rojo) + precio en promoción (verde). Se activa/desactiva con el interruptor "Mostrar bloque de producto arriba" en "Datos que pide el checkout" (viene activado). Solo es visual, no cambia el pedido ni las confirmaciones.',
   'Checkout · nuevo modo "Mostrar color y talla como desplegable (▼)" (interruptor en "Datos que pide el checkout"). Al activarlo, el cliente elige color y talla en listas desplegables (como el mockup) en vez de botones, y el color elegido muestra su foto al lado. Es opcional y aditivo: los embudos que no lo activen quedan igual con los botones de siempre. No cambia el envío del pedido ni las confirmaciones. (Primera parte del rediseño visual del checkout que ve el cliente.)',

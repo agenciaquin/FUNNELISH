@@ -1951,28 +1951,34 @@ export default function EmbudosPanel() {
 
                     return (
                       <div className="border-t border-[#EEE] pt-2.5 space-y-3">
-                        {/* Colores */}
+                        {/* Colores (variables) — tabla estilo mockup: FOTO + COLOR por fila */}
                         <div>
-                          <p className="text-[11px] font-bold text-[#0D0D0D] mb-1.5">🎨 Colores (cada uno con su foto)</p>
-                          <div className="space-y-1.5">
+                          <p className="text-[11px] font-bold text-[#0D0D0D] mb-1.5">🎨 Variables del producto <span className="font-normal text-[#9A9A9A]">(cada color con su foto)</span></p>
+                          <div className="rounded-xl border border-[#E0E0E0] overflow-hidden">
+                            <div className="grid grid-cols-[46px_1fr_36px] gap-2 items-center px-2 py-1.5 bg-[#F0EFEA] text-[9px] font-extrabold uppercase tracking-wide text-[#6B6B6B]">
+                              <span className="text-center">Foto</span><span>Color / variable</span><span></span>
+                            </div>
+                            {colores.length === 0 && (
+                              <p className="text-[11px] text-[#9A9A9A] px-3 py-3 text-center">Aún no hay colores. Agrega uno o tráelo del catálogo.</p>
+                            )}
                             {colores.map((c: any, ci: number) => (
-                              <div key={ci} className="flex items-center gap-2">
+                              <div key={ci} className="grid grid-cols-[46px_1fr_36px] gap-2 items-center px-2 py-1.5 border-t border-[#EEE]">
                                 {c.imagen ? (
-                                  <button onClick={() => { opcionDestino.current = { v: i, s: 0, o: ci }; refOpcion.current?.click(); }} className="shrink-0">
+                                  <button onClick={() => { opcionDestino.current = { v: i, s: 0, o: ci }; refOpcion.current?.click(); }} className="shrink-0 mx-auto" title="Cambiar foto">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img src={c.imagen} alt="" className="w-10 h-10 rounded object-cover" />
+                                    <img src={c.imagen} alt="" className="w-10 h-10 rounded-lg object-cover border border-[#E0E0E0]" />
                                   </button>
                                 ) : (
                                   <button
                                     onClick={() => { escribir(colores, tallas); opcionDestino.current = { v: i, s: 0, o: ci }; refOpcion.current?.click(); }}
-                                    className="w-10 h-10 rounded border border-dashed border-[#C9C9C9] text-[9px] text-[#6B6B6B] shrink-0 hover:border-[#00A89D]"
-                                  >+ Foto</button>
+                                    className="w-10 h-10 rounded-lg bg-[#1A1A1A] text-white text-[8px] font-bold leading-tight grid place-items-center text-center px-0.5 shrink-0 mx-auto hover:opacity-90"
+                                  >+ FOTO</button>
                                 )}
                                 <input
                                   value={c.valor}
                                   onChange={e => { const cs = [...colores]; cs[ci] = { ...c, valor: e.target.value }; escribir(cs, tallas); }}
                                   placeholder="Ej: NEGRO"
-                                  className={`${input} flex-1`}
+                                  className={`${input} font-semibold`}
                                 />
                                 <button onClick={() => escribir(colores.filter((_: any, j: number) => j !== ci), tallas)}
                                   className="w-8 h-8 rounded text-[#DC2626] hover:bg-[#FEE2E2] shrink-0">✕</button>
