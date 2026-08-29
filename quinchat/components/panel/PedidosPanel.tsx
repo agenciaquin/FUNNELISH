@@ -164,10 +164,7 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   const cargar = useCallback(async () => {
     setCargando(true);
     try {
-      // La vista "funnelish" trae las ventas web y luego se filtran las que NO son
-      // de un embudo QuinChat (esas son las de la página de Funnelish).
-      const canalFetch = canal === 'funnelish' ? 'funnel' : canal;
-      const res  = await fetch(`/api/pedidos/lista?canal=${canalFetch}&dias=${dias}`, { cache: 'no-store' });
+      const res  = await fetch(`/api/pedidos/lista?canal=${canal}&dias=${dias}`, { cache: 'no-store' });
       const data = await res.json();
       setPedidos(data.pedidos ?? []);
       setResumen(data.resumen ?? { total: 0, confirmados: 0, cancelados: 0, vendido: 0 });
@@ -182,11 +179,9 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
     return () => clearInterval(t);
   }, [cargar]);
 
-  // Vista Funnelish: solo las ventas SIN embudo de QuinChat (las de la página Funnelish).
-  const base = useMemo(
-    () => (canal === 'funnelish' ? pedidos.filter(p => !p.embudo_slug) : pedidos),
-    [pedidos, canal],
-  );
+  // La API ya devuelve el subconjunto correcto según el canal (incl. Funnelish).
+  const base = pedidos;
+  const resumenVista = resumen;
 
   const filtrados = base.filter(p => {
     const q = busca.toLowerCase();
@@ -195,17 +190,6 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
       || (p.telefono ?? '').includes(q)
       || (p.producto ?? '').toLowerCase().includes(q);
   });
-
-  // Resumen (tarjetas): en la vista Funnelish se recalcula sobre el subconjunto.
-  const resumenVista = useMemo(() => {
-    if (canal !== 'funnelish') return resumen;
-    return {
-      total:       base.length,
-      confirmados: base.filter(p => p.confirmado).length,
-      cancelados:  base.filter(p => String(p.estado).toLowerCase() === 'cancelado').length,
-      vendido:     base.filter(p => p.confirmado).reduce((s, p) => s + aNumero(p.valor), 0),
-    };
-  }, [canal, base, resumen]);
 
   const todosMarcados = filtrados.length > 0 && filtrados.every(p => seleccion.has(p.id));
 

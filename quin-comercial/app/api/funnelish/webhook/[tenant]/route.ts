@@ -18,6 +18,11 @@ export const maxDuration = 60;
  * con SU tenant_id y la confirmación sale por SU número de WhatsApp. Reutiliza
  * exactamente la misma lógica del webhook interno (`procesarPedidoFunnelish`).
  *
+ * CONFIRMACIÓN: por defecto se usa el modo 'solo' → el bot envía la confirmación
+ * y se APAGA (bot_enabled=false), dejando la conversación como "PENDIENTE POR
+ * CONFIRMACIÓN" para que la confirme un humano. Se puede cambiar poniendo
+ * `?modo=agente` en la URL (el bot sigue atendiendo tras confirmar).
+ *
  * No toca el webhook single-tenant existente (`../route.ts`): es aditivo.
  */
 
@@ -53,7 +58,7 @@ async function cargarTenant(slug: string): Promise<TenantWA | null> {
 
 // GET simple: sirve para probar en el navegador que la URL responde.
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ tenant: string }> },
 ) {
   const { tenant } = await params;
@@ -61,7 +66,8 @@ export async function GET(
   if (!t || t.activo === false) {
     return NextResponse.json({ ok: false, error: 'Tienda no encontrada o inactiva' }, { status: 404 });
   }
-  return NextResponse.json({ ok: true, tenant, listo: !!(t.wa_access_token && t.wa_phone_number_id) });
+  const modo = req.nextUrl.searchParams.get('modo') === 'agente' ? 'agente' : 'solo';
+  return NextResponse.json({ ok: true, tenant, listo: !!(t.wa_access_token && t.wa_phone_number_id), modo });
 }
 
 export async function POST(
@@ -79,5 +85,24 @@ export async function POST(
     phoneId: t.wa_phone_number_id ?? undefined,
     phoneIdVentas: t.wa_phone_number_id_ventas ?? undefined,
   };
+
+  // Modo de confirmación para pedidos de Funnelish: por defecto 'solo' (el bot
+  // envía la confirmación y se apaga; confirma un humano). ?modo=agente lo cambia.
+  const modo = req.nextUrl.searchParams.get('modo') === 'agente' ? 'agente' : 'solo';
+
+  // Funnelish no envía `modo_confirmacion`, así que lo inyectamos reconstruyendo
+  // el pedido (mismo patrón que /api/pedidos). Si el body no es JSON válido, se
+  // deja pasar tal cual para que el webhook responda su propio error.
+  let body: any = null;
+  try { body = await req.json(); } catch { body = null; }
+  if (body && typeof body === 'object') {
+    if (!body.modo_confirmacion) body.modo_confirmacion = modo;
+    const interna = new NextRequest(req.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return procesarPedidoFunnelish(interna, base);
+  }
   return procesarPedidoFunnelish(req, base);
 }
