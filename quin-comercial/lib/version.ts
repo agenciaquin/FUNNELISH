@@ -2,13 +2,14 @@
 // que desplegar. Sirve para confirmar, desde /api/version, que el `vercel --prod`
 // SÍ quedó en vivo (si el número que ves en la web coincide con el último, los
 // cambios ya están activos para TODOS los bots de los clientes).
-export const VERSION = 'v169';
+export const VERSION = 'v170';
 
 // Fecha aproximada de esta versión (referencia para ti, no afecta nada).
 export const VERSION_FECHA = '2026-08-28';
 
 // Resumen corto de lo último que entró en esta versión.
 export const VERSION_CAMBIOS = [
+  'Confirmaciones · nuevo webhook de Funnelish POR CLIENTE: /api/funnelish/webhook/<slug>. Ahora las ventas que llegan de Funnelish a la tienda del cliente (ej. Skioo) se confirman por SU propio WhatsApp del bot, igual que las ventas de los embudos internos. Aditivo: no toca el webhook anterior.',
   'Checkout · en el formulario, el DEPARTAMENTO ahora va ARRIBA del Municipio (así el cliente elige primero el departamento y luego se filtra la ciudad). Orden más lógico.',
   'Editor · los colores de cada producto ahora se ven como una TABLA (estilo mockup): encabezado FOTO / COLOR y cada color en su fila con su foto. Mismos botones de siempre (+ Agregar color, Traer de Catálogos) y la misma lógica; solo cambió cómo se ve. (Nota: el precio y las tallas siguen siendo por producto — para precio/stock por color se usa "Traer de Catálogos", que trae el stock real de cada color.)',
   'Editor · el editor de "Productos del checkout" ahora muestra cada producto como un BLOQUE tipo mockup: foto de portada grande, nombre, y precio antiguo (en rojo, tachado) + precio en promoción (en verde). Y se agregó el botón "⧉ Duplicar" en cada producto (crea una copia independiente para editarla aparte). Solo cambia cómo se ve/edita en el panel; no toca la venta ni las confirmaciones.',

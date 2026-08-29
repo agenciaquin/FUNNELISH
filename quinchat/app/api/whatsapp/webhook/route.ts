@@ -1783,6 +1783,24 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
+        // ── GUARDA: la clienta se queja de la foto / insiste en algo que el bot no
+        // puede resolver reenviando la misma foto (ej. "esa es para hombre, es para
+        // dama" — la prenda es la misma, solo cambia la talla, no hay otra foto).
+        // En vez de repetir y enojarla, pasa a un humano y apaga el bot.
+        const quejaFoto = [
+          'esa es para', 'ese es para', 'no es esa', 'ese no es', 'esa no es',
+          'sigues enviando', 'me sigues enviando', 'sigues mandando', 'me sigues mandando',
+          'la misma foto', 'otra vez la misma', 'la misma de', 'no es lo que', 'no es la que',
+          'está mal', 'esta mal', 'equivocad', 'esa no', 'ese no',
+        ].some(w => textLower.includes(w));
+        if (quejaFoto) {
+          const msg = 'Con mucho gusto 🙌 te paso con una asesora para enviarte exactamente lo que necesitas y dejar tu pedido perfecto 😊';
+          const wamid = await sendTextMessage(from, msg);
+          await saveAndSend(supabase, from, msg, 'text', wamid);
+          await marcarHumanoYNotificar(supabase, from);
+          continue;
+        }
+
         // ── 4. CAMBIO de color del pedido actual ──────────────────────────────
         const currentProductUpper = confirmedPedido.producto.toUpperCase();
         const colorAlreadyInProduct = mentionedColorConf

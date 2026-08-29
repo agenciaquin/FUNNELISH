@@ -137,6 +137,28 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
   const [checkoutModo, setCheckoutModo] = useState(false);  // pestaña Checkout: solo "Productos del checkout"
   const [pixelDe, setPixelDe] = useState<Embudo | null>(null); // embudo cuyo modal de píxel está abierto
   const [modoGuardando, setModoGuardando] = useState<string | null>(null); // slug cuyo modo se está guardando
+  const [optimizando, setOptimizando] = useState<string | null>(null); // slug cuyas fotos se están optimizando
+
+  // Comprime las fotos pesadas ya subidas de un embudo (para que la página cargue rápido).
+  async function optimizarFotos(slug: string) {
+    if (!window.confirm('¿Optimizar las fotos de este embudo? Se vuelven mucho más livianas para que la página cargue rápido en celular. Las originales no se borran.')) return;
+    setOptimizando(slug);
+    setAviso(null);
+    try {
+      const res = await fetch('/api/funnels/optimizar-fotos', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setAviso(d.error || 'No se pudieron optimizar las fotos.'); return; }
+      setAviso(d.fotos_optimizadas > 0
+        ? `✅ ${d.fotos_optimizadas} foto(s) optimizada(s) · ${d.ahorro_mb} MB menos. Refresca la página de venta para verlo.`
+        : 'Las fotos ya estaban livianas, no hubo nada que optimizar.');
+      cargar();
+    } catch {
+      setAviso('Error de conexión al optimizar.');
+    } finally { setOptimizando(null); }
+  }
 
   // Guarda ajustes rápidos (píxeles / modo de confirmación) de un embudo desde la
   // lista, sin abrir el editor. Actualiza también la copia local para reflejarlo ya.
@@ -710,16 +732,21 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
                     title="Seleccionar"
                     className="w-4 h-4 accent-[#00A89D] shrink-0"
                   />
-                  {e.imagenes?.[0] ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={imgOptim(e.imagenes[0], 120)} alt="" className="w-14 h-14 rounded-lg object-contain bg-[#F5F5F5] shrink-0" />
-                  ) : (
-                    <div className="w-14 h-14 rounded-lg bg-[#F5F5F5] flex items-center justify-center text-xl shrink-0">🛍️</div>
-                  )}
+                  {(() => {
+                    // Miniatura del PRODUCTO: la foto de la 1ª variante es la propia de
+                    // cada embudo (imagenes[0] a veces quedó compartida al duplicar).
+                    const portada = e.variantes?.[0]?.imagen || e.imagenes?.[0] || null;
+                    return portada ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={imgOptim(portada, 120)} alt="" className="w-14 h-14 rounded-lg object-contain bg-[#F5F5F5] shrink-0" />
+                    ) : (
+                      <div className="w-14 h-14 rounded-lg bg-[#F5F5F5] flex items-center justify-center text-xl shrink-0">🛍️</div>
+                    );
+                  })()}
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-semibold truncate">{e.producto}</span>
+                    <div className="flex items-start gap-2 flex-wrap">
+                      <span className="text-sm font-semibold break-words">{e.producto}</span>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                         e.activo ? 'text-[#15803D] bg-[#15803D]/10' : 'text-[#DC2626] bg-[#DC2626]/10'
                       }`}>{e.activo ? 'Activo' : 'Apagado'}</span>
@@ -749,6 +776,12 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => optimizarFotos(e.slug)}
+                      disabled={optimizando === e.slug}
+                      title="Comprime las fotos ya subidas para que la página cargue rápido en celular"
+                      className="px-3 py-1.5 rounded-lg border border-[#F59E0B]/50 text-[#B45309] text-xs hover:bg-[#F59E0B]/10 font-semibold disabled:opacity-50"
+                    >{optimizando === e.slug ? '⏳ Optimizando…' : '⚡ Optimizar fotos'}</button>
                     <button
                       onClick={() => setPixelDe(e)}
                       title="Pegar el píxel y token de Meta / TikTok sin abrir el editor"

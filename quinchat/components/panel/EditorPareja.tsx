@@ -61,7 +61,9 @@ export default function EditorPareja({
   // Grupos en orden (Dama, Caballero, POLO 1, POLO 2…)
   const grupos = [...new Set(selectores.map(s => (s.grupo ?? '').trim()).filter(Boolean))];
   // Modo POLOS: permite agregar/quitar variables (x2, x3, x4…). La pareja es fija.
-  const esPolos = grupos.some(g => /polo/i.test(g));
+  // Pack de prendas numeradas (POLO 1/2, BUZO 1/2…). Los grupos van numerados; la
+  // versión "pareja" usa DAMA/CABALLERO (sin número), así que no se confunde.
+  const esPolos = grupos.some(g => /polo/i.test(g)) || grupos.some(g => /\d/.test(g));
 
   const sel = (grupo: string, tipo: 'COLOR' | 'TALLA') =>
     selectores.find(s => (s.grupo ?? '') === grupo && new RegExp(tipo, 'i').test(s.etiqueta));
@@ -80,11 +82,14 @@ export default function EditorPareja({
   const setOpciones = (grupo: string, tipo: 'COLOR' | 'TALLA', ops: Opcion[]) =>
     onChange(conOpciones(selectores, grupo, tipo, ops));
 
-  /** Agrega otra variable (POLO 3, POLO 4…), copiando las tallas de la última. */
+  /** Agrega otra variable (BUZO 3, POLO 4…), copiando las tallas de la última.
+   *  Toma el MISMO nombre base del último grupo (BUZO, POLO…) para no mezclar. */
   const agregarPolo = () => {
     const nums = grupos.map(g => parseInt((g.match(/\d+/) || ['0'])[0], 10)).filter(n => n > 0);
     const n = (nums.length ? Math.max(...nums) : grupos.length) + 1;
-    const nuevo = `POLO ${n}`;
+    const ultimo  = grupos[grupos.length - 1] ?? 'POLO 1';
+    const prefijo = (ultimo.replace(/\s*\d+\s*$/, '').trim() || 'POLO').toUpperCase();
+    const nuevo = `${prefijo} ${n}`;
     const ultimaTalla = norm(sel(grupos[grupos.length - 1], 'TALLA')?.opciones ?? []);
     onChange([
       ...selectores,

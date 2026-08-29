@@ -19,18 +19,19 @@ export async function comprimirImagen(
   const maxLado = opts.maxLado ?? 1600;   // suficiente para pantalla de celular a todo lo ancho
   const calidad = opts.calidad ?? 0.82;   // 0–1; 0.82 se ve idéntico y pesa mucho menos
 
-  // Solo mapas de bits comprimibles. Lo demás (video, gif animado, svg) se deja igual.
-  // El PNG se respeta tal cual: puede tener transparencia (logos), y pasarlo a JPG
-  // le pondría fondo negro. Igual WhatsApp acepta PNG en el encabezado.
+  // Solo mapas de bits comprimibles. Video, GIF (animado) y SVG se dejan igual.
+  // El PNG SÍ se procesa (antes se saltaba y quedaban fotos de 2+ MB que hacían
+  // lenta la página): se redimensiona y se re-guarda como PNG para conservar la
+  // transparencia de los logos.
   if (
     typeof window === 'undefined' ||
     !file.type.startsWith('image/') ||
     file.type === 'image/gif' ||
-    file.type === 'image/png' ||
     file.type === 'image/svg+xml'
   ) {
     return file;
   }
+  const esPng = file.type === 'image/png';
 
   try {
     const bitmap = await createImageBitmap(file).catch(() => null);
@@ -50,17 +51,19 @@ export async function comprimirImagen(
     ctx.drawImage(bitmap, 0, 0, w, h);
     bitmap.close?.();
 
-    // JPG: compatible con web Y con los encabezados de plantillas de WhatsApp
-    // (WebP hace que Meta acepte el envío pero NO entregue el mensaje).
+    // PNG → PNG (conserva transparencia). El resto → JPG (compatible con web y con
+    // los encabezados de plantillas de WhatsApp; WebP hace que Meta no entregue).
+    const tipoSalida = esPng ? 'image/png' : 'image/jpeg';
     const blob: Blob | null = await new Promise((res) =>
-      canvas.toBlob(res, 'image/jpeg', calidad),
+      canvas.toBlob(res, tipoSalida, calidad),
     );
 
     // Si no logró bajar el peso, mejor dejar la original tal cual.
     if (!blob || blob.size >= file.size) return file;
 
     const base = file.name.replace(/\.[^.]+$/, '') || 'foto';
-    return new File([blob], `${base}.jpg`, { type: 'image/jpeg' });
+    const ext  = esPng ? 'png' : 'jpg';
+    return new File([blob], `${base}.${ext}`, { type: tipoSalida });
   } catch {
     return file; // ante cualquier duda, la original intacta
   }

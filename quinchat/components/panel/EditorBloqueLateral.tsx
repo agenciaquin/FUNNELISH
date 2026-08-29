@@ -528,7 +528,24 @@ export default function EditorBloqueLateral({
               {PALETA_COLORES.map(c => swatch(c, p.colorPrecio, (v) => setProp('colorPrecio', v)))}
               <input type="color" value={p.colorPrecio || '#DC2626'} onChange={e => setProp('colorPrecio', e.target.value)} className="w-7 h-7 rounded-full border-0 bg-transparent p-0 cursor-pointer" />
             </div>
-            <p className="text-[10px] text-[#9A9A9A] mt-0.5">Los valores del precio salen del bloque <b>Precio</b>.</p>
+          </div>
+
+          {/* Editar los NÚMEROS del precio directamente aquí (mismos que el bloque Precio) */}
+          <div className="grid grid-cols-2 gap-2 rounded-xl bg-[#F8FAFA] border border-[#E8E8E8] p-2.5">
+            <div className="col-span-2">
+              <p className="text-[11px] font-bold text-[#0D0D0D] uppercase">💲 Editar precios</p>
+              <p className="text-[10px] text-[#9A9A9A]">Cambian en toda la página (también en el bloque Precio).</p>
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-[#0D0D0D] mb-1 uppercase">Precio de hoy</label>
+              <input type="number" value={precio ?? ''} onChange={e => setCampo?.('precio', Number(e.target.value))}
+                className="w-full px-2 py-1.5 rounded-lg border border-[#E0E0E0] text-sm" placeholder="129900" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-[#0D0D0D] mb-1 uppercase">Precio tachado</label>
+              <input type="number" value={precioAntes ?? ''} onChange={e => setCampo?.('precio_antes', e.target.value ? Number(e.target.value) : null)}
+                className="w-full px-2 py-1.5 rounded-lg border border-[#E0E0E0] text-sm" placeholder="195000" />
+            </div>
           </div>
 
           {/* Tamaños de "oferta" y del precio */}
@@ -845,17 +862,31 @@ export default function EditorBloqueLateral({
                     const sel: string[] = Array.isArray(p.fotos) ? p.fotos : [];
                     const activa = sel.length === 0 || sel.includes(src);
                     return (
-                      <button key={i}
+                      <div key={i}
                         onClick={() => {
                           const base: string[] = Array.isArray(p.fotos) && p.fotos.length ? p.fotos : (sel.length === 0 ? [...imagenes] : []);
                           const next = base.includes(src) ? base.filter(x => x !== src) : [...base, src];
                           setProp('fotos', next.length ? next : undefined);
                         }}
-                        className={`relative rounded-lg overflow-hidden border-2 ${activa ? 'border-[#00A89D]' : 'border-[#E0E0E0] opacity-40'}`}>
+                        className={`relative rounded-lg overflow-hidden border-2 cursor-pointer ${activa ? 'border-[#00A89D]' : 'border-[#E0E0E0] opacity-40'}`}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={src} alt="" className="w-full aspect-square object-cover" />
                         {activa && <span className="absolute top-0.5 right-0.5 text-[10px] bg-[#00A89D] text-white rounded-full w-4 h-4 flex items-center justify-center">✓</span>}
-                      </button>
+                        {/* X para BORRAR la foto de la galería del embudo */}
+                        <button
+                          type="button"
+                          title="Borrar esta foto del embudo"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            if (!window.confirm('¿Borrar esta foto del embudo? No se puede deshacer.')) return;
+                            const nuevaGaleria = (imagenes ?? []).filter(x => x !== src);
+                            setCampo?.('imagenes', nuevaGaleria);
+                            const selRestante = (Array.isArray(p.fotos) ? p.fotos : []).filter(x => x !== src);
+                            setProp('fotos', selRestante.length ? selRestante : undefined);
+                          }}
+                          className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-[#DC2626] text-white text-[11px] font-bold flex items-center justify-center shadow hover:bg-[#B91C1C]"
+                        >✕</button>
+                      </div>
                     );
                   })}
                 </div>
