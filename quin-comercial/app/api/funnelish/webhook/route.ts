@@ -30,9 +30,10 @@ function buildMensaje(data: {
   producto: string;
   valor: string;
   extras?: string; // líneas "Etiqueta: valor" de los campos personalizados del checkout
+  marca?: string;  // saludo/marca por cliente (ej. "te saluda Isaac de Skioo")
 }): string {
   const lineas = [
-    'Hola 😊 te saluda Lilibeth. Tu pedido ya está listo para despacho 🚚✨ Por favor confirma que estos datos estén correctos:',
+    `Hola 😊 ${data.marca || 'te saluda Lilibeth'}. Tu pedido ya está listo para despacho 🚚✨ Por favor confirma que estos datos estén correctos:`,
     `Nombre: ${data.nombre}`,
     `Teléfono: ${data.telefono}`,
     `Dirección: ${data.direccion}`,
@@ -65,9 +66,10 @@ function buildMensajeTemplate(data: {
   producto: string;
   valor: string;
   extras?: string; // líneas "Etiqueta: valor" de los campos personalizados del checkout
+  marca?: string;  // saludo/marca por cliente (ej. "te saluda Isaac de Skioo")
 }): string {
   const lineas = [
-    `Hola ${data.saludo} 😊 te saludo de klixmant Tu pedido ya está listo para despacho 🚚`,
+    `Hola ${data.saludo} 😊 ${data.marca || 'te saludo de klixmant'} Tu pedido ya está listo para despacho 🚚`,
     `Nombre: ${data.nombre}`,
     `Teléfono: ${data.telefono}`,
     `Dirección: ${data.direccion}`,
@@ -336,6 +338,15 @@ export async function procesarPedidoFunnelish(req: NextRequest, base?: BaseLinea
     .map((x: any) => `${x.label}: ${x.valor}`)
     .join('\n');
 
+  // Saludo/marca por cliente para el mensaje (ej. "te saluda Isaac de Skioo").
+  let saludoMarca = '';
+  if (base?.tenantId) {
+    try {
+      const sbSaludo = createServerSupabaseClient();
+      const { data: tRow } = await sbSaludo.from('tenants').select('confirmacion_saludo').eq('id', base.tenantId).maybeSingle();
+      saludoMarca = String((tRow as any)?.confirmacion_saludo ?? '').trim();
+    } catch { /* si falla, se usa el saludo por defecto */ }
+  }
   const product        = Array.isArray(body.products) ? body.products[0] : null;
   // Foto que mandó la propia página de venta (respaldo si el catálogo no la tiene)
   const imagenPagina   = String(product?.image ?? body.imagen ?? '').trim();
@@ -385,7 +396,7 @@ export async function procesarPedidoFunnelish(req: NextRequest, base?: BaseLinea
   }
   const nombreImagenPrincipal = packProductos[0] ?? productoNombre;
 
-  const mensaje = buildMensaje({ nombre, telefono: tel10, direccion, ciudad, departamento, correo, talla, producto: productoNombre, valor, extras: extrasTexto });
+  const mensaje = buildMensaje({ nombre, telefono: tel10, direccion, ciudad, departamento, correo, talla, producto: productoNombre, valor, extras: extrasTexto, marca: saludoMarca });
 
   const supabase = base?.tenantId ? supabaseTenant(base.tenantId) : createServerSupabaseClient();
 
@@ -706,7 +717,7 @@ export async function procesarPedidoFunnelish(req: NextRequest, base?: BaseLinea
       ? buildMensajeTemplate({
           saludo: firstName || nombre,
           nombre, telefono: tel10, direccion, ciudad, departamento,
-          correo, talla, producto: productoNombre, valor, extras: extrasTexto,
+          correo, talla, producto: productoNombre, valor, extras: extrasTexto, marca: saludoMarca,
         })
       : mensaje;
 

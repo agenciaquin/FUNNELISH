@@ -2,13 +2,14 @@
 // que desplegar. Sirve para confirmar, desde /api/version, que el `vercel --prod`
 // SÍ quedó en vivo (si el número que ves en la web coincide con el último, los
 // cambios ya están activos para TODOS los bots de los clientes).
-export const VERSION = 'v171';
+export const VERSION = 'v172';
 
 // Fecha aproximada de esta versión (referencia para ti, no afecta nada).
 export const VERSION_FECHA = '2026-08-28';
 
 // Resumen corto de lo último que entró en esta versión.
 export const VERSION_CAMBIOS = [
+  'Confirmaciones · el saludo del mensaje ahora es POR CLIENTE (ya no dice "klixmant" fijo): sale de un dato del tenant. Para Skioo dice "te saluda Isaac de Skioo". OJO: esto cambia lo que se ve en QuinChat y el texto plano; el mensaje que le llega al CLIENTE viene de la plantilla aprobada de Meta y hay que editarla en el Administrador de WhatsApp para que también diga la marca correcta.',
   'Confirmaciones · las ventas que llegan de Funnelish ahora hacen que el bot ENVÍE la confirmación y se APAGUE (modo "solo"): la conversación queda como PENDIENTE POR CONFIRMACIÓN para que la cierre un humano, igual que en los embudos internos. (Se puede invertir con ?modo=agente en la URL del webhook.)',
   'Confirmaciones · nuevo webhook de Funnelish POR CLIENTE: /api/funnelish/webhook/<slug>. Ahora las ventas que llegan de Funnelish a la tienda del cliente (ej. Skioo) se confirman por SU propio WhatsApp del bot, igual que las ventas de los embudos internos. Aditivo: no toca el webhook anterior.',
   'CHECKOUT EDITABLE POR BLOQUES, igual que la página de inicio. Tocas 🛒 CHECKOUT y quedan las mismas tres columnas: bloques a la izquierda, teléfono en el centro y propiedades a la derecha con ESTRUCTURA DEL CHECKOUT (cada bloque con su 👁 y su 🗑). Abre YA armado y editable, sin botones de por medio. Los datos del cliente NO van sueltos: viven dentro de un módulo FORMULARIO. Al tocarlo salen todos los datos en una lista donde cada uno se puede: mostrar/ocultar (👁), RENOMBRAR con ✏️ y sus botones de aceptar ✓ / cancelar ✕ (cambia lo que ve el cliente, no el dato que llega en el pedido: si le pones CELULAR al whatsapp, sigue llegando como whatsapp), subir/bajar (↑↓), quitar (🗑, avisando qué se pierde) y marcar obligatorio. Con “+ Agregar un dato” vuelves a poner cualquiera de los 8 del pedido, o creas un CAMPO NUEVO tuyo (texto, notas, teléfono, correo, desplegable con sus opciones, casilla o fecha) que llega en el pedido con los demás. Los demás bloques (resumen del producto, color y talla, títulos, párrafos, espaciadores, resumen del pedido, sellos, forma de pago y botón) se arrastran y se editan igual. IMPORTANTE: ningún embudo cambia solo — arranca EXACTAMENTE como está hoy, respetando lo renombrado, lo oculto y los campos propios que ya tuviera (comprobado: el HTML sale idéntico), y solo se guarda cuando tocas algo. El total del resumen lo calcula el sistema con el precio del producto: no se escribe a mano. El editor viejo de “Datos que pide el checkout” quedó apagado: todo se edita en un solo sitio.',
