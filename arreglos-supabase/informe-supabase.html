@@ -1,0 +1,786 @@
+<title>Egress y seguridad quinchat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,500&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+  :root {
+    --tinta:      #0C0C0E;
+    --humo:       #16161A;
+    --humo-alto:  #1E1E24;
+    --linea:      #2A2A31;
+    --hueso:      #F2F0EA;
+    --gris:       #9A968C;
+    --gris-tenue: #6B6862;
+    --oro:        #D4A72C;
+    --oro-hondo:  #8A6F1E;
+    --bien:       #4E9A72;
+    --ojo:        #D08236;
+    --critico:    #C85049;
+
+    --fondo:      var(--tinta);
+    --superficie: var(--humo);
+    --superficie-alta: var(--humo-alto);
+    --texto:      var(--hueso);
+    --texto-2:    var(--gris);
+    --texto-3:    var(--gris-tenue);
+    --borde:      var(--linea);
+    --acento:     var(--oro);
+    --acento-2:   var(--oro-hondo);
+
+    --display: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+    --cuerpo:  'Newsreader', Georgia, 'Times New Roman', serif;
+    --dato:    'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --fondo:      #F6F4EE;
+      --superficie: #FFFFFF;
+      --superficie-alta: #FBF9F3;
+      --texto:      #131316;
+      --texto-2:    #55524B;
+      --texto-3:    #7E7A72;
+      --borde:      #DFDACD;
+      --acento:     #8A6F1E;
+      --acento-2:   #B9973A;
+      --bien:       #35704F;
+      --ojo:        #9E5A18;
+      --critico:    #A03832;
+    }
+  }
+
+  :root[data-theme="light"] {
+    --fondo:      #F6F4EE;
+    --superficie: #FFFFFF;
+    --superficie-alta: #FBF9F3;
+    --texto:      #131316;
+    --texto-2:    #55524B;
+    --texto-3:    #7E7A72;
+    --borde:      #DFDACD;
+    --acento:     #8A6F1E;
+    --acento-2:   #B9973A;
+    --bien:       #35704F;
+    --ojo:        #9E5A18;
+    --critico:    #A03832;
+  }
+
+  :root[data-theme="dark"] {
+    --fondo:      var(--tinta);
+    --superficie: var(--humo);
+    --superficie-alta: var(--humo-alto);
+    --texto:      var(--hueso);
+    --texto-2:    var(--gris);
+    --texto-3:    var(--gris-tenue);
+    --borde:      var(--linea);
+    --acento:     var(--oro);
+    --acento-2:   var(--oro-hondo);
+    --bien:       #4E9A72;
+    --ojo:        #D08236;
+    --critico:    #C85049;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--fondo);
+    color: var(--texto);
+    font-family: var(--cuerpo);
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .hoja {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 0 28px 96px;
+  }
+
+  /* ── Cabecera ─────────────────────────────────────────── */
+  .cabecera {
+    padding: 72px 0 40px;
+    border-bottom: 1px solid var(--borde);
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .marca {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-family: var(--display);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--acento);
+  }
+
+  .marca::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, var(--acento-2), transparent);
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-size: clamp(38px, 6.5vw, 62px);
+    font-weight: 800;
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  h1 em {
+    font-style: normal;
+    color: var(--acento);
+  }
+
+  .entradilla {
+    font-size: 20px;
+    line-height: 1.55;
+    color: var(--texto-2);
+    max-width: 60ch;
+    margin: 0;
+    font-weight: 300;
+  }
+
+  .meta-cab {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 28px;
+    font-family: var(--dato);
+    font-size: 12px;
+    color: var(--texto-3);
+  }
+  .meta-cab b { color: var(--texto-2); font-weight: 500; }
+
+  /* ── Tira de cifras ───────────────────────────────────── */
+  .cifras {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 1px;
+    background: var(--borde);
+    border: 1px solid var(--borde);
+    margin: 44px 0 8px;
+  }
+
+  .cifra {
+    background: var(--superficie);
+    padding: 24px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .cifra .et {
+    font-family: var(--display);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--texto-3);
+  }
+
+  .cifra .n {
+    font-family: var(--display);
+    font-size: 34px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .cifra .n small { font-size: 16px; font-weight: 600; color: var(--texto-2); }
+  .cifra.oro .n { color: var(--acento); }
+  .cifra.bien .n { color: var(--bien); }
+
+  .cifra .pie {
+    font-size: 14px;
+    color: var(--texto-2);
+    line-height: 1.35;
+  }
+
+  /* ── Secciones ────────────────────────────────────────── */
+  section { margin-top: 68px; }
+
+  .rotulo {
+    font-family: var(--display);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--acento);
+    margin-bottom: 14px;
+    display: block;
+  }
+
+  h2 {
+    font-family: var(--display);
+    font-size: clamp(26px, 3.4vw, 34px);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.12;
+    margin: 0 0 18px;
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-family: var(--display);
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    margin: 34px 0 10px;
+  }
+
+  p { max-width: 68ch; margin: 0 0 16px; }
+  p.ancho { max-width: none; }
+
+  strong { font-weight: 500; color: var(--texto); }
+  em.destaca { font-style: normal; color: var(--acento); font-weight: 500; }
+
+  code {
+    font-family: var(--dato);
+    font-size: 0.86em;
+    background: var(--superficie-alta);
+    border: 1px solid var(--borde);
+    border-radius: 3px;
+    padding: 1px 5px;
+    color: var(--texto);
+  }
+
+  /* ── Tablas ───────────────────────────────────────────── */
+  .tabla-caja {
+    overflow-x: auto;
+    border: 1px solid var(--borde);
+    background: var(--superficie);
+    margin: 22px 0;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+    min-width: 520px;
+  }
+
+  thead th {
+    font-family: var(--display);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--texto-3);
+    text-align: left;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--borde);
+    white-space: nowrap;
+    background: var(--superficie-alta);
+  }
+
+  tbody td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--borde);
+    vertical-align: top;
+    color: var(--texto-2);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody td:first-child { color: var(--texto); }
+
+  td.num, th.num { text-align: right; font-family: var(--dato); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.total td { background: var(--superficie-alta); color: var(--texto); font-weight: 500; }
+  tr.total td.num { color: var(--acento); }
+
+  .baja { color: var(--bien); font-family: var(--dato); }
+  .sube { color: var(--ojo); font-family: var(--dato); }
+
+  /* ── Píldoras de estado ───────────────────────────────── */
+  .pil {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--display);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .pil.ok    { color: var(--bien); }
+  .pil.curso { color: var(--acento); }
+  .pil.esp   { color: var(--texto-3); }
+  .pil.mal   { color: var(--critico); }
+
+  /* ── Fichas de hallazgo ───────────────────────────────── */
+  .hallazgos { display: flex; flex-direction: column; gap: 1px; background: var(--borde); border: 1px solid var(--borde); margin: 22px 0; }
+
+  .hallazgo {
+    background: var(--superficie);
+    padding: 22px 24px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 18px;
+    align-items: start;
+  }
+
+  .hallazgo .sev {
+    font-family: var(--dato);
+    font-size: 11px;
+    font-weight: 700;
+    padding-top: 4px;
+    color: var(--texto-3);
+  }
+  .hallazgo.critico .sev { color: var(--critico); }
+  .hallazgo.propio  .sev { color: var(--ojo); }
+
+  .hallazgo h4 {
+    font-family: var(--display);
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.01em;
+    color: var(--texto);
+  }
+  .hallazgo p { margin: 0; font-size: 15.5px; grid-column: 2; color: var(--texto-2); }
+  .hallazgo .arreglo {
+    grid-column: 2;
+    margin-top: 8px;
+    font-size: 14px;
+    color: var(--texto-2);
+    border-left: 2px solid var(--acento-2);
+    padding-left: 12px;
+  }
+  .hallazgo .arreglo b { color: var(--acento); font-weight: 500; }
+
+  /* ── Nota / aviso ─────────────────────────────────────── */
+  .nota {
+    border-left: 3px solid var(--acento);
+    background: var(--superficie);
+    padding: 18px 22px;
+    margin: 26px 0;
+    font-size: 16px;
+    color: var(--texto-2);
+  }
+  .nota b { color: var(--texto); font-weight: 500; }
+
+  /* ── Barras comparativas ──────────────────────────────── */
+  .barras { display: flex; flex-direction: column; gap: 16px; margin: 24px 0 8px; }
+  .barra-fila { display: grid; grid-template-columns: 130px 1fr; gap: 16px; align-items: center; }
+  .barra-et { font-family: var(--display); font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--texto-2); }
+  .barra-pista { position: relative; height: 30px; background: var(--superficie); border: 1px solid var(--borde); }
+  .barra-relleno { height: 100%; display: flex; align-items: center; padding-left: 11px; font-family: var(--dato); font-size: 12px; font-weight: 500; white-space: nowrap; }
+  .barra-relleno.antes { background: var(--acento-2); color: #0C0C0E; }
+  .barra-relleno.despues { background: var(--bien); color: #06120C; }
+  .barra-relleno.otro { background: var(--superficie-alta); color: var(--texto-2); border-right: 1px solid var(--borde); }
+
+  /* ── Fases ────────────────────────────────────────────── */
+  .fases { display: flex; flex-direction: column; gap: 1px; background: var(--borde); border: 1px solid var(--borde); margin: 22px 0; }
+  .fase { background: var(--superficie); padding: 20px 24px; display: grid; grid-template-columns: 46px 1fr auto; gap: 6px 16px; align-items: start; }
+  .fase .n {
+    font-family: var(--display); font-size: 26px; font-weight: 800;
+    color: var(--acento-2); line-height: 1; padding-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .fase h4 { font-family: var(--display); font-size: 17px; font-weight: 600; margin: 0; color: var(--texto); letter-spacing: -0.01em; }
+  .fase p { grid-column: 2; margin: 4px 0 0; font-size: 15.5px; color: var(--texto-2); }
+  .fase .pil { justify-self: end; }
+
+  footer {
+    margin-top: 76px;
+    padding-top: 26px;
+    border-top: 1px solid var(--borde);
+    font-family: var(--dato);
+    font-size: 12px;
+    color: var(--texto-3);
+    line-height: 1.7;
+  }
+
+  @media (max-width: 640px) {
+    .hoja { padding: 0 18px 64px; }
+    .cabecera { padding-top: 48px; }
+    .fase { grid-template-columns: 36px 1fr; }
+    .fase .pil { grid-column: 2; justify-self: start; margin-top: 8px; }
+    .barra-fila { grid-template-columns: 1fr; gap: 6px; }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cifra, .hallazgo, .fase { transition: background 140ms ease; }
+  }
+</style>
+
+<div class="hoja">
+
+  <header class="cabecera">
+    <div class="marca">Organización confirma-ya · Supabase</div>
+    <h1>Egress y seguridad<br><em>quinchat</em></h1>
+    <p class="entradilla">
+      Qué se encontró en los tres proyectos, qué se ha corregido, y qué pasa con
+      el consumo si seguimos como hasta ahora.
+    </p>
+    <div class="meta-cab">
+      <span>Fecha · <b>29 de agosto de 2026</b></span>
+      <span>Proyecto · <b>bjbjqmbuzpyjvcugbusx</b></span>
+      <span>Plan · <b>Pro</b></span>
+      <span>Método · <b>medición sobre datos reales</b></span>
+    </div>
+  </header>
+
+  <div class="cifras">
+    <div class="cifra oro">
+      <span class="et">Egress hoy</span>
+      <span class="n">36<small>%</small></span>
+      <span class="pie">del cupo de 250 GB. El 88% sale de las imágenes de las landings.</span>
+    </div>
+    <div class="cifra">
+      <span class="et">Crecimiento</span>
+      <span class="n">+84<small>%</small></span>
+      <span class="pie">de julio a agosto. El peso medio por archivo no bajó ni un 1%.</span>
+    </div>
+    <div class="cifra bien">
+      <span class="et">Ya comprimido</span>
+      <span class="n">442<small> MB</small></span>
+      <span class="pie">356 archivos, −83,9%, sin perder resolución.</span>
+    </div>
+    <div class="cifra bien">
+      <span class="et">Validación</span>
+      <span class="n">31<small>/31</small></span>
+      <span class="pie">landings de producción cargando su media. Cero rotas.</span>
+    </div>
+  </div>
+
+  <section>
+    <span class="rotulo">El diagnóstico</span>
+    <h2>El problema no era el tráfico, era el peso</h2>
+    <p>
+      El proyecto sirve unos <strong>2,8 GiB al día</strong> desde Storage, alrededor de
+      91 GB al mes sobre los 250 GB que incluye el plan Pro. No es que haya mucho
+      tráfico: es que cada archivo pesa unas diez veces lo que debería. La imagen
+      media de las landing pages ocupaba <strong>884 kB</strong>, y había PNG de hasta 5,5 MB.
+    </p>
+    <p>
+      La causa está en el formato, no en el volumen. Esas fotos estaban guardadas
+      como PNG —compresión sin pérdida, pésima para fotografía— y como JPEG
+      sobrecodificado. <em class="destaca">Solo convertirlas bien, a resolución y calidad
+      plenas, quita el 85% del peso.</em> No hace falta degradar nada.
+    </p>
+
+    <h3>De dónde sale el egress</h3>
+    <div class="tabla-caja">
+      <table>
+        <thead>
+          <tr><th>Carpeta</th><th class="num">Peso</th><th class="num">Egress / 24 h</th><th class="num">%</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>embudos/</code> — landings, chat y remarketing</td><td class="num">1.014 MB</td><td class="num">2,53 GiB</td><td class="num">88%</td></tr>
+          <tr><td><code>catalogo/</code></td><td class="num">374 MB</td><td class="num">301 MiB</td><td class="num">10%</td></tr>
+          <tr><td>Resto (packs, ventas, entrantes, clientes)</td><td class="num">555 MB</td><td class="num">50 MiB</td><td class="num">2%</td></tr>
+          <tr class="total"><td>Total</td><td class="num">1.943 MB</td><td class="num">2,88 GiB</td><td class="num">100%</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <span class="rotulo">Medición</span>
+    <h2>Crecimiento de julio a agosto</h2>
+    <p>
+      El bucket empezó en julio. Dos meses de historia es base fina para una
+      curva, pero la tendencia es inequívoca y el peso medio por archivo delata
+      que nada estaba comprimiendo.
+    </p>
+
+    <div class="tabla-caja">
+      <table>
+        <thead>
+          <tr><th>Mes</th><th class="num">Archivos</th><th class="num">Imagen</th><th class="num">Vídeo</th><th class="num">Total subido</th><th class="num">Peso medio</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Julio 2026</td><td class="num">784</td><td class="num">535 MB</td><td class="num">143 MB</td><td class="num">683 MB</td><td class="num">892 kB</td></tr>
+          <tr><td>Agosto 2026</td><td class="num">1.459</td><td class="num">870 MB</td><td class="num">373 MB</td><td class="num">1.260 MB</td><td class="num">884 kB</td></tr>
+          <tr class="total"><td>Variación</td><td class="num sube">+86%</td><td class="num sube">+63%</td><td class="num sube">+161%</td><td class="num sube">+84%</td><td class="num baja">−1%</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="nota">
+      <b>El vídeo crece al +161%</b>, mucho más rápido que la imagen. Hoy queda
+      tapado porque las imágenes dominan el egress, pero en cuanto se comprimen
+      pasa a ser el problema principal.
+    </div>
+
+    <h3>Cuánto comprime de verdad, medido sobre 356 archivos</h3>
+    <div class="tabla-caja">
+      <table>
+        <thead>
+          <tr><th>Tamaño original</th><th class="num">Archivos</th><th class="num">Antes</th><th class="num">Después</th><th class="num">Ahorro</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Más de 3 MB</td><td class="num">36</td><td class="num">150 MB</td><td class="num">15 MB</td><td class="num baja">−89,7%</td></tr>
+          <tr><td>Entre 1,5 y 3 MB</td><td class="num">81</td><td class="num">165 MB</td><td class="num">24 MB</td><td class="num baja">−85,5%</td></tr>
+          <tr><td>Menos de 0,7 MB (WebP a JPEG)</td><td class="num">6</td><td class="num">0,8 MB</td><td class="num">1,1 MB</td><td class="num sube">+37,5%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Los seis últimos crecen a propósito: eran WebP, un formato que Meta acepta
+      pero <strong>no entrega</strong> por WhatsApp. Pesan algo más y ahora sí llegan al
+      cliente.
+    </p>
+
+    <h3>Caché</h3>
+    <p>
+      Supabase pone una hora por defecto. Con una hora, el navegador vuelve a
+      pedir la misma foto al origen constantemente.
+    </p>
+    <div class="tabla-caja">
+      <table>
+        <thead><tr><th>Caducidad</th><th class="num">Archivos</th><th class="num">Proporción</th></tr></thead>
+        <tbody>
+          <tr><td>1 hora — por defecto de Supabase</td><td class="num">2.129</td><td class="num">95%</td></tr>
+          <tr><td>1 año — los que hemos tocado</td><td class="num">114</td><td class="num">5%</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <span class="rotulo">Proyección</span>
+    <h2>Cómo quedaría</h2>
+    <p>
+      Aplicando los ratios medidos —no estimados— a la distribución real de
+      tamaños del bucket.
+    </p>
+
+    <div class="barras">
+      <div class="barra-fila">
+        <span class="barra-et">Hoy</span>
+        <div class="barra-pista"><div class="barra-relleno antes" style="width:100%">1.943 MB</div></div>
+      </div>
+      <div class="barra-fila">
+        <span class="barra-et">Tras el backfill</span>
+        <div class="barra-pista"><div class="barra-relleno despues" style="width:24.5%">476 MB</div></div>
+      </div>
+    </div>
+
+    <div class="tabla-caja">
+      <table>
+        <thead><tr><th>Concepto</th><th class="num">Hoy</th><th class="num">Después</th><th class="num">Cambio</th></tr></thead>
+        <tbody>
+          <tr><td>Imágenes</td><td class="num">1.405 MB</td><td class="num">~366 MB</td><td class="num baja">−74%</td></tr>
+          <tr><td>Vídeos</td><td class="num">515 MB</td><td class="num">~88 MB</td><td class="num baja">−83%</td></tr>
+          <tr><td>Audio y PDF (no se tocan)</td><td class="num">22 MB</td><td class="num">22 MB</td><td class="num">—</td></tr>
+          <tr class="total"><td>Bucket</td><td class="num">1.943 MB</td><td class="num">~476 MB</td><td class="num baja">−75%</td></tr>
+          <tr><td>Egress mensual</td><td class="num">~91 GB</td><td class="num">~8 GB</td><td class="num baja">−91%</td></tr>
+          <tr><td>Uso del cupo de 250 GB</td><td class="num">36%</td><td class="num">~3%</td><td class="num baja">−33 pts</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Crecimiento mensual a partir de septiembre</h3>
+    <div class="tabla-caja">
+      <table>
+        <thead><tr><th>Material nuevo al mes</th><th class="num">Sin hacer nada</th><th class="num">Con la compresión</th></tr></thead>
+        <tbody>
+          <tr><td>Imágenes</td><td class="num">~1.420 MB</td><td class="num">~355 MB</td></tr>
+          <tr><td>Vídeos</td><td class="num">~975 MB</td><td class="num">~975 MB</td></tr>
+          <tr class="total"><td>Total</td><td class="num">~2.400 MB</td><td class="num">~1.330 MB</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="nota">
+      <b>El vídeo pasa a ser el 73% del crecimiento.</b> No se puede comprimir al
+      subir: en Vercel no hay ffmpeg y un mp4 de 45 MB no cabe en el límite de
+      tiempo. Se resuelve de tres maneras — desplegar el servicio de compresión
+      aparte, mover el vídeo a Cloudflare R2 (ya existe <code>lib/r2.ts</code> y su
+      ancho de banda es gratis), o pasar un backfill cada cierto tiempo.
+    </div>
+
+    <p>
+      <strong>Dos avisos sobre estas cifras.</strong> La parte medida es sólida; la proyectada
+      es un modelo apoyado en dos meses de historia. Y esto <em class="destaca">no rebaja la
+      factura de hoy</em>: con un 36% de uso no hay sobrecoste. Lo que se compra es
+      margen —y velocidad de carga en las landings, que en un embudo de ventas
+      probablemente valga más que el egress.
+    </p>
+  </section>
+
+  <section>
+    <span class="rotulo">Riesgos</span>
+    <h2>Lo que apareció por el camino</h2>
+    <p>
+      Cuatro defectos que las pruebas destaparon antes de tocar el grueso de los
+      archivos. Ninguno estaba en el plan original, y dos de ellos habrían pasado
+      inadvertidos: uno rompía campañas en silencio, el otro dejaba archivos sin
+      procesar mientras informaba de éxito.
+    </p>
+
+    <div class="hallazgos">
+      <div class="hallazgo critico">
+        <span class="sev">01</span>
+        <h4>Seis campañas de remarketing no se estaban entregando</h4>
+        <p>
+          Había seis imágenes en formato WebP subidas el 27 de agosto. Meta acepta
+          el envío y luego <strong>no entrega el mensaje</strong>. Llevaban dos días fallando
+          en silencio. No lo causó este trabajo: lo destapó.
+        </p>
+        <p class="arreglo"><b>Corregido</b> — convertidas a JPEG, y ahora el WebP se convierte siempre, pese lo que pese.</p>
+      </div>
+
+      <div class="hallazgo propio">
+        <span class="sev">02</span>
+        <h4>La marcha atrás dejaba los archivos peor que antes</h4>
+        <p>
+          Restaurar un original lo subía sin tipo de contenido, y quedaba
+          etiquetado como texto plano: no se renderiza como imagen, WhatsApp lo
+          descarta y el propio backfill lo ignora. Si hubiéramos convertido los
+          620 archivos y hecho rollback, <strong>habría roto el bucket entero</strong>.
+        </p>
+        <p class="arreglo"><b>Corregido</b> — ahora deduce el tipo de los bytes de cabecera. Los 10 archivos afectados, reparados y verificados.</p>
+      </div>
+
+      <div class="hallazgo">
+        <span class="sev">03</span>
+        <h4>Un archivo problemático abortaba el lote entero</h4>
+        <p>
+          Una descarga fallida cortaba el proceso y se llevaba por delante todo
+          lo que quedaba por procesar.
+        </p>
+        <p class="arreglo"><b>Corregido</b> — los errores se anotan por archivo y el proceso continúa hasta el final.</p>
+      </div>
+
+      <div class="hallazgo critico">
+        <span class="sev">04</span>
+        <h4>Treinta y cinco archivos eran invisibles para el proceso</h4>
+        <p>
+          El bucket tiene <code>embudos/SPIDERMAN/</code> y <code>embudos/spiderman/</code> —
+          carpetas distintas, con archivos distintos— y el listado de Supabase
+          <strong>agrupa carpetas sin distinguir mayúsculas</strong>: devolvía los hijos de
+          una bajo el nombre de la otra. Veintisiete archivos de
+          <code>spiderman</code>, cinco de <code>bts</code> y tres más no fallaban:
+          el proceso <em class="destaca">nunca supo que existían</em>, y terminaba diciendo
+          «hecho».
+        </p>
+        <p class="arreglo"><b>Corregido</b> — la enumeración ya no usa el listado, sino la tabla de objetos, que es la fuente de verdad. Los 35 archivos, recuperados.</p>
+      </div>
+    </div>
+
+    <div class="nota">
+      <b>Por qué importa haber revisado antes de convertirlo todo.</b> El defecto 02
+      estaba en el mecanismo de deshacer. Descubrirlo con 10 archivos en vez de
+      con 620 es exactamente la diferencia entre un contratiempo y un incidente.
+    </div>
+  </section>
+
+  <section>
+    <span class="rotulo">Seguridad</span>
+    <h2>Los tres proyectos</h2>
+    <div class="tabla-caja">
+      <table>
+        <thead><tr><th>Proyecto</th><th>Estado</th><th>Detalle</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>quinchat</code></td>
+            <td><span class="pil mal">Crítico</span></td>
+            <td>16 tablas accesibles con la clave pública, incluidos 40.000 mensajes de clientes. Cero usuarios registrados: la app funciona entera con la clave anónima.</td>
+          </tr>
+          <tr>
+            <td><code>confirma-ya</code></td>
+            <td><span class="pil ok">Cerrado</span></td>
+            <td>Protegido por permisos en vez de por RLS. Poco habitual, pero efectivo: nada alcanzable desde fuera.</td>
+          </tr>
+          <tr>
+            <td><code>master-quin</code></td>
+            <td><span class="pil ok">Limpio</span></td>
+            <td>Las 16 tablas con RLS activo y políticas correctas.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="nota">
+      <b>El cierre está escrito pero sin aplicar.</b> Al verificarlo contra el tráfico
+      real aparecieron dos tablas que el plan original iba a cerrar y que el panel
+      sí usa: cerrarlas lo habría roto. Ya están fuera de la lista. Se aplica
+      cuando se decida, con marcha atrás de una línea por tabla.
+    </div>
+  </section>
+
+  <section>
+    <span class="rotulo">Plan</span>
+    <h2>Dónde estamos</h2>
+    <div class="fases">
+      <div class="fase">
+        <span class="n">01</span>
+        <h4>Cerrar las tablas expuestas</h4>
+        <span class="pil esp">Preparado</span>
+        <p>12 tablas a revocar, con verificación previa, marcha atrás y comprobación posterior. Sin ejecutar.</p>
+      </div>
+      <div class="fase">
+        <span class="n">02</span>
+        <h4>Comprimir al subir</h4>
+        <span class="pil ok">Hecho</span>
+        <p>Las rutas de subida comprimen en el servidor. Cada foto nueva entra liviana, venga del panel o de donde venga. Cierra el grifo.</p>
+      </div>
+      <div class="fase">
+        <span class="n">03</span>
+        <h4>Reprocesar lo ya subido</h4>
+        <span class="pil curso">En curso</span>
+        <p>356 archivos y 442 MB recuperados, sin una sola landing rota. Quedan 852 imágenes y 38 vídeos. Cada original se respalda antes de sustituirse.</p>
+      </div>
+      <div class="fase">
+        <span class="n">04</span>
+        <h4>Resolver el vídeo</h4>
+        <span class="pil esp">Por decidir</span>
+        <p>Será el 73% del crecimiento una vez arregladas las imágenes. Servicio aparte, Cloudflare R2, o backfill periódico.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <span class="rotulo">Vigilancia</span>
+    <h2>Enterarse a tiempo</h2>
+    <p>
+      El egress es el síntoma: llega tarde y ya facturado. La causa —que entren
+      archivos pesados— se ve semanas antes.
+    </p>
+    <div class="tabla-caja">
+      <table>
+        <thead><tr><th>Capa</th><th>Qué avisa</th><th>Cuándo</th></tr></thead>
+        <tbody>
+          <tr><td>Spend Cap de Supabase</td><td>Correo al superar el cupo, sin cargos sorpresa. A cambio, el proyecto puede quedar restringido al agotarse el periodo de gracia.</td><td>Cuando ya pasó</td></tr>
+          <tr><td>Chequeo mensual en SQL</td><td>Peso medio de lo subido en 30 días y lista de imágenes pesadas con nombre y carpeta.</td><td>Semanas antes</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      La señal a vigilar es el <strong>peso medio</strong>: hoy 853 kB. Con la compresión
+      desplegada debe caer por debajo de 150 kB. Si dentro de un mes sigue alto,
+      algo sube por un camino que no pasa por el compresor.
+    </p>
+
+    <div class="nota">
+      <b>Coste nuevo en el radar.</b> Supabase está desplegando el cobro por
+      «Logs Ingest»: 0,50 $/GB con 5 GB incluidos. Este proyecto genera unos
+      2,1 GB al mes —el 41% del cupo—, y el 93% son registros de peticiones. Aún
+      no se factura, pero escala con el tráfico.
+    </div>
+  </section>
+
+  <footer>
+    Cifras medidas el 29 de agosto de 2026 sobre los datos reales del proyecto
+    <code>bjbjqmbuzpyjvcugbusx</code>. El egress procede de sumar 24 horas de
+    registros: es una estimación de un día, no la cifra de facturación — esa está
+    en Settings → Usage del panel. Las proyecciones aplican ratios de compresión
+    medidos sobre 356 archivos a la distribución real de tamaños del bucket.
+  </footer>
+
+</div>
+
+

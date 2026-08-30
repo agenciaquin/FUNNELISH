@@ -1,0 +1,15 @@
+# Acotado a arreglos-supabase/ — no toca el resto del repositorio.
+
+# dependencias y builds
+node_modules/
+dist/
+*.tsbuildinfo
+
+# variables de entorno — la service_role key va aquí, NUNCA commitearla
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
