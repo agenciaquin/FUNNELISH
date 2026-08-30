@@ -123,3 +123,28 @@ git revert <hash-del-merge>
 Los archivos ya comprimidos en Storage **no dependen de este código** y seguirían
 igual. Para deshacer aquello, sus originales están en `_originales/` y
 `restaurar()` en `media-api/src/storage.ts` los devuelve.
+
+---
+
+## Prueba de la ruta, hecha antes de desplegar (2026-08-29)
+
+Quedaba un hueco: el compresor estaba probado por separado, pero **el cableado
+de la ruta no**. Se cerró levantando `next dev` en local y subiendo un PNG real
+por `POST /api/funnels/imagen`, sin desplegar nada.
+
+```
+entrada   PNG  1920x1920 · 5.662 kB
+guardado  jpeg 1920x1920 ·   446 kB   (-92,1%)
+          image/jpeg · public, max-age=31536000
+```
+
+Las seis comprobaciones pasan: responde 200, sirve `image/jpeg`, el archivo es
+JPEG de verdad y no solo la cabecera, la URL termina en `.jpg`, **conserva la
+resolución original** y trae la caché de un año. El archivo de prueba se borró
+del bucket al terminar.
+
+Se reproduce con `media-api/probar-ruta-local.ts`.
+
+**Y el build ya está verificado en Linux:** el despliegue accidental a Vercel
+compiló `sharp` sin incidencias, las 90 rutas y el TypeScript en 14 segundos.
+Era el único riesgo técnico que quedaba.
