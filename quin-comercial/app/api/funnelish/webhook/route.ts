@@ -30,9 +30,10 @@ function buildMensaje(data: {
   producto: string;
   valor: string;
   extras?: string; // líneas "Etiqueta: valor" de los campos personalizados del checkout
+  marca?: string;  // saludo/marca por cliente (ej. "te saluda Isaac de Skioo")
 }): string {
   const lineas = [
-    'Hola 😊 te saluda Lilibeth. Tu pedido ya está listo para despacho 🚚✨ Por favor confirma que estos datos estén correctos:',
+    `Hola 😊 ${data.marca || 'te saluda Lilibeth'}. Tu pedido ya está listo para despacho 🚚✨ Por favor confirma que estos datos estén correctos:`,
     `Nombre: ${data.nombre}`,
     `Teléfono: ${data.telefono}`,
     `Dirección: ${data.direccion}`,
@@ -65,9 +66,10 @@ function buildMensajeTemplate(data: {
   producto: string;
   valor: string;
   extras?: string; // líneas "Etiqueta: valor" de los campos personalizados del checkout
+  marca?: string;  // saludo/marca por cliente (ej. "te saluda Isaac de Skioo")
 }): string {
   const lineas = [
-    `Hola ${data.saludo} 😊 te saludo de klixmant Tu pedido ya está listo para despacho 🚚`,
+    `Hola ${data.saludo} 😊 ${data.marca || 'te saludo de klixmant'} Tu pedido ya está listo para despacho 🚚`,
     `Nombre: ${data.nombre}`,
     `Teléfono: ${data.telefono}`,
     `Dirección: ${data.direccion}`,
@@ -336,6 +338,18 @@ export async function procesarPedidoFunnelish(req: NextRequest, base?: BaseLinea
     .map((x: any) => `${x.label}: ${x.valor}`)
     .join('\n');
 
+  // Saludo/marca por cliente para el mensaje (ej. "te saluda Isaac de Skioo").
+  let saludoMarca = '';
+  let numeroAsesor = '';
+  if (base?.tenantId) {
+    try {
+      const sbSaludo = createServerSupabaseClient();
+      const { data: tRow } = await sbSaludo.from('tenants').select('confirmacion_saludo, wa_numero_dueno').eq('id', base.tenantId).maybeSingle();
+      saludoMarca = String((tRow as any)?.confirmacion_saludo ?? '').trim();
+      numeroAsesor = String((tRow as any)?.wa_numero_dueno ?? '').replace(/\D/g, '');
+      if (numeroAsesor.length === 10) numeroAsesor = '57' + numeroAsesor;
+    } catch { /* si falla, se usa el saludo por defecto */ }
+  }
   const product        = Array.isArray(body.products) ? body.products[0] : null;
   // Foto que mandó la propia página de venta (respaldo si el catálogo no la tiene)
   const imagenPagina   = String(product?.image ?? body.imagen ?? '').trim();
@@ -385,7 +399,7 @@ export async function procesarPedidoFunnelish(req: NextRequest, base?: BaseLinea
   }
   const nombreImagenPrincipal = packProductos[0] ?? productoNombre;
 
-  const mensaje = buildMensaje({ nombre, telefono: tel10, direccion, ciudad, departamento, correo, talla, producto: productoNombre, valor, extras: extrasTexto });
+  const mensaje = buildMensaje({ nombre, telefono: tel10, direccion, ciudad, departamento, correo, talla, producto: productoNombre, valor, extras: extrasTexto, marca: saludoMarca });
 
   const supabase = base?.tenantId ? supabaseTenant(base.tenantId) : createServerSupabaseClient();
 
@@ -700,13 +714,28 @@ export async function procesarPedidoFunnelish(req: NextRequest, base?: BaseLinea
     await avisarPerdidos(aviso);
   }
 
+  // ── Aviso al asesor: cada venta NUEVA que entra (aún sin confirmar) ──────
+  //  El bot le escribe al número de avisos del tenant (wa_numero_dueno) para que
+  //  el asesor revise el chat y la confirme. Aquí ya se filtraron duplicados y
+  //  re-envíos, así que se dispara UNA sola vez por venta. Texto normal: el
+  //  asesor mantiene abierta la ventana de 24h escribiéndole al bot.
+  if (numeroAsesor) {
+    const avisoAsesor =
+      `✅ Nueva venta ingresada\n` +
+      `${nombre}\n` +
+      `${tel10}\n` +
+      `Revisa el chat y confírmala ✅`;
+    try { await sendTextMessage(numeroAsesor, avisoAsesor); }
+    catch (e) { console.error('[Funnelish] no se pudo avisar al asesor:', e); }
+  }
+
   if (sent) {
     // Texto a guardar en QuinChat
     const mensajeAlmacenado = templateSent
       ? buildMensajeTemplate({
           saludo: firstName || nombre,
           nombre, telefono: tel10, direccion, ciudad, departamento,
-          correo, talla, producto: productoNombre, valor, extras: extrasTexto,
+          correo, talla, producto: productoNombre, valor, extras: extrasTexto, marca: saludoMarca,
         })
       : mensaje;
 

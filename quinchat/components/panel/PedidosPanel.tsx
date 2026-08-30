@@ -79,7 +79,7 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [resumen, setResumen] = useState({ total: 0, confirmados: 0, cancelados: 0, vendido: 0 });
   const [cargando, setCargando] = useState(true);
-  const [canal, setCanal]       = useState<'funnel' | 'whatsapp' | 'todas'>('funnel');
+  const [canal, setCanal]       = useState<'funnel' | 'whatsapp' | 'todas' | 'funnelish'>('funnel');
   const [dias, setDias]         = useState(7);
   const [busca, setBusca]       = useState('');
   const [verCarritos, setVerCarritos] = useState(false);
@@ -179,7 +179,11 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
     return () => clearInterval(t);
   }, [cargar]);
 
-  const filtrados = pedidos.filter(p => {
+  // La API ya devuelve el subconjunto correcto según el canal (incl. Funnelish).
+  const base = pedidos;
+  const resumenVista = resumen;
+
+  const filtrados = base.filter(p => {
     const q = busca.toLowerCase();
     return !q
       || (p.nombre ?? '').toLowerCase().includes(q)
@@ -192,7 +196,7 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   // Desglose por día: confirmadas vs por confirmar (números y porcentaje).
   const porDia = useMemo(() => {
     const m = new Map<string, { total: number; conf: number; pend: number }>();
-    for (const p of pedidos) {
+    for (const p of base) {
       const dia = diaCol(p.created_at);
       const g = m.get(dia) ?? { total: 0, conf: 0, pend: 0 };
       g.total++;
@@ -202,7 +206,7 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
       m.set(dia, g);
     }
     return [...m.entries()].sort((a, b) => b[0].localeCompare(a[0]));
-  }, [pedidos]);
+  }, [base]);
 
   const chip = (activo: boolean) =>
     `px-3 py-1.5 rounded-lg text-xs border transition-colors ${
@@ -233,9 +237,10 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
         {/* Filtros */}
         <div className="flex items-center gap-2 mb-4 flex-wrap">
           <span className="text-[11px] font-bold text-[#6B6B6B] mr-0.5">Ventas:</span>
-          <button onClick={() => setCanal('funnel')}   className={chip(canal === 'funnel')}>🚀 Funnel</button>
-          <button onClick={() => setCanal('whatsapp')} className={chip(canal === 'whatsapp')}>💬 WhatsApp</button>
-          <button onClick={() => setCanal('todas')}    className={chip(canal === 'todas')}>Todas</button>
+          <button onClick={() => setCanal('funnel')}    className={chip(canal === 'funnel')}>🚀 Funnel</button>
+          <button onClick={() => setCanal('funnelish')} className={chip(canal === 'funnelish')}>📄 Funnelish</button>
+          <button onClick={() => setCanal('whatsapp')}  className={chip(canal === 'whatsapp')}>💬 WhatsApp</button>
+          <button onClick={() => setCanal('todas')}     className={chip(canal === 'todas')}>Todas</button>
           <span className="w-px h-5 bg-[#E8E8E8] mx-1" />
           {[1, 7, 30].map(d => (
             <button key={d} onClick={() => setDias(d)} className={chip(dias === d)}>
@@ -254,10 +259,10 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
         {/* Resumen */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
           {[
-            { t: 'Pedidos',     v: String(resumen.total),       c: '#8B5CF6', i: '🛒' },
-            { t: 'Confirmados', v: String(resumen.confirmados), c: '#15803D', i: '✅' },
-            { t: 'Cancelados',  v: String(resumen.cancelados),  c: '#DC2626', i: '✖️' },
-            { t: 'Vendido',     v: pesos(resumen.vendido),      c: '#00847A', i: '💰' },
+            { t: 'Pedidos',     v: String(resumenVista.total),       c: '#8B5CF6', i: '🛒' },
+            { t: 'Confirmados', v: String(resumenVista.confirmados), c: '#15803D', i: '✅' },
+            { t: 'Cancelados',  v: String(resumenVista.cancelados),  c: '#DC2626', i: '✖️' },
+            { t: 'Vendido',     v: pesos(resumenVista.vendido),      c: '#00847A', i: '💰' },
           ].map(k => (
             <div key={k.t} className="bg-white rounded-2xl border border-[#E8E8E8] p-4 shadow-sm">
               <div className="flex items-center gap-1.5 mb-1">
@@ -342,6 +347,8 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
             <p className="text-sm text-[#6B6B6B] py-12 text-center px-6">
               {canal === 'funnel'
                 ? 'Todavía no hay ventas desde tus páginas (funnel). Aparecerán apenas alguien compre.'
+                : canal === 'funnelish'
+                ? 'Todavía no hay ventas desde la página de Funnelish en este período.'
                 : canal === 'whatsapp'
                 ? 'Todavía no hay ventas del bot de WhatsApp en este período.'
                 : 'No hay ventas en este período.'}

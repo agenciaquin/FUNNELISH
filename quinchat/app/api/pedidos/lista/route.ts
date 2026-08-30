@@ -28,9 +28,13 @@ export async function GET(req: NextRequest) {
       .gte('created_at', desde)
       .order('created_at', { ascending: false })
       .limit(400);
-    if (canal === 'funnel')        c = c.like('referencia', 'web-%');
-    else if (canal === 'whatsapp') c = c.like('referencia', 'wa-%');
-    else                           c = c.or('referencia.like.web-%,referencia.like.wa-%');
+    if (canal === 'funnel')          c = c.like('referencia', 'web-%');
+    else if (canal === 'whatsapp')   c = c.like('referencia', 'wa-%');
+    // Funnelish (plataforma externa): sus pedidos NO llevan prefijo web-/wa-/venta-;
+    // su referencia es el ID numérico de Funnelish. Se excluyen los nuestros y luego
+    // en JS se dejan solo los de referencia numérica.
+    else if (canal === 'funnelish')  c = c.not('referencia', 'like', 'web-%').not('referencia', 'like', 'wa-%').not('referencia', 'like', 'venta-%');
+    else                             c = c.or('referencia.like.web-%,referencia.like.wa-%');
     return c;
   }
 
@@ -41,7 +45,13 @@ export async function GET(req: NextRequest) {
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const pedidos = (data ?? []) as any[];
+  let pedidos = (data ?? []) as any[];
+
+  // Funnelish = referencia SOLO numérica (el ID que genera Funnelish). Así no se
+  // cuelan pedidos internos (venta-…) ni nada que no sea de esa plataforma.
+  if (canal === 'funnelish') {
+    pedidos = pedidos.filter(p => /^\d+$/.test(String(p.referencia ?? '').trim()));
+  }
 
   // Miniatura del producto: PRIMERO la foto guardada CON ESTE pedido (la correcta,
   // la del producto que compró). Solo si el pedido no tiene foto propia, se usa
