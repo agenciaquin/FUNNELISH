@@ -20,6 +20,7 @@ carpeta aislada con la auditoría, el SQL y un servicio propio.
 | `auditoria-supabase-agencia-quin43.md` | Auditoría de seguridad de los 3 proyectos, 2026-08-28 |
 | `REPORTE-2026-08-29.md` | **Empieza por aquí.** Todo lo hecho, los 5 defectos encontrados y lo que queda |
 | `CAMBIOS-EN-QUINCHAT.md` | Qué se tocó fuera de esta carpeta, y cómo revertirlo |
+| `TEXTO-DEL-PR.md` | Lo que se comunicó al equipo al abrir el PR #1, incluido el aviso a agenciaquin |
 | `HALLAZGO-dos-compresores.md` | Otro compresor en `master` a 1080/q72. Medido: SSIM 0,896, degradada. Sin tocar |
 | `HALLAZGO-rutas-api-abiertas.md` | ⚠️ **Las 82 rutas de la API responden sin sesión en el dominio público. Sin corregir, pendiente de aprobación.** |
 | `sql/salidas/MEDICION-egress-2026-08-30.md` | **Resultado medido:** el peso servido a navegadores baja de 616 a 186 KiB (−69,8%) |
