@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { CACHE_UN_ANO, optimizarImagen } from '@/lib/optimizar-imagen-servidor';
 
+export const maxDuration = 60; // sharp necesita margen con fotos grandes
+
 const BUCKET = 'catalogo-imagenes';
 
 /** POST /api/catalogos/upload-imagen — sube foto al Storage de Supabase */

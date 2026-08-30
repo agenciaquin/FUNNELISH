@@ -11,6 +11,8 @@ import { CACHE_UN_ANO, optimizarImagen } from '@/lib/optimizar-imagen-servidor';
  * enlaces a mano.
  */
 
+export const maxDuration = 60; // sharp necesita margen con fotos grandes
+
 const clavePara = (nombre: string) => `plantilla_img_${nombre}`;
 
 export async function GET(req: NextRequest) {

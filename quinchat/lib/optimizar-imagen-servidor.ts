@@ -1,4 +1,4 @@
-import sharp from 'sharp';
+import sharp, { type Sharp } from 'sharp';
 
 /**
  * Comprime una foto EN EL SERVIDOR, justo antes de guardarla en Storage.
@@ -95,22 +95,21 @@ export async function optimizarImagen(
     const imagen = sharp(buffer, { failOn: 'none' });
     const meta = await imagen.metadata();
 
-    // Un PNG con canal alfa es casi siempre un logo. Pasarlo a JPEG le pondría
-    // fondo negro, así que se queda en PNG y se comprime como se pueda.
-    const conTransparencia = meta.hasAlpha === true;
+    // OJO: `hasAlpha` dice si EXISTE el canal alfa, no si se usa. Casi cualquier
+    // herramienta de diseño exporta PNG con un canal alfa completamente opaco, y
+    // mirando solo `hasAlpha` esas fotos se iban por la vía PNG y se perdía el
+    // ahorro grande — que es justo el caso que más abunda en el bucket.
+    //
+    // `stats().isOpaque` lo resuelve: recorre los píxeles y dice si el alfa
+    // aporta algo. Solo se consulta cuando hay canal, para no pagarlo siempre.
+    const conTransparencia = meta.hasAlpha === true && !(await sharp(buffer, { failOn: 'none' }).stats()).isOpaque;
 
     const redimensionada = imagen
       .rotate() // aplica la orientación EXIF antes de que sharp la descarte
       .resize({ width: LADO_MAX, height: LADO_MAX, fit: 'inside', withoutEnlargement: true });
 
-    // PNG SIN pérdida a propósito. La tentación es usar `palette: true`, que
-    // comprime mucho más, pero cuantiza a 256 colores —degradando cualquier
-    // degradado— y sharp llega a descartar el canal alfa al hacerlo. En una
-    // imagen con transparencia eso es exactamente lo que no queremos. Aquí el
-    // ahorro sale solo del redimensionado; si no llega al mínimo, se conserva
-    // el original.
     const salida = conTransparencia
-      ? await redimensionada.png({ compressionLevel: 9 }).toBuffer()
+      ? await comprimirConAlfa(redimensionada, buffer.length)
       : await redimensionada.jpeg({ quality: CALIDAD, mozjpeg: true }).toBuffer();
 
     // Del WebP se sale siempre, aunque el JPEG pese más: un archivo que no se
@@ -126,6 +125,31 @@ export async function optimizarImagen(
     // subida: se guarda el original y ya lo recogerá el backfill si hace falta.
     return original;
   }
+}
+
+/**
+ * Comprime una imagen CON TRANSPARENCIA, que obliga a salir en PNG.
+ *
+ * Se intenta primero PNG sin pérdida, que es lo que conviene a un logo. Pero si
+ * la entrada era un WebP —formato que comprime la transparencia con pérdida— el
+ * PNG puede salir MUCHO más grande. Medido sobre una imagen con alfa de 700 kB:
+ *
+ *   png sin pérdida : 7.463 kB   (x10,7)
+ *   png con paleta  :   914 kB   (x1,3)
+ *
+ * Por eso, y solo cuando el resultado engorda, se reintenta con `palette: true`.
+ * Cuantiza a 256 colores —un logo ni se entera; una foto con alfa sí, pero es un
+ * caso raro y la alternativa es multiplicar el peso por diez— y, comprobado
+ * sobre sharp 0.34, **conserva el canal alfa**.
+ *
+ * Se devuelve el más pequeño de los dos. Un logo normal ni llega al reintento.
+ */
+async function comprimirConAlfa(img: Sharp, bytesOriginales: number): Promise<Buffer> {
+  const sinPerdida = await img.clone().png({ compressionLevel: 9 }).toBuffer();
+  if (sinPerdida.length <= bytesOriginales) return sinPerdida;
+
+  const conPaleta = await img.clone().png({ compressionLevel: 9, palette: true, quality: 90 }).toBuffer();
+  return conPaleta.length < sinPerdida.length ? conPaleta : sinPerdida;
 }
 
 function extensionDe(contentType: string): string {
