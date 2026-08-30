@@ -19,6 +19,7 @@ carpeta aislada con la auditoría, el SQL y un servicio propio.
 | --- | --- |
 | `auditoria-supabase-agencia-quin43.md` | Auditoría de seguridad de los 3 proyectos, 2026-08-28 |
 | `CAMBIOS-EN-QUINCHAT.md` | **Qué se tocó fuera de esta carpeta, y cómo revertirlo** |
+| `HALLAZGO-rutas-api-abiertas.md` | ⚠️ **Las 82 rutas de la API responden sin sesión en el dominio público. Sin corregir, pendiente de aprobación.** |
 | `informe-supabase.html` | Informe consolidado para compartir |
 | `sql/` | Scripts de la fase 1: cerrar las tablas expuestas de `quinchat` |
 | `media-api/` | Servicio de compresión y herramientas de validación (Node + TypeScript) |
