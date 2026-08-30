@@ -4,8 +4,12 @@ Trabajo sobre los 3 proyectos Supabase de la organización `confirma-ya`
 (cuenta agenciaquin43).
 
 Vive aquí, junto a `quinchat/`, porque esa es la aplicación que consume estas
-bases. **No modifica nada de `quinchat/` ni de `quin-comercial/`**: es una
-carpeta aislada con la auditoría, el SQL y un servicio propio.
+bases. La carpeta en sí es autónoma: la auditoría, el SQL y un servicio propio.
+
+**Sí se tocó `quinchat/`**, en 8 archivos, para que las fotos entren
+comprimidas. Está todo en la rama `optimizacion-imagenes` y listado —con cómo
+revertirlo— en `CAMBIOS-EN-QUINCHAT.md`. **`quin-comercial/` no se tocó**; ver
+`PENDIENTE-quin-comercial.md`.
 
 > La carpeta se llama `arreglos-supabase` con guion y no "arreglos supabase" con
 > espacio: los espacios en las rutas rompen los `working-directory` de GitHub
@@ -36,16 +40,129 @@ Son **dos trabajos distintos** que conviene no mezclar:
 
 ---
 
-## Estado
+## Retomar esto en otro equipo
 
-**Nada se ha aplicado todavía sobre producción.** Todo lo de aquí está escrito,
-compilado y verificado, pero sin ejecutar.
+### 1 · Traerse el trabajo
+
+```bash
+git clone https://github.com/agenciaquin/FUNNELISH.git
+cd FUNNELISH
+git checkout optimizacion-imagenes     # aquí está todo; master no se tocó
+```
+
+### 2 · Instalar
+
+```bash
+cd quinchat            && npm install
+cd ../arreglos-supabase/media-api && npm install
+```
+
+### 3 · Las credenciales, que NO están en el repo
+
+Los `.env` están en `.gitignore` a propósito. Hay que recrearlos a mano; los
+valores salen del panel de Supabase, en **Settings → API**.
+
+**`arreglos-supabase/media-api/.env`**
+
+```
+SUPABASE_URL=              # Project URL
+SUPABASE_SERVICE_ROLE_KEY= # clave service_role (secreta)
+BUCKET=chat-media
+PORT=8080
+```
+
+Las demás (`IMAGEN_*`, `VIDEO_*`, `CACHE_CONTROL`) son opcionales: si faltan se
+usan los valores por defecto de `src/config.ts`, que ya son los correctos.
+
+**`quinchat/.env.local`** — solo si se va a levantar la app en local
+
+```
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+NEXTAUTH_SECRET=           # cualquier cadena larga sirve en local
+```
+
+> 🔑 **Pendiente: rotar la clave `service_role`.** Se pegó en una conversación,
+> así que conviene darla por comprometida y generar otra.
+
+### 4 · Comprobar que todo sigue bien
+
+Ninguno de estos escribe nada. Se pueden lanzar cuantas veces haga falta.
+
+```bash
+cd quinchat
+npx tsx pruebas/optimizar-imagen.ts     # 18 pruebas del compresor
+npm run build                            # compila y pasa TypeScript
+
+cd ../arreglos-supabase/media-api
+npx tsx validar-todo.ts                  # 723 archivos + embudos + Meta (lento)
+npx tsx validar-landings.ts              # las 31 landings, como las ve un cliente
+npx tsx validar-whatsapp.ts              # lo que se envía por WhatsApp
+npx tsx pesar-landing.ts colombia        # cuánto pesa una landing hoy
+npx tsx comparar-perfiles.ts 30          # peso vs calidad (SSIM) de cada perfil
+npx tsx auditar-rutas-api.ts             # qué rutas responden sin sesión
+```
+
+Referencia de lo que deben dar hoy: **723/723 · 341/341 · 0 WebP · 0 mal
+etiquetados**, **31/31 landings**, `/colombia` en **2,14 MB**.
+
+### 5 · Trampas ya pisadas, para no repetirlas
+
+| Síntoma | Qué pasa |
+| --- | --- |
+| `ERR_DLOPEN_FAILED` al usar `sharp` | Dos versiones de `sharp` en el mismo proceso (una de `media-api` y otra de `quinchat`) chocan en Windows. Por eso las pruebas del compresor viven en `quinchat/pruebas/` |
+| `next dev` arranca en el 8080 | Hereda `PORT` si se exportó el `.env` de `media-api` en esa terminal |
+| La ruta de subida responde 400 en local | Falta `NEXTAUTH_SECRET`, o falta la cabecera `Host` |
+| `POST /api/...` redirige al login en local | El middleware trata `localhost` como panel. Para probar la tienda: `curl -H "Host: pedido.klixmant.shop" ...` |
+| Un archivo del bucket dice `Cache-Control: no-cache` | Artefacto de las peticiones `HEAD`. Con un `GET` real devuelve `public, max-age=31536000` |
+| Consultas de logs que fallan | El endpoint de logs por API de Supabase **se retira el 23-09-2026**. Desde el Logs Explorer del panel sigue funcionando |
+
+---
+
+## Estado · al 30 de agosto de 2026
+
+| | |
+| --- | --- |
+| **Backfill de imágenes** | ✅ **HECHO sobre producción.** 723 archivos, 850 MB recuperados |
+| **Compresión al subir** | 📦 escrita y probada, **en el PR #1, sin publicar** |
+| **Corrección de seguridad** | ⛔ documentada, **sin aplicar** — espera a dirección |
+| **Fase 1 (cerrar tablas)** | ⛔ scripts listos, **sin ejecutar** |
+
+**PR #1:** https://github.com/agenciaquin/FUNNELISH/pull/1 · rama
+`optimizacion-imagenes`. `master` sin tocar.
+
+### El efecto, medido
+
+| | Antes | Ahora |
+| --- | ---: | ---: |
+| Peso medio servido a navegadores | 616 KiB | **186 KiB** (−69,8%) |
+| Una visita a `/colombia` | 20,98 MB | **2,14 MB** |
+| Bucket sin el respaldo | 1.943 MB | 1.093 MB |
+
+### Los tres proyectos Supabase
 
 | Proyecto | Ref | Estado |
 | --- | --- | --- |
-| `quinchat` | `bjbjqmbuzpyjvcugbusx` | 🔴 16 tablas con permisos para `anon`; 14 sin uso real |
+| `quinchat` | `bjbjqmbuzpyjvcugbusx` | 🔴 16 tablas con permisos para `anon`; 12 sin uso real |
 | `confirma-ya` | `glmnuqfnxwaibckufgtr` | 🟢 Cerrado por grants |
 | `master-quin` | `oejbsibpjiwakpsgkyvq` | 🟢 RLS en las 16 tablas |
+
+### Dónde vive cada app (importa para desplegar)
+
+| Proyecto Vercel | Atiende | ¿Se publica solo desde `master`? |
+| --- | --- | --- |
+| `quinchat-agencia-quin` | **`pedido.klixmant.shop`** — la tienda | **No.** A mano |
+| `quinchat-comercial` | `www.klixmant.shop`, `tienda.skioo.shop` | **Sí** |
+| `quinchat` | `quinchat-sepia.vercel.app` | Sí. Creado por error, solo compila los PR |
+
+> ⚠️ **Producción va por detrás de `master`.** La tienda corre `78d4cac`, tres
+> commits atrás, y los despliegues llevan marca `gitDirty`: se hicieron con
+> cambios sin guardar en git. **Publicar la rama arrastraría v171–v173 y
+> descartaría eso.** Por eso debe publicar agenciaquin, no un tercero.
+>
+> Marcha atrás: Vercel guarda 20 despliegues de producción. Se vuelve a
+> cualquiera desde el panel, sin reconstruir.
 
 ---
 
@@ -323,3 +440,49 @@ venga de donde venga.
 - **R2**: `lib/r2.ts` ya existe y da ancho de banda gratis, pero solo se usa para
   vídeo y para el enlace firmado. Las imágenes van siempre a Supabase. Mover las
   imágenes a R2 sería otra mejora grande, y es independiente de todo esto.
+
+---
+
+## Qué queda por hacer, por orden
+
+| # | Pendiente | Necesita | Dónde está el detalle |
+| --- | --- | --- | --- |
+| 1 | **Publicar el PR #1** — sin esto el consumo vuelve a crecer | Que lo publique **agenciaquin**, con sus v171–v173 | `TEXTO-DEL-PR.md` |
+| 2 | **Corregir las 82 rutas abiertas** | Aprobación de dirección | `HALLAZGO-rutas-api-abiertas.md` |
+| 3 | **`quin-comercial` no comprime nada** | Que pase antes el PR #1 | `PENDIENTE-quin-comercial.md` |
+| 4 | Collages en paralelo sin límite → 429 | Decisión. Son ~10 líneas | Defecto nº 5 del reporte |
+| 5 | **Borrar `_originales/`** (1.010 MB) | Esperar una semana **y** cerrar el perfil de calidad | `HALLAZGO-dos-compresores.md` |
+| 6 | Los 38 vídeos — **515 MB, el 47% del bucket** | Decisión de fondo: servicio aparte, R2, o backfill | Reporte, sección 7 |
+| 7 | Fase 1 de seguridad — cerrar 12 tablas | Aprobación. Scripts listos | `sql/` |
+| 8 | Rotar la clave `service_role` | — | arriba, apartado 3 |
+| 9 | Confirmar el Spend Cap y a qué correo avisa | — | «Vigilancia», capa 1 |
+
+> **El orden importa en dos sitios.** El punto 5 no se hace antes de decidir el
+> perfil de calidad: mientras existan los originales, cualquier recompresión
+> futura sale limpia; sin ellos sería pérdida sobre pérdida. Y el punto 3 espera
+> al 1 para no mezclar dos apps en una misma revisión.
+
+---
+
+## Cómo saber si sigue funcionando, dentro de un mes
+
+La señal es **el peso medio de lo que entra**, no el egress: el egress llega
+tarde y ya facturado.
+
+```sql
+select to_char(created_at at time zone 'America/Bogota','YYYY-MM-DD') dia,
+       count(*) archivos,
+       pg_size_pretty(sum((metadata->>'size')::bigint)) entra,
+       pg_size_pretty((avg((metadata->>'size')::bigint))::bigint) medio,
+       count(*) filter (where (metadata->>'size')::bigint > 307200) pesados
+from storage.objects
+where bucket_id='chat-media' and name not like '_originales/%'
+  and coalesce(metadata->>'mimetype','') like 'image/%'
+  and created_at > (now() at time zone 'America/Bogota') - interval '7 days'
+group by 1 order by 1 desc
+```
+
+Con el PR publicado, el peso medio debe bajar de **858 kB a menos de 200 kB**.
+Si no baja, lo que entra viene de `quin-comercial` — y entonces toca el punto 3.
+
+Más completo, con veredicto de una línea: `sql/004_chequeo_consumo.sql`.
