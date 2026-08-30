@@ -1,5 +1,8 @@
 import Jimp from 'jimp';
 
+/** Misma calidad que `lib/optimizar-imagen-servidor.ts`. */
+const CALIDAD_JPEG = 85;
+
 /**
  * Une varias fotos de producto en UNA sola imagen (lado a lado) y la sube a
  * Supabase Storage. Se usa para los PACK X2 (dos colores en una sola foto) tanto
@@ -35,7 +38,10 @@ export async function generarCollagePack(
     let left = 0;
     imgs.forEach((im: any) => { canvas.composite(im, left, 0); left += im.getWidth(); });
 
-    const buffer = await canvas.getBufferAsync(Jimp.MIME_JPEG);
+    // Jimp codifica JPEG a calidad 100 si no se le dice otra cosa, y un collage
+    // de 2700x900 sale a ~1,6 MB. A 85 pesa 442 kB —un 73% menos— y el cliente
+    // no nota la diferencia. Mismo valor que el resto del proyecto.
+    const buffer = await canvas.quality(CALIDAD_JPEG).getBufferAsync(Jimp.MIME_JPEG);
 
     const { error: upErr } = await supabase.storage.from(bucket)
       .upload(path, buffer, { contentType: 'image/jpeg', upsert: true });
