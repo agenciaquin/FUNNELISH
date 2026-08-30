@@ -340,11 +340,14 @@ export async function procesarPedidoFunnelish(req: NextRequest, base?: BaseLinea
 
   // Saludo/marca por cliente para el mensaje (ej. "te saluda Isaac de Skioo").
   let saludoMarca = '';
+  let numeroAsesor = '';
   if (base?.tenantId) {
     try {
       const sbSaludo = createServerSupabaseClient();
-      const { data: tRow } = await sbSaludo.from('tenants').select('confirmacion_saludo').eq('id', base.tenantId).maybeSingle();
+      const { data: tRow } = await sbSaludo.from('tenants').select('confirmacion_saludo, wa_numero_dueno').eq('id', base.tenantId).maybeSingle();
       saludoMarca = String((tRow as any)?.confirmacion_saludo ?? '').trim();
+      numeroAsesor = String((tRow as any)?.wa_numero_dueno ?? '').replace(/\D/g, '');
+      if (numeroAsesor.length === 10) numeroAsesor = '57' + numeroAsesor;
     } catch { /* si falla, se usa el saludo por defecto */ }
   }
   const product        = Array.isArray(body.products) ? body.products[0] : null;
@@ -709,6 +712,21 @@ export async function procesarPedidoFunnelish(req: NextRequest, base?: BaseLinea
       `Producto: ${productoNombre}\n` +
       `Valor: ${valor}`;
     await avisarPerdidos(aviso);
+  }
+
+  // ── Aviso al asesor: cada venta NUEVA que entra (aún sin confirmar) ──────
+  //  El bot le escribe al número de avisos del tenant (wa_numero_dueno) para que
+  //  el asesor revise el chat y la confirme. Aquí ya se filtraron duplicados y
+  //  re-envíos, así que se dispara UNA sola vez por venta. Texto normal: el
+  //  asesor mantiene abierta la ventana de 24h escribiéndole al bot.
+  if (numeroAsesor) {
+    const avisoAsesor =
+      `✅ Nueva venta ingresada\n` +
+      `${nombre}\n` +
+      `${tel10}\n` +
+      `Revisa el chat y confírmala ✅`;
+    try { await sendTextMessage(numeroAsesor, avisoAsesor); }
+    catch (e) { console.error('[Funnelish] no se pudo avisar al asesor:', e); }
   }
 
   if (sent) {
