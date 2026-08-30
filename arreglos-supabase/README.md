@@ -18,7 +18,8 @@ carpeta aislada con la auditoría, el SQL y un servicio propio.
 | | |
 | --- | --- |
 | `auditoria-supabase-agencia-quin43.md` | Auditoría de seguridad de los 3 proyectos, 2026-08-28 |
-| `CAMBIOS-EN-QUINCHAT.md` | **Qué se tocó fuera de esta carpeta, y cómo revertirlo** |
+| `REPORTE-2026-08-29.md` | **Empieza por aquí.** Todo lo hecho, los 5 defectos encontrados y lo que queda |
+| `CAMBIOS-EN-QUINCHAT.md` | Qué se tocó fuera de esta carpeta, y cómo revertirlo |
 | `HALLAZGO-rutas-api-abiertas.md` | ⚠️ **Las 82 rutas de la API responden sin sesión en el dominio público. Sin corregir, pendiente de aprobación.** |
 | `informe-supabase.html` | Informe consolidado para compartir |
 | `sql/` | Scripts de la fase 1: cerrar las tablas expuestas de `quinchat` |
@@ -195,19 +196,30 @@ npm run backfill -- --prefijo embudos --aplicar
 viene del cambio de formato, no de recortar calidad, así que no hace falta
 degradar nada. Medido sobre archivos reales: **imágenes −83 a −94%, vídeos −83%**.
 
-### Estado del backfill
+### Estado del backfill — TERMINADO el 2026-08-29
 
-| Lote | Estado |
+| Prefijo | Estado |
 | --- | --- |
-| `embudos/` — 10 imágenes más pesadas | ✅ aplicado 2026-08-29 · 52 MB → 3,0 MB (−94,2%) |
-| `embudos/` — 387 imágenes restantes | pendiente |
-| `embudos/` — 32 vídeos | pendiente |
-| `catalogo/` — 293 imágenes | pendiente (10% del egress) |
+| `embudos/` — imágenes | ✅ **completo** (quedan 11 que no compensa tocar) |
+| `catalogo/` — imágenes | ✅ **completo** |
+| `packs/` — imágenes | ✅ **completo** |
+| `embudos/` — 38 vídeos | ⏸ pendiente de decisión de fondo |
+| `ventas/` · `entrantes/` — 551 imágenes | ⏹ **no se tocan** a propósito: ya pesan 166-226 kB |
 
-Verificado en producción sobre el lote aplicado: la URL no cambia, sirve
-`Content-Type: image/webp`, decodifica correctamente **a 1920×1920 — la
-resolución original**, y el original queda íntegro en `_originales/`. La caché
-pasó de `max-age=3600` a `max-age=31536000`.
+**723 archivos · 850 MB recuperados · reducción media del 84,2%.**
+El bucket pasó de **1.943 a 1.092 MB**.
+
+Verificado en producción tras cada lote: la URL no cambia, sirve
+`Content-Type: image/jpeg`, decodifica **a resolución original**, y el original
+queda íntegro en `_originales/`. La caché pasó de `max-age=3600` a
+`max-age=31536000`.
+
+Medido sobre tráfico real de clientes: `/colombia` bajó de **20,98 a 2,14 MB
+por visita** (−90%) y `/polo-textura` de 9,47 a 0,82 MB (−91,6%).
+
+> **`_originales/` ocupa 1.010 MB.** El bucket total pesa hoy *más* que antes de
+> empezar: es el precio de que todo sea reversible. **El ahorro no se
+> materializa hasta borrarlo**, y conviene esperar una semana sin incidencias.
 
 > **Ojo con `pg_default_acl`:** en este proyecto las tablas creadas por
 > `postgres` dan solo `Dxtm` a *todos* los roles, `service_role` incluido. Toda
