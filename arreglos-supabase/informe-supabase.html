@@ -424,7 +424,7 @@
       el consumo si seguimos como hasta ahora.
     </p>
     <div class="meta-cab">
-      <span>Fecha · <b>29 de agosto de 2026</b></span>
+      <span>Fecha · <b>30 de agosto de 2026</b></span>
       <span>Proyecto · <b>bjbjqmbuzpyjvcugbusx</b></span>
       <span>Plan · <b>Pro</b></span>
       <span>Método · <b>medición sobre datos reales</b></span>
@@ -432,25 +432,25 @@
   </header>
 
   <div class="cifras">
-    <div class="cifra oro">
-      <span class="et">Egress hoy</span>
-      <span class="n">36<small>%</small></span>
-      <span class="pie">del cupo de 250 GB. El 88% sale de las imágenes de las landings.</span>
-    </div>
-    <div class="cifra">
-      <span class="et">Crecimiento</span>
-      <span class="n">+84<small>%</small></span>
-      <span class="pie">de julio a agosto. El peso medio por archivo no bajó ni un 1%.</span>
+    <div class="cifra bien">
+      <span class="et">Peso por imagen servida</span>
+      <span class="n">186<small> KiB</small></span>
+      <span class="pie">desde 616 KiB. Medido con 8 h de tráfico real de clientes.</span>
     </div>
     <div class="cifra bien">
-      <span class="et">Ya comprimido</span>
-      <span class="n">442<small> MB</small></span>
-      <span class="pie">356 archivos, −83,9%, sin perder resolución.</span>
+      <span class="et">Recuperado</span>
+      <span class="n">850<small> MB</small></span>
+      <span class="pie">723 archivos, −84,2%, sin perder resolución.</span>
     </div>
     <div class="cifra bien">
       <span class="et">Validación</span>
       <span class="n">31<small>/31</small></span>
-      <span class="pie">landings de producción cargando su media. Cero rotas.</span>
+      <span class="pie">landings cargando su media. Cero rotas, cero errores en 402 peticiones.</span>
+    </div>
+    <div class="cifra oro">
+      <span class="et">Lo que queda pesando</span>
+      <span class="n">515<small> MB</small></span>
+      <span class="pie">38 vídeos: el 47% del bucket, sin tocar. Es la siguiente decisión.</span>
     </div>
   </div>
 
@@ -550,36 +550,73 @@
   </section>
 
   <section>
-    <span class="rotulo">Proyección</span>
-    <h2>Cómo quedaría</h2>
+    <span class="rotulo">Resultado</span>
+    <h2>Qué pasó de verdad</h2>
     <p>
-      Aplicando los ratios medidos —no estimados— a la distribución real de
-      tamaños del bucket.
+      Ya no es una proyección. Con <b>8 h 37 min de tráfico limpio</b>, sin el
+      backfill corriendo, esto es lo que se midió el 30 de agosto.
     </p>
 
     <div class="barras">
       <div class="barra-fila">
-        <span class="barra-et">Hoy</span>
-        <div class="barra-pista"><div class="barra-relleno antes" style="width:100%">1.943 MB</div></div>
+        <span class="barra-et">Antes</span>
+        <div class="barra-pista"><div class="barra-relleno antes" style="width:100%">616 KiB por imagen servida</div></div>
       </div>
       <div class="barra-fila">
-        <span class="barra-et">Tras el backfill</span>
-        <div class="barra-pista"><div class="barra-relleno despues" style="width:24.5%">476 MB</div></div>
+        <span class="barra-et">Ahora</span>
+        <div class="barra-pista"><div class="barra-relleno despues" style="width:30.2%">186 KiB</div></div>
       </div>
     </div>
 
     <div class="tabla-caja">
       <table>
-        <thead><tr><th>Concepto</th><th class="num">Hoy</th><th class="num">Después</th><th class="num">Cambio</th></tr></thead>
+        <thead><tr><th>Concepto</th><th class="num">Antes</th><th class="num">Medido hoy</th><th class="num">Cambio</th></tr></thead>
         <tbody>
-          <tr><td>Imágenes</td><td class="num">1.405 MB</td><td class="num">~366 MB</td><td class="num baja">−74%</td></tr>
-          <tr><td>Vídeos</td><td class="num">515 MB</td><td class="num">~88 MB</td><td class="num baja">−83%</td></tr>
-          <tr><td>Audio y PDF (no se tocan)</td><td class="num">22 MB</td><td class="num">22 MB</td><td class="num">—</td></tr>
-          <tr class="total"><td>Bucket</td><td class="num">1.943 MB</td><td class="num">~476 MB</td><td class="num baja">−75%</td></tr>
-          <tr><td>Egress mensual</td><td class="num">~91 GB</td><td class="num">~8 GB</td><td class="num baja">−91%</td></tr>
-          <tr><td>Uso del cupo de 250 GB</td><td class="num">36%</td><td class="num">~3%</td><td class="num baja">−33 pts</td></tr>
+          <tr class="total"><td>Peso medio servido a navegadores</td><td class="num">616 KiB</td><td class="num">186 KiB</td><td class="num baja">−69,8%</td></tr>
+          <tr><td>Mediana por petición</td><td class="num">—</td><td class="num">163 KiB</td><td class="num">—</td></tr>
+          <tr><td>Errores 4xx / 5xx</td><td class="num">—</td><td class="num">0 de 402</td><td class="num">—</td></tr>
+          <tr><td>Bucket sin el respaldo</td><td class="num">1.943 MB</td><td class="num">1.093 MB</td><td class="num baja">−43,7%</td></tr>
+          <tr><td>Una visita a <code>/colombia</code></td><td class="num">20,98 MB</td><td class="num">2,14 MB</td><td class="num baja">−90,0%</td></tr>
+          <tr><td>Una visita a <code>/polo-textura</code></td><td class="num">9,47 MB</td><td class="num">0,82 MB</td><td class="num baja">−91,6%</td></tr>
         </tbody>
       </table>
+    </div>
+
+    <div class="nota">
+      <b>El escalón se ve hora a hora.</b> El 29 de agosto por la tarde cada
+      petición pesaba entre 363 y 651 KiB. Desde las 03:00 del día 30 —justo
+      cuando terminó el último lote— ninguna hora ha pasado de 235 KiB. Mismo
+      tráfico, mismos embudos, mismos clientes: lo único que cambió fueron los
+      archivos.
+    </div>
+
+    <p>
+      <strong>Lo que esto todavía no demuestra.</strong> La ventana limpia cae de
+      madrugada en Colombia, la franja de menos tráfico. El peso <em>por
+      petición</em> es válido —no depende de cuánta gente entre—, pero el egress
+      diario y el porcentaje del cupo necesitan un día natural completo. Si el
+      volumen se mantiene, los ~91 GB/mes estimados caerían a
+      <em class="destaca">~27-30 GB</em>.
+    </p>
+
+    <div class="tabla-caja">
+      <table>
+        <thead><tr><th>Qué queda en el bucket</th><th class="num">Archivos</th><th class="num">Peso</th><th class="num">Medio</th></tr></thead>
+        <tbody>
+          <tr><td><b>Vídeos, sin comprimir</b></td><td class="num">38</td><td class="num">515 MB</td><td class="num">14 MB</td></tr>
+          <tr><td>Resto (ventas, entrantes, chats)</td><td class="num">1.434</td><td class="num">407 MB</td><td class="num">291 kB</td></tr>
+          <tr><td>Imágenes ya comprimidas</td><td class="num">773</td><td class="num">171 MB</td><td class="num">227 kB</td></tr>
+          <tr><td><code>_originales/</code> (respaldo, borrable)</td><td class="num">723</td><td class="num">1.010 MB</td><td class="num">1.431 kB</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="nota">
+      <b>Esto cambia la siguiente prioridad.</b> Las 773 imágenes que costaron
+      toda la jornada pesan hoy 171 MB —el 16% del bucket—. Los 38 vídeos pesan
+      515 MB: el <b>47%</b>. Y en egress pasa lo mismo a menor escala: en 24 h,
+      30 peticiones de vídeo se llevaron 154 MiB frente a 1,10 GiB en 2.675
+      peticiones de imagen. El 1% de las peticiones, el 12% del egress.
     </div>
 
     <h3>Crecimiento mensual a partir de septiembre</h3>
@@ -725,14 +762,14 @@
       <div class="fase">
         <span class="n">02</span>
         <h4>Comprimir al subir</h4>
-        <span class="pil ok">Hecho</span>
-        <p>Las rutas de subida comprimen en el servidor. Cada foto nueva entra liviana, venga del panel o de donde venga. Cierra el grifo.</p>
+        <span class="pil esp">Escrito, sin desplegar</span>
+        <p>Las rutas de subida comprimen en el servidor: cada foto nueva entraría liviana. Probado en local y compilado en Vercel, pero <b>en la rama <code>optimizacion-imagenes</code>, no en producción</b>. Sin esto el problema vuelve a crecer.</p>
       </div>
       <div class="fase">
         <span class="n">03</span>
         <h4>Reprocesar lo ya subido</h4>
-        <span class="pil curso">En curso</span>
-        <p>356 archivos y 442 MB recuperados, sin una sola landing rota. Quedan 852 imágenes y 38 vídeos. Cada original se respalda antes de sustituirse.</p>
+        <span class="pil ok">Hecho</span>
+        <p>723 archivos y 850 MB recuperados (−84,2%), sin una sola landing rota. Cada original quedó respaldado en <code>_originales/</code>: 1.010 MB que se pueden borrar tras una semana sin incidencias.</p>
       </div>
       <div class="fase">
         <span class="n">04</span>
@@ -774,11 +811,11 @@
   </section>
 
   <footer>
-    Cifras medidas el 29 de agosto de 2026 sobre los datos reales del proyecto
-    <code>bjbjqmbuzpyjvcugbusx</code>. El egress procede de sumar 24 horas de
-    registros: es una estimación de un día, no la cifra de facturación — esa está
-    en Settings → Usage del panel. Las proyecciones aplican ratios de compresión
-    medidos sobre 356 archivos a la distribución real de tamaños del bucket.
+    Trabajo del 29 de agosto de 2026; resultado medido el 30 sobre los datos
+    reales del proyecto <code>bjbjqmbuzpyjvcugbusx</code>. El peso por petición
+    procede de 8 h 37 min de registros ya sin backfill, filtrando solo tráfico de
+    navegador. Es una medición sobre registros, no la cifra de facturación — esa
+    está en Settings → Usage del panel, y necesita un día natural completo.
   </footer>
 
 </div>

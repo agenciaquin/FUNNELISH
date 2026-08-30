@@ -21,6 +21,7 @@ carpeta aislada con la auditoría, el SQL y un servicio propio.
 | `REPORTE-2026-08-29.md` | **Empieza por aquí.** Todo lo hecho, los 5 defectos encontrados y lo que queda |
 | `CAMBIOS-EN-QUINCHAT.md` | Qué se tocó fuera de esta carpeta, y cómo revertirlo |
 | `HALLAZGO-rutas-api-abiertas.md` | ⚠️ **Las 82 rutas de la API responden sin sesión en el dominio público. Sin corregir, pendiente de aprobación.** |
+| `sql/salidas/MEDICION-egress-2026-08-30.md` | **Resultado medido:** el peso servido a navegadores baja de 616 a 186 KiB (−69,8%) |
 | `informe-supabase.html` | Informe consolidado para compartir |
 | `sql/` | Scripts de la fase 1: cerrar las tablas expuestas de `quinchat` |
 | `media-api/` | Servicio de compresión y herramientas de validación (Node + TypeScript) |
