@@ -123,3 +123,19 @@ SSIM real quedaría por debajo del 0,9527 medido. Desde `_originales/` la pasada
 es limpia y da exactamente esa cifra.
 
 Borrar el respaldo cierra esa puerta para siempre.
+
+---
+
+## Decisión tomada · 30 de agosto de 2026
+
+**Se mantiene 1920/q85.** Decidido por el auditor tras ver la comparativa.
+
+Razón, en corto: apretar más ahorraría unos 9 MB en un cupo de 250 GB que está
+al 36%. No baja ninguna factura, y a cambio las fotos de producto empiezan a
+verse sucias. En una tienda de ropa la textura de la prenda es lo que vende.
+
+`1290/q80` queda descartado por ahora, no eliminado: son dos constantes en
+`lib/optimizar-imagen-servidor.ts` si algún día el consumo aprieta de verdad.
+
+**El botón «⚡ Optimizar fotos» de agenciaquin se queda intacto.** No se toca
+código ajeno. Queda pendiente que alguien del equipo se lo comente.
