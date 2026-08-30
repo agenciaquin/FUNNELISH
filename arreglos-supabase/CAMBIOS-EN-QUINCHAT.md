@@ -30,6 +30,8 @@ una integración o de una llamada suelta a la API.
 | `app/api/plantillas-wa/imagen/route.ts` | Comprime + caché de un año |
 | `app/api/catalogos/upload-imagen/route.ts` | Comprime + caché de un año |
 | `app/api/funnels/video/route.ts` | Solo caché de un año |
+| `lib/collage.ts` | Los collages de pack se guardaban a calidad 100. Ahora a 85 |
+| `app/api/funnelish/webhook/route.ts` | Lo mismo: el collage del webhook, a calidad 85 |
 | `package.json` · `package-lock.json` | Añade `sharp` |
 
 **Efecto visible para el usuario: ninguno.** Misma interfaz, mismas URL, misma
