@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { CACHE_UN_ANO, optimizarImagen } from '@/lib/optimizar-imagen-servidor';
 
 /**
  * Foto asociada a una plantilla de WhatsApp.
@@ -37,11 +38,20 @@ export async function POST(req: NextRequest) {
     }
 
     const mime = String(imagenMime || 'image/jpeg');
-    const ext  = mime.includes('png') ? 'png' : 'jpg';
-    const ruta = `plantillas/${nombre}-${Date.now()}.${ext}`;
+
+    // Esta foto se manda a Meta en cada envío, así que el optimizador solo puede
+    // devolver JPEG o PNG. Nunca WebP: Meta lo acepta pero no entrega el mensaje.
+    const img = await optimizarImagen(buffer, mime);
+
+    const ruta = `plantillas/${nombre}-${Date.now()}.${img.ext}`;
 
     const { error: upErr } = await supabase.storage
-      .from('chat-media').upload(ruta, buffer, { contentType: mime, upsert: true });
+      .from('chat-media')
+      .upload(ruta, img.buffer, {
+        contentType: img.contentType,
+        cacheControl: CACHE_UN_ANO,
+        upsert: true,
+      });
     if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
 
     const { data: pub } = supabase.storage.from('chat-media').getPublicUrl(ruta);
