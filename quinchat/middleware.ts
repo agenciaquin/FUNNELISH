@@ -49,6 +49,7 @@ export default function middleware(req: NextRequest, event: any) {
     '/api/funnelish/webhook', '/api/cron/remarketing', '/api/cron/ventas-seguimiento', '/api/cron/mantener-chat', '/api/cron/vendedores', '/api/cron/objeciones', '/api/cron/apagar-vendidos', '/api/cron/seguimiento-ia', '/api/cron/meta-alertas', '/api/cron/capi', '/api/cron/registros-funnel', '/api/cron/promo-cierre', '/api/pedidos',
     '/p/', '/manifest.json', '/sw.js', '/icon-', '/apple-touch-icon',
     '/logo-agencia-quin', '/logo-quin-app', '/_next/', '/favicon.ico',
+    '/api/diagnostico/', // SOLO EN LA RAMA DE PRUEBA - no se fusiona
   ];
   if (publicas.some(p => pathname.startsWith(p))) return NextResponse.next();
 
