@@ -152,14 +152,20 @@ etiquetados**, **31/31 landings**, `/colombia` en **2,14 MB**.
 
 | Proyecto Vercel | Atiende | ¿Se publica solo desde `master`? |
 | --- | --- | --- |
-| `quinchat-agencia-quin` | **`pedido.klixmant.shop`** — la tienda | **No.** A mano |
-| `quinchat-comercial` | `www.klixmant.shop`, `tienda.skioo.shop` | **Sí** |
+| `quinchat-agencia-quin` | **`pedido.klixmant.shop`** — la tienda | **Sí, desde el 31-08-2026.** Antes iba a mano |
+| `quinchat-comercial` | `www.klixmant.shop`, `tienda.skioo.shop` | Sí — pero **construye `quin-comercial/`**, no `quinchat/` |
 | `quinchat` | `quinchat-sepia.vercel.app` | Sí. Creado por error, solo compila los PR |
 
-> ⚠️ **Producción va por detrás de `master`.** La tienda corre `78d4cac`, tres
-> commits atrás, y los despliegues llevan marca `gitDirty`: se hicieron con
-> cambios sin guardar en git. **Publicar la rama arrastraría v171–v173 y
-> descartaría eso.** Por eso debe publicar agenciaquin, no un tercero.
+**Las dos apps del repositorio no son la misma.** `quinchat/` atiende
+`pedido.klixmant.shop`; `quin-comercial/` atiende las dos tiendas. La compresión
+de esta jornada toca **solo `quinchat/`**: fusionar a `master` republica las tiendas sin
+cambiarles nada. Se confundió una cosa con otra durante el despliegue del 31-08.
+
+> ⚠️ **La tienda va 21 commits por detrás de `master`, y aún no se ha publicado.**
+> Corre `78d4cac` con marca `gitDirty`: se desplegó con cambios sin guardar en
+> git, que **se perderán** al publicar desde `master`. De los 21 commits, 18 son de
+> esta jornada y tres son **v171–v173, del flujo de ventas**, que nunca se han
+> visto en ese sitio. Conviene publicar con alguien mirando, no de madrugada.
 >
 > Marcha atrás: Vercel guarda 20 despliegues de producción. Se vuelve a
 > cualquiera desde el panel, sin reconstruir.
@@ -447,7 +453,7 @@ venga de donde venga.
 
 | # | Pendiente | Necesita | Dónde está el detalle |
 | --- | --- | --- | --- |
-| 1 | **Publicar el PR #1** — sin esto el consumo vuelve a crecer | Que lo publique **agenciaquin**, con sus v171–v173 | `TEXTO-DEL-PR.md` |
+| 1 | **Publicar `pedido.klixmant.shop`** — el PR #1 ya está fusionado en `master` (31-08), pero la tienda sigue con el despliegue del 29 | Un despliegue, con alguien mirando después | El aviso de arriba |
 | 2 | **Corregir las 82 rutas abiertas** | Aprobación de dirección | `HALLAZGO-rutas-api-abiertas.md` |
 | 3 | **`quin-comercial` no comprime nada** | Que pase antes el PR #1 | `PENDIENTE-quin-comercial.md` |
 | 4 | **El chat saliente no se comprime** — 289 MB, 761 kB de media, −83% medido | Que pase antes el PR #1 | `HALLAZGO-chat-saliente-sin-comprimir.md` |
