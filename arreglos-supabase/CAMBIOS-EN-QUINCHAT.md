@@ -150,3 +150,54 @@ Se reproduce con `media-api/probar-ruta-local.ts`.
 **Y el build ya está verificado en Linux:** el despliegue accidental a Vercel
 compiló `sharp` sin incidencias, las 90 rutas y el TypeScript en 14 segundos.
 Era el único riesgo técnico que quedaba.
+
+---
+
+## ¿Y que funcione en el servidor, no solo aquí?
+
+Es la pregunta que las pruebas en local no pueden contestar. `sharp` no es
+código normal: lleva dentro un programa compilado, distinto para cada sistema.
+Puede compilar bien y reventar al primer uso.
+
+**No es una duda teórica: a este proyecto ya le pasó.** En `next.config.ts` hay
+un parche escrito porque las fuentes de Jimp no se copiaban al servidor y la
+marca de agua del catálogo fallaba en producción con `ENOENT`.
+
+### Lo comprobado (30 de agosto)
+
+**1 · Compila en el servidor.** Rama de prueba `prueba-compresion-servidor`,
+construida por Vercel: compiló en 51 s, pasó la revisión de tipos entera en
+Linux y publicó las cuatro rutas. Sin un solo error.
+
+**2 · El binario de `sharp` sí viaja dentro de cada ruta.** Este es el punto que
+falló con Jimp. Next escribe, para cada ruta, la lista de archivos que se lleva
+al servidor. Abierta esa lista tras construir:
+
+```
+funnels/imagen            29 archivos de sharp · 1 binario .node
+plantillas-wa/imagen      29 archivos de sharp · 1 binario .node
+catalogos/upload-imagen   29 archivos de sharp · 1 binario .node
+```
+
+La diferencia con Jimp es real y explica por qué aquello falló y esto no: las
+fuentes de Jimp son archivos de datos que se abren por su ruta en disco, y el
+rastreo de Next no puede adivinarlos. El binario de `sharp` entra por un
+`require`, que sí se sigue.
+
+**3 · El binario de Linux está declarado.** El rastreo de arriba se hizo en
+Windows y por eso recogió `sharp-win32-x64`. En el servidor recoge el de Linux
+por el mismo mecanismo, y `@img/sharp-linux-x64 0.35.4` figura en el
+`package-lock.json`, así que la instalación de Vercel lo baja.
+
+### Lo que sigue sin comprobarse
+
+**Ejecutar la compresión dentro del servidor de Vercel.** Se preparó una ruta de
+diagnóstico en una rama desechable y Vercel la construyó bien, pero los
+servidores de prueba exigen inicio de sesión de Vercel y no se pudo invocar.
+
+Queda como el único hueco. Los tres puntos de arriba lo estrechan mucho —la
+forma habitual en que esto falla es justo la del punto 2—, pero no es lo mismo
+que haberlo visto correr.
+
+La forma más barata de cerrarlo: tras publicar, subir **una** foto desde el
+panel y mirar cuánto pesó en el bucket. Si salió ligera, está corriendo.

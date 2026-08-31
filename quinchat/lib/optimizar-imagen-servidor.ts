@@ -140,7 +140,8 @@ export async function optimizarImagen(
  * Por eso, y solo cuando el resultado engorda, se reintenta con `palette: true`.
  * Cuantiza a 256 colores —un logo ni se entera; una foto con alfa sí, pero es un
  * caso raro y la alternativa es multiplicar el peso por diez— y, comprobado
- * sobre sharp 0.34, **conserva el canal alfa**.
+ * sobre sharp 0.35.4 —la versión que instalan estas rutas—, **conserva el canal
+ * alfa**. Lo verifica la prueba «webp con alfa conserva transparencia».
  *
  * Se devuelve el más pequeño de los dos. Un logo normal ni llega al reintento.
  */
