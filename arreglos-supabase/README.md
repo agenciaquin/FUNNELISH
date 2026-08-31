@@ -453,21 +453,22 @@ venga de donde venga.
 
 | # | Pendiente | Necesita | Dónde está el detalle |
 | --- | --- | --- | --- |
-| 1 | **Publicar `pedido.klixmant.shop`** — el PR #1 ya está fusionado en `master` (31-08), pero la tienda sigue con el despliegue del 29 | Un despliegue, con alguien mirando después | El aviso de arriba |
+| ~~1~~ | ~~**Publicar `pedido.klixmant.shop`**~~ — **HECHO el 31-08-2026 a las 02:57.** Comprobado con una subida real: 274 kB y caché de un año | — | `CAMBIOS-EN-QUINCHAT.md` |
 | 2 | **Corregir las 82 rutas abiertas** | Aprobación de dirección | `HALLAZGO-rutas-api-abiertas.md` |
 | 3 | **`quin-comercial` no comprime nada** | Que pase antes el PR #1 | `PENDIENTE-quin-comercial.md` |
-| 4 | **El chat saliente no se comprime** — 289 MB, 761 kB de media, −83% medido | Que pase antes el PR #1 | `HALLAZGO-chat-saliente-sin-comprimir.md` |
-| 5 | Collages en paralelo sin límite → 429 | Decisión. Son ~10 líneas | Defecto nº 5 del reporte |
-| 6 | **Borrar `_originales/`** (1.010 MB) | Esperar una semana **y** cerrar el perfil de calidad | `HALLAZGO-dos-compresores.md` |
-| 7 | Los 38 vídeos — **515 MB, el 47% del bucket** | Decisión de fondo: servicio aparte, R2, o backfill | Reporte, sección 7 |
-| 8 | Fase 1 de seguridad — cerrar 12 tablas | Aprobación. Scripts listos | `sql/` |
-| 9 | Rotar la clave `service_role` | — | arriba, apartado 3 |
-| 10 | Confirmar el Spend Cap y a qué correo avisa | — | «Vigilancia», capa 1 |
+| 4 | **La marca de agua del catálogo sale a calidad 100** — y hay 212 MB en dos buckets sin auditar | Decisión. Dos líneas, pero exige mirar el texto con los ojos | `HALLAZGO-marca-de-agua-calidad-100.md` |
+| 5 | **El chat saliente no se comprime** — 289 MB, 761 kB de media, −83% medido | Que pase antes el PR #1 | `HALLAZGO-chat-saliente-sin-comprimir.md` |
+| 6 | Collages en paralelo sin límite → 429 | Decisión. Son ~10 líneas | Defecto nº 5 del reporte |
+| 7 | **Borrar `_originales/`** (1.010 MB) | Esperar una semana **y** cerrar el perfil de calidad | `HALLAZGO-dos-compresores.md` |
+| 8 | Los 38 vídeos — **515 MB, el 47% del bucket** | Decisión de fondo: servicio aparte, R2, o backfill | Reporte, sección 7 |
+| 9 | Fase 1 de seguridad — cerrar 12 tablas | Aprobación. Scripts listos | `sql/` |
+| 10 | Rotar la clave `service_role` | — | arriba, apartado 3 |
+| 11 | Confirmar el Spend Cap y a qué correo avisa | — | «Vigilancia», capa 1 |
 
-> **El orden importa en dos sitios.** El punto 6 no se hace antes de decidir el
+> **El orden importa en dos sitios.** El punto 7 no se hace antes de decidir el
 > perfil de calidad: mientras existan los originales, cualquier recompresión
-> futura sale limpia; sin ellos sería pérdida sobre pérdida. Y los puntos 3 y 4
-> esperan al 1 para no mover el PR debajo de quien lo está revisando.
+> futura sale limpia; sin ellos sería pérdida sobre pérdida. El punto 1 ya está
+> hecho: la tienda se publicó el 31-08 y la compresión está viva y comprobada.
 
 ---
 
