@@ -112,3 +112,18 @@ No comprimen: el chat (`whatsapp/send-media`), las subidas por URL firmada
 `quin-comercial/`. Para probar la compresión hay que subir por una de las tres
 primeras, y con un archivo que tras comprimirse en el navegador **no pase de
 4 MB** — por encima de eso el panel se salta el servidor.
+
+### 6 · Antes de optimizar algo, mirar si alguien lo sirve
+
+El 31-08-2026 se iban a comprimir los 486 MB de vídeo de `embudos/`. Al cruzar
+el bucket contra la tabla `funnels` resultó que **449 MB no los referencia
+ningún embudo**: no generan ni una petición. Comprimirlos habría sido gastar
+horas de `ffmpeg` para ahorrar almacenamiento en un cupo que está al 36 %,
+cuando borrarlos recupera cuatro veces más.
+
+Y de los cuatro vídeos que sí se usan, solo uno mejoraba al recomprimirlo. El
+trabajo real era una décima parte del que parecía.
+
+**Regla:** el peso de un archivo no dice lo que cuesta. Lo que cuesta es el peso
+**por lo que se sirve**. La consulta que separa una cosa de la otra está en
+`arreglos-supabase/HALLAZGO-videos.md`, y sirve igual para fotos.

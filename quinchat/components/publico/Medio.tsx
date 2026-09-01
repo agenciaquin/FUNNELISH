@@ -46,10 +46,35 @@ export default function Medio({
     };
     const quitar = () => eventos.forEach(ev => window.removeEventListener(ev, activar));
 
-    v.play().catch(() => {}); // arranca en silencio
-    eventos.forEach(ev => window.addEventListener(ev, activar, { passive: true }));
+    // El video NO arranca al cargar la página, sino cuando se acerca a la
+    // pantalla. Antes se llamaba a `play()` aquí mismo, y como estos videos van
+    // en secciones de más abajo (`imagen_clientes`, `imagen_detalle`), el
+    // cliente se descargaba el archivo entero aunque no bajara nunca hasta él:
+    // el de `pareja` pesa 23 MB. El `play()` es también lo que dispara la
+    // descarga, así que retrasarlo es lo que ahorra los bytes; por eso los
+    // escuchadores de audio se registran a la vez y no antes.
+    let arrancado = false;
+    const arrancar = () => {
+      if (arrancado || !ref.current) return;
+      arrancado = true;
+      ref.current.play().catch(() => {}); // arranca en silencio
+      eventos.forEach(ev => window.addEventListener(ev, activar, { passive: true }));
+    };
 
-    return quitar;
+    if (typeof IntersectionObserver === 'undefined') {
+      arrancar(); // navegador sin soporte: como estaba antes
+      return quitar;
+    }
+
+    // 300px de margen: empieza a cargar un poco antes de asomar, para que no se
+    // vea el recuadro en negro al llegar.
+    const vigia = new IntersectionObserver(
+      entradas => { if (entradas.some(e => e.isIntersecting)) { arrancar(); vigia.disconnect(); } },
+      { rootMargin: '300px' },
+    );
+    vigia.observe(v);
+
+    return () => { vigia.disconnect(); quitar(); };
   }, [video, url]);
 
   if (video) {
@@ -63,7 +88,10 @@ export default function Medio({
           muted
           loop
           playsInline
-          autoPlay
+          // Sin `autoPlay` y con `preload="none"` el navegador no pide ni un
+          // byte hasta que el vigía de arriba llama a `play()`. Con `autoPlay`
+          // la descarga empieza al montar y el vigía no serviría de nada.
+          preload="none"
           onPause={() => { ref.current?.play().catch(() => {}); }}
           onClick={() => {
             const v = ref.current;

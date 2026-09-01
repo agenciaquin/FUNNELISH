@@ -28,6 +28,7 @@ revertirlo— en `CAMBIOS-EN-QUINCHAT.md`. **`quin-comercial/` no se tocó**; ve
 | `PENDIENTE-quin-comercial.md` | ⏳ La app gemela no comprime nada y escribe en el mismo bucket. Medido y sin aplicar |
 | `HALLAZGO-dos-compresores.md` | Otro compresor en `master` a 1080/q72. Medido: SSIM 0,896, degradada. Sin tocar |
 | `HALLAZGO-rutas-api-abiertas.md` | ⚠️ **Las 82 rutas de la API responden sin sesión en el dominio público. Sin corregir, pendiente de aprobación.** |
+| `HALLAZGO-videos.md` | 🎬 449 MB de vídeo que no usa ningún embudo, y un `autoPlay` que se descargaba entero sin que nadie lo viera. Arreglo de código aplicado, sin subir |
 | `sql/salidas/MEDICION-egress-2026-08-30.md` | **Resultado medido:** el peso servido a navegadores baja de 616 a 186 KiB (−69,8%) |
 | `informe-supabase.html` | Informe consolidado para compartir |
 | `sql/` | Scripts de la fase 1: cerrar las tablas expuestas de `quinchat` |
