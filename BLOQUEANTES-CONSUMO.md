@@ -36,6 +36,10 @@ El middleware se probó en local con `Host: pedido.klixmant.shop`: las rutas pú
 | `quinchat-agencia-quin` | ✅ sí | Revisar en cron-job.org que **todas** las tareas lo manden (`Authorization: Bearer …` o `?secret=`). **`ventas-seguimiento` antes no lo pedía**: seguramente su tarea no lo manda |
 | `quinchat-comercial` | ❌ **no** | Crearla en Vercel **y** añadirla a todas sus tareas en cron-job.org. Sin eso, al publicar se paran todos los crons de quin-comercial |
 
+En quin-comercial, `aprendizaje`, `objeciones`, `apagar-vendidos` y `seguimiento-ia` también se pueden lanzar
+con sesión del panel, pero entonces **solo corren para la empresa de esa sesión**. Para que corran para todos
+los clientes hace falta la clave: sin `CRON_SECRET`, esos crons ya no recorren a todos.
+
 ### 2 · `WHATSAPP_APP_SECRET` — firma de Meta
 
 - Meta → developers.facebook.com → la app → Configuración → Básica → **Clave secreta de la app**.
@@ -49,19 +53,65 @@ El middleware se probó en local con `Host: pedido.klixmant.shop`: las rutas pú
 
 ### 3 · `FUNNELISH_WEBHOOK_TOKEN` — webhook de Funnelish
 
-- Generar una cadena larga al azar y crearla en los dos proyectos de Vercel.
-- En Funnelish, cambiar la URL del webhook añadiendo `?token=<la cadena>` (conservar `&modo=agente` si lo lleva).
+- Generar una cadena larga al azar y crearla en los dos proyectos de Vercel (puede ser distinta en cada uno).
 - **Sin la variable** funciona como hoy. **Con la variable pero sin cambiar la URL en Funnelish**, se
   rechazan las ventas de Funnelish (el checkout propio no se ve afectado).
+
+**quinchat** (una sola empresa): en Funnelish, añadir a la URL del webhook `?token=<la cadena>` (conservar
+`&modo=agente` si lo lleva).
+
+**quin-comercial** tiene dos tipos de URL:
+
+| URL | Token que acepta |
+| --- | --- |
+| `/api/funnelish/webhook` (la de la agencia) | la cadena de la variable, tal cual |
+| `/api/funnelish/webhook/<slug>` (una por cliente) | `HMAC-SHA256(FUNNELISH_WEBHOOK_TOKEN, <slug>)` en hex: **uno distinto por cliente** |
+
+El token de un cliente no sirve para la URL de otro, y ningún cliente conoce la cadena general. No se guarda
+nada en la base: se recalcula. Para sacar la URL de cada cliente (desde `quin-comercial/`, con la **misma**
+cadena que se va a poner en Vercel):
+
+```bash
+FUNNELISH_WEBHOOK_TOKEN='<la cadena>' npx tsx pruebas/token-por-cliente.ts <slug1> <slug2> …
+# BASE=https://<dominio> si el cliente usa otro dominio distinto de www.klixmant.shop
+```
+
+> ⚠️ **Orden obligatorio en quin-comercial.** Al crear `FUNNELISH_WEBHOOK_TOKEN` en `quinchat-comercial`,
+> **todas** las URLs de Funnelish sin token (la de la agencia y la de **cada cliente**) empiezan a recibir
+> 401 y **se cortan sus ventas**. Antes de crear la variable:
+> 1. Sacar la lista de clientes que usan Funnelish (slug de `tenants`) y generar sus URLs con el script.
+> 2. Que cada cliente cambie la URL en **su** Funnelish (conservar `&modo=agente` si lo lleva), y la agencia la suya.
+> 3. Solo entonces crear la variable y publicar. Mientras la variable no exista, la URL con token también
+>    funciona (se acepta todo), así que el cambio de URL se puede hacer antes sin cortar nada.
+>
+> Cambiar la cadena más adelante invalida la URL de todos los clientes a la vez.
 
 ### 4 · Freno del bot (opcional, ya viene con valores por defecto)
 
 | Variable | Por defecto | Uso |
 | --- | --- | --- |
 | `BOT_IA` | (vacía = encendido) | `off` apaga las respuestas de IA en todos los chats |
-| `BOT_TOPE_DIARIO` | `40` | Respuestas del bot por chat en 24 h antes de pasar a HUMANO. `0` lo desactiva |
+| `BOT_TOPE_DIARIO` | `80` | Mensajes salientes del bot por chat en 24 h antes de pasar a HUMANO. `0` lo desactiva |
+
+`BOT_TOPE_DIARIO` cuenta **mensajes salientes** del bot (filas `role: 'assistant'`), no turnos: cada parte de
+una respuesta separada por `---` cuenta como uno, igual que cada foto y los mensajes de los crons. Con 40
+(el valor anterior) un comprador que pedía ver colores podía pasar a HUMANO en una conversación normal;
+80 son unos 20-30 turnos. Al pasar a HUMANO se **añade** la etiqueta: el estado del chat (VENTA REALIZADA,
+PEDIDO PROGRAMADO…) se conserva.
 
 Recomendado para la reactivación: publicar con `BOT_IA=off`, comprobar webhooks y crons, y después quitarla.
+
+### 4b · Tabla `rate_limits` en la base de quinchat — límite de `/api/pedidos`
+
+`/api/pedidos` admite como mucho **5 pedidos por teléfono y 20 por IP cada hora** (respuesta 429 con un mensaje
+para el cliente). El conteo se guarda en la tabla `rate_limits`. quin-comercial ya la tiene
+(`sql/mt-12-rate-limits.sql`); en quinchat hay que crearla con `quinchat/sql/rate-limits.sql` (misma tabla).
+
+- **Necesita aprobación**: es SQL que escribe en la base de producción de quinchat.
+- **Sin la tabla no se corta nada**: el límite falla abierto y deja pasar todos los pedidos, pero entonces no
+  limita. Se ve en el registro de Supabase, no en el de Vercel.
+- Comprobar primero si quinchat y quin-comercial comparten proyecto de Supabase: si lo comparten, la tabla ya
+  existe.
 
 ### 5 · Otras cosas que cambian de comportamiento
 
@@ -70,8 +120,15 @@ Recomendado para la reactivación: publicar con `BOT_IA=off`, comprobar webhooks
   que las notificaciones de pago no llegaran. Ahora está abierta; la ruta verifica el pago con Mercado Pago.
 - Cualquier herramienta externa que llamara otras rutas de `/api/` sin sesión dejará de funcionar. Las
   conocidas (ConfirmaYa → `/api/whatsapp/confirmar`, con su API key) siguen abiertas.
+- `/api/pedidos`, `/api/funnels/evento`, `/api/funnels/carrito` (y `/api/registro` en quin-comercial) solo son
+  públicas con `POST`. El `GET` de diagnóstico de `/api/funnels/evento` en quinchat pide sesión.
+- `/api/pedidos` ignora las fotos (`imagen`, `imagenes`) que no sean de Supabase, `R2_PUBLIC_URL`, las tiendas o
+  el mismo dominio que recibe el pedido, y usa la del catálogo o la de respaldo. **Si algún embudo usa fotos
+  alojadas en otro sitio**, su plantilla de confirmación saldrá con la foto del catálogo: tras publicar, hacer
+  un pedido de prueba en cada embudo activo y mirar la foto que llega por WhatsApp.
+- Un pedido que sale duplicado ya no manda la compra a Meta (CAPI).
 
-## Revisión del agente de pruebas (30-09-2026)
+## Revisión del agente de pruebas (30-09-2026, antes de la auditoría)
 
 Primera pasada: **NO LISTO**. El cron `objeciones` (usa IA) seguía abierto sin `CRON_SECRET` en las dos apps
 (`} else { return true; }` que no se había cambiado). Corregido; la prueba de crons pasa ahora **56/56**
@@ -96,6 +153,33 @@ Observaciones que quedan abiertas:
   clasificación de fotos con Claude (M5) y la transcripción de audios con Groq (gratis hoy).
 - `BOT_TOPE_DIARIO` con un valor que no es número (p. ej. `cuarenta`) desactiva el tope, igual que `0`.
 - Si llegan `?token=` vacío y la cabecera `x-webhook-token` correcta, manda la query y se rechaza.
+
+## Correcciones tras la auditoría (`AUDIT-BLOQUEANTES.md`, 30-09-2026)
+
+La auditoría dio **REQUIERE CORRECCIONES** con 5 fallos. Un commit por fallo:
+
+| Commit | Fallo | Qué se hizo | App |
+| --- | --- | --- | --- |
+| `fix(api)` | Carritos del panel sin sesión (datos personales) | Las rutas públicas exactas solo aceptan `POST` en el middleware, y además `GET/PATCH/DELETE` de `funnels/carrito` y el `GET` de `funnels/evento` piden sesión en la ruta | middleware: las dos · rutas: quinchat |
+| `fix(bot)` | El freno borraba las etiquetas | Añade `HUMANO` a la lista de `label` en vez de reemplazarla; tope por defecto 80 | las dos (`lib/freno-bot.ts` idéntico) |
+| `fix(crons)` | Cualquier sesión lanzaba la IA de todos los clientes | Con clave, todas las empresas; con sesión, solo la suya (`alcanceCron`) en `aprendizaje`, `objeciones`, `apagar-vendidos` y `seguimiento-ia` | quin-comercial |
+| `fix(pedidos)` | `/api/pedidos` sin límite | 5 por teléfono y 20 por IP cada hora, solo fotos propias, sin CAPI para duplicados | las dos |
+| `fix(funnelish)` | Un único token para todos los clientes | Token por cliente derivado del slug con HMAC, y script para generar las URLs | quin-comercial |
+
+Pruebas tras las correcciones (en local, sin variables de producción):
+
+| Prueba (`<app>/pruebas/`) | quinchat | quin-comercial |
+| --- | --- | --- |
+| `middleware-api.ts` (ahora prueba también los métodos de las exactas) | 323/323 | 584/584 |
+| `crons.ts` sin clave / con clave | 56/56 · 84/84 | 52/52 · 78/78 |
+| `token-funnelish.ts` (+ token por cliente en quin-comercial) | 20/20 | 33/33 |
+| `firma-meta.ts` (+ `firma-meta-ruta.ts` en quinchat) | 6/6 · 4/4 | 15/15 |
+| `freno-bot.ts` (etiquetas conservadas, tope 80) | 26/26 | 26/26 |
+| `imagen-propia.ts` (nueva) | 17/17 | 17/17 |
+
+Sin comprobar (necesitan la base real): que el límite de `/api/pedidos` cuente de verdad en `rate_limits`,
+y que un cron lanzado con sesión recorra solo la empresa de la sesión (se comprobó que con sesión sin empresa
+responde 401 y que con empresa pasa la comprobación; el filtro por empresa es una consulta a `tenants`).
 
 ## Lo que NO entra en esta rama (sigue en la auditoría)
 
