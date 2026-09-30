@@ -24,9 +24,8 @@ async function autorizado(req: NextRequest): Promise<boolean> {
   if (secret) {
     if (req.headers.get('authorization') === `Bearer ${secret}`) return true;
     if (req.nextUrl.searchParams.get('secret') === secret) return true;
-  } else {
-    return true; // sin clave configurada, no se bloquea
   }
+  // Sin CRON_SECRET solo entra el panel con sesión: antes quedaba abierto a cualquiera.
   // Usuario del panel con sesión activa
   const session = await getServerSession(authOptions);
   return !!session;

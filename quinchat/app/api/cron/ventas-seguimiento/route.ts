@@ -24,7 +24,15 @@ const NO_INTERESADO = /no me interesa|no gracias|ya no (lo )?quiero|no lo quiero
  * al cliente que recibió el FORMULARIO DE DATOS y no respondió. No molesta a
  * quien no mostró interés ni a quien ya compró. Se llama desde un cron externo.
  */
+function autorizado(req: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false; // sin CRON_SECRET no corre: antes quedaba abierto a cualquiera
+  if (req.headers.get('authorization') === `Bearer ${secret}`) return true;
+  return req.nextUrl.searchParams.get('secret') === secret;
+}
+
 export async function GET(req: NextRequest) {
+  if (!autorizado(req)) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   const numeroVentas = process.env.WHATSAPP_PHONE_NUMBER_ID_VENTAS;
   if (!numeroVentas) return NextResponse.json({ ok: true, nota: 'No hay número de ventas configurado.' });
 
