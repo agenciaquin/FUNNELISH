@@ -23,6 +23,8 @@ import { atenderVenta } from '@/lib/quinchat/ventas';
 import { esVendedor, vendedorDe, extraerVentas, nombreChat, generoDe, DIAS_NOMINA, LIMITE_INCENTIVO_SEG } from '@/lib/vendedores';
 import { ADMINS_VENTAS } from '@/lib/quinchat/registro-venta';
 import { lineaTalla } from '@/lib/formato-pedido';
+import { leerAvisoDeMeta } from '@/lib/firma-meta';
+import { botPuedeResponder } from '@/lib/freno-bot';
 
 // El webhook espera unos segundos a que el cliente termine de escribir,
 // así que necesita más tiempo del que Vercel da por defecto.
@@ -1064,6 +1066,7 @@ export async function procesarEntrada(req: NextRequest, base?: BaseLinea) {
     // ── Verificar bot activo ─────────────────────────────────────────────────
     const botEnabled = existing ? (existing.bot_enabled ?? true) : true;
     if (!botEnabled) continue;
+    if (!(await botPuedeResponder(supabase, from))) continue;
 
     // ── Esperar a que el cliente termine de escribir ─────────────────────────
     // La gente escribe en varios mensajes cortos ("hola", "quiero el negro",
