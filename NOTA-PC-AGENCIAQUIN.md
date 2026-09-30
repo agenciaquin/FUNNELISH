@@ -142,3 +142,20 @@ Detalle, archivos y líneas en la auditoría.
 - No hacer `vercel --prod` desde local.
 - No borrar nada del bucket sin respaldo y sin el visto bueno.
 - La clave `service_role` se dio por comprometida en agosto: **rotarla** sigue pendiente.
+
+---
+
+## Actualización · los arreglos bloqueantes ya están escritos
+
+Rama **`bloqueantes-consumo`** (desde `master`, sin publicar). Los 5 arreglos de la sección D, probados con
+`tsc`, `next build` y el middleware en local. Detalle y lista de configuración en `BLOQUEANTES-CONSUMO.md`.
+
+Orden al volver aquí:
+1. Fases 0–2 de arriba (subir v174 y unirlo con `master` en `union-v174-compresor`).
+2. `git rebase union-v174-compresor bloqueantes-consumo`. Los conflictos más probables son
+   `quinchat/app/api/whatsapp/webhook/route.ts` y `quinchat/lib/quinchat/ventas.ts`, si v174 los cambió.
+   Comprobar después que siguen `leerAvisoDeMeta`, `botPuedeResponder` y el INSERT anti-duplicados.
+3. **Repetir la revisión de la sección B sobre v174**: puede haber rutas nuevas que el middleware ahora cierra
+   y que la tienda necesite (añadirlas a `API_PUBLICA_EXACTA` en `middleware.ts`).
+4. Configurar `CRON_SECRET` (falta en quinchat-comercial), `WHATSAPP_APP_SECRET`, `FUNNELISH_WEBHOOK_TOKEN`
+   y `BOT_IA=off` para la primera publicación. Ver `BLOQUEANTES-CONSUMO.md`.
