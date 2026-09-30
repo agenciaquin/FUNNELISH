@@ -112,3 +112,25 @@ No comprimen: el chat (`whatsapp/send-media`), las subidas por URL firmada
 `quin-comercial/`. Para probar la compresión hay que subir por una de las tres
 primeras, y con un archivo que tras comprimirse en el navegador **no pase de
 4 MB** — por encima de eso el panel se salta el servidor.
+
+---
+
+## ⚖️ LEY · Toda imagen que se suba se comprime. Sin excepciones.
+
+Decidido por dirección el 30-09-2026. Aplica a `quinchat/`, `quin-comercial/` y a cualquier app futura.
+
+1. **Ninguna imagen llega al almacenamiento (Supabase Storage o R2) sin pasar por el compresor del
+   servidor** (`lib/optimizar-imagen-servidor.ts`: 1920 px, JPEG q85, PNG con transparencia real se queda en
+   PNG). Da igual el origen: panel, embudos, catálogo, plantillas, chat saliente, fotos que entran por
+   WhatsApp, collages, URLs firmadas, integraciones o scripts.
+2. **La compresión del navegador es una ayuda, no la garantía.** La garantía es el servidor. Una ruta que sube
+   directo desde el navegador (URL firmada) tiene que pasar por el servidor si el archivo es una imagen.
+3. **Toda imagen se sube con `cacheControl` de 1 año** (`CACHE_UN_ANO`). Es la marca que permite comprobar en
+   la base de datos que pasó por el compresor: `metadata->>'cacheControl' = 'max-age=31536000'`.
+4. **Quien añada una ruta o función que escriba archivos** usa el compresor y lo demuestra con la prueba
+   `pruebas/ley-imagenes.ts` de cada app, que tiene que pasar antes de publicar.
+5. **Si algo no se puede comprimir** (un formato raro, un fallo de `sharp`), se registra en el log y se sube el
+   original, pero **nunca se desactiva la compresión para “que funcione”**.
+6. Con `sharp` van **todas** sus piezas en `outputFileTracingIncludes`, incluido `./node_modules/@img/**/*`
+   (observación 1). Una publicación que no incluya `sharp` rompe esta ley: así pasó del 31-08 al 30-09 sin que
+   nadie lo notara.
