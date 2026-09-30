@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { sendTextMessage } from '@/lib/whatsapp';
 import { conLinea } from '@/lib/whatsapp-contexto';
 import { chat } from '@/lib/quinchat/claude';
 import { esVendedor } from '@/lib/vendedores';
-import { porCadaTenant } from '@/lib/cron-tenant';
+import { alcanceCron, porCadaTenant } from '@/lib/cron-tenant';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -47,10 +45,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ status: 'apagado', motivo: 'seguimiento-ia desactivado para ahorrar IA' });
   }
 
-  if (!autorizado(req)) {
-    const session = await getServerSession(authOptions);
-    if (!session) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
-  }
+  // Cron (clave) → todas las empresas; alguien del panel con sesión → solo la suya
+  const alcance = await alcanceCron(autorizado(req));
+  if (!alcance) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
 
   const now = Date.now();
   const colHour = new Date(now - H(5)).getUTCHours();
@@ -182,7 +179,7 @@ export async function GET(req: NextRequest) {
         }
       },
     );
-  });
+  }, alcance.soloTenantId);
 
   return NextResponse.json({ status: 'ok', revisados, enviados, saltados, sinTiempo, tenants, errores });
 }
