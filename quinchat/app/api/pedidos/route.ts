@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { POST as procesarPedido } from '@/app/api/funnelish/webhook/route';
+import { procesarPedidoFunnelish as procesarPedido } from '@/app/api/funnelish/webhook/route';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { enviarCompraMeta } from '@/lib/capi';
 

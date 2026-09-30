@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { procesarPedidoFunnelish } from '../route';
 import type { BaseLinea } from '@/lib/whatsapp-contexto';
+import { tokenFunnelishValido } from '@/lib/token-funnelish';
 
 // El envío de la confirmación puede tardar (arma foto + plantilla) → más tiempo
 // del que Vercel da por defecto (igual que el webhook single-tenant).
@@ -74,6 +75,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ tenant: string }> },
 ) {
+  if (!tokenFunnelishValido(req)) {
+    return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
+  }
   const { tenant } = await params;
   const t = await cargarTenant(tenant);
   if (!t || t.activo === false) {

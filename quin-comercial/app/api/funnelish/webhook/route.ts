@@ -8,6 +8,7 @@ import { isCompleteAddress, getAddressQuestion } from '@/lib/address';
 import { lineaTalla } from '@/lib/formato-pedido';
 import { validateAddressLupap, getLupapMessage } from '@/lib/lupap';
 import Jimp from 'jimp';
+import { tokenFunnelishValido } from '@/lib/token-funnelish';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -283,7 +284,12 @@ async function generarCollagePack(supabase: any, productos: string[], imagenes: 
 }
 
 // ── POST — Receive Funnelish purchase webhook ──────────────────────────────────
+// Entrada pública: exige el token. El checkout propio (`/api/pedidos`) llama
+// directo a `procesarPedidoFunnelish`, sin pasar por aquí.
 export async function POST(req: NextRequest) {
+  if (!tokenFunnelishValido(req)) {
+    return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
+  }
   return procesarPedidoFunnelish(req);
 }
 
