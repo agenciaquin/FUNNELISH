@@ -8,6 +8,8 @@
  * Recorre TODAS las rutas `app/api/**\/route.ts`, y a cada una le manda un método
  * que la ruta NO exporta: si el middleware la deja pasar, Next responde 405 sin
  * ejecutar nada; si la protege, responde 307 a /login. Así no se ejecuta lógica.
+ * Las rutas públicas exactas solo lo son con POST: a esas se les manda además un
+ * POST con el cuerpo vacío (lo rechazan al leer el JSON) y GET/PATCH/DELETE.
  *
  * La lista "esperada" es la especificación (BLOQUEANTES-CONSUMO.md), no una copia
  * de `esApiPublica`: lo que se prueba es lo que hace el middleware compilado.
@@ -23,8 +25,11 @@ const RAIZ = join(__dirname, '..');
 const HOSTS_TIENDA = ['www.klixmant.shop', 'tienda.skioo.shop'];
 const HOSTS_PANEL = ['localhost', 'quinchat-comercial.vercel.app'];
 
-function esperadaPublica(ruta: string): boolean {
-  if (['/api/pedidos', '/api/funnels/evento', '/api/funnels/carrito', '/api/registro'].includes(ruta)) return true;
+// Las exactas solo son públicas con POST (lo único que hacen la página de venta y el alta).
+const EXACTAS_SOLO_POST = ['/api/pedidos', '/api/funnels/evento', '/api/funnels/carrito', '/api/registro'];
+
+function esperadaPublica(ruta: string, metodo: string): boolean {
+  if (EXACTAS_SOLO_POST.includes(ruta)) return metodo === 'POST';
   const prefijos = ['/api/whatsapp/webhook', '/api/whatsapp/confirmar', '/api/funnelish/webhook', '/api/recargas/webhook', '/api/cron', '/api/auth'];
   return prefijos.some(p => ruta === p || ruta.startsWith(p + '/'));
 }
@@ -110,7 +115,7 @@ function informar(ok: boolean, texto: string) {
     const exp = exportados(readFileSync(f, 'utf8'));
     const metodo = METODOS.find(m => !exp.has(m));
     if (!metodo) { informar(false, `${ruta}: exporta todos los métodos, no se puede sondear sin ejecutar`); continue; }
-    const quiero = esperadaPublica(ruta);
+    const quiero = esperadaPublica(ruta, metodo);
     (quiero ? publicas : protegidas).push(ruta);
 
     for (const host of [...HOSTS_TIENDA, ...HOSTS_PANEL]) {
@@ -131,6 +136,20 @@ function informar(ok: boolean, texto: string) {
         ? !aLogin(r)
         : aLogin(r) || r.status === 400 || r.status === 404 || (r.status === 308 && !r.location.includes('//'));
       informar(ok, `límite ${e.ruta} (${e.nota}) [${host}] -> ${r.status}${r.location ? ' ' + r.location : ''}`);
+    }
+  }
+
+  // ── Exactas: el POST pasa sin sesión, y los otros métodos (GET/PATCH/DELETE del
+  //    panel) piden sesión aunque la ruta los exporte. El POST va con el cuerpo
+  //    vacío: cada ruta lo rechaza al leer el JSON, antes de tocar la base.
+  for (const ruta of EXACTAS_SOLO_POST) {
+    for (const host of [...HOSTS_TIENDA, ...HOSTS_PANEL]) {
+      const r = await pedir('POST', ruta, host);
+      informar(!aLogin(r) && r.status !== 404, `exacta POST ${ruta} pasa sin sesión [${host}] -> ${r.status}`);
+      for (const metodo of ['GET', 'PATCH', 'DELETE']) {
+        const m = await pedir(metodo, ruta, host);
+        informar(aLogin(m), `exacta ${metodo.padEnd(6)} ${ruta} pide sesión [${host}] -> ${m.status}${m.location ? ' ' + m.location : ''}`);
+      }
     }
   }
 

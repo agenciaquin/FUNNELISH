@@ -18,20 +18,28 @@ const proteger = withAuth({ pages: { signIn: '/login' } });
  * iniciar sesión, en la tienda y en el panel. Antes la tienda (cualquier dominio
  * que no fuera *.vercel.app) dejaba pasar la API entera.
  *
- *  · exactas: las que llama la página de venta y el alta de empresas.
+ *  · exactas: las que llama la página de venta y el alta de empresas, y SOLO
+ *    con el método que usan (todas hacen POST). `/api/funnels/carrito` también
+ *    tiene GET, PATCH y DELETE para el panel, con nombres y teléfonos: esos
+ *    piden sesión (y la ruta la vuelve a pedir).
  *    `/api/pedidos` NO abre `/api/pedidos/lista`, que devuelve datos de clientes.
  *  · prefijos: webhooks y crons. Se protegen solos (firma, consulta a Mercado
  *    Pago o `CRON_SECRET`).
  */
-const API_PUBLICA_EXACTA = ['/api/pedidos', '/api/funnels/evento', '/api/funnels/carrito', '/api/registro'];
+const API_PUBLICA_EXACTA: Record<string, string[]> = {
+  '/api/pedidos': ['POST'],
+  '/api/funnels/evento': ['POST'],
+  '/api/funnels/carrito': ['POST'],
+  '/api/registro': ['POST'],
+};
 const API_PUBLICA_PREFIJO = [
   '/api/auth/', '/api/whatsapp/webhook', '/api/whatsapp/confirmar',
   '/api/funnelish/webhook', '/api/recargas/webhook', '/api/cron/',
 ];
 
-function esApiPublica(pathname: string): boolean {
+function esApiPublica(pathname: string, metodo: string): boolean {
   const ruta = pathname.replace(/\/+$/, '');
-  return API_PUBLICA_EXACTA.includes(ruta)
+  return (API_PUBLICA_EXACTA[ruta]?.includes(metodo.toUpperCase()) ?? false)
     || API_PUBLICA_PREFIJO.some(p => ruta === p.replace(/\/$/, '') || ruta.startsWith(p.endsWith('/') ? p : `${p}/`));
 }
 
@@ -45,7 +53,7 @@ export default function middleware(req: NextRequest, event: any) {
   const { pathname } = req.nextUrl;
 
   if (pathname.startsWith('/api/')) {
-    if (esApiPublica(pathname)) return NextResponse.next();
+    if (esApiPublica(pathname, req.method)) return NextResponse.next();
     return (proteger as any)(req, event);
   }
 

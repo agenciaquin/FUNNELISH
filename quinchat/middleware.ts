@@ -21,19 +21,25 @@ const proteger = withAuth({ pages: { signIn: '/login' } });
  * API entera, y cualquiera podía mandar plantillas de WhatsApp de pago o usar la
  * IA sin entrar.
  *
- *  · exactas: las que llama la página de venta. `/api/pedidos` NO abre
- *    `/api/pedidos/lista`, que devuelve datos de clientes.
+ *  · exactas: las que llama la página de venta, y SOLO con el método que usa
+ *    (la página solo hace POST). `/api/funnels/carrito` también tiene GET, PATCH
+ *    y DELETE para el panel, con nombres y teléfonos: esos piden sesión.
+ *    `/api/pedidos` NO abre `/api/pedidos/lista`, que devuelve datos de clientes.
  *  · prefijos: webhooks y crons. Se protegen solos (firma o `CRON_SECRET`).
  */
-const API_PUBLICA_EXACTA = ['/api/pedidos', '/api/funnels/evento', '/api/funnels/carrito'];
+const API_PUBLICA_EXACTA: Record<string, string[]> = {
+  '/api/pedidos': ['POST'],
+  '/api/funnels/evento': ['POST'],
+  '/api/funnels/carrito': ['POST'],
+};
 const API_PUBLICA_PREFIJO = [
   '/api/auth/', '/api/whatsapp/webhook', '/api/whatsapp/confirmar',
   '/api/funnelish/webhook', '/api/cron/',
 ];
 
-function esApiPublica(pathname: string): boolean {
+function esApiPublica(pathname: string, metodo: string): boolean {
   const ruta = pathname.replace(/\/+$/, '');
-  return API_PUBLICA_EXACTA.includes(ruta)
+  return (API_PUBLICA_EXACTA[ruta]?.includes(metodo.toUpperCase()) ?? false)
     || API_PUBLICA_PREFIJO.some(p => ruta === p.replace(/\/$/, '') || ruta.startsWith(p.endsWith('/') ? p : `${p}/`));
 }
 
@@ -43,7 +49,7 @@ export default function middleware(req: NextRequest, event: any) {
   const { pathname } = req.nextUrl;
 
   if (pathname.startsWith('/api/')) {
-    if (esApiPublica(pathname)) return NextResponse.next();
+    if (esApiPublica(pathname, req.method)) return NextResponse.next();
     return (proteger as any)(req, event);
   }
 

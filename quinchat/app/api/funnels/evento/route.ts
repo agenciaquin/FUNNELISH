@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { createServerSupabaseClient } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
@@ -31,7 +33,10 @@ export async function POST(req: NextRequest) {
 
 // GET: diagnóstico. Dice si la tabla existe, cuántos eventos hay y si se puede
 // insertar (para ver el error real de la base). Abrir /api/funnels/evento.
+// Pide sesión: escribe una fila `_diag` y no es para la página pública.
 export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   const admin = createServerSupabaseClient();
   let total: number | null = null;
   let insertOk = false;
