@@ -483,8 +483,13 @@ export async function GET(req: NextRequest) {
 
 // ─── POST — Mensajes entrantes WhatsApp ───────────────────────────────────────
 export async function POST(req: NextRequest) {
-  let body: any;
-  try { body = await req.json(); } catch { return NextResponse.json({ status: 'ok' }); }
+  const aviso = await leerAvisoDeMeta(req);
+  if (!aviso.valido) {
+    console.warn(`[Webhook] aviso rechazado: ${aviso.motivo}`);
+    return NextResponse.json({ error: 'firma no valida' }, { status: 401 });
+  }
+  let body: any = aviso.body;
+  if (!body) return NextResponse.json({ status: 'ok' });
 
   const value = body?.entry?.[0]?.changes?.[0]?.value;
 

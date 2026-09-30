@@ -521,8 +521,16 @@ export async function POST(req: NextRequest) {
  * tenant (multi-tenant); si viene vacío, funciona en modo single-tenant (env).
  */
 export async function procesarEntrada(req: NextRequest, base?: BaseLinea) {
-  let body: any;
-  try { body = await req.json(); } catch { return NextResponse.json({ status: 'ok' }); }
+  // La ruta de un cliente (base con tenantId) puede llegar desde SU propia app de
+  // Meta, con otra clave secreta que aún no guardamos. Por eso la firma solo se
+  // comprueba en la línea propia de la agencia.
+  const aviso = await leerAvisoDeMeta(req, base?.tenantId ? '' : undefined);
+  if (!aviso.valido) {
+    console.warn(`[Webhook] aviso rechazado: ${aviso.motivo}`);
+    return NextResponse.json({ error: 'firma no valida' }, { status: 401 });
+  }
+  let body: any = aviso.body;
+  if (!body) return NextResponse.json({ status: 'ok' });
 
   const value = body?.entry?.[0]?.changes?.[0]?.value;
 
