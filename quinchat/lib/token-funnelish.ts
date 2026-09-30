@@ -8,6 +8,10 @@ import { timingSafeEqual } from 'crypto';
  * Sin esto, cualquiera que conozca la URL crea pedidos falsos y hace que se
  * mande una plantilla de confirmación (de pago) al número que quiera.
  *
+ * El token solo protege esta entrada. El checkout propio (`/api/pedidos`) llega
+ * al mismo proceso sin token, porque es público; allí el abuso lo frenan el
+ * límite por IP y por teléfono y que solo se aceptan fotos de sitios propios.
+ *
  * Si `FUNNELISH_WEBHOOK_TOKEN` no está configurada se deja pasar y se avisa:
  * cortar las ventas reales por una variable que falta sería peor. Hay que
  * configurarla, y añadir el `?token=` en Funnelish, antes de reactivar.
