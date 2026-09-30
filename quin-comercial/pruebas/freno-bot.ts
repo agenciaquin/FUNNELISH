@@ -7,17 +7,23 @@ import { botIaApagado, botPuedeResponder } from '../lib/freno-bot';
 
 type Llamada = { tabla: string; ops: Array<[string, any[]]> };
 
-function supabaseFalso(respuestaConteo: { count: number | null; error: any }) {
+// `conv` = lo que devuelve la lectura de `label` de la conversación.
+function supabaseFalso(
+  respuestaConteo: { count: number | null; error: any },
+  conv: { data: any; error: any } = { data: { label: null }, error: null },
+) {
   const llamadas: Llamada[] = [];
   const from = (tabla: string) => {
     const l: Llamada = { tabla, ops: [] };
     llamadas.push(l);
     const b: any = {};
-    for (const op of ['select', 'eq', 'gte', 'update', 'insert', 'upsert', 'delete', 'in', 'lt']) {
+    for (const op of ['select', 'eq', 'gte', 'update', 'insert', 'upsert', 'delete', 'in', 'lt', 'maybeSingle']) {
       b[op] = (...args: any[]) => { l.ops.push([op, args]); return b; };
     }
     b.then = (ok: any, mal: any) => {
-      const res = tabla === 'messages' ? respuestaConteo : { data: null, error: null };
+      const res = tabla === 'messages' ? respuestaConteo
+        : l.ops.some(o => o[0] === 'maybeSingle') ? conv
+        : { data: null, error: null };
       return Promise.resolve(res).then(ok, mal);
     };
     return b;
@@ -57,13 +63,13 @@ function entorno(botIa?: string, tope?: string) {
     caso(`BOT_IA=${v === undefined ? '(sin variable)' : `'${v}'`} no apaga`, botIaApagado() === false);
   }
 
-  // ── Por debajo del tope (40 por defecto) ────────────────────────────────────
+  // ── Por debajo del tope (80 por defecto) ────────────────────────────────────
   entorno(undefined, undefined);
   {
     const antes = Date.now();
-    const f = supabaseFalso({ count: 39, error: null });
+    const f = supabaseFalso({ count: 79, error: null });
     const r = await botPuedeResponder(f.cliente, CHAT);
-    caso('count 39 < 40 -> true', r === true);
+    caso('count 79 < 80 -> true', r === true);
     caso('count < tope no apaga el chat', !huboUpdate(f.llamadas));
     const m = f.llamadas.find(l => l.tabla === 'messages');
     const sel = op(m, 'select')[0];
@@ -79,16 +85,40 @@ function entorno(botIa?: string, tope?: string) {
   }
 
   // ── En el tope o por encima ─────────────────────────────────────────────────
-  for (const n of [40, 100]) {
+  const actualizacion = (ll: Llamada[]) => {
+    const conv = ll.find(l => l.tabla === 'conversations' && op(l, 'update').length > 0);
+    return { upd: op(conv, 'update')[0]?.[0], eq: op(conv, 'eq')[0] };
+  };
+  for (const n of [80, 100]) {
     const f = supabaseFalso({ count: n, error: null });
     const r = await botPuedeResponder(f.cliente, CHAT);
-    const conv = f.llamadas.find(l => l.tabla === 'conversations');
-    const upd = op(conv, 'update')[0]?.[0];
-    const eq = op(conv, 'eq')[0];
-    caso(`count ${n} >= 40 -> false`, r === false);
-    caso(`count ${n}: update bot_enabled=false, label=HUMANO en ese chat`,
+    const { upd, eq } = actualizacion(f.llamadas);
+    caso(`count ${n} >= 80 -> false`, r === false);
+    caso(`count ${n}: sin etiquetas -> bot_enabled=false, label=HUMANO en ese chat`,
       upd?.bot_enabled === false && upd?.label === 'HUMANO' && eq?.[0] === 'id' && eq?.[1] === CHAT,
       JSON.stringify({ upd, eq }));
+  }
+  // HUMANO se AÑADE: no borra el estado ni las otras etiquetas, y no se duplica.
+  for (const [antes, esperado] of [
+    ['VENTA REALIZADA', 'VENTA REALIZADA | HUMANO'],
+    ['PEDIDO PROGRAMADO | PENDIENTE DE ABONO', 'PEDIDO PROGRAMADO | PENDIENTE DE ABONO | HUMANO'],
+    ['VENTA REALIZADA | HUMANO', 'VENTA REALIZADA | HUMANO'],
+  ]) {
+    const f = supabaseFalso({ count: 80, error: null }, { data: { label: antes }, error: null });
+    await botPuedeResponder(f.cliente, CHAT);
+    const { upd } = actualizacion(f.llamadas);
+    const lectura = f.llamadas.find(l => l.tabla === 'conversations' && op(l, 'maybeSingle').length > 0);
+    caso(`label '${antes}' -> '${esperado}'`,
+      upd?.bot_enabled === false && upd?.label === esperado
+        && op(lectura, 'eq').some(e => e[0] === 'id' && e[1] === CHAT),
+      JSON.stringify(upd));
+  }
+  {
+    const f = supabaseFalso({ count: 80, error: null }, { data: null, error: { message: 'fallo de red' } });
+    const r = await botPuedeResponder(f.cliente, CHAT);
+    const { upd } = actualizacion(f.llamadas);
+    caso('no se puede leer label -> apaga el bot sin tocar label',
+      r === false && upd?.bot_enabled === false && !('label' in (upd ?? {})), JSON.stringify(upd));
   }
 
   // ── Errores al contar: deja responder ───────────────────────────────────────
