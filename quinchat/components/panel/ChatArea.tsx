@@ -145,6 +145,7 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
   const [sending, setSending]           = useState(false);
   const [botEnabled, setBotEnabled]     = useState(true);
   const [botOpen, setBotOpen]           = useState(false);
+  const [menuOpen, setMenuOpen]         = useState(false); // menú ⋮ del encabezado en móvil
   // Notas internas del asesor sobre este chat
   const [notasOpen, setNotasOpen]       = useState(false);
   const [notasText, setNotasText]       = useState('');
@@ -837,7 +838,14 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="relative flex items-center gap-2" onClick={e => e.stopPropagation()}>
+          {/* En móvil, todo (Notas, Bot, Etiquetas) se agrupa en este menú ⋮ */}
+          <button
+            onClick={() => setMenuOpen(o => !o)}
+            className="md:hidden w-9 h-9 rounded-full border border-[#E8E8E8] bg-[#F5F5F5] text-[#0D0D0D] flex items-center justify-center text-xl leading-none shrink-0"
+            aria-label="Opciones del chat"
+          >⋮</button>
+          <div className={`${menuOpen ? 'flex' : 'hidden'} md:flex flex-col md:flex-row items-stretch md:items-center gap-2 absolute md:static right-0 top-full mt-1 md:mt-0 bg-white md:bg-transparent border md:border-0 border-[#E8E8E8] rounded-xl md:rounded-none shadow-xl md:shadow-none p-2 md:p-0 z-40 w-[250px] md:w-auto`}>
           {/* Notas internas del asesor sobre este chat (no las ve el cliente) */}
           <div className="relative" onClick={e => e.stopPropagation()}>
             <button
@@ -1001,7 +1009,7 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
               </div>
             );
           })()}
-
+          </div>
         </div>
       </div>
 

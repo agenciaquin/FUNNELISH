@@ -59,6 +59,8 @@ export async function GET(req: NextRequest) {
       if (esVendedor(String(c.id)) || String((c as any).label ?? '').toUpperCase().includes('VENDEDOR')) { await marcar(); saltados++; continue; }
       // Marcado como cancelado/no interesado en la etiqueta: no molestar.
       if (/CANCELAD|ANULAD|NO INTERES/.test(String((c as any).label ?? '').toUpperCase())) { await marcar(); saltados++; continue; }
+      // Etiqueta "NO ENVIAR RECORDATORIO": el humano está atendiendo, no intervenir.
+      if (String((c as any).label ?? '').toUpperCase().includes('NO ENVIAR RECORDATORIO')) { await marcar(); saltados++; continue; }
 
       // Últimos mensajes del chat (para ver quién habló de último y si pidió datos).
       const { data: msgs } = await supabase.from('messages')

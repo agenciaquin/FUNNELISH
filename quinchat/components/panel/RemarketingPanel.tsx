@@ -16,6 +16,8 @@ export default function RemarketingPanel() {
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [cargando, setCargando] = useState(true);
   const [diasMin, setDiasMin] = useState(0); // antigüedad mínima (días sin actividad); 0 = todos
+  const [desde, setDesde] = useState(''); // rango de fechas (YYYY-MM-DD), opcional
+  const [hasta, setHasta] = useState('');
   const [template, setTemplate] = useState('promo_amor_amistad_24h');
   const [imageUrl, setImageUrl] = useState('');
   const [enviando, setEnviando] = useState(false);
@@ -24,6 +26,18 @@ export default function RemarketingPanel() {
   const [error, setError] = useState<string | null>(null);
   const [reporte, setReporte] = useState<Reporte | null>(null);   // campaña recién enviada (en vivo)
   const [campanas, setCampanas] = useState<Reporte[]>([]);        // historial de campañas
+  const [plantillas, setPlantillas] = useState<{ name: string; status?: string }[]>([]); // plantillas de Meta
+
+  // Cargar las plantillas creadas (para el menú desplegable). Solo las aprobadas.
+  useEffect(() => {
+    fetch('/api/plantillas-wa')
+      .then(r => r.json())
+      .then(d => {
+        const ps = (d.plantillas ?? []).filter((p: any) => !p.status || String(p.status).toUpperCase() === 'APPROVED');
+        setPlantillas(ps);
+      })
+      .catch(() => {});
+  }, []);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   function cargarCampanas() {
@@ -67,12 +81,15 @@ export default function RemarketingPanel() {
   // números de cada etiqueta reflejen a cuántos se les enviaría REALMENTE.
   useEffect(() => {
     setCargando(true);
-    fetch(`/api/remarketing?dias=${diasMin}`)
+    const qs = new URLSearchParams({ dias: String(diasMin) });
+    if (desde) qs.set('desde', desde);
+    if (hasta) qs.set('hasta', hasta);
+    fetch(`/api/remarketing?${qs.toString()}`)
       .then(r => r.json())
       .then(d => setEtiquetas(d.etiquetas ?? []))
       .catch(() => setError('No se pudieron cargar las etiquetas.'))
       .finally(() => setCargando(false));
-  }, [diasMin]);
+  }, [diasMin, desde, hasta]);
 
   const OPCIONES_DIAS = [
     { v: 0, t: 'Todos' },
@@ -94,15 +111,16 @@ export default function RemarketingPanel() {
     if (sel.size === 0) { setError('Elige al menos una etiqueta.'); return; }
     if (!template.trim()) { setError('Escribe el nombre de la plantilla aprobada en Meta.'); return; }
     const filtro = diasMin > 0 ? ` que lleven ${diasMin}+ días sin actividad` : '';
+    const rango = (desde || hasta) ? ` con actividad ${desde ? `desde ${desde}` : ''}${hasta ? ` hasta ${hasta}` : ''}` : '';
     const ok = window.confirm(
-      `Vas a enviar la plantilla "${template}" a aprox. ${totalSel} cliente(s) de las etiquetas seleccionadas${filtro}.\n\n¿Enviar ahora?`,
+      `Vas a enviar la plantilla "${template}" a aprox. ${totalSel} cliente(s) de las etiquetas seleccionadas${filtro}${rango}.\n\n¿Enviar ahora?`,
     );
     if (!ok) return;
     setEnviando(true);
     try {
       const res = await fetch('/api/remarketing', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ etiquetas: [...sel], template: template.trim(), imageUrl: imageUrl.trim() || undefined, diasMin }),
+        body: JSON.stringify({ etiquetas: [...sel], template: template.trim(), imageUrl: imageUrl.trim() || undefined, diasMin, desde: desde || undefined, hasta: hasta || undefined }),
       });
       const d = await res.json();
       if (!res.ok) { setError(d.error ?? 'No se pudo enviar.'); return; }
@@ -150,6 +168,36 @@ export default function RemarketingPanel() {
               ? 'Enviando a TODOS los de la etiqueta, sin importar cuándo escribieron.'
               : `Solo se enviará a quienes lleven ${diasMin}+ días sin actividad (los recientes quedan fuera).`}
           </p>
+
+          {/* Rango de fechas: enviar solo a clientes con actividad entre dos fechas */}
+          <div className="mt-3 pt-3 border-t border-[#EFEFEF]">
+            <div className="text-[11px] font-bold text-[#0D0D0D] mb-2">📅 Rango de fechas (opcional)</div>
+            <div className="flex items-end gap-2 flex-wrap">
+              <div>
+                <label className="block text-[10px] text-[#9A9A9A] mb-1">Desde</label>
+                <input type="date" value={desde} max={hasta || undefined}
+                  onChange={e => setDesde(e.target.value)}
+                  className="px-2 py-1.5 rounded-lg border border-[#E0E0E0] text-[12px]" />
+              </div>
+              <div>
+                <label className="block text-[10px] text-[#9A9A9A] mb-1">Hasta</label>
+                <input type="date" value={hasta} min={desde || undefined}
+                  onChange={e => setHasta(e.target.value)}
+                  className="px-2 py-1.5 rounded-lg border border-[#E0E0E0] text-[12px]" />
+              </div>
+              {(desde || hasta) && (
+                <button onClick={() => { setDesde(''); setHasta(''); }}
+                  className="px-3 py-1.5 rounded-lg border border-[#E0E0E0] text-[11px] font-semibold text-[#6B6B6B] hover:bg-[#F4F4F4]">
+                  ✕ Quitar fechas
+                </button>
+              )}
+            </div>
+            <p className="text-[10px] text-[#9A9A9A] mt-2">
+              {(desde || hasta)
+                ? `Solo se enviará a clientes con actividad ${desde ? `desde ${desde}` : ''}${hasta ? ` hasta ${hasta}` : ''}. Ideal para mandar por tandas durante el día.`
+                : 'Deja las fechas vacías para no filtrar por fecha. Úsalas para enviar por tandas (ej. clientes de una fecha específica).'}
+            </p>
+          </div>
         </div>
 
         {cargando ? (
@@ -180,10 +228,19 @@ export default function RemarketingPanel() {
       <section className="bg-white rounded-2xl border border-[#E8E8E8] p-4 space-y-3">
         <p className="text-[12px] font-bold text-[#0D0D0D] uppercase">2. Plantilla aprobada de Meta</p>
         <div>
-          <label className="block text-[11px] font-bold text-[#0D0D0D] mb-1 uppercase">Nombre de la plantilla</label>
-          <input value={template} onChange={e => setTemplate(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border border-[#E0E0E0] text-sm" placeholder="promo_amor_amistad_24h" />
-          <p className="text-[10px] text-[#9A9A9A] mt-1">Debe estar APROBADA en Meta (categoría Marketing). Su cuerpo usa {'{{1}}'} = nombre del cliente.</p>
+          <label className="block text-[11px] font-bold text-[#0D0D0D] mb-1 uppercase">Elige la plantilla</label>
+          {plantillas.length > 0 ? (
+            <select value={template} onChange={e => setTemplate(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-[#E0E0E0] text-sm bg-white">
+              <option value="">— Selecciona una plantilla —</option>
+              {plantillas.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
+              {template && !plantillas.some(p => p.name === template) && <option value={template}>{template}</option>}
+            </select>
+          ) : (
+            <input value={template} onChange={e => setTemplate(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-[#E0E0E0] text-sm" placeholder="promo_amor_amistad_24h" />
+          )}
+          <p className="text-[10px] text-[#9A9A9A] mt-1">Solo aparecen las plantillas *aprobadas* en Meta (categoría Marketing). Su cuerpo usa {'{{1}}'} = nombre del cliente.</p>
         </div>
         <div>
           <label className="block text-[11px] font-bold text-[#0D0D0D] mb-1 uppercase">Imagen del encabezado (opcional)</label>

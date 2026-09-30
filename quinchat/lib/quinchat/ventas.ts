@@ -1406,9 +1406,9 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
     }
 
     // ¿El modelo pidió pasar a un humano?
+    // Handoff SILENCIOSO: NO se le manda nada al cliente (no se le dice que pasa a
+    // un asesor ni que el bot se apaga). Solo se apaga el bot y se avisa a Lilibeth.
     if (respuesta.includes('[[HUMANO]]')) {
-      const { limpio } = separarFotos(respuesta.replace('[[HUMANO]]', ''));
-      if (limpio) await responder(supabase, from, limpio);
       await marcarHumano(supabase, from, contactName);
       return;
     }
@@ -1438,7 +1438,11 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
 async function marcarHumano(supabase: any, from: string, contactName: string) {
   await supabase.from('conversations').update({ bot_enabled: false, label: 'HUMANO' }).eq('id', from);
   const tel = from.replace(/^57/, '');
-  const aviso = `🔔 Un cliente de VENTAS necesita un asesor: ${contactName} (${tel}).`;
+  const nombre = contactName && contactName !== 'Desconocido' ? contactName : 'El cliente';
+  const aviso =
+    `🔔 *LILIBETH*\n` +
+    `El cliente *${nombre}* (cel: ${tel}) NECESITA SOPORTE HUMANO.\n` +
+    `Atiéndelo de forma rápida para no perder la venta 🙏`;
   // Aviso a soporte + copia a Lilibeth (…499)
   for (const n of [ADMIN_VENTAS_HUMANO, '573187051499']) {
     try { await sendTextMessage(n, aviso); } catch { /* no bloquear */ }

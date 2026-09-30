@@ -240,21 +240,23 @@ async function buscarImagenProducto(supabase: any, nombre: string): Promise<stri
       // Palabras GENÉRICAS (comunes a muchas familias) y de COLOR: no identifican
       // la marca. La palabra DISTINTIVA (PULSAR, HONDA, FERRARI…) es la que manda.
       const GENERICAS = new Set(['BUZO', 'MOTO', 'REFLECTIVO', 'ESCUDERIA', 'PACK',
+        'PAREJA', 'DUO', 'COMBO', 'CUELLO', 'ALTO', 'HOMBRE', 'DAMA', 'MUJER', 'CABALLERO', 'UNISEX',
         'NEGRO', 'ROJO', 'AZUL', 'BLANCO', 'MARFIL', 'AMARILLO', 'BEIGE', 'VERDE',
         'GRIS', 'OSCURO', 'NAVY', 'COCOA', 'REDBULL']);
       const distintivas = words.filter((w: string) => !GENERICAS.has(w));
-      let best: { url: string; score: number; name: string } | null = null;
+      // El ranking se hace por PALABRAS DISTINTIVAS (marca/familia): así "PAREJA
+      // NACIONAL LIBERTADORES" nunca agarra "PAREJA STITCH" (comparten solo PAREJA).
+      // El puntaje por todas las palabras (incluye color) solo desempata.
+      let best: { url: string; d: number; c: number; name: string } | null = null;
       for (const row of allColors) {
         if (!row.nombre_producto || !row.url_imagen) continue;
-        const name  = (row.nombre_producto as string).toUpperCase();
-        const score = words.filter((w: string) => name.includes(w)).length;
-        if (score > 0 && (!best || score > best.score)) best = { url: row.url_imagen as string, score, name };
-      }
-      // El match DEBE incluir la palabra distintiva (marca/familia). Si no la tiene,
-      // es de OTRA familia (ej. Honda para un Pulsar) → se descarta para no mostrar
-      // la foto equivocada; se cae a la imagen del embudo.
-      if (best && distintivas.length > 0 && !distintivas.some((w: string) => best!.name.includes(w))) {
-        best = null;
+        const name = (row.nombre_producto as string).toUpperCase();
+        const d = distintivas.length > 0 ? distintivas.filter((w: string) => name.includes(w)).length : 0;
+        const c = words.filter((w: string) => name.includes(w)).length;
+        // Si el producto tiene palabras distintivas, la foto DEBE compartir al menos una.
+        if (distintivas.length > 0 && d === 0) continue;
+        if (distintivas.length === 0 && c === 0) continue;
+        if (!best || d > best.d || (d === best.d && c > best.c)) best = { url: row.url_imagen as string, d, c, name };
       }
       if (best) return best.url;
     }
@@ -325,7 +327,19 @@ export async function POST(req: NextRequest) {
   const lastName   = String(body.last_name   ?? '').trim();
   const nombre     = [firstName, lastName].filter(Boolean).join(' ') || '—';
 
-  const tel10      = normalizePhone(body.phone);
+  // El celular puede llegar en distintos campos según el embudo/checkout de Funnelish.
+  // Se prueban todos y se usa el primero que sea un celular colombiano válido.
+  const posiblesTel = [
+    body.phone, body.shipping_phone, body.billing_phone, body.customer_phone,
+    body?.customer?.phone, body?.contact?.phone, body?.shipping?.phone, body?.billing?.phone,
+    body?.customer?.phone_number, body.phone_number, body.telefono,
+  ];
+  let tel10 = '';
+  for (const p of posiblesTel) {
+    const n = normalizePhone(p);
+    if (/^3\d{9}$/.test(n)) { tel10 = n; break; }
+  }
+  if (!tel10) tel10 = normalizePhone(body.phone); // respaldo: lo que haya en phone
   const waPhone    = `57${tel10}`;
 
   const direccion    = String(body.address          ?? body.shipping_address ?? '—').trim();
@@ -358,6 +372,7 @@ export async function POST(req: NextRequest) {
       `⚠️ *PEDIDO SIN WHATSAPP VÁLIDO* — revísalo manualmente\n` +
       `Nombre: ${nombre}\n` +
       `Teléfono (como llegó): ${body.phone ?? '—'}\n` +
+      `Otros campos tel: shipping_phone=${body.shipping_phone ?? '—'} · customer.phone=${body?.customer?.phone ?? '—'} · phone_number=${body.phone_number ?? '—'}\n` +
       `Dirección: ${direccion}\n` +
       `Ciudad: ${ciudad}\n` +
       `Departamento: ${departamento}\n` +
@@ -371,6 +386,10 @@ export async function POST(req: NextRequest) {
 
   // ── PACK X2: separar colores y talla; armar producto combinado ────────────────
   const pack = parsePack(productoNombre, variantName);
+  // "PAREJA" (o DUO/COMBO): pack de 2 prendas del MISMO diseño. parsePack no lo
+  // detecta (solo PACK X2 / DOS COLORES), así que se manejaba como 1 sola prenda y
+  // el bot mandaba una foto. Aquí lo marcamos para mostrar las DOS prendas.
+  const esParejaMismoDiseno = !pack.esPack && /\b(PAREJA|DUO|COMBO)\b/i.test(productoNombre);
   const packProductos = pack.esPack ? pack.productos : [];
   if (pack.esPack) {
     productoNombre = pack.productoFinal;   // ej: "ROJO TOYOTA + NEGRO TOYOTA"
@@ -464,6 +483,15 @@ export async function POST(req: NextRequest) {
     if (collage) { imageUrl = collage; segundaImagenUrl = null; esCollage = true; } // collage OK → no enviar 2da por separado
   }
 
+  // PAREJA (2 prendas del MISMO diseño): mostrar la prenda DOS veces en un collage
+  // para que el cliente vea claro que son 2. (Antes solo salía 1 foto.)
+  if (esParejaMismoDiseno && !esCollage
+      && imageUrl && imageUrl.startsWith('http') && imageUrl !== FALLBACK_IMAGE) {
+    const collagePareja = await generarCollagePack(supabase, [productoNombre, productoNombre], [imageUrl, imageUrl]);
+    if (collagePareja) { imageUrl = collagePareja; segundaImagenUrl = null; esCollage = true; }
+    else { segundaImagenUrl = imageUrl; } // sin collage → al menos enviar la 2da foto suelta
+  }
+
   const now = new Date().toISOString();
 
   // ── Origen del tráfico (de qué campaña vino este pedido) ─────────────────────
@@ -495,7 +523,7 @@ export async function POST(req: NextRequest) {
     telefono:    tel10,
     nombre,
     producto:    productoNombre,
-    cantidad:    pack.cantidad, // prendas del pedido (PACK X2 = 2) → para el monedero de metas
+    cantidad:    esParejaMismoDiseno ? 2 : pack.cantidad, // prendas del pedido (PACK X2 / PAREJA = 2) → monedero de metas
     foto_producto: fotoProducto,
     talla,
     valor,

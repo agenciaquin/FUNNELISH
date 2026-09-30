@@ -27,6 +27,8 @@ const EmbudosPanel       = dynamic(() => import('./EmbudosPanel'),        { ssr:
 const PedidosPanel       = dynamic(() => import('./PedidosPanel'),        { ssr: false });
 const SeguimientoPanel   = dynamic(() => import('./SeguimientoPanel'),    { ssr: false });
 const RemarketingPanel   = dynamic(() => import('./RemarketingPanel'),     { ssr: false });
+const PromocionesPanel   = dynamic(() => import('./PromocionesPanel'),     { ssr: false });
+const VendedoresLinksPanel = dynamic(() => import('./VendedoresLinksPanel'), { ssr: false });
 const VentasPanel        = dynamic(() => import('./VentasPanel'),         { ssr: false });
 const MetasPanel         = dynamic(() => import('./MetasPanel'),          { ssr: false });
 const VendedoresPanel    = dynamic(() => import('./VendedoresPanel'),     { ssr: false });
@@ -387,6 +389,8 @@ export default function WhatsAppPanel({ userName }: Props) {
         />
       )}
       {activeSection === 'remarketing'   && <RemarketingPanel />}
+      {activeSection === 'promociones'   && <PromocionesPanel />}
+      {activeSection === 'vendedores_links' && <VendedoresLinksPanel />}
       {activeSection === 'entrenamiento' && <EntrenamientoPanel />}
       {activeSection === 'plantillas'    && <PlantillasPanel />}
       {activeSection === 'disparadores'  && <DisparadoresPanel />}

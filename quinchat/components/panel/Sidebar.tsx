@@ -6,7 +6,7 @@ import { signOut } from 'next-auth/react';
 import { confirmarSalida } from '@/lib/panel/cambios';
 import BotonAvisos from './BotonAvisos';
 
-export type PanelSection = 'chat' | 'chat_ventas' | 'metas' | 'estadisticas' | 'embudos' | 'pedidos' | 'ventas' | 'vendedores' | 'seguimiento' | 'objeciones' | 'remarketing' | 'memoria' | 'faq' | 'entrenamiento' | 'plantillas' | 'disparadores' | 'contactos' | 'etiquetas' | 'catalogos' | 'integraciones' | 'ajustes' | 'manual';
+export type PanelSection = 'chat' | 'chat_ventas' | 'metas' | 'estadisticas' | 'embudos' | 'pedidos' | 'ventas' | 'vendedores' | 'seguimiento' | 'objeciones' | 'remarketing' | 'promociones' | 'vendedores_links' | 'memoria' | 'faq' | 'entrenamiento' | 'plantillas' | 'disparadores' | 'contactos' | 'etiquetas' | 'catalogos' | 'integraciones' | 'ajustes' | 'manual';
 
 // Íconos SVG personalizados (embudo de ventas y WhatsApp)
 const IconoEmbudo = ({ color }: { color: string }) => (
@@ -34,6 +34,8 @@ const NAV_MAIN: NavItem[] = [
   { key: 'seguimiento',  label: 'META ADS',     icon: '🎯' },
   { key: 'objeciones',   label: 'Objeciones',   icon: '🔎' },
   { key: 'remarketing',  label: 'Remarketing',  icon: '📣' },
+  { key: 'promociones',  label: 'Promociones',  icon: '🔥' },
+  { key: 'vendedores_links', label: 'Links vendedores', icon: '🔗' },
 ];
 
 // Todo lo demás vive dentro de "Herramientas"
