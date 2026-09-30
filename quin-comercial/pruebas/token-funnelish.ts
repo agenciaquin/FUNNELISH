@@ -6,8 +6,9 @@
  * 2) La ruta `app/api/funnelish/webhook/route.ts`: `POST` rechaza sin token y
  *    `procesarPedidoFunnelish` (lo que usa el checkout propio) NO lo pide. Se
  *    llama con `event: 'refund'`, que la función ignora antes de tocar nada.
- * También la ruta por cliente `[tenant]` rechaza sin token (no se prueba el caso
- * con token correcto: carga el cliente de la base).
+ * También la ruta por cliente `[tenant]` rechaza sin token, con la clave general
+ * y con el token de otro cliente: solo vale HMAC-SHA256(clave, slug). No se prueba
+ * la ruta con el token correcto: carga el cliente de la base (sí se prueba el módulo).
  * 3) `app/api/pedidos/route.ts` llama a `procesarPedidoFunnelish`, no a `POST`.
  *
  * Sin variables de Supabase ni WhatsApp: nada de esto puede tener efecto real.
@@ -15,7 +16,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { NextRequest } from 'next/server';
-import { tokenFunnelishValido } from '../lib/token-funnelish';
+import { createHmac } from 'node:crypto';
+import { tokenFunnelishDeCliente, tokenFunnelishValido } from '../lib/token-funnelish';
 
 const RAIZ = join(__dirname, '..');
 const URL_WH = 'https://x.test/api/funnelish/webhook';
@@ -57,6 +59,20 @@ const pedir = (url: string, h: Record<string, string> = {}, cuerpo = '{"event":"
   caso('?token= vacío + cabecera correcta: manda la query (rechaza)',
     tokenFunnelishValido(pedir(`${URL_WH}?token=`, { 'x-webhook-token': TOKEN })) === false);
 
+  // ── 1b. Token por cliente: HMAC-SHA256(clave, slug) en hex ──────────────────
+  const tokPrueba = tokenFunnelishDeCliente('prueba');
+  caso('token de cliente = HMAC-SHA256 hex conocido',
+    tokPrueba === createHmac('sha256', TOKEN).update('prueba').digest('hex') && /^[0-9a-f]{64}$/.test(tokPrueba));
+  caso('token de cliente con clave explícita = con la variable', tokenFunnelishDeCliente('prueba', TOKEN) === tokPrueba);
+  caso('cada cliente tiene un token distinto', tokenFunnelishDeCliente('otra') !== tokPrueba);
+  caso('cliente: su token pasa', tokenFunnelishValido(pedir(`${URL_WH}/prueba?token=${tokPrueba}`), 'prueba') === true);
+  caso('cliente: su token por cabecera pasa', tokenFunnelishValido(pedir(`${URL_WH}/prueba`, { 'x-webhook-token': tokPrueba }), 'prueba') === true);
+  caso('cliente: la clave general NO pasa', tokenFunnelishValido(pedir(`${URL_WH}/prueba?token=${TOKEN}`), 'prueba') === false);
+  caso('cliente: el token de otro cliente NO pasa',
+    tokenFunnelishValido(pedir(`${URL_WH}/prueba?token=${tokenFunnelishDeCliente('otra')}`), 'prueba') === false);
+  caso('cliente: sin token NO pasa', tokenFunnelishValido(pedir(`${URL_WH}/prueba`), 'prueba') === false);
+  caso('ruta de la agencia: el token de un cliente NO pasa', tokenFunnelishValido(pedir(`${URL_WH}?token=${tokPrueba}`)) === false);
+
   // ── 2. Ruta real ────────────────────────────────────────────────────────────
   const ruta = await import('../app/api/funnelish/webhook/route');
   const rutaTenant = await import('../app/api/funnelish/webhook/[tenant]/route');
@@ -65,6 +81,10 @@ const pedir = (url: string, h: Record<string, string> = {}, cuerpo = '{"event":"
   caso('POST /api/funnelish/webhook/[tenant] sin token -> 401 (antes de tocar la base)', t1.status === 401, `status ${t1.status}`);
   const t2 = await rutaTenant.POST(pedir('https://x.test/api/funnelish/webhook/prueba?token=malo'), params);
   caso('POST [tenant] con token malo -> 401', t2.status === 401, `status ${t2.status}`);
+  const t3 = await rutaTenant.POST(pedir(`https://x.test/api/funnelish/webhook/prueba?token=${TOKEN}`), params);
+  caso('POST [tenant] con la clave general -> 401', t3.status === 401, `status ${t3.status}`);
+  const t4 = await rutaTenant.POST(pedir(`https://x.test/api/funnelish/webhook/prueba?token=${tokenFunnelishDeCliente('otra')}`), params);
+  caso('POST [tenant] con el token de otro cliente -> 401', t4.status === 401, `status ${t4.status}`);
   const r1 = await ruta.POST(pedir(URL_WH));
   caso('POST /api/funnelish/webhook sin token -> 401', r1.status === 401, `status ${r1.status}`);
   const r2 = await ruta.POST(pedir(`${URL_WH}?token=malo`));
