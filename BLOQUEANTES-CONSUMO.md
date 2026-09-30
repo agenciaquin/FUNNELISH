@@ -71,6 +71,32 @@ Recomendado para la reactivación: publicar con `BOT_IA=off`, comprobar webhooks
 - Cualquier herramienta externa que llamara otras rutas de `/api/` sin sesión dejará de funcionar. Las
   conocidas (ConfirmaYa → `/api/whatsapp/confirmar`, con su API key) siguen abiertas.
 
+## Revisión del agente de pruebas (30-09-2026)
+
+Primera pasada: **NO LISTO**. El cron `objeciones` (usa IA) seguía abierto sin `CRON_SECRET` en las dos apps
+(`} else { return true; }` que no se había cambiado). Corregido; la prueba de crons pasa ahora **56/56**
+(quinchat) y **52/52** (quin-comercial).
+
+| Prueba (`<app>/pruebas/`) | quinchat | quin-comercial |
+| --- | --- | --- |
+| `middleware-api.ts`: todas las rutas × hosts de tienda y panel | 287/287 | 520/520 |
+| `crons.ts` sin clave / con clave | 56/56 · 84/84 | 52/52 · 78/78 |
+| `token-funnelish.ts` | 20/20 | 22/22 |
+| `firma-meta.ts` (+ `firma-meta-ruta.ts` en quinchat) | 6/6 · 4/4 | 15/15 |
+| `freno-bot.ts` | 22/22 | 22/22 |
+
+Cómo correrlas: el encabezado de cada archivo trae el comando. Las de middleware y crons necesitan
+`next build` + `next start` en local; ninguna usa variables de producción.
+
+Observaciones que quedan abiertas:
+- **Anti-duplicados (quinchat):** solo revisión de código; no se puede ejecutar sin montar la ruta entera.
+  Efecto menor, igual que en quin-comercial: reacciones, ubicaciones y tipos no soportados dejan un globo vacío
+  en el panel, y una reacción que llega durante los 12 s de espera hace que el bot no responda al texto anterior.
+- **Con `BOT_IA=off` o el tope alcanzado se sigue gastando en dos sitios** que van antes del freno: la
+  clasificación de fotos con Claude (M5) y la transcripción de audios con Groq (gratis hoy).
+- `BOT_TOPE_DIARIO` con un valor que no es número (p. ej. `cuarenta`) desactiva el tope, igual que `0`.
+- Si llegan `?token=` vacío y la cabecera `x-webhook-token` correcta, manda la query y se rechaza.
+
 ## Lo que NO entra en esta rama (sigue en la auditoría)
 
 Intervalos del panel (6 s / 12 s), compresión en quin-comercial, ISR en landings, seguimiento agrupado,
