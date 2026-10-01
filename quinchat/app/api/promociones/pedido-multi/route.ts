@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { sendConfirmacionTemplate } from '@/lib/whatsapp';
 import { FALLBACK_IMAGE } from '@/lib/product-catalog';
+import { permitido } from '@/lib/rate-limit';
 
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
@@ -34,6 +35,23 @@ export async function POST(req: NextRequest) {
   if (!nombre) return NextResponse.json({ error: 'Falta el nombre.' }, { status: 400 });
   if (!/^3\d{9}$/.test(tel10)) return NextResponse.json({ error: 'El teléfono (celular) no es válido.' }, { status: 400 });
   if (items.length === 0) return NextResponse.json({ error: 'El carrito está vacío.' }, { status: 400 });
+
+  // Límite de pedidos: igual que /promociones/pedido y /api/pedidos (mismas
+  // claves, 5 por teléfono y 20 por IP cada hora). Un carrito cuenta como UN
+  // pedido: manda una sola plantilla. Va antes de tocar el stock.
+  const ip = (req.headers.get('x-real-ip') ?? req.headers.get('x-forwarded-for')?.split(',')[0] ?? '').trim();
+  if (ip && !(await permitido(`pedido-ip:${ip}`, 20, 3600))) {
+    return NextResponse.json(
+      { error: 'Recibimos muchos pedidos desde tu conexión. Espera un rato e inténtalo de nuevo, o escríbenos por WhatsApp.' },
+      { status: 429 }
+    );
+  }
+  if (!(await permitido(`pedido-tel:${tel10}`, 5, 3600))) {
+    return NextResponse.json(
+      { error: 'Ya recibimos varios pedidos con este WhatsApp en la última hora. Si quieres cambiar algo, escríbenos por WhatsApp y te ayudamos.' },
+      { status: 429 }
+    );
+  }
 
   const waPhone = `57${tel10}`;
   const now = new Date().toISOString();
