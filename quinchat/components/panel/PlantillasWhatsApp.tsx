@@ -100,15 +100,20 @@ export default function PlantillasWhatsApp() {
       if (!res.ok) { setAviso(`❌ ${data.error}`); return; }
 
       // Guardar la foto para reutilizarla en cada envío, sin pedir enlaces
+      let notaFoto = '';
       if (imagen && data.nombre) {
-        await fetch('/api/plantillas-wa/imagen', {
+        const rf = await fetch('/api/plantillas-wa/imagen', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ nombre: data.nombre, imagenBase64: imagen.base64, imagenMime: imagen.mime }),
-        }).catch(() => {});
+        }).catch(() => null);
+        // LEY DE PESO: aviso no bloqueante (nivel 4) o lo que hay que hacer si la foto no se pudo guardar.
+        const df = rf ? await rf.json().catch(() => ({})) : {};
+        if (rf && !rf.ok) notaFoto = ` ❌ La foto no se guardó: ${df.error ?? 'error desconocido'}`;
+        else if (df.aviso) notaFoto = ` ⚠️ ${df.aviso}`;
       }
 
-      setAviso(`✅ "${data.nombre}" enviada a revisión. Meta suele responder en minutos.`);
+      setAviso(`✅ "${data.nombre}" enviada a revisión. Meta suele responder en minutos.${notaFoto}`);
       limpiar();
       await cargar();
       setVista('lista');

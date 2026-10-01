@@ -143,6 +143,13 @@ function pieDeFoto(msg: Message): string {
 export default function ChatArea({ conversation, messages, onMessageSent, onConversationsUpdate, onBack }: Props) {
   const [input, setInput]               = useState('');
   const [sending, setSending]           = useState(false);
+  // LEY DE PESO nivel 4: aviso visible que no bloquea; se quita solo a los 8 s.
+  const [avisoPeso, setAvisoPeso]       = useState<string | null>(null);
+  useEffect(() => {
+    if (!avisoPeso) return;
+    const t = setTimeout(() => setAvisoPeso(null), 8000);
+    return () => clearTimeout(t);
+  }, [avisoPeso]);
   const [botEnabled, setBotEnabled]     = useState(true);
   const [botOpen, setBotOpen]           = useState(false);
   const [menuOpen, setMenuOpen]         = useState(false); // menú ⋮ del encabezado en móvil
@@ -624,9 +631,13 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
           created_at: new Date().toISOString(),
         });
         onConversationsUpdate();
+        // LEY DE PESO nivel 4: se envió; aviso visible que no bloquea (no es un alert).
+        if (data.aviso) setAvisoPeso(String(data.aviso));
       } else {
         if (mediaUrl) URL.revokeObjectURL(mediaUrl);
-        alert('No se pudo enviar el archivo. El formato puede no ser compatible con WhatsApp.');
+        // 422/415/413: el servidor dice qué hacer para que entre.
+        const d = await res.json().catch(() => ({}));
+        alert(d?.error || 'No se pudo enviar el archivo. El formato puede no ser compatible con WhatsApp.');
       }
     } catch {
       if (mediaUrl) URL.revokeObjectURL(mediaUrl);
@@ -1334,6 +1345,13 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
               className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) sendFile(f); }}
             />
+
+            {avisoPeso && (
+              <div onClick={() => setAvisoPeso(null)} role="status"
+                className="fixed bottom-24 right-4 z-50 max-w-xs cursor-pointer rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 shadow-lg">
+                ⚠️ {avisoPeso}
+              </div>
+            )}
 
             {/* + Attach */}
             <button

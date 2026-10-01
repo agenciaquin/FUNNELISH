@@ -33,6 +33,7 @@ export default function SelectorPlantillaWA({ telefono, nombreContacto, onCerrar
   const [imagenUrl, setImagenUrl]   = useState('');
   const [enviando, setEnviando]     = useState(false);
   const [subiendoImg, setSubiendoImg] = useState(false);
+  const [avisoImg, setAvisoImg] = useState<{ texto: string; error: boolean } | null>(null); // LEY DE PESO
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -85,9 +86,11 @@ export default function SelectorPlantillaWA({ telefono, nombreContacto, onCerrar
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nombre: sel.name, imagenBase64: base64, imagenMime: file.type }),
       });
-      const data = await res.json();
-      if (!res.ok) { alert(`No se pudo subir: ${data.error}`); return; }
+      const data = await res.json().catch(() => ({}));
+      // Sin alert bloqueante: el error (con lo que hay que hacer) y el aviso de peso salen junto a la foto.
+      if (!res.ok) { setAvisoImg({ texto: data.error || 'No se pudo subir la foto.', error: true }); return; }
       setImagenUrl(data.url);
+      setAvisoImg(data.aviso ? { texto: data.aviso, error: false } : null);
     } finally {
       setSubiendoImg(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -236,6 +239,7 @@ export default function SelectorPlantillaWA({ telefono, nombreContacto, onCerrar
                       {subiendoImg ? 'Subiendo…' : '📷 Subir la foto de esta plantilla'}
                     </button>
                   )}
+                  {avisoImg && <p className={`text-[11px] mt-1.5 ${avisoImg.error ? 'text-red-600' : 'text-amber-700'}`}>{avisoImg.error ? '❌ ' : '⚠️ '}{avisoImg.texto}</p>}
                   <p className="text-[10px] text-[#6B6B6B] mt-1.5">
                     Queda guardada: la próxima vez se usa sola.
                   </p>

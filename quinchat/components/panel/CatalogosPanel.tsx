@@ -189,6 +189,7 @@ function ModalColor({
   const [nombre,    setNombre]    = useState(initial?.nombre_producto ?? '');
   const [url,       setUrl]       = useState(initial?.url_imagen      ?? '');
   const [uploading, setUploading] = useState(false);
+  const [avisoFoto, setAvisoFoto] = useState<{ texto: string; error: boolean } | null>(null); // LEY DE PESO
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -199,8 +200,12 @@ function ModalColor({
       const fd = new FormData();
       fd.append('file', file);
       const res  = await fetch('/api/catalogos/upload-imagen', { method: 'POST', body: fd });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (data.url) setUrl(data.url);
+      // Aviso visible pero NO bloqueante: la foto se subió aunque pese más de lo recomendado.
+      setAvisoFoto(!res.ok ? { texto: data.error || 'No se pudo subir la foto.', error: true } : data.aviso ? { texto: data.aviso, error: false } : null);
+    } catch {
+      setAvisoFoto({ texto: 'No se pudo subir la foto.', error: true });
     } finally {
       setUploading(false);
       e.target.value = '';
@@ -256,6 +261,7 @@ function ModalColor({
                 )}
               </button>
             )}
+            {avisoFoto && <p className={`mt-2 text-xs ${avisoFoto.error ? 'text-red-600' : 'text-amber-700'}`}>{avisoFoto.error ? '❌ ' : '⚠️ '}{avisoFoto.texto}</p>}
           </div>
 
           {/* Nombre del color */}
@@ -325,6 +331,7 @@ export default function CatalogosPanel() {
   const [inlineNombre,   setInlineNombre]   = useState('');
   const [inlineUrl,      setInlineUrl]      = useState('');
   const [inlineUploading, setInlineUploading] = useState(false);
+  const [inlineAviso, setInlineAviso] = useState<{ texto: string; error: boolean } | null>(null); // LEY DE PESO
   const inlineFileRef = useRef<HTMLInputElement>(null);
 
   // Re-estampar marca de agua en todas las fotos que aún no la tienen
@@ -520,8 +527,11 @@ export default function CatalogosPanel() {
       const fd = new FormData();
       fd.append('file', file);
       const res  = await fetch('/api/catalogos/upload-imagen', { method: 'POST', body: fd });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (data.url) setInlineUrl(data.url);
+      setInlineAviso(!res.ok ? { texto: data.error || 'No se pudo subir la foto.', error: true } : data.aviso ? { texto: data.aviso, error: false } : null);
+    } catch {
+      setInlineAviso({ texto: 'No se pudo subir la foto.', error: true });
     } finally {
       setInlineUploading(false);
       e.target.value = '';
@@ -779,6 +789,7 @@ export default function CatalogosPanel() {
 
                         {/* Inputs */}
                         <div className="flex-1 flex flex-col gap-2">
+                          {inlineAviso && <p className={`text-[11px] ${inlineAviso.error ? 'text-red-600' : 'text-amber-700'}`}>{inlineAviso.error ? '❌ ' : '⚠️ '}{inlineAviso.texto}</p>}
                           <input
                             autoFocus
                             placeholder="Nombre del color (ej: Negro)"

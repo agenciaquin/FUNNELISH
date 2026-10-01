@@ -72,6 +72,7 @@ export default function RemarketingPanel() {
       const d = await res.json();
       if (!res.ok) { setError(d.error ?? 'No se pudo subir la imagen.'); return; }
       setImageUrl(d.url as string);
+      if (d.aviso) setError(`⚠️ ${d.aviso}`);   // LEY DE PESO nivel 4: subida correcta, aviso no bloqueante
     } catch {
       setError('No se pudo subir la imagen.');
     } finally { setSubiendo(false); }

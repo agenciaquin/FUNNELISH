@@ -25,7 +25,7 @@ import { comprimirImagen } from '@/lib/imagen-comprimir';
  * - Videos o archivos grandes → van DIRECTO a Supabase con un enlace firmado,
  *   así no chocan con el tope de ~4.5 MB de las funciones de Vercel.
  */
-async function subirArchivo(file: File, slug: string): Promise<string | null> {
+async function subirArchivo(file: File, slug: string, alAviso?: (aviso: string) => void): Promise<string | null> {
   // Comprime la foto en el navegador ANTES de subir (videos/gif quedan intactos).
   file = await comprimirImagen(file);
 
@@ -39,6 +39,8 @@ async function subirArchivo(file: File, slug: string): Promise<string | null> {
     const res = await fetch('/api/funnels/imagen', { method: 'POST', body: fd });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'No se pudo subir la imagen.');
+    // LEY DE PESO nivel 4: la foto se subió; el aviso es visible pero no bloquea.
+    if (data.aviso) alAviso?.(data.aviso);
     return data.url as string;
   }
 
@@ -196,7 +198,7 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
   async function subirAudio(file: File) {
     setSubiendo('audio');
     try {
-      const url = await subirArchivo(file, actual.slug || 'nuevo');
+      const url = await subirArchivo(file, actual.slug || 'nuevo', a => setAviso(`⚠️ ${a}`));
       if (url) set('audio_url', url);
     } catch (e: any) {
       alert(e?.message || 'No se pudo subir el audio.');
