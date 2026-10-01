@@ -109,7 +109,7 @@ function mezclarVariado(items: Promo[]): Promo[] {
   return out;
 }
 
-export default function PromosLista({ promos, sellerWa, sellerNombre, sellerCodigo, sellerToken, adminToken }: { promos: Promo[]; sellerWa?: string | null; sellerNombre?: string | null; sellerCodigo?: string | null; sellerToken?: string | null; adminToken?: string | null }) {
+export default function PromosLista({ promos, sellerWa, sellerNombre, sellerCodigo, sellerToken }: { promos: Promo[]; sellerWa?: string | null; sellerNombre?: string | null; sellerCodigo?: string | null; sellerToken?: string | null }) {
   // Modo vendedor: si viene un número de vendedor, se oculta "COMPRAR AQUÍ" y
   // el combo; el botón de WhatsApp de cada producto va al número del vendedor.
   const sellerMode = !!sellerWa;
@@ -188,7 +188,7 @@ export default function PromosLista({ promos, sellerWa, sellerNombre, sellerCodi
         <div className="pr-sellerbar">🛍️ Estás comprando con <b>{sellerNombre}</b> · pago contra entrega</div>
       )}
       <div className="pr-wrap">
-        {visibles.map((p, i) => <Card key={p.id} p={p} idx={i} sellerMode={sellerMode} waNumber={waNumber} sellerCodigo={sellerCodigo} sellerToken={sellerToken} adminToken={adminToken} selected={sel.has(p.id)} onToggle={() => toggleSel(p.id)} onComprar={(talla, color) => setCompra({ promo: p, talla, color })} />)}
+        {visibles.map((p, i) => <Card key={p.id} p={p} idx={i} sellerMode={sellerMode} waNumber={waNumber} sellerCodigo={sellerCodigo} sellerToken={sellerToken} selected={sel.has(p.id)} onToggle={() => toggleSel(p.id)} onComprar={(talla, color) => setCompra({ promo: p, talla, color })} />)}
       </div>
       {visibles.length === 0 && <p style={{ textAlign: 'center', color: '#7f938f', padding: '30px 16px' }}>{nq ? `No encontramos productos para "${q}".` : 'No hay productos en esta categoría.'}</p>}
       {compra && <ModalCompra promo={compra.promo} initialTalla={compra.talla} initialColor={compra.color} onClose={() => setCompra(null)} />}
@@ -221,7 +221,7 @@ function ColorPills({ colores, sel, onPick }: { colores: string[]; sel: string; 
   );
 }
 
-function Card({ p, idx, onComprar, selected, onToggle, sellerMode, waNumber, sellerCodigo, sellerToken, adminToken }: { p: Promo; idx: number; onComprar: (talla: string, color: string) => void; selected: boolean; onToggle: () => void; sellerMode?: boolean; waNumber: string; sellerCodigo?: string | null; sellerToken?: string | null; adminToken?: string | null }) {
+function Card({ p, idx, onComprar, selected, onToggle, sellerMode, waNumber, sellerCodigo, sellerToken }: { p: Promo; idx: number; onComprar: (talla: string, color: string) => void; selected: boolean; onToggle: () => void; sellerMode?: boolean; waNumber: string; sellerCodigo?: string | null; sellerToken?: string | null }) {
   const colores = coloresDe(p);
   const [color, setColor] = useState(colores[0] || '');
   const [talla, setTalla] = useState('');
@@ -242,9 +242,9 @@ function Card({ p, idx, onComprar, selected, onToggle, sellerMode, waNumber, sel
   const qs = new URLSearchParams();
   if (sellerCodigo) qs.set('v', sellerCodigo);
   if (color) qs.set('color', color);
-  // Token para "marcar vendido": el del vendedor (con ?v=) o el del principal (sin ?v=).
+  // Token para "marcar vendido": solo el del vendedor (con ?v=). El del principal
+  // ya no viaja en el enlace: lo veía cualquier cliente (lib/promo-principal.ts).
   if (sellerToken) qs.set('k', sellerToken);
-  else if (!sellerMode && adminToken) qs.set('k', adminToken);
   const urlProducto = `${SITE}/promos/${p.id}${qs.toString() ? `?${qs.toString()}` : ''}`;
   const waText = encodeURIComponent(
     `¡Hola! 😊 Quiero este producto:\n*${p.nombre}*${p.referencia ? `\nRef: ${p.referencia}` : ''}${color ? `\nColor: ${color}` : ''}${talla ? `\nTalla: ${talla.replace(' - ', ' ')}` : ''}\nValor: ${pesos(p.precio)}\n${urlProducto}`,

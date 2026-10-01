@@ -1,4 +1,6 @@
+import { cookies } from 'next/headers';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { COOKIE_PROMO_PRINCIPAL } from '@/lib/promo-principal';
 import PromoProducto from '@/components/publico/PromoProducto';
 
 export const dynamic = 'force-dynamic';
@@ -65,17 +67,19 @@ export default async function ProductoPromoPage({ params, searchParams }: { para
   const { sellerWa, sellerNombre, sellerCodigo, token } = await getSeller(sp?.v?.trim());
   const kParam = sp?.k?.trim() || '';
 
-  // El botón "Marcar vendido" aparece si el link trae el token correcto:
-  //  · con ?v= → token del vendedor (descuenta y venta va a su WhatsApp).
-  //  · sin ?v= (enlace principal) → token del principal (tu número).
+  // El botón "Marcar vendido" aparece si:
+  //  · con ?v= → el link trae el token del vendedor (descuenta y venta va a su WhatsApp).
+  //  · sin ?v= (enlace principal) → el teléfono tiene la cookie del principal
+  //    (tu número). Su token NO se pasa a la página: /vender lo lee de la cookie.
   let canSell = false;
   let ventaCodigo: string | null = null;
   let ventaToken: string | null = null;
   if (sellerCodigo && token && kParam && kParam === token) {
     canSell = true; ventaCodigo = sellerCodigo; ventaToken = kParam;
-  } else if (!sellerCodigo && kParam) {
-    const prinToken = await getPrincipalToken();
-    if (prinToken && kParam === prinToken) { canSell = true; ventaCodigo = '__principal__'; ventaToken = kParam; }
+  } else if (!sellerCodigo) {
+    const enCookie = (await cookies()).get(COOKIE_PROMO_PRINCIPAL)?.value ?? '';
+    const prinToken = enCookie ? await getPrincipalToken() : null;
+    if (prinToken && enCookie === prinToken) { canSell = true; ventaCodigo = '__principal__'; }
   }
 
   return (

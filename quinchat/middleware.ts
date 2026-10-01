@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { withAuth } from 'next-auth/middleware';
+import { COOKIE_PROMO_PRINCIPAL, COOKIE_PROMO_PRINCIPAL_SEG } from '@/lib/promo-principal';
 
 /**
  * Dos sitios en un mismo proyecto:
@@ -58,6 +59,26 @@ export default function middleware(req: NextRequest, event: any) {
   if (pathname.startsWith('/api/')) {
     if (esApiPublica(pathname, req.method)) return NextResponse.next();
     return (proteger as any)(req, event);
+  }
+
+  // Enlace privado del dueño para "marcar vendido" (/promos?k=<token>, sin ?v=):
+  // el token pasa a una cookie httpOnly y se quita de la dirección, para que no
+  // quede en el historial ni en los enlaces que se comparten. Aquí no se valida:
+  // lo comparan la ficha y /api/promociones/vender contra la base. Ver
+  // lib/promo-principal.ts. Los links de vendedor (?v=…&k=…) siguen igual.
+  if (/^\/(p\/)?promos(\/|$)/.test(pathname)
+      && req.nextUrl.searchParams.has('k') && !req.nextUrl.searchParams.has('v')) {
+    const url = req.nextUrl.clone();
+    const k = (url.searchParams.get('k') ?? '').trim();
+    url.searchParams.delete('k');
+    const res = NextResponse.redirect(url);
+    if (k) {
+      res.cookies.set(COOKIE_PROMO_PRINCIPAL, k, {
+        httpOnly: true, sameSite: 'lax', path: '/',
+        secure: url.protocol === 'https:', maxAge: COOKIE_PROMO_PRINCIPAL_SEG,
+      });
+    }
+    return res;
   }
 
   if (esTienda) {

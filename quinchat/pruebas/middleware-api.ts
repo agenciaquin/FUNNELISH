@@ -87,7 +87,7 @@ function urlDeArchivo(f: string): string {
   ).join('/');
 }
 
-function pedir(metodo: string, ruta: string, host: string): Promise<{ status: number; location: string; rewrite: string }> {
+function pedir(metodo: string, ruta: string, host: string): Promise<{ status: number; location: string; rewrite: string; cookie: string }> {
   const u = new URL(BASE);
   return new Promise((ok, mal) => {
     const r = request({ hostname: u.hostname, port: u.port, method: metodo, path: ruta, headers: { host, 'content-length': '0' } }, res => {
@@ -96,6 +96,7 @@ function pedir(metodo: string, ruta: string, host: string): Promise<{ status: nu
         status: res.statusCode ?? 0,
         location: String(res.headers.location ?? ''),
         rewrite: String(res.headers['x-middleware-rewrite'] ?? ''),
+        cookie: (res.headers['set-cookie'] ?? []).join(' | '),
       }));
     });
     r.on('error', mal);
@@ -172,6 +173,22 @@ function informar(ok: boolean, texto: string) {
       `tienda / lleva a /tienda [${host}] -> ${raiz.status} ${raiz.location}`);
     const panel = await pedir('GET', '/panel', host);
     informar(/\/tienda$/.test(panel.location), `tienda /panel lleva a /tienda [${host}] -> ${panel.status} ${panel.location}`);
+
+    // /promos abre sin sesión. El enlace privado del principal (?k= sin ?v=) pasa
+    // el token a una cookie httpOnly y lo quita de la dirección; el de vendedor
+    // (?v=…&k=…) no se toca (lib/promo-principal.ts).
+    const promos = await pedir('GET', '/promos', host);
+    informar(promos.rewrite === '/p/promos' && !aLogin(promos), `tienda /promos se reescribe a /p/promos [${host}] -> ${promos.status} rewrite=${promos.rewrite || '(ninguna)'}`);
+    for (const ruta of ['/promos?k=abc123', '/promos/p1?color=Negro&k=abc123']) {
+      const r = await pedir('GET', ruta, host);
+      const destino = ruta.replace(/[?&]k=abc123/, '');
+      informar((r.status === 307 || r.status === 308) && r.location.endsWith(destino) && !r.location.includes('k=')
+        && /promo_principal=abc123/.test(r.cookie) && /HttpOnly/i.test(r.cookie) && /SameSite=lax/i.test(r.cookie),
+        `tienda ${ruta} guarda k en cookie httpOnly y lo quita de la URL [${host}] -> ${r.status} ${r.location} cookie=${r.cookie || '(ninguna)'}`);
+    }
+    const vend = await pedir('GET', '/promos/p1?v=ana&k=abc123', host);
+    informar(vend.rewrite.startsWith('/p/promos/p1') && !vend.cookie.includes('promo_principal'),
+      `tienda link de vendedor ?v=&k= no se toca [${host}] -> ${vend.status} rewrite=${vend.rewrite || '(ninguna)'}`);
   }
   for (const host of HOSTS_PANEL) {
     const r = await pedir('GET', '/colombia', host);

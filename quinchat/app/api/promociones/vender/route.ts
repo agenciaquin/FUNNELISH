@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { COOKIE_PROMO_PRINCIPAL } from '@/lib/promo-principal';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,6 +8,11 @@ export const dynamic = 'force-dynamic';
  * "Marcar como vendido" desde el link del vendedor.
  * Descuenta 1 unidad del color+talla indicados. Solo funciona si el `token`
  * coincide con el del vendedor (código), para que un cliente no pueda descontar.
+ *
+ * El principal (`__principal__`) no manda el token en el cuerpo: se lee de su
+ * cookie httpOnly (lib/promo-principal.ts), porque la página ya no lo conoce.
+ * Las compras de clientes NO pasan por aquí: /pedido y /pedido-multi descuentan
+ * el stock en el servidor sin token.
  */
 export async function POST(req: NextRequest) {
   let b: any;
@@ -16,7 +22,9 @@ export async function POST(req: NextRequest) {
   const color = String(b?.color ?? '').trim();
   const talla = String(b?.talla ?? '').trim();
   const codigo = String(b?.codigo ?? '').trim();
-  const token = String(b?.token ?? '').trim();
+  const token = codigo === '__principal__'
+    ? (req.cookies.get(COOKIE_PROMO_PRINCIPAL)?.value ?? '').trim()
+    : String(b?.token ?? '').trim();
 
   if (!promoId) return NextResponse.json({ error: 'Falta el producto.' }, { status: 400 });
   if (!talla) return NextResponse.json({ error: 'Elige la talla que se vendió.' }, { status: 400 });

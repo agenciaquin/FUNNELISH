@@ -21,12 +21,9 @@ export default async function PromosPage({ searchParams }: { searchParams: Promi
 
   // Modo vendedor: /promos?v=<codigo>. Si el código existe y está activo, el
   // catálogo oculta "COMPRAR AQUÍ" y "COMPRAR POR WHATSAPP" va a SU número.
-  // Token del "principal" (tu número): habilita "marcar vendido" en el enlace principal.
-  let adminToken: string | null = null;
-  {
-    const { data: prin } = await supabase.from('vendedores_promo').select('token').eq('codigo', '__principal__').maybeSingle();
-    adminToken = prin?.token ?? null;
-  }
+  // El token del "principal" (tu número) ya NO se lee aquí: iba a todos los
+  // visitantes y con él se vaciaba el stock. Su "marcar vendido" va por cookie
+  // (lib/promo-principal.ts).
 
   const codigo = (await searchParams)?.v?.trim();
   let sellerWa: string | null = null;
@@ -60,7 +57,7 @@ export default async function PromosPage({ searchParams }: { searchParams: Promi
           Pronto tendremos nuevas promociones aquí. ¡Vuelve pronto! 😊
         </p>
       ) : (
-        <PromosLista promos={promos} sellerWa={sellerWa} sellerNombre={sellerNombre} sellerCodigo={sellerCodigo} sellerToken={sellerToken} adminToken={adminToken} />
+        <PromosLista promos={promos} sellerWa={sellerWa} sellerNombre={sellerNombre} sellerCodigo={sellerCodigo} sellerToken={sellerToken} />
       )}
 
       <footer style={{ textAlign: 'center', color: '#6d817d', fontSize: 12, padding: '24px 16px' }}>
