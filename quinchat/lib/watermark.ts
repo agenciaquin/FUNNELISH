@@ -1,5 +1,6 @@
 import Jimp from 'jimp';
 import path from 'path';
+import { createHash } from 'crypto';
 import { bufferDesdeJimp } from '@/lib/optimizar-imagen-servidor';
 import { subirArchivo } from '@/lib/subir-archivo';
 
@@ -94,7 +95,11 @@ export async function estamparNombreDetallado(
 
     const bucket = 'chat-media';
     const hash = Math.abs(hashStr(texto)).toString(36).slice(0, 6);
-    const path = `catalogo/marcas/${sanit(key)}-${ESTILO}-${hash}.jpg`;
+    // El nombre lleva también un hash de la FOTO DE ORIGEN: una foto nueva del mismo color
+    // es una ruta nueva y la caché de 1 año (la marca de la LEY) nunca sirve la foto vieja.
+    // Se mantiene `-${ESTILO}-` para que `esEstiloActual` siga reconociéndolo.
+    const hashFoto = createHash('sha1').update(urlOriginal).digest('hex').slice(0, 10);
+    const path = `catalogo/marcas/${sanit(key)}-${ESTILO}-${hash}-${hashFoto}.jpg`;
     // LEY DE PESO: Jimp compone la etiqueta y sharp codifica (foto-whatsapp, 250 kB),
     // en vez del JPEG de Jimp a calidad 100. Es automático: nunca rechaza.
     // OJO: el texto de la etiqueta es fino; la revisión a ojo (q85 frente a q90) sigue pendiente.

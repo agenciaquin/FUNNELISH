@@ -1,4 +1,5 @@
 import Jimp from 'jimp';
+import { createHash } from 'crypto';
 
 import { bufferDesdeJimp } from '@/lib/optimizar-imagen-servidor';
 import { subirArchivo } from '@/lib/subir-archivo';
@@ -19,7 +20,10 @@ export async function generarCollagePack(
   try {
     const bucket   = 'chat-media';
     const sanit    = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-    const fileName = `${productos.map(sanit).sort().join('__')}__v2.jpg`;
+    // El nombre lleva también un hash de las FOTOS (no solo del producto): con la caché de
+    // 1 año y `upsert`, una foto nueva del mismo producto debe ser una ruta nueva.
+    const hashFotos = createHash('sha1').update(imagenes.join('|')).digest('hex').slice(0, 10);
+    const fileName = `${productos.map(sanit).sort().join('__')}__${hashFotos}__v2.jpg`;
     const path     = `packs/${fileName}`;
     const supaUrl  = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
     const publicUrl = `${supaUrl}/storage/v1/object/public/${bucket}/${path}`;
