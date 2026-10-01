@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { createServerSupabaseClient } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
@@ -9,6 +11,9 @@ export const dynamic = 'force-dynamic';
  *   /promos?v=<codigo>
  * En ese modo el catálogo oculta "COMPRAR AQUÍ" y el botón
  * "COMPRAR POR WHATSAPP" apunta al celular de ese vendedor.
+ *
+ * Todo es del panel y pide sesión aquí mismo, además del middleware: el GET
+ * devuelve el token de cada vendedor, y con un token se descuenta stock.
  */
 
 // Deja el celular en 10 dígitos (quita +57 / 57 y todo lo que no sea número).
@@ -27,6 +32,8 @@ function slugify(s: string): string {
 }
 
 export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   const supabase = createServerSupabaseClient();
   const { data, error } = await supabase
     .from('vendedores_promo')
@@ -38,6 +45,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   let b: any;
   try { b = await req.json(); } catch { return NextResponse.json({ error: 'body inválido' }, { status: 400 }); }
 
@@ -78,6 +87,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   const id = req.nextUrl.searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'Falta el id.' }, { status: 400 });
   const supabase = createServerSupabaseClient();

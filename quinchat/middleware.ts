@@ -25,12 +25,19 @@ const proteger = withAuth({ pages: { signIn: '/login' } });
  *    (la página solo hace POST). `/api/funnels/carrito` también tiene GET, PATCH
  *    y DELETE para el panel, con nombres y teléfonos: esos piden sesión.
  *    `/api/pedidos` NO abre `/api/pedidos/lista`, que devuelve datos de clientes.
+ *    Las tres de promociones son las que llama la página pública /promos
+ *    (comprar uno, comprar el carrito y "marcar vendido" con el link del
+ *    vendedor). El resto de promociones (`/api/promociones` para crear y borrar,
+ *    `/api/vendedores-promo` con los tokens) es del panel y pide sesión.
  *  · prefijos: webhooks y crons. Se protegen solos (firma o `CRON_SECRET`).
  */
 const API_PUBLICA_EXACTA: Record<string, string[]> = {
   '/api/pedidos': ['POST'],
   '/api/funnels/evento': ['POST'],
   '/api/funnels/carrito': ['POST'],
+  '/api/promociones/pedido': ['POST'],
+  '/api/promociones/pedido-multi': ['POST'],
+  '/api/promociones/vender': ['POST'],
 };
 const API_PUBLICA_PREFIJO = [
   '/api/auth/', '/api/whatsapp/webhook', '/api/whatsapp/confirmar',

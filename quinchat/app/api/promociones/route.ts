@@ -1,16 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { createServerSupabaseClient } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * Promociones: productos que se muestran en la página instantánea /promos.
- * - GET            → solo activos (para la página pública).
+ * - GET            → solo activos.
  * - GET ?admin=1   → todos (para administrar en el panel).
  * - POST           → crea o actualiza (si trae id).
  * - DELETE ?id=    → borra.
+ *
+ * Todo esto es del panel y pide sesión aquí mismo, además del middleware: sin
+ * ella cualquiera podía cambiar precios, stock o borrar promociones. La página
+ * pública /promos no llama a esta ruta: lee la base en el servidor.
  */
 export async function GET(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   const admin = req.nextUrl.searchParams.get('admin') === '1';
   const supabase = createServerSupabaseClient();
   let q = supabase.from('promociones').select('*').order('orden', { ascending: true }).order('creado_at', { ascending: false });
@@ -21,6 +29,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   let b: any;
   try { b = await req.json(); } catch { return NextResponse.json({ error: 'body inválido' }, { status: 400 }); }
 
@@ -68,6 +78,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   const id = req.nextUrl.searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'Falta el id.' }, { status: 400 });
   const supabase = createServerSupabaseClient();

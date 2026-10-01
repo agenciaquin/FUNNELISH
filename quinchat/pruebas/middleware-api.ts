@@ -26,7 +26,12 @@ const HOSTS_TIENDA = ['pedido.klixmant.shop'];
 const HOSTS_PANEL = ['localhost', 'quinchat-agencia-quin.vercel.app'];
 
 // Las exactas solo son públicas con POST (lo único que hace la página de venta).
-const EXACTAS_SOLO_POST = ['/api/pedidos', '/api/funnels/evento', '/api/funnels/carrito'];
+// Las tres de promociones son las que llama /promos (PromosLista y PromoProducto);
+// `/api/promociones` y `/api/vendedores-promo` son del panel y caen en "protegida".
+const EXACTAS_SOLO_POST = [
+  '/api/pedidos', '/api/funnels/evento', '/api/funnels/carrito',
+  '/api/promociones/pedido', '/api/promociones/pedido-multi', '/api/promociones/vender',
+];
 
 function esperadaPublica(ruta: string, metodo: string): boolean {
   if (EXACTAS_SOLO_POST.includes(ruta)) return metodo === 'POST';
@@ -46,6 +51,8 @@ const EXTRA: Array<{ ruta: string; publica: boolean; nota: string }> = [
   { ruta: '/api/cron/%2e%2e/pedidos/lista', publica: false, nota: 'recorrido %2e%2e' },
   { ruta: '/api//pedidos/lista', publica: false, nota: 'doble barra' },
   { ruta: '/API/pedidos/lista', publica: false, nota: 'mayúsculas' },
+  { ruta: '/api/promociones/pedidox', publica: false, nota: 'prefijo parecido a promociones/pedido' },
+  { ruta: '/api/promociones/pedido/../../vendedores-promo', publica: false, nota: 'recorrido desde promociones' },
 ];
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
