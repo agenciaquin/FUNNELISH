@@ -147,7 +147,7 @@ async function main() {
     comprobar('PNG alfa con ruido: nivel 4 (SUPERA_TOPE, no rechaza)', !r.cumple && r.nivel === 4 && r.codigo === 'SUPERA_TOPE',
       `${kb(src.length)} -> ${kb(r.buffer.length)} en ${((Date.now() - t0) / 1000).toFixed(1)} s`);
     comprobar('PNG alfa con ruido: aviso con peso y tope, no bloqueante', !!r.aviso && r.aviso.startsWith('Subida.') && r.aviso.includes('kB') && r.aviso.includes('250'), r.aviso ?? '(sin aviso)');
-    comprobar('PNG alfa con ruido: no baja de 1280 (suelo del rescate)', f.lado >= 1280 && f.lado <= LADO_MINIMO_IMAGEN, `${f.lado} px`);
+    comprobar('PNG alfa con ruido: nivel 4 guarda la mejor de los escalones NORMALES (lado >= 1440, no el rescate)', f.lado >= LADO_MINIMO_IMAGEN && !(r.escalon ?? '').startsWith('1280'), `${f.lado} px (${r.escalon})`);
     comprobar('PNG alfa con ruido: sigue PNG con alfa', f.formato === 'png' && f.alfa && r.contentType === 'image/png', `${f.formato} alfa=${f.alfa}`);
     comprobar('PNG alfa con ruido: devuelve la mejor versión', r.buffer.length > 0 && r.buffer.length < src.length, kb(r.buffer.length));
   }

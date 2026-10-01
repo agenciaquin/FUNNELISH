@@ -215,6 +215,10 @@ export async function optimizarImagen(
       if (!(mejorNormal && mejorNormal.buf.length <= toleranciaMax)) {
         enRescate = true;
         await recorrer(rescate, toleranciaMax);
+        // Nivel 4 (decisión de dirección): si el rescate tampoco cupo, se guarda la mejor de los
+        // escalones NORMALES (la de más calidad, normalmente 1440 px q75), no la más pequeña del rescate.
+        const trasRescate = mejor as Candidato | null;
+        if (mejorNormal && trasRescate && trasRescate.buf.length > toleranciaMax) mejor = mejorNormal;
       }
     }
 
