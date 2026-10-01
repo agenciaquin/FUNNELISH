@@ -24,6 +24,12 @@ export interface PostgrestFalso {
   fallar: (p: Peticion) => boolean;
   /** Demora (ms) antes de procesar cada petición: sirve para ver carreras. */
   demoraMs: number;
+  /**
+   * Tablas cuya clave primaria es `id` (opcional; vacío = sin comprobar, como
+   * antes). En ellas un INSERT con un id repetido responde 409 / `23505`, y un
+   * upsert (`Prefer: resolution=merge-duplicates`) completa la fila existente.
+   */
+  unicos: Set<string>;
   cerrar(): Promise<void>;
 }
 
@@ -78,6 +84,7 @@ export async function arrancarPostgrest(inicial: Record<string, any[]> = {}): Pr
     peticiones: [],
     fallar: () => false,
     demoraMs: 0,
+    unicos: new Set(),
     cerrar: async () => {},
   };
 
@@ -89,7 +96,9 @@ export async function arrancarPostgrest(inicial: Record<string, any[]> = {}): Pr
       metodo: req.method ?? 'GET',
       tabla: m ? decodeURIComponent(m[1]) : u.pathname,
       query: u.searchParams,
-      cuerpo: texto ? JSON.parse(texto) : undefined,
+      // Las subidas a Storage (`/storage/v1/...`) traen binario: no es JSON y
+      // responden 404 más abajo, como un Storage que falla.
+      cuerpo: (() => { try { return texto ? JSON.parse(texto) : undefined; } catch { return undefined; } })(),
       prefer: String(req.headers['prefer'] ?? ''),
     };
     db.peticiones.push(p);
@@ -125,6 +134,17 @@ export async function arrancarPostgrest(inicial: Record<string, any[]> = {}): Pr
         case 'POST': {
           const filas = (Array.isArray(p.cuerpo) ? p.cuerpo : [p.cuerpo])
             .map((f: any) => ({ id: randomUUID(), creado_at: new Date().toISOString(), ...f }));
+          if (db.unicos.has(p.tabla)) {
+            const merge = p.prefer.includes('resolution=merge-duplicates');
+            if (!merge && filas.some((f: any) => tabla.some(x => x.id === f.id))) {
+              return json(409, { message: `duplicate key value violates unique constraint "${p.tabla}_pkey"`, code: '23505' });
+            }
+            for (const f of filas) {
+              const previa = tabla.find(x => x.id === f.id);
+              if (previa) Object.assign(previa, f); else tabla.push(f);
+            }
+            return quiereFilas ? json(201, filas) : json(201, undefined);
+          }
           tabla.push(...filas);
           return quiereFilas ? json(201, filas) : json(201, undefined);
         }

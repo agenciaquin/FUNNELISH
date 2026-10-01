@@ -472,6 +472,20 @@ async function saveAndSend(
   }
 }
 
+/**
+ * Guarda un mensaje del cliente con INSERT. Devuelve `true` si ese id ya existía
+ * (Meta reintentó el aviso): quien llama debe saltarse el mensaje. Cualquier
+ * otro error se registra y NO cuenta como duplicado, para no dejar al cliente sin
+ * respuesta por un fallo de la base.
+ */
+async function guardarEntrante(supabase: any, fila: Record<string, any>): Promise<boolean> {
+  const { error } = await supabase.from('messages').insert(fila);
+  if (!error) return false;
+  const dup = error.code === '23505' || /duplicate key|already exists/i.test(error.message || '');
+  if (!dup) console.error('[WhatsApp] no se pudo guardar el mensaje entrante:', error.message);
+  return dup;
+}
+
 // ─── GET — verificación Meta ──────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
@@ -715,21 +729,11 @@ export async function POST(req: NextRequest) {
 
     // ── Anti-duplicados de Meta ──────────────────────────────────────────────
     // Meta REINTENTA el aviso si tardamos en responder (la espera de 12 s más la
-    // IA lo provocan). El guardado de más abajo es un upsert, así que el reintento
-    // pasaba como mensaje nuevo: doble llamada a la IA y doble respuesta al
-    // cliente. Se marca el wamid con un INSERT: si ya existía, es un reintento.
-    // (Mismo patrón que quin-comercial.) Los upsert de abajo completan el mensaje.
-    if (msgId) {
-      const { error: dupErr } = await supabase.from('messages').insert({
-        id: msgId, conversation_id: from, content: (msg as any)?.text?.body ?? '', role: 'user', type: 'text',
-        created_at: new Date().toISOString(),
-      });
-      if (dupErr) {
-        const dup = (dupErr as any).code === '23505' || /duplicate key|already exists/i.test((dupErr as any).message || '');
-        if (dup) { console.log('[WhatsApp] mensaje duplicado de Meta, ignorado:', msgId); continue; }
-        // Otro tipo de error: no se bloquea; los upsert siguientes guardan el mensaje.
-      }
-    }
+    // IA lo provocan). Se detecta en el mismo sitio donde se guarda el mensaje de
+    // verdad, con INSERT (`guardarEntrante`): si el id ya existía, es un reintento
+    // y se corta antes de la espera y de la IA. Antes se insertaba aquí una fila
+    // marcadora para CUALQUIER tipo; con ubicación, reacción o contacto nunca se
+    // rellenaba, y la espera la tomaba por "llegó otro mensaje": el bot se callaba.
 
     // ── ¿Vino de un anuncio de clic-a-WhatsApp? ──────────────────────────────
     // Meta manda el anuncio de origen en el primer mensaje. Se guarda una sola
@@ -772,6 +776,18 @@ export async function POST(req: NextRequest) {
         video: '🎬 Video', document: '📎 Documento', sticker: '🖼️ Sticker',
       };
       const etiqueta = etiquetas[msg.type] ?? '📎 Archivo';
+
+      // Anti-duplicados ANTES de descargar: un reintento no vuelve a bajar el
+      // archivo ni a subir otra copia a Storage. La fila queda con la etiqueta y
+      // el upsert de abajo la completa con la URL (si la descarga falla, queda la
+      // etiqueta, igual que antes). La nota de voz va SIEMPRE con `-audio`: el id
+      // normal es para su transcripción, que sigue al flujo de texto.
+      const idMedia = (msg.type === 'audio' || msg.type === 'voice') ? `${msgId}-audio` : msgId;
+      if (msgId && await guardarEntrante(supabase, {
+        id: idMedia, conversation_id: from, content: etiqueta,
+        role: 'user', type: 'text', created_at: new Date().toISOString(),
+      })) { console.log('[WhatsApp] mensaje duplicado de Meta, ignorado:', msgId); continue; }
+
       let publicUrl: string | null = null;
       let audioTexto = '';   // transcripción de la nota de voz (si se pudo)
 
@@ -804,9 +820,8 @@ export async function POST(req: NextRequest) {
       const caption = (msg[msg.type]?.caption as string | undefined)?.trim();
 
       // Registrar el archivo en el chat (aunque falle la descarga, queda constancia).
-      // Si es una nota de voz que se va a transcribir, se guarda con un id aparte
-      // para que la transcripción (que va con el id normal) NO la sobrescriba.
-      const idMedia = ((msg.type === 'audio' || msg.type === 'voice') && audioTexto) ? `${msgId}-audio` : msgId;
+      // Completa la fila del anti-duplicados (`idMedia`, arriba): la nota de voz
+      // va con un id aparte para que la transcripción NO la sobrescriba.
       await supabase.from('messages').upsert({
         id: idMedia, conversation_id: from,
         content: publicUrl ?? etiqueta,
@@ -1028,13 +1043,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Guardar mensaje entrante (idempotente) ───────────────────────────────
+    // ── Guardar mensaje entrante (y anti-duplicados) ─────────────────────────
+    // INSERT, no upsert: si el id ya existe es un reintento de Meta y se corta
+    // aquí, antes del aviso, la espera y la IA. Va después de crear la
+    // conversación, como antes, por si `messages` tiene clave ajena hacia ella.
     const horaMensaje = new Date().toISOString();
-    await supabase.from('messages').upsert({
+    if (await guardarEntrante(supabase, {
       id: msgId, conversation_id: from, content: text,
       role: 'user', type: 'text', reply_to: replyToContent,
       created_at: horaMensaje,
-    }, { onConflict: 'id' });
+    })) { console.log('[WhatsApp] mensaje duplicado de Meta, ignorado:', msgId); continue; }
 
     // ── Aviso push al panel (PC / celular) ───────────────────────────────────
     // Se envía siempre, incluso con el bot apagado: si atiende una persona,
