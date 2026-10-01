@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import type { TipoArchivo } from '@/lib/ley-peso';
 import { CACHE_UN_ANO, optimizarImagen } from '@/lib/optimizar-imagen-servidor';
 
 export const maxDuration = 60; // sharp necesita margen con fotos grandes
@@ -21,7 +22,15 @@ export async function POST(req: NextRequest) {
 
   // Las fotos de catálogo acaban enviándose por WhatsApp, así que el optimizador
   // solo devuelve JPEG o PNG — nunca WebP, que Meta no entrega.
-  const img = await optimizarImagen(buffer, file.type);
+  // LEY DE PESO: foto de catálogo (250 kB) o, si el panel lo indica, gráfico con texto (400 kB).
+  const tipo: TipoArchivo = String(formData.get('tipo') ?? '') === 'grafico-texto' ? 'grafico-texto' : 'foto-web';
+  const img = await optimizarImagen(buffer, file.type, tipo);
+  // LEY §1 punto 4: el peso NO rechaza. Solo lo técnicamente imposible (archivo dañado
+  // o que no es una imagen). Si no cabe se guarda la mejor y se devuelve un `aviso`
+  // visible pero no bloqueante.
+  if (img.fallo) {
+    return NextResponse.json({ error: 'No se pudo leer la imagen: el archivo está dañado o no es una imagen. Expórtala de nuevo como JPG o PNG e inténtalo otra vez.', codigo: 'ILEGIBLE' }, { status: 422 });
+  }
 
   const name = `${Date.now()}-${Math.random().toString(36).slice(2)}.${img.ext}`;
 
@@ -48,5 +57,5 @@ export async function POST(req: NextRequest) {
     .from(BUCKET)
     .getPublicUrl(data!.path);
 
-  return NextResponse.json({ url: publicUrl });
+  return NextResponse.json({ url: publicUrl, nivel: img.nivel, aviso: img.aviso });
 }

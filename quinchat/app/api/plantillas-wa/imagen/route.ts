@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { formatearPeso } from '@/lib/ley-peso';
 import { CACHE_UN_ANO, optimizarImagen } from '@/lib/optimizar-imagen-servidor';
 
 /**
@@ -12,6 +13,9 @@ import { CACHE_UN_ANO, optimizarImagen } from '@/lib/optimizar-imagen-servidor';
  */
 
 export const maxDuration = 60; // sharp necesita margen con fotos grandes
+
+/** Meta no acepta imágenes de más de 5 MB: límite externo, no de la LEY. */
+const LIMITE_META = 5 * 1024 * 1024;
 
 const clavePara = (nombre: string) => `plantilla_img_${nombre}`;
 
@@ -43,7 +47,19 @@ export async function POST(req: NextRequest) {
 
     // Esta foto se manda a Meta en cada envío, así que el optimizador solo puede
     // devolver JPEG o PNG. Nunca WebP: Meta lo acepta pero no entrega el mensaje.
-    const img = await optimizarImagen(buffer, mime);
+    // LEY DE PESO: foto-whatsapp (250 kB). El peso NO rechaza (LEY §1 punto 4): si no
+    // cabe se guarda la mejor versión y se devuelve un `aviso`. Solo se rechaza lo que
+    // Meta no puede recibir y no se puede arreglar aquí.
+    const img = await optimizarImagen(buffer, mime, 'foto-whatsapp');
+    if (img.fallo) {
+      return NextResponse.json({ error: 'No se pudo leer la imagen: el archivo está dañado o no es una imagen. Expórtala de nuevo como JPG o PNG e inténtalo otra vez.', codigo: 'ILEGIBLE' }, { status: 422 });
+    }
+    if (img.contentType !== 'image/jpeg' && img.contentType !== 'image/png') {
+      return NextResponse.json({ error: 'WhatsApp solo admite imágenes JPG o PNG. Convierte la imagen a uno de esos formatos y vuelve a subirla.', codigo: 'FORMATO' }, { status: 415 });
+    }
+    if (img.buffer.length > LIMITE_META) {
+      return NextResponse.json({ error: `Meta no admite imágenes de más de 5 MB y esta pesa ${formatearPeso(img.buffer.length)} incluso comprimida. Recórtala o usa una versión más pequeña.`, codigo: 'LIMITE_META' }, { status: 413 });
+    }
 
     const ruta = `plantillas/${nombre}-${Date.now()}.${img.ext}`;
 
@@ -65,7 +81,7 @@ export async function POST(req: NextRequest) {
       { onConflict: 'clave' }
     );
 
-    return NextResponse.json({ ok: true, url });
+    return NextResponse.json({ ok: true, url, nivel: img.nivel, aviso: img.aviso });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? 'Error inesperado.' }, { status: 500 });
   }

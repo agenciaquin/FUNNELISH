@@ -69,6 +69,7 @@ export default function PromocionesPanel() {
       const d = await res.json();
       if (!res.ok) { setAviso(d.error || 'No se pudo subir la foto.'); return; }
       setEdit(e => e ? { ...e, foto: d.url } : e);
+      if (d.aviso) setAviso(d.aviso);   // LEY DE PESO nivel 4: la foto se subió; aviso visible, no bloqueante
     } catch { setAviso('No se pudo subir la foto.'); }
     finally { setSubiendo(false); }
   }
@@ -83,6 +84,7 @@ export default function PromocionesPanel() {
       const d = await res.json();
       if (!res.ok) { setAviso(d.error || 'No se pudo subir la foto.'); return; }
       setEdit(e => e ? { ...e, fotos: { ...(e.fotos || {}), [color]: d.url } } : e);
+      if (d.aviso) setAviso(d.aviso);   // LEY DE PESO nivel 4: la foto se subió; aviso visible, no bloqueante
     } catch { setAviso('No se pudo subir la foto.'); }
     finally { setSubColor(null); }
   }
