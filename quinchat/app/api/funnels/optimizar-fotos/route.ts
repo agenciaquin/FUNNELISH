@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { esVideo } from '@/lib/funnels';
-import Jimp from 'jimp';
+import { optimizarImagen } from '@/lib/optimizar-imagen-servidor';
+import { subirArchivo } from '@/lib/subir-archivo';
 
 export const maxDuration = 300; // procesar varias fotos puede tardar
 export const dynamic = 'force-dynamic';
@@ -13,9 +14,8 @@ export const dynamic = 'force-dynamic';
  *
  * body: { slug }
  */
-const MAX_LADO = 1080;   // suficiente para celular a todo lo ancho
-const CALIDAD  = 72;     // 0–100
-const UMBRAL_BYTES = 300 * 1024; // solo re-procesa fotos de más de ~300 KB
+// LEY DE PESO: ya no hay lado ni calidad propios (antes 1080 px / q72, por debajo
+// del mínimo de 1440 px de la ley). Manda el compresor: foto-web, 250 kB, por escalones.
 
 /** Descarga, redimensiona y recomprime una foto. Devuelve la URL nueva o la misma si no valía la pena. */
 async function optimizarUna(supabase: any, slug: string, url: string): Promise<{ nueva: string; antes: number; despues: number } | null> {
@@ -24,23 +24,18 @@ async function optimizarUna(supabase: any, slug: string, url: string): Promise<{
     const res = await fetch(url);
     if (!res.ok) return null;
     const original = Buffer.from(await res.arrayBuffer());
-    if (original.length <= UMBRAL_BYTES) return null; // ya es liviana
+    const tipoCont = (res.headers.get('content-type') ?? 'image/jpeg').split(';')[0];
+    const img = await optimizarImagen(original, tipoCont, 'foto-web');
+    if (!img.optimizada) return null;            // ya cabía (o es GIF/SVG): no se toca
+    // Nivel 4 (no cupo): el compresor ya lo registró; se guarda la mejor versión si mejora la original.
+    if (img.buffer.length >= original.length) return null; // no mejoró
 
-    const img: any = await Jimp.read(original);
-    if (img.getWidth() > MAX_LADO) img.resize(MAX_LADO, Jimp.AUTO);
-    img.quality(CALIDAD);
-    const liviana: Buffer = await img.getBufferAsync(Jimp.MIME_JPEG);
-
-    if (liviana.length >= original.length) return null; // no mejoró
-
-    const ruta = `embudos-opt/${slug}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.jpg`;
-    const { error } = await supabase.storage
-      .from('chat-media').upload(ruta, liviana, { contentType: 'image/jpeg', upsert: false });
-    if (error) { console.error('[Optimizar] upload:', error.message); return null; }
-
-    const { data: pub } = supabase.storage.from('chat-media').getPublicUrl(ruta);
-    if (!pub?.publicUrl) return null;
-    return { nueva: pub.publicUrl, antes: original.length, despues: liviana.length };
+    const r = await subirArchivo({
+      supabase, bucket: 'chat-media', prefijo: `embudos-opt/${slug}`, buffer: img.buffer,
+      contentType: img.contentType, tipo: 'foto-web', origen: 'optimizar-fotos',
+    });
+    if (!r.subido || !r.url) { console.error('[Optimizar] upload:', r.error); return null; }
+    return { nueva: r.url, antes: original.length, despues: r.buffer.length };
   } catch (e) {
     console.error('[Optimizar] error con', url, e);
     return null;

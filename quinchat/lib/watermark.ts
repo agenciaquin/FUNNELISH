@@ -1,5 +1,7 @@
 import Jimp from 'jimp';
 import path from 'path';
+import { bufferDesdeJimp } from '@/lib/optimizar-imagen-servidor';
+import { subirArchivo } from '@/lib/subir-archivo';
 
 // Versión del estilo de la marca de agua. Al cambiar el diseño (tamaño, posición),
 // sube este número: así el botón "Marcar fotos" re-aplica el nuevo estilo a TODAS.
@@ -90,14 +92,17 @@ export async function estamparNombreDetallado(
     badge.print(font, padX, padY, txt);
     img.composite(badge, margin, margin);
 
-    const buffer = await img.getBufferAsync(Jimp.MIME_JPEG);
-
     const bucket = 'chat-media';
     const hash = Math.abs(hashStr(texto)).toString(36).slice(0, 6);
     const path = `catalogo/marcas/${sanit(key)}-${ESTILO}-${hash}.jpg`;
-    const { error: upErr } = await supabase.storage.from(bucket)
-      .upload(path, buffer, { contentType: 'image/jpeg', upsert: true });
-    if (upErr) { console.error('[Marca] upload error:', upErr.message); return { url: null, error: 'storage: ' + upErr.message }; }
+    // LEY DE PESO: Jimp compone la etiqueta y sharp codifica (foto-whatsapp, 250 kB),
+    // en vez del JPEG de Jimp a calidad 100. Es automático: nunca rechaza.
+    // OJO: el texto de la etiqueta es fino; la revisión a ojo (q85 frente a q90) sigue pendiente.
+    const r = await subirArchivo({
+      supabase, bucket, ruta: path, buffer: await bufferDesdeJimp(img), contentType: 'image/png',
+      tipo: 'foto-whatsapp', origen: 'marca-agua', upsert: true,
+    });
+    if (!r.subido) { console.error('[Marca] upload error:', r.error); return { url: null, error: 'storage: ' + r.error }; }
 
     const supaUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
     // Cache-busting por si se re-estampa con el mismo path

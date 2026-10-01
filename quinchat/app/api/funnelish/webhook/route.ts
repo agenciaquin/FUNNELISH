@@ -8,6 +8,8 @@ import { lineaTalla } from '@/lib/formato-pedido';
 import { tokenFunnelishValido } from '@/lib/token-funnelish';
 import { validateAddressLupap, getLupapMessage } from '@/lib/lupap';
 import Jimp from 'jimp';
+import { bufferDesdeJimp } from '@/lib/optimizar-imagen-servidor';
+import { subirArchivo } from '@/lib/subir-archivo';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -295,14 +297,16 @@ async function generarCollagePack(supabase: any, productos: string[], imagenes: 
     let left = 0;
     imgs.forEach((im: any) => { canvas.composite(im, left, 0); left += im.getWidth(); });
 
-    // Jimp codifica JPEG a calidad 100 si no se le dice otra cosa, y un collage
-    // de 2700x900 sale a ~1,6 MB. A 85 pesa 442 kB —un 73% menos— y el cliente
-    // no nota la diferencia. Mismo valor que el resto del proyecto.
-    const buffer = await canvas.quality(85).getBufferAsync(Jimp.MIME_JPEG);
-
-    const { error: upErr } = await supabase.storage.from(bucket)
-      .upload(path, buffer, { contentType: 'image/jpeg', upsert: true });
-    if (upErr) { console.error('[Collage] upload error:', upErr.message); return null; }
+    // LEY DE PESO: Jimp solo COMPONE; sharp codifica (foto-whatsapp, 250 kB). Jimp a
+    // calidad 100 daba ~1,6 MB por collage. Es automático: nunca rechaza; si no cabe
+    // se guarda la mejor versión y queda la línea [ley-peso].
+    const r = await subirArchivo({
+      supabase, bucket, ruta: path, buffer: await bufferDesdeJimp(canvas), contentType: 'image/png',
+      tipo: 'foto-whatsapp', origen: 'collage', upsert: true,
+    });
+    if (!r.subido) { console.error('[Collage] upload error:', r.error); return null; }
+    // PENDIENTE (frente V3): este generador y el de lib/collage.ts siguen siendo dos
+    // copias; aquí solo se cambió la línea que codifica y guarda.
 
     console.log(`[Collage] generado ${path}`);
     return publicUrl;
