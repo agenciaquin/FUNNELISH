@@ -5,6 +5,7 @@ agente de pruebas (verifica).
 **Estado: SIMULACRO.** No se ha escrito, borrado ni sobrescrito **nada** en Supabase: ni Storage ni base. Todo lo que
 sigue sale de bajar los archivos reales, comprimirlos en este PC y medirlos.
 **Manda:** `TABLERO-AGENTES.md` (orden), `LEY-DE-PESO.md` §2 (topes) y `ESTRATEGIA-PESO.md` §4.2 (P20–P27).
+**Revisado tras `VERIFICACION-PRUEBAS.md`** (30-09-2026): corregidos F1–F9, ver §13. Las cifras no cambian.
 
 > ⚠️ **Windows no decide sobre Linux.** Todo se midió aquí (Windows, `sharp` 0.35 de la app, `ffmpeg` 6.1.1 de
 > `ffmpeg-static`). Los scripts corren en el PC, no en Vercel, así que esta vez Windows **sí** es el destino de la
@@ -48,7 +49,12 @@ como uso. Ninguna columna, fuera de ese registro, contiene `_originales/`.
 tablero pide cruzar `catalogo_variables`. **Se cierra con `cruce-solo-lectura.sql`** (solo `SELECT`; lo ejecuta quien
 tenga el editor SQL de Supabase): consulta 2 para esas dos tablas, consulta 1 para `information_schema` entero (otros
 esquemas), consulta 3 para los 18 vídeos contra todas las columnas de todos los esquemas y consulta 4 para
-`_originales/`. **A2 y A1 se niegan a ejecutar** mientras esas tablas no se den por revisadas con `--tablas-revisadas`.
+`_originales/`. **A2 y A1 se niegan a ejecutar** mientras esas tablas no se den por revisadas con
+`--tablas-revisadas <fichero>`: el **fichero con los resultados** de ese SQL, que tiene que tener menos de 24 h y
+nombrar las dos tablas. Su sha256 y su fecha quedan en el registro de ejecuciones.
+
+El cruce decodifica `%XX` trozo a trozo (un «50% OFF» en la misma celda ya no esconde una ruta escrita con `%2F`),
+pagina cada tabla ordenada por su clave primaria y, en A2, comprueba además la **ruta completa** de cada vídeo.
 
 ---
 
@@ -208,6 +214,11 @@ móvil del cliente se la quedaría un año **aunque se restaurara el original**.
 2. Revisión a ojo en un móvil (§8) y 7 días mirando los registros.
 3. **Fase 2** (`--ejecutar --fijar-cache`): los **mismos bytes** otra vez con el año de la LEY.
 
+La fase 1 solo sube si en Storage sigue el original medido; la fase 2, solo si está la versión de la fase 1. Lo que ya
+está en fase 1 no vuelve a entrar en fase 1, y relanzar el simulacro no vuelve a medir lo ya medido (nunca hay una
+segunda compresión). `restaurar.ts` devuelve los bytes, el `Content-Type` y el `cacheControl` **originales**; con
+`--cache-corta` pone 1 día.
+
 Si algo sale mal entre las dos, `restaurar.ts` lo deshace y como mucho un día después ningún cliente lo ve. Los 143
 archivos que hoy tienen 1 año siguen enseñando la versión vieja a quien ya la tenía: es lo que queremos.
 
@@ -219,25 +230,29 @@ corta. Se sustituyen **de madrugada** (2:00–5:00, hora de Colombia).
 ## 8 · Orden de ejecución propuesto y marcha atrás
 
 Cada paso necesita el **visto bueno de dirección, por escrito, para ese paso**. Antes de cualquiera: el SQL del §1 (lo
-ejecuta quien tenga el editor SQL) y **mover las copias a un disco que no sea temporal** (`--copias D:\copias-limpieza`
-o similar: el scratchpad de esta sesión se puede borrar solo). Los scripts vuelven a cruzar al arrancar y comprueban
-el sha256 de cada archivo justo antes de escribirlo: si cambió desde el simulacro, lo saltan.
+ejecuta quien tenga el editor SQL y guarda sus resultados en un fichero, p. ej. `resultados-sql.txt`) y **mover la
+carpeta de copias a un disco que no sea temporal** y usarla con `--copias <nueva carpeta>` (el scratchpad de esta
+sesión se puede borrar solo). Las copias, `resultados/` y `salida/` guardan rutas **relativas** a `--copias`, así que
+la carpeta se puede mover entera. Los scripts vuelven a cruzar al arrancar, comprueban el sha256 de cada archivo
+justo antes de escribirlo (si cambió desde el simulacro, lo saltan y lo dicen) y, después de escribir, vuelven a
+leerlo para confirmar que quedó lo esperado. Cada escritura queda en `<copias>/resultados/ejecuciones.jsonl`, que
+solo crece: es lo que permite deshacer lo borrado.
 
 El tablero pide **primero el grifo (A6/P19, tras Z7)**. Si Z7 tarda, esto se puede hacer igual y repetir después una
 pasada corta (los scripts son relanzables: solo miden lo que pasa del tope).
 
 | # | Paso | Comando (desde la raíz del repo, `tsx` del scratchpad o `npx tsx`) | Comprobación | Marcha atrás |
 | --- | --- | --- | --- | --- |
-| 0 | Simulacro del día (vuelve a medir y a cruzar) | `a2-…ts`, `a34-…ts`, `a5-…ts`, `a1-…ts` sin `--ejecutar` | Mismas cifras que aquí ± lo nuevo | — |
-| 1 | **A2** mover los 18 a `_borrar/` | `a2-videos-huerfanos.ts --ejecutar --tablas-revisadas catalogo_categorias,catalogo_variables` | 404 en las 18 URLs; los 14 embudos de `pzdjz` y `pareja` siguen con vídeo | `restaurar.ts --tarea a2 --ejecutar` |
+| 0 | Simulacro del día (vuelve a cruzar; mide solo lo NUEVO, lo ya medido no se rehace) | `a2-…ts`, `a34-…ts`, `a5-…ts`, `a1-…ts` sin `--ejecutar` | Mismas cifras que aquí ± lo nuevo; ningún «AVISO cambio-fuera» | — |
+| 1 | **A2** mover los 18 a `_borrar/` | `a2-videos-huerfanos.ts --ejecutar --tablas-revisadas resultados-sql.txt` | 404 en las 18 URLs; los 14 embudos de `pzdjz` y `pareja` siguen con vídeo | `restaurar.ts --tarea a2 --ejecutar` |
 | 2 | **A3/A4 prueba:** una zona pequeña, `plantillas` (1 archivo) | `a34-…ts --ejecutar --zona plantillas` | La URL pública devuelve el nuevo `ETag` y el nuevo peso al momento (CDN invalidada) | `restaurar.ts --tarea a34 --zona plantillas --ejecutar` |
 | 3 | **A5 sin D5** (3 vídeos), de madrugada | `a5-…ts --ejecutar` | Se ven y suenan en `pareja`, `pareja-tk`, `spiderman-tend` en un móvil | `restaurar.ts --tarea a5 --ejecutar` |
 | 4 | **A3** chat saliente (289) | `a34-…ts --ejecutar --zona chat-saliente` | Revisión a ojo: las 21 con SSIM < 0,955 y 3 capturas con texto pequeño; abrir 5 conversaciones en el panel | `restaurar.ts --tarea a34 --zona chat-saliente --ejecutar` |
 | 5 | **A4** zona a zona: `packs`, `ventas`, `embudos/chat`, `catalogo`, `plantillas-images`, `embudos`, `catalogo-imagenes` | `a34-…ts --ejecutar --zona <zona>` | `validar-landings.ts` y `validar-whatsapp.ts` (media-api) en verde; 3 fotos de producto vistas en móvil por zona | `restaurar.ts --tarea a34 --zona <zona> --ejecutar` |
-| 6 | **Fase 2** de 2–5, a los 7 días sin incidencias | lo mismo con `--fijar-cache` | `cacheControl` = 31536000 en `storage.objects` (consulta 5 del SQL) | `restaurar.ts` (sube el original con 1 día) |
+| 6 | **Fase 2** de 2–5, a los 7 días sin incidencias | lo mismo con `--fijar-cache` | `cacheControl` = 31536000 en `storage.objects` (consulta 5 del SQL) | `restaurar.ts` (sube el original con su caché original; `--cache-corta` para 1 día) |
 | 7 | **A5 D5** (9 vídeos de chat), solo si dirección aprueba D5 | `a5-…ts --ejecutar --d5` | Las 9 conversaciones reproducen el vídeo en el panel | `restaurar.ts --tarea a5 --ejecutar` |
-| 8 | **Purga de `_borrar/`** (A2), 14 días después del paso 1 sin 404 que importen | `a2-…ts --ejecutar --purgar --tablas-revisadas …` | `_borrar/` vacío | Solo desde la copia local |
-| 9 | **A1**, al final (≥ 7 días tras la fase 2) | `a1-originales.ts --bajar-copia` y luego `--ejecutar --a34-hecho` | Copia verificada; consulta 4 del SQL = 0; quedan los 8 a conservar | `restaurar.ts --tarea a1 --ejecutar` (desde la copia local) |
+| 8 | **Purga de `_borrar/`** (A2), 14 días después del paso 1 sin 404 que importen | `a2-…ts --ejecutar --purgar --tablas-revisadas resultados-sql.txt` (el script no borra nada que lleve menos de 14 días, según el registro) | `_borrar/` vacío | `restaurar.ts --tarea a2 --ejecutar` (recrea desde la copia local) |
+| 9 | **A1**, al final (≥ 7 días tras la fase 2) | `a1-originales.ts --bajar-copia` y luego `--ejecutar --a34-hecho --tablas-revisadas resultados-sql.txt` | Copia verificada; consulta 4 del SQL = 0; quedan los 8 a conservar | `restaurar.ts --tarea a1 --ejecutar` (desde la copia local) |
 
 ---
 
@@ -289,6 +304,9 @@ sin bajar de SSIM 0,95 (342 kB de media), los 8 originales a conservar y los 17 
 - **PNG que pasan a JPEG con el nombre `.png`** (166): el `Content-Type` sí cambia, y la pasada de agosto ya lo hizo
   así en `embudos/` sin problemas conocidos, pero no se ha probado un envío por WhatsApp de uno de ellos después.
 - **quin-comercial:** su base es otra cuenta; si enlaza a estos buckets, no lo vemos.
+- **Recrear un objeto borrado en el Supabase real:** la marcha atrás de A1 y de la purga de A2 usa `POST` (crear,
+  sin `x-upsert`), que es como sube `supabase-js`; probado solo contra el Supabase falso. Prueba más barata cuando
+  toque: restaurar el primer vídeo purgado y abrir su URL.
 
 ---
 
@@ -317,3 +335,32 @@ $TSX arreglos-supabase/limpieza/a34-recomprimir-imagenes.ts --copias <carpeta fu
      [--compresor <worktree>/quinchat] [--zona chat-saliente] [--limite 20]
 $TSX arreglos-supabase/limpieza/a5-recomprimir-videos.ts --copias <…> [--ffmpeg <ruta a ffmpeg>]
 ```
+
+---
+
+## 13 · Correcciones tras la verificación del agente de pruebas (`VERIFICACION-PRUEBAS.md`)
+
+| Fallo | Qué pasaba | Qué hace ahora |
+| --- | --- | --- |
+| **F1** | Relanzar el simulacro tras la fase 1 volvía a medir desde lo ya comprimido (SSIM 0,917) y una nueva fase 1 lo subía; la fase 2 se saltaba sin avisar | `a34.jsonl` guarda **una medición por archivo, la primera, sobre su original**, y nunca se rehace ni se pisa su `salida/`. La fase 1 solo sube si en Storage está el original medido («ya en fase 1» si no); la fase 2, solo si está la versión de la fase 1. Todo lo saltado se dice |
+| **F2** | Relanzar A5 reescribía `a5.json` sin los vídeos ya sustituidos: la fase 2 y la marcha atrás no hacían nada | `a5.json` es un registro que solo crece (unión de lo que había y lo nuevo) |
+| **F3** | `restaurar --tarea a1` no veía lo borrado; la restauración tras purgar A2 era un comentario; `PUT` no crea | Cada escritura queda en `resultados/ejecuciones.jsonl` (solo crece) con la ruta relativa y el sha256 de su copia. `restaurar` lee de ahí (y de las copias en disco) y recrea con `POST` lo que ya no existe |
+| **F4** | Las rutas de las copias eran absolutas: mover la carpeta rompía la ejecución y la marcha atrás | La ruta de cada copia se deduce de dónde está su `.meta.json`; `salida/` y el registro usan rutas relativas a `--copias` |
+| **F5** | A1 borraba aunque faltaran tablas por revisar | A1 exige la misma prueba del SQL que A2 |
+| **F6** | Un `%` suelto anulaba la decodificación de la celda; `messages` se paginaba sin orden; `--tablas-revisadas` era un texto | Decodificación por trozos, orden por clave primaria y segunda comprobación por ruta en A2. `--tablas-revisadas` recibe el **fichero** de resultados del SQL (< 24 h, nombra las tablas; sha256 al registro) |
+| **F7** | `restaurar` ponía siempre 1 día de caché y deducía el `Content-Type` | Devuelve el `cacheControl` y el `Content-Type` originales (de la copia); `--cache-corta` es opcional |
+| **F8** | A5 fallaba si no existía `resultados/` | Se crea siempre |
+| **F9** | Comentarios que prometían lo que el código no hacía | Implementado: comprobación **después** de cada escritura (vuelve a leer y compara), segunda comprobación por ruta en A2, nuevo cruce en A5 con `--ejecutar` (salta lo que ya no está en uso), la purga comprueba los 14 días en el código y no vuelve a bajar los vídeos; al negarse, el proceso sale con código 1 |
+
+**Pruebas del agente de pruebas, relanzadas contra el Supabase falso** (`…\scratchpad\pruebas-limpieza\`):
+
+| Prueba | Antes | Ahora |
+| --- | ---: | ---: |
+| `segunda-pasada.mjs` (F1) | 10/14 | **14/14** |
+| `a5-relanzar.mjs` (F2) | 9/12 | **12/12** |
+| `simulacro-falso.mjs` (original, sin tocar) | 94/105 | **102/105**: los 3 que fallan pasan `--tablas-revisadas catalogo_variables`, que ahora se rechaza a propósito (F6) |
+| `simulacro-falso-v2.mjs` (= la original con el fichero del SQL, `POST` en el falso y 16 casos nuevos: A1 borra y se restaura, purga a los 14 días y restauración tras purgar, prueba SQL caducada, código de salida) | — | **121/121** |
+| `recomprimir-muestra.ts` | 254/255 | 254/255 (sin cambios: la que queda es la medida informativa con ffmpeg, 0,9495) |
+| `transparencia.ts` | 166/166 | 166/166 |
+
+La v2 se genera con `parchear-v2.cjs` a partir de la original, que no se toca.
