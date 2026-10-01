@@ -85,6 +85,16 @@ function buscar(nodo: any, comp: any): any {
       caso('catálogo ?v=ana: no manda el token del principal', !props.includes(PRINCIPAL));
       caso('catálogo ?v=ana: el link de vendedor sigue llevando SU token', props.includes(ANA));
     }
+    // ?v=__principal__: el principal NO es un vendedor (auditoría de integracion,
+    // fallo 1). La fila de la prueba está activa y con celular, el peor caso. Se
+    // mira el árbol ENTERO, no solo las props de PromosLista.
+    const todo = (a: any) => JSON.stringify(a, (_k, v) => (typeof v === 'function' ? undefined : v));
+    for (const v of ['__principal__', ' __principal__ ']) {
+      const arbol = await Catalogo({ searchParams: Promise.resolve({ v }) });
+      const lista = buscar(arbol, PromosLista)?.props ?? {};
+      caso(`catálogo ?v=${JSON.stringify(v)}: el token del principal no sale`, !todo(arbol).includes(PRINCIPAL));
+      caso(`catálogo ?v=${JSON.stringify(v)}: no entra en modo vendedor`, !lista.sellerCodigo && !lista.sellerWa && !lista.sellerToken);
+    }
 
     // ── Ficha /promos/[id] ───────────────────────────────────────────────────
     const ficha = async (sp: Record<string, string>, cookie?: string) => {
@@ -112,6 +122,14 @@ function buscar(nodo: any, comp: any): any {
     {
       const p = await ficha({ v: 'ana', k: ANA });
       caso('ficha de vendedor con su token: con botón (igual que antes)', p.canSell === true && p.ventaCodigo === 'ana');
+    }
+    {
+      const p = await ficha({ v: '__principal__' });
+      caso('ficha ?v=__principal__: ni modo vendedor ni token', !p.sellerCodigo && !p.sellerWa && p.canSell === false && !JSON.stringify(p).includes(PRINCIPAL));
+    }
+    {
+      const p = await ficha({ v: '__principal__', k: PRINCIPAL });
+      caso('ficha ?v=__principal__&k=<principal> sin cookie: sin botón', p.canSell === false && !JSON.stringify(p).includes(PRINCIPAL));
     }
     {
       const p = await ficha({ v: 'ana', k: PRINCIPAL }, PRINCIPAL);

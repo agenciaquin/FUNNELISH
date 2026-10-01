@@ -30,11 +30,14 @@ export default async function PromosPage({ searchParams }: { searchParams: Promi
   let sellerNombre: string | null = null;
   let sellerCodigo: string | null = null;
   let sellerToken: string | null = null;
-  if (codigo) {
+  // `__principal__` no es un vendedor: con ?v=__principal__ su token saldría en
+  // el ?k= de cada producto. Se descarta aquí y en la consulta.
+  if (codigo && codigo !== '__principal__') {
     const { data: vend } = await supabase
       .from('vendedores_promo')
       .select('nombre, celular, activo, token')
       .eq('codigo', codigo)
+      .neq('codigo', '__principal__')
       .maybeSingle();
     if (vend && vend.activo && /^\d{10}$/.test(String(vend.celular))) {
       sellerWa = `57${vend.celular}`;

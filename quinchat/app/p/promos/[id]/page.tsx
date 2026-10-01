@@ -15,9 +15,10 @@ async function getPromo(id: string) {
 
 async function getSeller(codigo?: string) {
   const vacio = { sellerWa: null as string | null, sellerNombre: null as string | null, sellerCodigo: null as string | null, token: null as string | null };
-  if (!codigo) return vacio;
+  // `__principal__` no es un vendedor: su token no entra nunca por ?v= (va por cookie).
+  if (!codigo || codigo === '__principal__') return vacio;
   const supabase = createServerSupabaseClient();
-  const { data: v } = await supabase.from('vendedores_promo').select('nombre, celular, activo, token').eq('codigo', codigo).maybeSingle();
+  const { data: v } = await supabase.from('vendedores_promo').select('nombre, celular, activo, token').eq('codigo', codigo).neq('codigo', '__principal__').maybeSingle();
   if (v && v.activo && /^\d{10}$/.test(String(v.celular))) {
     return { sellerWa: `57${v.celular}`, sellerNombre: v.nombre as string, sellerCodigo: codigo, token: (v.token as string) ?? null };
   }
