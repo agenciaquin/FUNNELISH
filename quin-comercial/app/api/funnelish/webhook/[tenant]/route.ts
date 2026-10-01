@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { procesarPedidoFunnelish } from '../route';
 import type { BaseLinea } from '@/lib/whatsapp-contexto';
+import { tokenFunnelishValido } from '@/lib/token-funnelish';
 
 // El envío de la confirmación puede tardar (arma foto + plantilla) → más tiempo
 // del que Vercel da por defecto (igual que el webhook single-tenant).
@@ -11,7 +12,8 @@ export const maxDuration = 60;
  * WEBHOOK DE PEDIDOS DE FUNNELISH POR CLIENTE (multi-tenant).
  *
  * Cada empresa cliente configura en SU Funnelish el webhook de pedidos apuntando a:
- *   https://<app-comercial>/api/funnelish/webhook/<slug-del-cliente>
+ *   https://<app-comercial>/api/funnelish/webhook/<slug-del-cliente>?token=<token-del-cliente>
+ * (el token de cada cliente lo imprime `npx tsx pruebas/token-por-cliente.ts <slug>`).
  *
  * Aquí se resuelve el tenant por su `slug`, se leen SUS credenciales de WhatsApp
  * desde la tabla `tenants`, y se procesa el pedido con ellas: el pedido se guarda
@@ -75,6 +77,11 @@ export async function POST(
   { params }: { params: Promise<{ tenant: string }> },
 ) {
   const { tenant } = await params;
+  // Token PROPIO de este cliente (derivado de su slug), no la clave general:
+  // el de un cliente no sirve para la URL de otro. Ver lib/token-funnelish.ts.
+  if (!tokenFunnelishValido(req, tenant)) {
+    return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
+  }
   const t = await cargarTenant(tenant);
   if (!t || t.activo === false) {
     return NextResponse.json({ error: 'Tienda no encontrada o inactiva' }, { status: 404 });

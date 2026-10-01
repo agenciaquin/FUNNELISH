@@ -13,6 +13,36 @@ import { withAuth } from 'next-auth/middleware';
 
 const proteger = withAuth({ pages: { signIn: '/login' } });
 
+/**
+ * Rutas de la API que se pueden llamar SIN sesión. Todo lo demás de /api/ pide
+ * iniciar sesión, en la tienda y en el panel. Antes la tienda (cualquier dominio
+ * que no fuera *.vercel.app) dejaba pasar la API entera.
+ *
+ *  · exactas: las que llama la página de venta y el alta de empresas, y SOLO
+ *    con el método que usan (todas hacen POST). `/api/funnels/carrito` también
+ *    tiene GET, PATCH y DELETE para el panel, con nombres y teléfonos: esos
+ *    piden sesión (y la ruta la vuelve a pedir).
+ *    `/api/pedidos` NO abre `/api/pedidos/lista`, que devuelve datos de clientes.
+ *  · prefijos: webhooks y crons. Se protegen solos (firma, consulta a Mercado
+ *    Pago o `CRON_SECRET`).
+ */
+const API_PUBLICA_EXACTA: Record<string, string[]> = {
+  '/api/pedidos': ['POST'],
+  '/api/funnels/evento': ['POST'],
+  '/api/funnels/carrito': ['POST'],
+  '/api/registro': ['POST'],
+};
+const API_PUBLICA_PREFIJO = [
+  '/api/auth/', '/api/whatsapp/webhook', '/api/whatsapp/confirmar',
+  '/api/funnelish/webhook', '/api/recargas/webhook', '/api/cron/',
+];
+
+function esApiPublica(pathname: string, metodo: string): boolean {
+  const ruta = pathname.replace(/\/+$/, '');
+  return (API_PUBLICA_EXACTA[ruta]?.includes(metodo.toUpperCase()) ?? false)
+    || API_PUBLICA_PREFIJO.some(p => ruta === p.replace(/\/$/, '') || ruta.startsWith(p.endsWith('/') ? p : `${p}/`));
+}
+
 export default function middleware(req: NextRequest, event: any) {
   const host = (req.headers.get('host') ?? '').toLowerCase();
   // El PANEL vive en el dominio de la app (…vercel.app) o en localhost. CUALQUIER
@@ -21,6 +51,11 @@ export default function middleware(req: NextRequest, event: any) {
   const esPanel = host.endsWith('.vercel.app') || host.startsWith('localhost') || host.startsWith('127.0.0.1') || host === '';
   const esTienda = !esPanel;
   const { pathname } = req.nextUrl;
+
+  if (pathname.startsWith('/api/')) {
+    if (esApiPublica(pathname, req.method)) return NextResponse.next();
+    return (proteger as any)(req, event);
+  }
 
   if (esTienda) {
     // La raíz de la tienda no muestra el panel: lleva al primer embudo activo
@@ -31,7 +66,6 @@ export default function middleware(req: NextRequest, event: any) {
     // Direcciones cortas: /nacional muestra la página de venta sin que el
     // cliente vea el /p/ en la barra del navegador.
     const interno = pathname.startsWith('/p/')
-      || pathname.startsWith('/api/')
       || pathname.startsWith('/_next')
       || pathname === '/tienda'
       || pathname.includes('.');           // archivos: imágenes, iconos, etc.
@@ -47,9 +81,7 @@ export default function middleware(req: NextRequest, event: any) {
 
   // Rutas públicas del panel (webhooks, páginas de venta, archivos de la app)
   const publicas = [
-    '/login', '/registro', '/api/registro', '/api/auth', '/api/whatsapp/webhook', '/api/whatsapp/confirmar',
-    '/api/funnelish/webhook', '/api/cron/remarketing', '/api/cron/ventas-seguimiento', '/api/cron/mantener-chat', '/api/cron/vendedores', '/api/cron/objeciones', '/api/cron/apagar-vendidos', '/api/cron/seguimiento-ia', '/api/cron/meta-alertas', '/api/cron/capi', '/api/cron/registros-funnel', '/api/cron/promo-cierre', '/api/cron/carrito-recuperacion', '/api/pedidos', '/api/funnels/evento', '/api/funnels/carrito',
-    '/p/', '/manifest.json', '/sw.js', '/icon-', '/apple-touch-icon',
+    '/login', '/registro', '/p/', '/manifest.json', '/sw.js', '/icon-', '/apple-touch-icon',
     '/logo-agencia-quin', '/logo-quin-app', '/_next/', '/favicon.ico',
   ];
   if (publicas.some(p => pathname.startsWith(p))) return NextResponse.next();

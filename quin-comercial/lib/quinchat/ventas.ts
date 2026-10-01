@@ -14,6 +14,7 @@ import { bloqueDeMemoria } from '@/lib/memoria';
 import { registrarFAQCandidata } from '@/lib/faq';
 import { cargarPromptEmpresa } from '@/lib/quinchat/prompt-tenant';
 import { cargarComportamiento } from '@/lib/quinchat/comportamiento';
+import { botPuedeResponder } from '@/lib/freno-bot';
 
 const ADMIN_VENTAS_HUMANO = '573143534918';
 // Estados exclusivos del pedido (uno a la vez); el resto son etiquetas adicionales
@@ -761,6 +762,7 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
     // Si el bot está apagado en este chat, no responde (lo atiende un humano)
     const botOn = conv ? (conv.bot_enabled ?? true) : true;
     if (!botOn) return;
+    if (!(await botPuedeResponder(supabase, from))) return;
 
     try { await mostrarEscribiendo(msg.id); } catch { /* ignorar */ }
 

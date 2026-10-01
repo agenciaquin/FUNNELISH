@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { porCadaTenant } from '@/lib/cron-tenant';
+import { alcanceCron, porCadaTenant } from '@/lib/cron-tenant';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,17 +16,15 @@ const MINUTOS = 30;
 
 function autorizado(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
-  if (!secret) return true;
+  if (!secret) return false; // sin CRON_SECRET no corre: antes quedaba abierto a cualquiera
   if (req.headers.get('authorization') === `Bearer ${secret}`) return true;
   return req.nextUrl.searchParams.get('secret') === secret;
 }
 
 export async function GET(req: NextRequest) {
-  // Cron (clave) o alguien del panel con sesión
-  if (!autorizado(req)) {
-    const session = await getServerSession(authOptions);
-    if (!session) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
-  }
+  // Cron (clave) → todas las empresas; alguien del panel con sesión → solo la suya
+  const alcance = await alcanceCron(autorizado(req));
+  if (!alcance) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
 
   const limite = new Date(Date.now() - MINUTOS * 60_000).toISOString();
   let apagados = 0;
@@ -50,7 +46,7 @@ export async function GET(req: NextRequest) {
       .update({ bot_enabled: false, vendido_at: null })
       .in('id', ids);
     apagados += ids.length;
-  });
+  }, alcance.soloTenantId);
 
   return NextResponse.json({ status: 'ok', apagados, tenants, errores });
 }

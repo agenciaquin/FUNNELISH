@@ -16,6 +16,8 @@ import { esVendedor, vendedorDe, extraerVentas, nombreChat, generoDe, DIAS_NOMIN
 import { etiquetarOficinaSinAbono, marcarOficinaAbonada, quitarEtiquetaOficina } from '@/lib/etiqueta-oficina';
 import { ADMINS_VENTAS } from '@/lib/quinchat/registro-venta';
 import { lineaTalla } from '@/lib/formato-pedido';
+import { leerAvisoDeMeta } from '@/lib/firma-meta';
+import { botPuedeResponder } from '@/lib/freno-bot';
 
 // El webhook espera unos segundos a que el cliente termine de escribir,
 // así que necesita más tiempo del que Vercel da por defecto.
@@ -486,8 +488,13 @@ export async function GET(req: NextRequest) {
 
 // ─── POST — Mensajes entrantes WhatsApp ───────────────────────────────────────
 export async function POST(req: NextRequest) {
-  let body: any;
-  try { body = await req.json(); } catch { return NextResponse.json({ status: 'ok' }); }
+  const aviso = await leerAvisoDeMeta(req);
+  if (!aviso.valido) {
+    console.warn(`[Webhook] aviso rechazado: ${aviso.motivo}`);
+    return NextResponse.json({ error: 'firma no valida' }, { status: 401 });
+  }
+  let body: any = aviso.body;
+  if (!body) return NextResponse.json({ status: 'ok' });
 
   const value = body?.entry?.[0]?.changes?.[0]?.value;
 
@@ -705,6 +712,24 @@ export async function POST(req: NextRequest) {
   for (const msg of value.messages) {
     const from  = msg.from as string;
     const msgId = msg.id  as string;
+
+    // ── Anti-duplicados de Meta ──────────────────────────────────────────────
+    // Meta REINTENTA el aviso si tardamos en responder (la espera de 12 s más la
+    // IA lo provocan). El guardado de más abajo es un upsert, así que el reintento
+    // pasaba como mensaje nuevo: doble llamada a la IA y doble respuesta al
+    // cliente. Se marca el wamid con un INSERT: si ya existía, es un reintento.
+    // (Mismo patrón que quin-comercial.) Los upsert de abajo completan el mensaje.
+    if (msgId) {
+      const { error: dupErr } = await supabase.from('messages').insert({
+        id: msgId, conversation_id: from, content: (msg as any)?.text?.body ?? '', role: 'user', type: 'text',
+        created_at: new Date().toISOString(),
+      });
+      if (dupErr) {
+        const dup = (dupErr as any).code === '23505' || /duplicate key|already exists/i.test((dupErr as any).message || '');
+        if (dup) { console.log('[WhatsApp] mensaje duplicado de Meta, ignorado:', msgId); continue; }
+        // Otro tipo de error: no se bloquea; los upsert siguientes guardan el mensaje.
+      }
+    }
 
     // ── ¿Vino de un anuncio de clic-a-WhatsApp? ──────────────────────────────
     // Meta manda el anuncio de origen en el primer mensaje. Se guarda una sola
@@ -1029,6 +1054,7 @@ export async function POST(req: NextRequest) {
     // ── Verificar bot activo ─────────────────────────────────────────────────
     const botEnabled = existing ? (existing.bot_enabled ?? true) : true;
     if (!botEnabled) continue;
+    if (!(await botPuedeResponder(supabase, from))) continue;
 
     // ── Esperar a que el cliente termine de escribir ─────────────────────────
     // La gente escribe en varios mensajes cortos ("hola", "quiero el negro",

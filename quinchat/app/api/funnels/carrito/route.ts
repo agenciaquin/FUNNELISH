@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { createServerSupabaseClient } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
@@ -56,7 +58,12 @@ export async function POST(req: NextRequest) {
 }
 
 // GET: lista carritos abandonados no recuperados que NO terminaron comprando.
+// GET, PATCH y DELETE son del panel y piden sesión aquí mismo, aunque el
+// middleware ya solo deja pasar el POST sin sesión: devuelven nombre y teléfono
+// de clientes, y no deben depender de una sola barrera.
 export async function GET(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   const verRecuperados = req.nextUrl.searchParams.get('recuperados') === '1';
   const admin = createServerSupabaseClient();
 
@@ -120,6 +127,8 @@ export async function GET(req: NextRequest) {
 //  - { id, recuperado }  → marca/reabre
 //  - { id, nota }        → guarda/actualiza la nota privada
 export async function PATCH(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   let b: any;
   try { b = await req.json(); } catch { return NextResponse.json({ error: 'body inválido' }, { status: 400 }); }
   const id = String(b?.id ?? '');
@@ -147,6 +156,8 @@ export async function PATCH(req: NextRequest) {
 
 // DELETE: elimina definitivamente carritos. ?id=x (uno) o ?ids=a,b,c (varios).
 export async function DELETE(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   const sp = req.nextUrl.searchParams;
   const idsParam = sp.get('ids');
   const uno = sp.get('id');

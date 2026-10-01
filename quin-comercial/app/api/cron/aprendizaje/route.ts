@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { chat } from '@/lib/quinchat/claude';
 import { reglasAprobadas, CATEGORIAS } from '@/lib/memoria';
-import { porCadaTenant } from '@/lib/cron-tenant';
+import { alcanceCron, porCadaTenant } from '@/lib/cron-tenant';
 
 // Analizar decenas de conversaciones toma su tiempo
 export const maxDuration = 60;
@@ -18,22 +16,19 @@ export const maxDuration = 60;
 /**
  * Se puede disparar de dos formas: desde el cron con la clave secreta, o desde
  * el panel por alguien que ya inició sesión (el botón "Revisar ahora").
+ * Con la clave recorre todas las empresas; con sesión, SOLO la de esa sesión
+ * (cualquiera se registra y saca una sesión: no puede lanzar la IA de todos).
  */
-async function autorizado(req: NextRequest): Promise<boolean> {
+function claveOk(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
-  if (secret) {
-    if (req.headers.get('authorization') === `Bearer ${secret}`) return true;
-    if (req.nextUrl.searchParams.get('secret') === secret) return true;
-  } else {
-    return true; // sin clave configurada, no se bloquea
-  }
-  // Usuario del panel con sesión activa
-  const session = await getServerSession(authOptions);
-  return !!session;
+  if (!secret) return false;
+  if (req.headers.get('authorization') === `Bearer ${secret}`) return true;
+  return req.nextUrl.searchParams.get('secret') === secret;
 }
 
 export async function GET(req: NextRequest) {
-  if (!(await autorizado(req))) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
+  const alcance = await alcanceCron(claveOk(req));
+  if (!alcance) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
 
   const horas = Number(req.nextUrl.searchParams.get('horas') ?? 24);
   const desde = new Date(Date.now() - horas * 3_600_000).toISOString();
@@ -173,7 +168,7 @@ export async function GET(req: NextRequest) {
 
     propuestasTotal += nuevas.length;
     chatsTotal += utiles.length;
-  });
+  }, alcance.soloTenantId);
 
   return NextResponse.json({ status: 'ok', propuestas: propuestasTotal, chats: chatsTotal, tenants, errores });
 }

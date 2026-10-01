@@ -27,7 +27,15 @@ const HORA = 3_600_000;
  *  - Si la ventana ya se cerró, no se manda nada (no se gasta): se marca como
  *    seguimiento_enviado para no volver a revisarlo.
  */
-export async function GET(_req: NextRequest) {
+function autorizado(req: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false; // sin CRON_SECRET no corre: antes quedaba abierto a cualquiera
+  if (req.headers.get('authorization') === `Bearer ${secret}`) return true;
+  return req.nextUrl.searchParams.get('secret') === secret;
+}
+
+export async function GET(req: NextRequest) {
+  if (!autorizado(req)) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   const ahora   = Date.now();
   const hace5h  = new Date(ahora - 5 * HORA).toISOString();
   const hace24h = new Date(ahora - 24 * HORA).toISOString();

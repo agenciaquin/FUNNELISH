@@ -15,7 +15,7 @@ const ADMINS = ['573167648391', '573187051499', '573143534918'];
 
 function autorizado(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
-  if (!secret) return true;
+  if (!secret) return false; // sin CRON_SECRET no corre: antes quedaba abierto a cualquiera
   if (req.headers.get('authorization') === `Bearer ${secret}`) return true;
   return req.nextUrl.searchParams.get('secret') === secret;
 }

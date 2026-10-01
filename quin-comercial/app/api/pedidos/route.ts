@@ -3,6 +3,8 @@ import { procesarPedidoFunnelish } from '@/app/api/funnelish/webhook/route';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { enviarCompraMeta } from '@/lib/capi';
 import type { BaseLinea } from '@/lib/whatsapp-contexto';
+import { permitido } from '@/lib/rate-limit';
+import { imagenPropia } from '@/lib/imagen-propia';
 
 export const maxDuration = 60;
 
@@ -36,6 +38,35 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    // ── Límite de pedidos ────────────────────────────────────────────────────
+    // Esta ruta es pública y cada pedido manda una plantilla de WhatsApp desde el
+    // número del cliente y una compra a Meta. Sin límite, cualquiera la usaba
+    // para escribirle a cualquier celular. Por hora:
+    //  · 5 por teléfono: un comprador real hace 1, y con reintentos, doble clic
+    //    o un segundo producto no pasa de 2-3.
+    //  · 20 por IP: los operadores móviles ponen a muchos clientes detrás de la
+    //    misma IP, así que se deja holgado; frena a quien los manda en bucle.
+    // El conteo va en la base (tabla `rate_limits`, lib/rate-limit.ts), no en
+    // memoria: vale para todas las instancias de Vercel. Si la tabla falla, deja
+    // pasar (no tumba las ventas por un error del límite).
+    const ip = (req.headers.get('x-real-ip') ?? req.headers.get('x-forwarded-for')?.split(',')[0] ?? '').trim();
+    if (ip && !(await permitido(`pedido-ip:${ip}`, 20, 3600))) {
+      return NextResponse.json(
+        { error: 'Recibimos muchos pedidos desde tu conexión. Espera un rato e inténtalo de nuevo, o escríbenos por WhatsApp.' },
+        { status: 429 }
+      );
+    }
+    if (!(await permitido(`pedido-tel:${tel}`, 5, 3600))) {
+      return NextResponse.json(
+        { error: 'Ya recibimos varios pedidos con este WhatsApp en la última hora. Si quieres cambiar algo, escríbenos por WhatsApp y te ayudamos.' },
+        { status: 429 }
+      );
+    }
+
+    // Fotos: solo se aceptan las de sitios propios (ver lib/imagen-propia.ts).
+    const hostPeticion = req.headers.get('host') ?? '';
+    const imagen = imagenPropia(b.imagen, hostPeticion);
 
     // ── ¿De qué empresa es este embudo? ──────────────────────────────────────
     // El slug es único global; el embudo lleva su tenant_id. Con eso cargamos
@@ -111,7 +142,7 @@ export async function POST(req: NextRequest) {
         name: String(b.variante ?? '').trim(),
         variant_name: String(b.talla ?? '').trim(),
         amount: Number(b.precio ?? 0),
-        image: String(b.imagen ?? '').trim() || undefined,
+        image: imagen,
       }],
       // Campos personalizados del checkout (opcionales): [{label, valor}] → se
       // muestran como líneas "Etiqueta: valor" en el mensaje del pedido.
@@ -121,10 +152,10 @@ export async function POST(req: NextRequest) {
             .filter((x: any) => x.label && x.valor)
         : undefined,
       // Foto del producto elegido en la página; respaldo para la plantilla de WhatsApp
-      imagen: String(b.imagen ?? '').trim() || undefined,
+      imagen,
       // "Arma tu pack": fotos de cada buzo, para armar el collage x2 en el servidor
       imagenes: Array.isArray(b.imagenes)
-        ? b.imagenes.filter((u: any) => typeof u === 'string' && u.startsWith('http'))
+        ? b.imagenes.map((u: unknown) => imagenPropia(u, hostPeticion)).filter(Boolean)
         : undefined,
       meta: {
         utm_source:   b.utms?.utm_source   ?? '',
@@ -174,7 +205,9 @@ export async function POST(req: NextRequest) {
 
     // ── Avisar la compra a Meta desde el servidor (Conversions API) ──────────
     // Así la venta aparece en la campaña aunque el píxel del navegador se pierda.
-    try {
+    // Un pedido duplicado no es otra venta: no se avisa (desordena las campañas).
+    const duplicado = resultado?.status === 'duplicado' || resultado?.duplicado === true;
+    if (!duplicado) try {
       if (f?.pixel_meta && f?.pixel_meta_token) {
         await enviarCompraMeta({
           pixelId: f.pixel_meta, token: f.pixel_meta_token,

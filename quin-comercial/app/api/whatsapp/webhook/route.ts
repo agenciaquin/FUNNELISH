@@ -23,6 +23,8 @@ import { atenderVenta } from '@/lib/quinchat/ventas';
 import { esVendedor, vendedorDe, extraerVentas, nombreChat, generoDe, DIAS_NOMINA, LIMITE_INCENTIVO_SEG } from '@/lib/vendedores';
 import { ADMINS_VENTAS } from '@/lib/quinchat/registro-venta';
 import { lineaTalla } from '@/lib/formato-pedido';
+import { leerAvisoDeMeta } from '@/lib/firma-meta';
+import { botPuedeResponder } from '@/lib/freno-bot';
 
 // El webhook espera unos segundos a que el cliente termine de escribir,
 // así que necesita más tiempo del que Vercel da por defecto.
@@ -521,8 +523,16 @@ export async function POST(req: NextRequest) {
  * tenant (multi-tenant); si viene vacío, funciona en modo single-tenant (env).
  */
 export async function procesarEntrada(req: NextRequest, base?: BaseLinea) {
-  let body: any;
-  try { body = await req.json(); } catch { return NextResponse.json({ status: 'ok' }); }
+  // La ruta de un cliente (base con tenantId) puede llegar desde SU propia app de
+  // Meta, con otra clave secreta que aún no guardamos. Por eso la firma solo se
+  // comprueba en la línea propia de la agencia.
+  const aviso = await leerAvisoDeMeta(req, base?.tenantId ? '' : undefined);
+  if (!aviso.valido) {
+    console.warn(`[Webhook] aviso rechazado: ${aviso.motivo}`);
+    return NextResponse.json({ error: 'firma no valida' }, { status: 401 });
+  }
+  let body: any = aviso.body;
+  if (!body) return NextResponse.json({ status: 'ok' });
 
   const value = body?.entry?.[0]?.changes?.[0]?.value;
 
@@ -1056,6 +1066,7 @@ export async function procesarEntrada(req: NextRequest, base?: BaseLinea) {
     // ── Verificar bot activo ─────────────────────────────────────────────────
     const botEnabled = existing ? (existing.bot_enabled ?? true) : true;
     if (!botEnabled) continue;
+    if (!(await botPuedeResponder(supabase, from))) continue;
 
     // ── Esperar a que el cliente termine de escribir ─────────────────────────
     // La gente escribe en varios mensajes cortos ("hola", "quiero el negro",

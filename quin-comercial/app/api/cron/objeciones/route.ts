@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { chat } from '@/lib/quinchat/claude';
 import { CATEGORIAS_OBJ, normalizarCategoria } from '@/lib/objeciones';
-import { porCadaTenant } from '@/lib/cron-tenant';
+import { alcanceCron, porCadaTenant } from '@/lib/cron-tenant';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -21,16 +19,13 @@ export const maxDuration = 60;
 // "ANULADO EN EFFI" NO cuenta como ganada: la transportadora anuló el pedido.
 const ESTADOS_GANADOS = ['VENTA REALIZADA', 'PEDIDO PROGRAMADO'];
 
-async function autorizado(req: NextRequest): Promise<boolean> {
+// Con la clave recorre todas las empresas; con sesión del panel, SOLO la de esa
+// sesión (cualquiera se registra y saca una sesión: no puede lanzar la IA de todos).
+function claveOk(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
-  if (secret) {
-    if (req.headers.get('authorization') === `Bearer ${secret}`) return true;
-    if (req.nextUrl.searchParams.get('secret') === secret) return true;
-  } else {
-    return true;
-  }
-  const session = await getServerSession(authOptions);
-  return !!session;
+  if (!secret) return false;
+  if (req.headers.get('authorization') === `Bearer ${secret}`) return true;
+  return req.nextUrl.searchParams.get('secret') === secret;
 }
 
 function fechaColombia(offsetDias = 0): string {
@@ -39,7 +34,8 @@ function fechaColombia(offsetDias = 0): string {
 }
 
 export async function GET(req: NextRequest) {
-  if (!(await autorizado(req))) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
+  const alcance = await alcanceCron(claveOk(req));
+  if (!alcance) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
 
   const horas = Number(req.nextUrl.searchParams.get('horas') ?? 24);
   const desdeIso = new Date(Date.now() - horas * 3_600_000).toISOString();
@@ -170,7 +166,7 @@ export async function GET(req: NextRequest) {
 
     clasificados += filas.length;
     analizados += candidatos.length;
-  });
+  }, alcance.soloTenantId);
 
   return NextResponse.json({ status: 'ok', clasificados, analizados, tenants, errores });
 }

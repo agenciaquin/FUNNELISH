@@ -24,7 +24,7 @@ const HORAS_22 = 22 * 3_600_000;
 
 function autorizado(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
-  if (!secret) return true; // sin secret configurado, no bloquea (dev)
+  if (!secret) return false; // sin CRON_SECRET no corre: antes quedaba abierto a cualquiera
   const bearer = req.headers.get('authorization') === `Bearer ${secret}`;
   const query  = req.nextUrl.searchParams.get('secret') === secret;
   return bearer || query;

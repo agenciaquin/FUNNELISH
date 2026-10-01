@@ -10,7 +10,7 @@ const SOPORTE = '573187051499'; // Lilibeth
 
 function autorizado(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
-  if (!secret) return true;
+  if (!secret) return false; // sin CRON_SECRET no corre: antes quedaba abierto a cualquiera
   return req.headers.get('authorization') === `Bearer ${secret}`
       || req.nextUrl.searchParams.get('secret') === secret;
 }

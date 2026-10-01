@@ -5,6 +5,7 @@ import { getProductImageUrl, FALLBACK_IMAGE } from '@/lib/product-catalog';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { isCompleteAddress, getAddressQuestion } from '@/lib/address';
 import { lineaTalla } from '@/lib/formato-pedido';
+import { tokenFunnelishValido } from '@/lib/token-funnelish';
 import { validateAddressLupap, getLupapMessage } from '@/lib/lupap';
 import Jimp from 'jimp';
 
@@ -312,7 +313,16 @@ async function generarCollagePack(supabase: any, productos: string[], imagenes: 
 }
 
 // ── POST — Receive Funnelish purchase webhook ──────────────────────────────────
+// Entrada pública: exige el token. El checkout propio (`/api/pedidos`) llama
+// directo a `procesarPedidoFunnelish`, sin pasar por aquí.
 export async function POST(req: NextRequest) {
+  if (!tokenFunnelishValido(req)) {
+    return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
+  }
+  return procesarPedidoFunnelish(req);
+}
+
+export async function procesarPedidoFunnelish(req: NextRequest) {
   let body: any;
   try {
     body = await req.json();
