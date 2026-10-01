@@ -8,9 +8,10 @@
  *
  *   cd quinchat && npx tsx pruebas/ley-peso.ts
  *
- * Qué comprueba: peso <= tope, lado mayor >= 1440 px (suelo de la ley),
- * `SUPERA_TOPE` cuando ni el último escalón alcanza, y que lo que ya cabe no se
- * recomprime. Una línea por caso; sale con código 1 si algo falla.
+ * Qué comprueba: peso <= tope, lado mayor >= 1440 px (suelo de la ley), los
+ * NIVELES de aceptación (LEY §1 punto 4: 1 cabe, 2 casi cabe, 3 rescate, 4 aceptado
+ * con aviso; el peso NUNCA rechaza) y que lo que ya cabe no se recomprime.
+ * Una línea por caso; sale con código 1 si algo falla.
  */
 import sharp from 'sharp';
 import { optimizarImagen } from '../lib/optimizar-imagen-servidor.js';
@@ -135,20 +136,20 @@ async function main() {
     comprobar(`banner con texto: lado >= ${LADO_MINIMO_IMAGEN}`, f.lado >= LADO_MINIMO_IMAGEN, `${f.lado} px`);
   }
 
-  // 5 · PNG con alfa REAL y ruido de 12 MP: no cabe ni en el último escalón.
-  //     Se comprueba SUPERA_TOPE, el mensaje, el suelo de 1440 y que sigue siendo PNG con alfa.
+  // 5 · PNG con alfa REAL y ruido: no cabe ni con rescate -> NIVEL 4 (se acepta con aviso).
+  //     Se comprueba el nivel, el aviso, el suelo del rescate (1280) y que sigue siendo PNG con alfa.
   {
-    const w = 4000, h = 3000;
+    const w = 2400, h = 1800;
     const src = await desde(ruidoRaw(w, h, 4), w, h, 4).png({ compressionLevel: 1 }).toBuffer();
     const t0 = Date.now();
     const r = await optimizarImagen(src, 'image/png', 'png-alfa');
     const f = await ficha(r.buffer);
-    comprobar('PNG alfa 12 MP con ruido: SUPERA_TOPE', !r.cumple && r.codigo === 'SUPERA_TOPE',
+    comprobar('PNG alfa con ruido: nivel 4 (SUPERA_TOPE, no rechaza)', !r.cumple && r.nivel === 4 && r.codigo === 'SUPERA_TOPE',
       `${kb(src.length)} -> ${kb(r.buffer.length)} en ${((Date.now() - t0) / 1000).toFixed(1)} s`);
-    comprobar('PNG alfa 12 MP con ruido: mensaje con kB y tope', !!r.mensaje && r.mensaje.includes('kB') && r.mensaje.includes('250'), r.mensaje ?? '(sin mensaje)');
-    comprobar('PNG alfa 12 MP con ruido: lado >= 1440 (y no se bajó más)', f.lado === LADO_MINIMO_IMAGEN, `${f.lado} px`);
-    comprobar('PNG alfa 12 MP con ruido: sigue PNG con alfa', f.formato === 'png' && f.alfa && r.contentType === 'image/png', `${f.formato} alfa=${f.alfa}`);
-    comprobar('PNG alfa 12 MP con ruido: devuelve la mejor versión', r.buffer.length > 0 && r.buffer.length < src.length, kb(r.buffer.length));
+    comprobar('PNG alfa con ruido: aviso con peso y tope, no bloqueante', !!r.aviso && r.aviso.startsWith('Subida.') && r.aviso.includes('kB') && r.aviso.includes('250'), r.aviso ?? '(sin aviso)');
+    comprobar('PNG alfa con ruido: no baja de 1280 (suelo del rescate)', f.lado >= 1280 && f.lado <= LADO_MINIMO_IMAGEN, `${f.lado} px`);
+    comprobar('PNG alfa con ruido: sigue PNG con alfa', f.formato === 'png' && f.alfa && r.contentType === 'image/png', `${f.formato} alfa=${f.alfa}`);
+    comprobar('PNG alfa con ruido: devuelve la mejor versión', r.buffer.length > 0 && r.buffer.length < src.length, kb(r.buffer.length));
   }
 
   // 6 · PNG con alfa REAL que sí cabe (logo con degradado de transparencia): sale PNG con alfa.
@@ -163,16 +164,29 @@ async function main() {
       `${kb(src.length)} -> ${kb(r.buffer.length)} (${r.escalon ?? 'intacto'})`);
   }
 
-  // 7 · Ruido de 12 MP en JPEG (foto de producto): ni el último escalón alcanza los 250 kB.
-  //     El compresor NO rechaza (eso lo decide quien llama): devuelve la mejor versión y SUPERA_TOPE.
+  // 7 · Ruido de 12 MP en JPEG (foto de producto): el último escalón normal deja ~326 kB, por
+  //     encima de 250 kB pero dentro de tope + 50 % (375 kB): NIVEL 2, se acepta tal cual, sin aviso.
   {
     const w = 4000, h = 3000;
     const src = await desde(ruidoRaw(w, h, 3), w, h, 3).jpeg({ quality: 90 }).toBuffer();
     const r = await optimizarImagen(src, 'image/jpeg', 'foto-web');
     const f = await ficha(r.buffer);
-    comprobar('ruido 12 MP (foto-web): SUPERA_TOPE sin lanzar', !r.cumple && r.codigo === 'SUPERA_TOPE' && r.buffer.length > 0,
+    comprobar('ruido 12 MP (foto-web): nivel 2, sin aviso ni código', !r.cumple && r.nivel === 2 && r.codigo === undefined && r.aviso === undefined && r.buffer.length > 0,
       `${kb(src.length)} -> ${kb(r.buffer.length)} (tope ${kb(r.tope)})`);
     comprobar('ruido 12 MP (foto-web): escalón final 1440/q75', r.escalon === '1440/q75' && f.lado === LADO_MINIMO_IMAGEN, `${r.escalon} ${f.lado} px`);
+  }
+
+  // 7b · NIVEL 3 (rescate): grano fuerte; los escalones normales dejan > 375 kB y q70 / 1280 px sí caben.
+  {
+    const src = await desde(texturaRaw(2400, 1800, 255), 2400, 1800, 3).jpeg({ quality: 92 }).toBuffer();
+    const silenciar = console.warn; console.warn = () => {};
+    const r = await optimizarImagen(src, 'image/jpeg', 'foto-web');
+    console.warn = silenciar;
+    const f = await ficha(r.buffer);
+    comprobar('grano fuerte (foto-web): nivel 3 por rescate', r.nivel === 3 && !r.cumple && r.buffer.length <= Math.floor(topeDe('foto-web') * 1.5) && (r.escalon ?? '').endsWith('/q70'),
+      `${kb(src.length)} -> ${kb(r.buffer.length)} (${r.escalon})`);
+    comprobar('grano fuerte: el rescate no baja de 1280 px', f.lado >= 1280, `${f.lado} px`);
+    comprobar('grano fuerte: sin aviso (el nivel 3 no avisa al panel)', r.aviso === undefined);
   }
 
   // 8 · Entrante con transparencia real: JPG sobre blanco, no PNG pesado.
@@ -199,7 +213,7 @@ async function main() {
     const silenciar = console.warn; console.warn = () => {};
     const r = await optimizarImagen(basura, 'image/jpeg', 'foto-web');
     console.warn = silenciar;
-    comprobar('archivo ilegible: fallo marcado y SUPERA_TOPE', r.fallo === true && r.buffer === basura && !r.cumple && r.codigo === 'SUPERA_TOPE');
+    comprobar('archivo ilegible: fallo marcado y nivel 4 (aviso, no excepción)', r.fallo === true && r.buffer === basura && !r.cumple && r.nivel === 4 && r.codigo === 'SUPERA_TOPE');
   }
 
   console.log(`  ${'-'.repeat(86)}`);

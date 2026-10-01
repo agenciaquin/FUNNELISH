@@ -47,6 +47,8 @@ export interface Perfil {
   sujeto: string;
   /** Escalones, en orden. Solo imágenes. */
   escalones?: readonly Escalon[];
+  /** Escalones extra del nivel 3 (rescate). Solo imágenes. */
+  rescate?: readonly Escalon[];
   /** Mínimo de px que nunca se baja (lado mayor en imagen; lado corto en vídeo). */
   ladoMinimo?: number;
   /** Solo vídeo: velocidad máxima, en bits por segundo. */
@@ -84,13 +86,29 @@ export const ESCALONES_GRAFICO: readonly Escalon[] = [
   { lado: 1440, calidad: 90, croma444: true },
 ];
 
+/**
+ * Escalones de RESCATE (LEY §1 punto 4, nivel 3). Solo se prueban cuando los
+ * normales dejan la imagen por encima de tope + tolerancia. Aquí sí se baja de
+ * 1440 px o de q75 (el SSIM puede quedar por debajo de 0,95: es el precio de
+ * aceptar la subida en vez de rechazarla).
+ */
+export const ESCALONES_RESCATE_FOTO: readonly Escalon[] = [
+  { lado: 1440, calidad: 70 },
+  { lado: 1280, calidad: 70 },
+];
+
+/** Gráfico con texto: q85 con croma 4:4:4 (las letras aguantan mejor que con el croma normal). */
+export const ESCALONES_RESCATE_GRAFICO: readonly Escalon[] = [
+  { lado: 1440, calidad: 85, croma444: true },
+];
+
 /** Los perfiles. Aquí, y solo aquí, están las cifras de la LEY §2. */
 export const PERFILES: Readonly<Record<TipoArchivo, Perfil>> = {
-  'foto-web':      { sujeto: 'La foto', tope: 250 * KB, escalones: ESCALONES_FOTO, ladoMinimo: LADO_MINIMO_IMAGEN },
-  'foto-whatsapp': { sujeto: 'La foto', tope: 250 * KB, escalones: ESCALONES_FOTO, ladoMinimo: LADO_MINIMO_IMAGEN },
-  'grafico-texto': { sujeto: 'El gráfico', tope: 400 * KB, escalones: ESCALONES_GRAFICO, ladoMinimo: LADO_MINIMO_IMAGEN },
-  'png-alfa':      { sujeto: 'La imagen PNG', tope: 250 * KB, escalones: ESCALONES_FOTO, ladoMinimo: LADO_MINIMO_IMAGEN },
-  'foto-entrante': { sujeto: 'La foto del cliente', tope: 400 * KB, escalones: ESCALONES_FOTO, ladoMinimo: LADO_MINIMO_IMAGEN },
+  'foto-web':      { sujeto: 'La foto', tope: 250 * KB, escalones: ESCALONES_FOTO, rescate: ESCALONES_RESCATE_FOTO, ladoMinimo: LADO_MINIMO_IMAGEN },
+  'foto-whatsapp': { sujeto: 'La foto', tope: 250 * KB, escalones: ESCALONES_FOTO, rescate: ESCALONES_RESCATE_FOTO, ladoMinimo: LADO_MINIMO_IMAGEN },
+  'grafico-texto': { sujeto: 'El gráfico', tope: 400 * KB, escalones: ESCALONES_GRAFICO, rescate: ESCALONES_RESCATE_GRAFICO, ladoMinimo: LADO_MINIMO_IMAGEN },
+  'png-alfa':      { sujeto: 'La imagen PNG', tope: 250 * KB, escalones: ESCALONES_FOTO, rescate: ESCALONES_RESCATE_FOTO, ladoMinimo: LADO_MINIMO_IMAGEN },
+  'foto-entrante': { sujeto: 'La foto del cliente', tope: 400 * KB, escalones: ESCALONES_FOTO, rescate: ESCALONES_RESCATE_FOTO, ladoMinimo: LADO_MINIMO_IMAGEN },
   // 2 Mb/s = 2 000 000 bits por segundo (el «Mb» de la ley es decimal, como en los códecs).
   'video-landing': { sujeto: 'El vídeo', tope: 4 * MB, ladoMinimo: 720, bitrateMax: 2_000_000 },
   'video-chat':    { sujeto: 'El vídeo', tope: 10 * MB, ladoMinimo: 480 },
@@ -109,10 +127,40 @@ export function topeDe(tipo: TipoArchivo): number {
   return PERFILES[tipo].tope;
 }
 
-/** Código con el que quien llama sabe que no cupo, ni en el último escalón. */
+/**
+ * Cuánto por encima del tope se acepta tal cual (LEY §1 punto 4, nivel 2):
+ * la calidad manda sobre unos kB. 0,5 = hasta un 50 % más.
+ */
+export const TOLERANCIA = 0.5;
+
+/** Tope + tolerancia, en bytes (redondeado hacia abajo). */
+export function topeConTolerancia(tipo: TipoArchivo): number {
+  return Math.floor(topeDe(tipo) * (1 + TOLERANCIA));
+}
+
+/**
+ * Nivel con el que se acepta un archivo (LEY §1 punto 4):
+ *   1 cabe · 2 casi cabe (hasta tope + 50 %) · 3 rescate (cabe en tope + 50 % solo
+ *   con escalones extra) · 4 aceptado con aviso (nada basta; se guarda la mejor).
+ * `viaRescate` dice si el peso se consiguió con escalones de rescate. Un peso
+ * inválido (NaN, negativo) es nivel 4: nunca se da por bueno en silencio.
+ */
+export type Nivel = 1 | 2 | 3 | 4;
+export function nivelDe(tipo: TipoArchivo, bytes: number, viaRescate = false): Nivel {
+  if (!Number.isFinite(bytes) || bytes < 0) return 4;
+  if (bytes <= topeDe(tipo)) return 1;
+  if (bytes <= topeConTolerancia(tipo)) return viaRescate ? 3 : 2;
+  return 4;
+}
+
+/**
+ * Código del nivel 4: «ni con rescate cupo». YA NO es un rechazo: el archivo se
+ * guarda (la mejor versión) y se avisa. Solo sirve para registrar y vigilar.
+ */
 export type CodigoPeso = 'SUPERA_TOPE';
 
 export interface VeredictoPeso {
+  /** ¿Pesa como mucho el tope? (nivel 1). Un nivel 2–4 NO es un rechazo, ver `nivelDe`. */
   cumple: boolean;
   bytes: number;
   tope: number;
@@ -139,7 +187,13 @@ export function formatearPeso(bytes: number): string {
   return `${Math.round(bytes / KB)} kB`;
 }
 
-/** Mensaje de rechazo para el panel: dice el peso y el tope (LEY §1 punto 4). */
+/** Aviso del nivel 4 para el panel: visible pero NO bloqueante (LEY §1 punto 4). */
+export function mensajeAviso(tipo: TipoArchivo, bytes: number): string {
+  const p = PERFILES[tipo];
+  return `Subida. Pesa ${formatearPeso(bytes)}, lo recomendado es ${formatearPeso(p.tope)}; si puedes, usa una versión más ligera.`;
+}
+
+/** Texto con el peso y el tope (el aviso y las alertas lo reutilizan). */
 export function mensajeSupera(tipo: TipoArchivo, bytes: number): string {
   const p = PERFILES[tipo];
   return `${p.sujeto} pesa ${formatearPeso(bytes)} y el tope es ${formatearPeso(p.tope)}.`;

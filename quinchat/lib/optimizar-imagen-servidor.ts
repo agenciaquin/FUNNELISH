@@ -1,5 +1,8 @@
 import sharp from 'sharp';
-import { ESCALONES_FOTO, PERFILES, cumpleTope, topeDe, type CodigoPeso, type TipoArchivo } from './ley-peso';
+import {
+  ESCALONES_FOTO, PERFILES, mensajeAviso, nivelDe, topeConTolerancia, topeDe,
+  type CodigoPeso, type Escalon, type Nivel, type TipoArchivo,
+} from './ley-peso';
 
 /**
  * Comprime una foto EN EL SERVIDOR, justo antes de guardarla en Storage.
@@ -46,9 +49,13 @@ import { ESCALONES_FOTO, PERFILES, cumpleTope, topeDe, type CodigoPeso, type Tip
  * de las cifras): se prueba un escalón tras otro y se para en el primero que
  * cabe. Se baja calidad antes que tamaño y nunca por debajo de 1440 px.
  *
- * Si ni el último escalón cabe NO se lanza ni se rechaza aquí: se devuelve la
- * mejor versión con `cumple: false` y `codigo: 'SUPERA_TOPE'`, y quien llama
- * decide (el panel rechaza; los entrantes guardan y alertan: LEY §1 punto 4).
+ * NIVELES (LEY §1 punto 4, decisión de dirección 30-09-2026: ACEPTAR antes que
+ * rechazar). Tras los escalones normales:
+ *   1 cabe en el tope · 2 casi cabe (hasta tope + 50 %): se acepta y se registra
+ *   `tolerancia` · 3 rescate (escalones extra: q70 y 1280 px; gráficos q85) si con
+ *   ellos cabe en tope + 50 %: se registra `rescate` · 4 nada basta: se devuelve la
+ *   mejor versión conseguida con `codigo: 'SUPERA_TOPE'` y un `aviso` listo para el
+ *   panel. NUNCA se lanza ni se rechaza por peso: quien llama guarda y avisa.
  */
 
 export interface ImagenOptimizada {
@@ -61,12 +68,16 @@ export interface ImagenOptimizada {
   tipo: TipoArchivo;
   /** Tope en bytes de ese tipo. */
   tope: number;
-  /** ¿`buffer` pesa lo que permite el tope? */
+  /** ¿`buffer` pesa como mucho el tope? (nivel 1). OJO: no es «se rechaza»; mira `nivel`. */
   cumple: boolean;
-  /** `SUPERA_TOPE` si no cabe ni en el último escalón. */
+  /** Nivel con el que se acepta: 1 cabe · 2 casi cabe · 3 rescate · 4 aceptado con aviso. */
+  nivel: Nivel;
+  /** `SUPERA_TOPE` solo en el nivel 4 (ni con rescate cupo). No es un rechazo. */
   codigo?: CodigoPeso;
-  /** Peso y tope en texto, listo para enseñar. Solo si no cumple. */
+  /** Nivel 4: peso y tope en texto, para el registro. */
   mensaje?: string;
+  /** Nivel 4: aviso visible pero NO bloqueante para el panel («Subida. Pesa X, lo recomendado es Y…»). */
+  aviso?: string;
   /** Escalón con el que se guardó (`1920/q80`), si se comprimió. */
   escalon?: string;
   /** El compresor falló (archivo corrupto, formato ilegible). Se devuelve el original. */
@@ -78,6 +89,8 @@ interface Candidato {
   buf: Buffer;
   ct: string;
   escalon: string;
+  /** Se consiguió con un escalón de rescate (nivel 3 si cabe en tope + 50 %). */
+  rescate: boolean;
 }
 
 /**
@@ -101,11 +114,25 @@ export async function optimizarImagen(
 
   const resultado = (
     buf: Buffer, tipoContenido: string, optimizada: boolean, extra: Partial<ImagenOptimizada> = {},
+    viaRescate = false,
   ): ImagenOptimizada => {
-    const v = cumpleTope(tipoMedido, buf.length);
+    const tope = topeDe(tipoMedido);
+    const nivel = nivelDe(tipoMedido, buf.length, viaRescate);
+    const aviso4 = nivel === 4;
+    // Los niveles 2, 3 y 4 dejan UNA línea en el registro (LEY §1 punto 4).
+    if (nivel > 1) {
+      console.warn('[ley-peso]', JSON.stringify({
+        estado: nivel === 2 ? 'tolerancia' : nivel === 3 ? 'rescate' : 'SUPERA_TOPE',
+        nivel, tipo: tipoMedido, bytes: buf.length, tope, escalon: extra.escalon,
+      }));
+    }
     return {
       buffer: buf, contentType: tipoContenido, ext: extensionDe(tipoContenido), optimizada,
-      tipo: tipoMedido, tope: v.tope, cumple: v.cumple, codigo: v.codigo, mensaje: v.mensaje, ...extra,
+      tipo: tipoMedido, tope, cumple: nivel === 1, nivel,
+      codigo: aviso4 ? 'SUPERA_TOPE' : undefined,
+      mensaje: aviso4 ? mensajeAviso(tipoMedido, buf.length) : undefined,
+      aviso: aviso4 ? mensajeAviso(tipoMedido, buf.length) : undefined,
+      ...extra,
     };
   };
   const original = () => resultado(buffer, contentType, false);
@@ -138,46 +165,63 @@ export async function optimizarImagen(
     const viaPng = alfaReal && tipoMedido !== 'foto-entrante';
 
     const escalones = PERFILES[tipoMedido].escalones ?? ESCALONES_FOTO;
+    const rescate = PERFILES[tipoMedido].rescate ?? [];
     const tope = topeDe(tipoMedido);
+    const toleranciaMax = topeConTolerancia(tipoMedido);
+    let enRescate = false;
     const base = sharp(buffer, { failOn: 'none' }).rotate(); // aplica el EXIF antes de que sharp lo descarte
 
     // El original compite solo si ya tiene un formato válido para esta vía.
     let mejor: Candidato | null = (viaPng && esPng) || (!viaPng && esJpeg)
-      ? { buf: buffer, ct: contentType, escalon: 'original' }
+      ? { buf: buffer, ct: contentType, escalon: 'original', rescate: false }
       : null;
 
-    /** Anota el intento y dice si cabe. */
-    const probar = (buf: Buffer, tipoContenido: string, escalon: string): boolean => {
-      if (!mejor || buf.length < mejor.buf.length) mejor = { buf, ct: tipoContenido, escalon };
-      return buf.length <= tope;
+    /** Anota el intento y dice si cabe en `limite`. */
+    const probar = (buf: Buffer, tipoContenido: string, escalon: string, limite: number): boolean => {
+      if (!mejor || buf.length < mejor.buf.length) mejor = { buf, ct: tipoContenido, escalon, rescate: enRescate };
+      return buf.length <= limite;
     };
 
-    if (viaPng) {
-      // PNG sin pérdida y, si no cabe, con paleta (un logo ni se entera; una foto
-      // con alfa sí, pero es un caso raro). Solo se baja el tamaño: la calidad no
-      // es una opción en PNG. Un WebP con alfa puede engordar x10 a PNG sin
-      // pérdida (700 kB -> 7.463 kB), de ahí el segundo intento.
-      const lados = [...new Set(escalones.map((e) => e.lado))];
-      for (const lado of lados) {
-        const redim = base.clone().resize({ width: lado, height: lado, fit: 'inside', withoutEnlargement: true });
-        if (probar(await redim.clone().png({ compressionLevel: 9 }).toBuffer(), 'image/png', `${lado}/png`)) break;
-        if (probar(await redim.clone().png({ compressionLevel: 9, palette: true, quality: 90 }).toBuffer(), 'image/png', `${lado}/png-paleta`)) break;
+    /** Recorre una lista de escalones y para en el primero que cabe en `limite`. */
+    const recorrer = async (lista: readonly Escalon[], limite: number): Promise<boolean> => {
+      if (viaPng) {
+        // PNG sin pérdida y, si no cabe, con paleta (un logo ni se entera; una foto
+        // con alfa sí, pero es un caso raro). Solo se baja el tamaño: la calidad no
+        // es una opción en PNG. Un WebP con alfa puede engordar x10 a PNG sin
+        // pérdida (700 kB -> 7.463 kB), de ahí el segundo intento.
+        const lados = [...new Set(lista.map((e) => e.lado))];
+        for (const lado of lados) {
+          const redim = base.clone().resize({ width: lado, height: lado, fit: 'inside', withoutEnlargement: true });
+          if (probar(await redim.clone().png({ compressionLevel: 9 }).toBuffer(), 'image/png', `${lado}/png`, limite)) return true;
+          if (probar(await redim.clone().png({ compressionLevel: 9, palette: true, quality: 90 }).toBuffer(), 'image/png', `${lado}/png-paleta`, limite)) return true;
+        }
+        return false;
       }
-    } else {
-      for (const e of escalones) {
+      for (const e of lista) {
         let img = base.clone().resize({ width: e.lado, height: e.lado, fit: 'inside', withoutEnlargement: true });
         if (alfaReal) img = img.flatten({ background: '#ffffff' });
         const buf = await img
           .jpeg({ quality: e.calidad, mozjpeg: true, chromaSubsampling: e.croma444 ? '4:4:4' : '4:2:0' })
           .toBuffer();
-        if (probar(buf, 'image/jpeg', `${e.lado}/q${e.calidad}${e.croma444 ? '/444' : ''}`)) break;
+        if (probar(buf, 'image/jpeg', `${e.lado}/q${e.calidad}${e.croma444 ? '/444' : ''}`, limite)) return true;
+      }
+      return false;
+    };
+
+    // Nivel 1: escalones normales. Si no cabe, nivel 2 (hasta tope + 50 %: se acepta
+    // la mejor tal cual). Si tampoco, nivel 3: escalones de rescate. Si nada basta, nivel 4.
+    if (!(await recorrer(escalones, tope))) {
+      const mejorNormal = mejor as Candidato | null;
+      if (!(mejorNormal && mejorNormal.buf.length <= toleranciaMax)) {
+        enRescate = true;
+        await recorrer(rescate, toleranciaMax);
       }
     }
 
     const elegido = mejor as Candidato | null;
     // Sin candidato (no debería pasar) o el mejor es el propio original: se devuelve tal cual.
     if (!elegido || elegido.buf === buffer) return original();
-    return resultado(elegido.buf, elegido.ct, true, { escalon: elegido.escalon });
+    return resultado(elegido.buf, elegido.ct, true, { escalon: elegido.escalon }, elegido.rescate);
   } catch (e) {
     // Un archivo corrupto o un formato que sharp no entiende no debe tumbar la
     // subida (LEY §1 punto 5: no en silencio, queda el aviso en el registro).
@@ -203,3 +247,19 @@ function extensionDe(contentType: string): string {
  * origen constantemente, que es de donde salía buena parte del egress.
  */
 export const CACHE_UN_ANO = '31536000';
+
+/**
+ * Pasa una imagen de Jimp (ya compuesta) a un buffer SIN PÉRDIDA, para que el
+ * compresor la codifique UNA sola vez. Jimp compone (collage, marca de agua) y
+ * sharp codifica: Jimp a calidad 100 pesaba ~1,6 MB por collage.
+ *
+ * Se usa el bitmap en crudo y se tira el canal alfa: estas imágenes son opacas,
+ * y sin alfa el compresor las manda directas a JPEG.
+ */
+export async function bufferDesdeJimp(img: { bitmap: { data: Buffer; width: number; height: number } }): Promise<Buffer> {
+  const { data, width, height } = img.bitmap;
+  return sharp(data, { raw: { width, height, channels: 4 } })
+    .removeAlpha()
+    .png({ compressionLevel: 1 }) // intermedio: rápido, no se guarda en ningún sitio
+    .toBuffer();
+}

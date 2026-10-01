@@ -49,8 +49,9 @@ async function main() {
     const m = await sharp(r.buffer).metadata();
     comprobar('jpeg grande se comprime', r.optimizada && r.contentType === 'image/jpeg' && r.buffer.length < src.length,
       `${kb(src.length)} -> ${kb(r.buffer.length)}`);
-    // Con la LEY DE PESO el ruido no cabe a 1920: baja por escalones, pero nunca de 1440.
-    comprobar('jpeg grande se redimensiona (1440-1920)', Math.max(m.width!, m.height!) >= 1440 && Math.max(m.width!, m.height!) <= 1920,
+    // Con la LEY DE PESO el ruido no cabe a 1920: baja por escalones normales (nunca de 1440)
+    // y, si ni así queda cerca del tope, el RESCATE (nivel 3) puede llegar a 1280 px.
+    comprobar('jpeg grande se redimensiona (1280-1920)', Math.max(m.width!, m.height!) >= 1280 && Math.max(m.width!, m.height!) <= 1920,
       `${m.width}x${m.height}`);
   }
 
