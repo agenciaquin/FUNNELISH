@@ -1,3 +1,4 @@
+import { subirArchivo } from '@/lib/subir-archivo';
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { sendTextMessage, sendAudioByUrl, sendImageByUrl, reenviarImagenComoMedia, descargarWhatsAppMedia, mostrarEscribiendo } from '@/lib/whatsapp';
@@ -796,16 +797,18 @@ export async function POST(req: NextRequest) {
           const media = await descargarWhatsAppMedia(mediaId);
           if (media) {
             if (msg.type === 'image') { imgBuffer = media.buffer; imgMime = (media.mimeType || 'image/jpeg').split(';')[0]; }
-            const ext = (media.mimeType.split('/')[1] ?? 'bin').split(';')[0].replace('jpeg', 'jpg');
-            const ruta = `entrantes/${from}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
-            const { error: upErr } = await supabase.storage
-              .from('chat-media')
-              .upload(ruta, media.buffer, { contentType: media.mimeType, upsert: false });
-            if (upErr) console.error('[WhatsApp] subir archivo entrante:', upErr.message);
-            else {
-              const { data: pub } = supabase.storage.from('chat-media').getPublicUrl(ruta);
-              publicUrl = pub?.publicUrl ?? null;
-            }
+            // LEY DE PESO: la foto del cliente se guarda como foto-entrante (400 kB) y
+            // NUNCA se rechaza: si no cabe se guarda la mejor versión y queda la línea
+            // [ley-peso]. A la IA se le sigue pasando el buffer ORIGINAL (arriba).
+            // El sticker no se recomprime (uno animado quedaría quieto). Audio, vídeo y
+            // documento siguen igual: PENDIENTE (vídeo entrante = tarea de WebCodecs).
+            const r = await subirArchivo({
+              supabase, bucket: 'chat-media', prefijo: `entrantes/${from}`,
+              buffer: media.buffer, contentType: media.mimeType, tipo: 'foto-entrante',
+              origen: 'entrante', comprimir: msg.type !== 'sticker',
+            });
+            if (!r.subido) console.error('[WhatsApp] subir archivo entrante:', r.error);
+            else publicUrl = r.url ?? null;
             // 🎙️ Nota de voz → transcribir para entenderla.
             if (msg.type === 'audio' || msg.type === 'voice') {
               audioTexto = (await transcribirAudio(media.buffer, media.mimeType)) ?? '';

@@ -7,6 +7,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { sendTextMessage, sendImageByUrl, mostrarEscribiendo, descargarWhatsAppMedia } from '@/lib/whatsapp';
 import { generarCollagePack } from '@/lib/collage';
+import { subirArchivo } from '@/lib/subir-archivo';
 import { lineaTalla } from '@/lib/formato-pedido';
 import { transcribirAudio } from '@/lib/transcribir';
 import { chat } from '@/lib/quinchat/claude';
@@ -1112,14 +1113,15 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
         try {
           const media = await descargarWhatsAppMedia(mediaId);
           if (media) {
-            const ext = (media.mimeType.split('/')[1] ?? 'bin').split(';')[0].replace('jpeg', 'jpg');
-            const ruta = `ventas/${from}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
-            const { error: upErr } = await supabase.storage
-              .from('chat-media').upload(ruta, media.buffer, { contentType: media.mimeType, upsert: false });
-            if (!upErr) {
-              const { data: pub } = supabase.storage.from('chat-media').getPublicUrl(ruta);
-              publicUrl = pub?.publicUrl ?? null;
-            } else console.error('[Ventas] subir archivo entrante:', upErr.message);
+            // LEY DE PESO: automático, nunca rechaza (se guarda la mejor y se registra).
+            // La IA recibe más abajo el buffer ORIGINAL. Sticker sin recomprimir.
+            const r = await subirArchivo({
+              supabase, bucket: 'chat-media', prefijo: `ventas/${from}`,
+              buffer: media.buffer, contentType: media.mimeType, tipo: 'foto-whatsapp',
+              origen: 'ventas-entrante', comprimir: m.type !== 'sticker',
+            });
+            if (r.subido) publicUrl = r.url ?? null;
+            else console.error('[Ventas] subir archivo entrante:', r.error);
 
             // Si es foto, además se le pasa a la IA para que la vea
             if (m.type === 'image' && fotosDelCliente.length < 3 && media.buffer.length < 4_000_000) {
