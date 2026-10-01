@@ -18,3 +18,10 @@ Reglas estrictas:
 - Respetas las reglas de negocio (prefijo +57, correo y valor por defecto, género por defecto) y la plantilla EXACTA de Lilibeth.
 - Código limpio, comentado en español, sin dependencias externas.
 - No marcas una tarea como hecha si su criterio de aceptación no se cumple.
+
+
+## ⚖️ LEY DE PESO (obligatoria, 30-09-2026)
+Todo archivo que se suba, guarde, genere o sirva (foto, PNG, JPG, SVG, GIF, vídeo, collage…) llega **por debajo
+de su tope y sin pérdida visible** (SSIM ≥ 0,95). Topes, escalones y excepciones: **`LEY-DE-PESO.md`**, que lees
+antes de tocar cualquier cosa que escriba archivos. El orden de trabajo lo marca **`TABLERO-AGENTES.md`**.
+Ningún archivo que escriba en Storage queda sin prueba de peso; ninguna compresión se desactiva "para que funcione".

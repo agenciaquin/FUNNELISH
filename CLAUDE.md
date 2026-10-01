@@ -116,14 +116,71 @@ primeras, y con un archivo que tras comprimirse en el navegador **no pase de
 ### 6 · Antes de optimizar algo, mirar si alguien lo sirve
 
 El 31-08-2026 se iban a comprimir los 486 MB de vídeo de `embudos/`. Al cruzar
-el bucket contra la tabla `funnels` resultó que **449 MB no los referencia
-ningún embudo**: no generan ni una petición. Comprimirlos habría sido gastar
-horas de `ffmpeg` para ahorrar almacenamiento en un cupo que está al 36 %,
-cuando borrarlos recupera cuatro veces más.
-
-Y de los cuatro vídeos que sí se usan, solo uno mejoraba al recomprimirlo. El
-trabajo real era una décima parte del que parecía.
+el bucket contra la tabla `funnels` salió que **la mayor parte no la referencia
+ningún embudo**: no genera ni una petición. Comprimirla habría sido gastar horas
+de `ffmpeg` para ahorrar almacenamiento en un cupo que está al 36 %, cuando
+borrarla recupera más. Y de los cuatro vídeos que sí se usan, solo uno mejoraba
+al recomprimirlo: el trabajo real era una décima parte del que parecía.
 
 **Regla:** el peso de un archivo no dice lo que cuesta. Lo que cuesta es el peso
-**por lo que se sirve**. La consulta que separa una cosa de la otra está en
-`arreglos-supabase/HALLAZGO-videos.md`, y sirve igual para fotos.
+**por lo que se sirve**.
+
+### 6 bis · Un bucket puede recibir archivos de más de un sistema
+
+El 01-09-2026, al sacar la lista para borrar, la cifra anterior se cayó: de los
+28 «huérfanos», **10 eran vídeos de conversaciones de WhatsApp** (222,7 MB) que
+viven en `embudos/chat/` y están referenciados en la tabla **`messages`**, no en
+`funnels`. La consulta solo miraba `funnels`, así que los daba por muertos.
+**Borrarlos habría roto 10 conversaciones de clientes.** Los huérfanos reales son
+18 y pesan 226,8 MB.
+
+**Regla:** antes de declarar algo huérfano, cruzarlo contra **todas** las tablas
+que puedan nombrarlo, no solo contra la obvia. Y con archivos, la comprobación se
+hace **justo antes de borrar**, no una semana antes.
+
+La consulta corregida y la lista archivo por archivo están en
+`arreglos-supabase/HALLAZGO-videos.md`. Sirve igual para fotos, añadiendo
+`catalogo_colores` y `catalogo_variables` al cruce.
+
+### 6 ter · El grifo antes que el charco
+
+Al preparar ese borrado apareció la causa: **no existe en todo el código una sola
+llamada que borre un archivo del bucket**. Ni al sustituir la foto de un embudo,
+ni al borrar un embudo entero. Resultado: **el 75 % de lo subido a `embudos/`
+está muerto** —264 MB de 351— y crece ~2 GB al año.
+
+**Regla:** ante basura acumulada, medir el **ritmo** antes de limpiar. Si el
+proceso que la produce sigue vivo, limpiar primero significa limpiar dos veces.
+
+Detalle, cifras y los tres sitios exactos donde se pierde el archivo, en
+`arreglos-supabase/HALLAZGO-nadie-borra-del-bucket.md`. **Ojo al implementarlo:**
+un mismo archivo puede tener varios dueños —el vídeo de 2,7 MB lo comparten 14
+embudos—, así que un borrado ingenuo rompe embudos vivos.
+
+### 7 · Un editor en rojo no significa que el código esté roto
+
+El 01-09-2026 una compañera abrió `quin-comercial/` y le salieron **14 errores
+rojos** en `app/p/[slug]/pedido/page.tsx`. No había nada roto: **falta
+`node_modules`**, que está en `.gitignore` y no viaja al clonar. Sin él,
+TypeScript no lee la firma `notFound(): never` de Next, no descarta el `null`, y
+los nueve `'f' is possibly null` son eco del mismo hueco.
+
+**Alerta:** la tentación es tapar esos avisos con `f!` o `f?.`. Sería **ensuciar
+código correcto y en producción** por un falso positivo. Instalar primero, mirar
+después. `quin-comercial/` sirve `www.klixmant.shop` y `tienda.skioo.shop`.
+
+**Regla:** ante rojos en un proyecto que ya funciona en producción, la primera
+hipótesis es el entorno, no el código. Se descarta con un comando —
+`npm ci --prefer-offline`— que no toca ni un archivo del repositorio.
+
+El caso completo, con las cifras, lo que **no** se debe hacer (subir
+`node_modules`, cambiar de gestor de paquetes) y las suposiciones que siguen sin
+comprobar, está en `MONTAR-EL-PROYECTO.md`.
+
+---
+
+## ⚖️ LEY DE PESO · Todo archivo entra ligero (30-09-2026)
+
+Amplía la LEY de imágenes a **todos los formatos** (fotos, PNG, SVG, GIF, vídeo…) con un **tope máximo por
+archivo** y sin pérdida visible de calidad. Topes y reglas en **`LEY-DE-PESO.md`**. El orden de trabajo de los
+agentes está en **`TABLERO-AGENTES.md`**.

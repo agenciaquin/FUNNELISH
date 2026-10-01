@@ -5,7 +5,17 @@
       "PowerShell(gh repo *)",
       "PowerShell(Get-Content *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(git push origin *)",
+      "Bash(git push -u origin *)"
+    ],
+    "deny": [
+      "Bash(git push *master*)",
+      "Bash(git push *--force*)",
+      "Bash(git push *-f *)",
+      "Bash(git push *+*)",
+      "Bash(git push *--delete*)",
+      "Bash(git push *--mirror*)"
     ]
   }
 }

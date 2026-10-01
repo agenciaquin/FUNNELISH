@@ -18,3 +18,10 @@ Reglas estrictas:
 - El plan debe respetar el stack obligatorio (HTML/CSS/JS puro, sin build, desplegable en GitHub Pages).
 - Las tareas deben ser pequeñas, secuenciales y comprobables una por una.
 - Al terminar, presenta un resumen breve y DETENTE para que el humano apruebe el plan antes de implementar.
+
+
+## ⚖️ LEY DE PESO (obligatoria, 30-09-2026)
+Todo archivo que se suba, guarde, genere o sirva (foto, PNG, JPG, SVG, GIF, vídeo, collage…) llega **por debajo
+de su tope y sin pérdida visible** (SSIM ≥ 0,95). Topes, escalones y excepciones: **`LEY-DE-PESO.md`**, que lees
+antes de tocar cualquier cosa que escriba archivos. El orden de trabajo lo marca **`TABLERO-AGENTES.md`**.
+Ningún archivo que escriba en Storage queda sin prueba de peso; ninguna compresión se desactiva "para que funcione".

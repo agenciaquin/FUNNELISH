@@ -28,7 +28,8 @@ revertirlo— en `CAMBIOS-EN-QUINCHAT.md`. **`quin-comercial/` no se tocó**; ve
 | `PENDIENTE-quin-comercial.md` | ⏳ La app gemela no comprime nada y escribe en el mismo bucket. Medido y sin aplicar |
 | `HALLAZGO-dos-compresores.md` | Otro compresor en `master` a 1080/q72. Medido: SSIM 0,896, degradada. Sin tocar |
 | `HALLAZGO-rutas-api-abiertas.md` | ⚠️ **Las 82 rutas de la API responden sin sesión en el dominio público. Sin corregir, pendiente de aprobación.** |
-| `HALLAZGO-videos.md` | 🎬 449 MB de vídeo que no usa ningún embudo, y un `autoPlay` que se descargaba entero sin que nadie lo viera. Arreglo de código aplicado, sin subir |
+| `HALLAZGO-videos.md` | 🎬 **227 MB** de vídeo huérfano —corregido el 01-09: de los «449 MB», 223 eran chats de clientes— y un `autoPlay` que se descargaba entero sin que nadie lo viera. Arreglo de código aplicado, sin subir |
+| `HALLAZGO-nadie-borra-del-bucket.md` | 🚰 **El 75 % de `embudos/` está muerto (264 MB) y sube ~2 GB/año.** No existe ni una llamada que borre del bucket. Medido, sin arreglar |
 | `sql/salidas/MEDICION-egress-2026-08-30.md` | **Resultado medido:** el peso servido a navegadores baja de 616 a 186 KiB (−69,8%) |
 | `informe-supabase.html` | Informe consolidado para compartir |
 | `sql/` | Scripts de la fase 1: cerrar las tablas expuestas de `quinchat` |
@@ -331,7 +332,7 @@ degradar nada. Medido sobre archivos reales: **imágenes −83 a −94%, vídeos
 | `embudos/` — imágenes | ✅ **completo** (quedan 11 que no compensa tocar) |
 | `catalogo/` — imágenes | ✅ **completo** |
 | `packs/` — imágenes | ✅ **completo** |
-| `embudos/` — 38 vídeos | ⏸ pendiente de decisión de fondo |
+| `embudos/` — 38 vídeos | ⏸ medido el 31-08 y corregido el 01-09: solo 4 se sirven, 18 son huérfanos (227 MB) y 10 son chats. Ver `HALLAZGO-videos.md` |
 | `ventas/` · `entrantes/` — 551 imágenes | ⏹ **no se tocan** a propósito: ya pesan 166-226 kB |
 
 **723 archivos · 850 MB recuperados · reducción media del 84,2%.**
@@ -461,15 +462,24 @@ venga de donde venga.
 | 5 | **El chat saliente no se comprime** — 289 MB, 761 kB de media, −83% medido | Que pase antes el PR #1 | `HALLAZGO-chat-saliente-sin-comprimir.md` |
 | 6 | Collages en paralelo sin límite → 429 | Decisión. Son ~10 líneas | Defecto nº 5 del reporte |
 | 7 | **Borrar `_originales/`** (1.010 MB) | Esperar una semana **y** cerrar el perfil de calidad | `HALLAZGO-dos-compresores.md` |
-| 8 | Los 38 vídeos — **515 MB, el 47% del bucket** | Decisión de fondo: servicio aparte, R2, o backfill | Reporte, sección 7 |
-| 9 | Fase 1 de seguridad — cerrar 12 tablas | Aprobación. Scripts listos | `sql/` |
-| 10 | Rotar la clave `service_role` | — | arriba, apartado 3 |
-| 11 | Confirmar el Spend Cap y a qué correo avisa | — | «Vigilancia», capa 1 |
+| 8 | **Nadie borra del bucket** — el 75 % de `embudos/` está muerto (264 MB) y sube ~2 GB/año. Arreglar el `POST` y el `DELETE` de `funnels` | Decisión. Es código en producción | `HALLAZGO-nadie-borra-del-bucket.md` |
+| 9 | Los vídeos — ya no es «decisión de fondo». **Borrar 18 huérfanos (227 MB)** y recomprimir uno de 23 MB. 🔴 Los 10 de `embudos/chat/` NO se tocan | Decisión del equipo. Lista y consulta listas | `HALLAZGO-videos.md` |
+| 10 | Fase 1 de seguridad — cerrar 12 tablas | Aprobación. Scripts listos | `sql/` |
+| 11 | Rotar la clave `service_role` | — | arriba, apartado 3 |
+| 12 | Confirmar el Spend Cap y a qué correo avisa | — | «Vigilancia», capa 1 |
 
+> [!IMPORTANT]
 > **El orden importa en dos sitios.** El punto 7 no se hace antes de decidir el
 > perfil de calidad: mientras existan los originales, cualquier recompresión
-> futura sale limpia; sin ellos sería pérdida sobre pérdida. El punto 1 ya está
-> hecho: la tienda se publicó el 31-08 y la compresión está viva y comprobada.
+> futura sale limpia; sin ellos sería pérdida sobre pérdida. Y **el punto 8 va
+> antes que el 9**: si se limpian los huérfanos sin arreglar el grifo, se vuelven
+> a acumular solos.
+
+> [!CAUTION]
+> **Nada de `embudos/chat/` se borra jamás.** Son vídeos de conversaciones de
+> clientes (222,7 MB) que no aparecen en `funnels` pero sí en `messages`. La
+> primera consulta de huérfanos los daba por muertos y estuvieron a punto de
+> irse. Ver `HALLAZGO-videos.md`.
 
 ---
 
