@@ -119,6 +119,24 @@ export const STOCK_DEFAULT = {
   color: '#DC2626',
 };
 
+/** Semáforo del bloque de escasez. */
+export const STOCK_AMBAR = '#F59E0B';
+export const STOCK_ROJO  = '#DC2626';
+
+/**
+ * Color de la barra de escasez según lo que queda.
+ *
+ * Por encima del 50% manda el color que eligió el embudo; por debajo el bloque
+ * avisa solo, sin que nadie lo configure: ámbar hasta el 25% y rojo a partir de
+ * ahí. Antes el color era uno fijo, así que un embudo con la barra en dorado
+ * seguía en dorado al 3% — justo cuando debía gritar.
+ */
+export function colorDeStock(pct: number, base: string): string {
+  if (pct <= 25) return STOCK_ROJO;
+  if (pct <= 50) return STOCK_AMBAR;
+  return base;
+}
+
 /** Contenido por defecto del bloque "Botón MÁS VENDIDO". */
 export const MAS_VENDIDO_DEFAULT = {
   texto: 'MÁS VENDIDO',

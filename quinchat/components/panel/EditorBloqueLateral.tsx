@@ -406,6 +406,11 @@ export default function EditorBloqueLateral({
               <input type="color" value={p.color || '#DC2626'} onChange={e => setProp('color', e.target.value)}
                 className="w-7 h-7 rounded-full border-0 bg-transparent p-0 cursor-pointer" />
             </div>
+            <p className="text-[10px] text-[#9A9A9A] mt-1">
+              Este color se usa por encima del 50%. Debajo avisa solo:
+              <span className="font-bold" style={{ color: '#F59E0B' }}> ámbar</span> hasta el 25% y
+              <span className="font-bold" style={{ color: '#DC2626' }}> rojo</span> por debajo, con la alerta parpadeando.
+            </p>
           </div>
           <div className="rounded-lg border border-[#E8E8E8] p-2.5 bg-[#FAFAFA] space-y-2">
             <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer">
