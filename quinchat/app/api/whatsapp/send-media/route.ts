@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { uploadWhatsAppMedia, sendMediaMessage, sendTextMessage } from '@/lib/whatsapp';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { entrarLinea } from '@/lib/whatsapp-contexto';
+import { subirArchivo } from '@/lib/subir-archivo';
 
 /**
  * POST /api/whatsapp/send-media
@@ -29,9 +30,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing "to" or "file"' }, { status: 400 });
   }
 
-  const mimeType = file.type || 'application/octet-stream';
+  // `let`: si es una foto, el compresor de la LEY DE PESO sustituye el buffer y el tipo.
+  let mimeType = file.type || 'application/octet-stream';
   const filename = file.name || 'archivo';
-  const buffer   = Buffer.from(await file.arrayBuffer());
+  let buffer: Buffer = Buffer.from(await file.arrayBuffer());
 
   // Determine WhatsApp media type
   let waType: 'image' | 'document' | 'audio' | 'video';
@@ -56,18 +58,31 @@ export async function POST(req: NextRequest) {
 
   // 1. Upload to Supabase Storage (permanent URL for panel display)
   let permanentUrl: string | null = null;
+  let aviso: string | undefined;   // nivel 4 de la LEY: aviso visible pero no bloqueante
   if (waType === 'image' || waType === 'audio' || waType === 'video') {
-    const ext = mimeType.split('/')[1]?.split(';')[0]?.replace('jpeg', 'jpg') ?? 'bin';
-    const storageKey = `${to}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
-    const { error: upErr } = await supabase.storage
-      .from('chat-media')
-      .upload(storageKey, buffer, { contentType: mimeType, upsert: false });
-    if (!upErr) {
-      const { data: urlData } = supabase.storage.from('chat-media').getPublicUrl(storageKey);
-      permanentUrl = urlData.publicUrl;
-    } else {
-      console.warn('[Supabase Storage] upload failed:', upErr.message);
+    // LEY DE PESO: la foto se comprime como foto-whatsapp (250 kB, solo JPEG o PNG)
+    // y A META VA EL MISMO BUFFER COMPRIMIDO. El peso NO rechaza (LEY §1 punto 4):
+    // si no cabe se envía la mejor versión y la respuesta lleva un `aviso`. Audio y
+    // vídeo siguen igual (PENDIENTE: la compresión de vídeo es la tarea de WebCodecs).
+    const r = await subirArchivo({
+      supabase, bucket: 'chat-media', prefijo: String(to), buffer, contentType: mimeType,
+      tipo: 'foto-whatsapp', rechazarIlegible: waType === 'image', origen: 'chat-saliente',
+    });
+    if (r.ilegible) {
+      return NextResponse.json({ error: 'No se pudo leer la imagen: el archivo está dañado o no es una imagen. Expórtala de nuevo como JPG o PNG e inténtalo otra vez.', codigo: 'ILEGIBLE' }, { status: 422 });
     }
+    // Lo imposible para Meta se dice con lo que hay que hacer.
+    if (waType === 'image' && r.contentType !== 'image/jpeg' && r.contentType !== 'image/png') {
+      return NextResponse.json({ error: 'WhatsApp solo admite imágenes JPG o PNG. Convierte la imagen a uno de esos formatos y vuelve a enviarla.', codigo: 'FORMATO' }, { status: 415 });
+    }
+    if (waType === 'image' && r.buffer.length > 5 * 1024 * 1024) {
+      return NextResponse.json({ error: `Meta no admite imágenes de más de 5 MB y esta pesa ${(r.buffer.length / 1048576).toFixed(1)} MB incluso comprimida. Recórtala o usa una versión más pequeña.`, codigo: 'LIMITE_META' }, { status: 413 });
+    }
+    buffer = r.buffer;
+    mimeType = r.contentType;
+    aviso = r.aviso;
+    if (r.subido) permanentUrl = r.url ?? null;
+    else console.warn('[Supabase Storage] upload failed:', r.error);
   }
 
   // 1b. VIDEO grande: WhatsApp NO permite videos de más de 16 MB. Si pesa más,
@@ -95,7 +110,7 @@ export async function POST(req: NextRequest) {
       last_message: `🎬 Video${caption?.trim() ? `: ${caption.trim()}` : ''}`,
       last_message_time: new Date().toISOString(),
     }).eq('id', to);
-    return NextResponse.json({ success: true, id: msgIdV, type: 'video', media_url: permanentUrl, sentAsLink: true });
+    return NextResponse.json({ success: true, id: msgIdV, type: 'video', media_url: permanentUrl, sentAsLink: true, aviso });
   }
 
   // 2. Upload to WhatsApp (Meta)
@@ -147,5 +162,5 @@ export async function POST(req: NextRequest) {
     last_message_time: new Date().toISOString(),
   }).eq('id', to);
 
-  return NextResponse.json({ success: true, id: msgId, type: waType, media_url: permanentUrl });
+  return NextResponse.json({ success: true, id: msgId, type: waType, media_url: permanentUrl, aviso });
 }
