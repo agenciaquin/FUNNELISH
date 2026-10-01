@@ -1,6 +1,6 @@
-import sharp from 'sharp';
+import sharp, { type OutputInfo, type Sharp } from 'sharp';
 import {
-  ESCALONES_FOTO, PERFILES, mensajeAviso, nivelDe, topeConTolerancia, topeDe,
+  ESCALONES_FOTO, PERFILES, SSIM_MINIMO, mensajeAviso, nivelDe, topeConTolerancia, topeDe,
   type CodigoPeso, type Escalon, type Nivel, type TipoArchivo,
 } from './ley-peso';
 
@@ -148,7 +148,20 @@ export async function optimizarImagen(
 
   // Si el original ya cabe y su formato vale (JPEG o PNG), no se toca: una
   // segunda pasada solo quitaría calidad a cambio de nada.
-  if ((esJpeg || esPng) && buffer.length <= topeDe(tipoMedido)) return original();
+  if ((esJpeg || esPng) && buffer.length <= topeDe(tipoMedido)) {
+    // Pero antes se comprueba que es una imagen de verdad: un corrupto pequeño o un
+    // PDF con tipo JPEG no puede llegar a Meta como si fuera una foto.
+    try {
+      const m = await sharp(buffer, { failOn: 'none' }).metadata();
+      if (!m.width || !m.height) throw new Error('sin dimensiones');
+    } catch (e) {
+      console.warn('[ley-peso]', JSON.stringify({
+        estado: 'COMPRESOR_FALLO', tipo: tipoMedido, bytes: buffer.length, motivo: String((e as Error)?.message ?? e),
+      }));
+      return { ...original(), fallo: true };
+    }
+    return original();
+  }
 
   try {
     const meta = await sharp(buffer, { failOn: 'none' }).metadata();
@@ -208,9 +221,61 @@ export async function optimizarImagen(
       return false;
     };
 
+    /**
+     * Vía JPEG: de más a menos calidad se descartan los que pesan más que tope + 50 %
+     * y, de los que caben, se elige el MÁS LIGERO que sigue pareciéndose al original
+     * (SSIM >= SSIM_MINIMO). Para en cuanto uno cabe en el tope con ese parecido (nivel 1).
+     * Si el primero que cabe en tope + 50 % ya no llega a ese parecido, se acepta igual
+     * (más calidad no cabe). Devuelve false si ninguno cabe en tope + 50 %.
+     */
+    const buscarCalidad = async (): Promise<boolean> => {
+      // Se DECODIFICA UNA SOLA VEZ (decodificar 12 MP es la mitad del tiempo de cada
+      // intento): los candidatos salen del bitmap en crudo. Más de 40 MP no se cachean
+      // (150 MB de memoria): ahí cada intento parte del archivo.
+      const px = (meta.width ?? 0) * (meta.height ?? 0);
+      let crudo: { data: Buffer; info: OutputInfo } | null = null;
+      if (px > 0 && px <= 40_000_000) {
+        let pre = sharp(buffer, { failOn: 'none' }).rotate();
+        if (alfaReal) pre = pre.flatten({ background: '#ffffff' });
+        crudo = await pre.raw().toBuffer({ resolveWithObject: true });
+      }
+      const desdeCrudo = () => crudo
+        ? sharp(crudo.data, { raw: { width: crudo.info.width, height: crudo.info.height, channels: crudo.info.channels } })
+        : base.clone();
+      let ref: { datos: Buffer; w: number; h: number } | null = null;
+      // El original JPEG que ya cabe en tope + 50 % es la reserva con parecido 1.
+      let reserva: Candidato | null = esJpeg && buffer.length <= toleranciaMax
+        ? { buf: buffer, ct: contentType, escalon: 'original', rescate: false } : null;
+      let elegido: Candidato | null = null;
+      for (const e of escalones) {
+        let img = desdeCrudo().resize({ width: e.lado, height: e.lado, fit: 'inside', withoutEnlargement: true });
+        if (alfaReal && !crudo) img = img.flatten({ background: '#ffffff' });
+        const buf = await img
+          .jpeg({ quality: e.calidad, mozjpeg: true, chromaSubsampling: e.croma444 ? '4:4:4' : '4:2:0' })
+          .toBuffer();
+        const nombre = `${e.lado}/q${e.calidad}${e.croma444 ? '/444' : ''}`;
+        probar(buf, 'image/jpeg', nombre, toleranciaMax);          // anota el más ligero (nivel 4)
+        if (buf.length > toleranciaMax) continue;                  // demasiado pesado: el siguiente
+        if (reserva && reserva.escalon === 'original' && buf.length >= reserva.buf.length) continue; // el original es mejor
+        ref ??= await grises(crudo ? desdeCrudo() : buffer);
+        const parecido = ssimGris(ref.datos, (await grises(buf, ref)).datos, ref.w, ref.h);
+        const cand: Candidato = { buf, ct: 'image/jpeg', escalon: nombre, rescate: false };
+        if (parecido >= SSIM_MINIMO) {
+          if (buf.length <= tope) { elegido = cand; break; }       // nivel 1
+          reserva = cand;                                          // nivel 2; se sigue buscando uno que quepa
+          continue;
+        }
+        if (!reserva) reserva = cand;                              // más calidad no cabe: se acepta este
+        break;                                                     // los siguientes aún se parecen menos
+      }
+      elegido ??= reserva;
+      if (elegido) mejor = elegido;
+      return elegido !== null;
+    };
+
     // Nivel 1: escalones normales. Si no cabe, nivel 2 (hasta tope + 50 %: se acepta
     // la mejor tal cual). Si tampoco, nivel 3: escalones de rescate. Si nada basta, nivel 4.
-    if (!(await recorrer(escalones, tope))) {
+    if (!(viaPng ? await recorrer(escalones, tope) : await buscarCalidad())) {
       const mejorNormal = mejor as Candidato | null;
       if (!(mejorNormal && mejorNormal.buf.length <= toleranciaMax)) {
         enRescate = true;
@@ -235,6 +300,45 @@ export async function optimizarImagen(
     }));
     return { ...original(), fallo: true };
   }
+}
+
+/** Escala de grises a 1290 px (o a las dimensiones de la referencia): el SSIM de la LEY. */
+async function grises(fuente: Buffer | Sharp, destino?: { w: number; h: number }) {
+  const redim = destino
+    ? { width: destino.w, height: destino.h, fit: 'fill' as const }
+    : { width: 1290, height: 1290, fit: 'inside' as const };
+  // Un Buffer es un archivo (se aplica el EXIF); un Sharp ya viene orientado y en crudo.
+  const origen = Buffer.isBuffer(fuente) ? sharp(fuente, { failOn: 'none' }).rotate() : fuente;
+  const { data, info } = await origen.flatten({ background: '#ffffff' })
+    .resize(redim).greyscale().raw().toBuffer({ resolveWithObject: true });
+  return { datos: data, w: info.width, h: info.height };
+}
+
+/** SSIM global sobre ventanas de 8x8 (Wang et al. 2004), la misma medida de `medir-topes.ts`. */
+function ssimGris(a: Buffer, b: Buffer, w: number, h: number): number {
+  const C1 = (0.01 * 255) ** 2;
+  const C2 = (0.03 * 255) ** 2;
+  const V = 8;
+  let suma = 0;
+  let bloques = 0;
+  for (let by = 0; by + V <= h; by += V) {
+    for (let bx = 0; bx + V <= w; bx += V) {
+      let sa = 0, sb = 0, saa = 0, sbb = 0, sab = 0;
+      for (let y = 0; y < V; y++) {
+        for (let x = 0; x < V; x++) {
+          const i = (by + y) * w + bx + x;
+          const va = a[i]!, vb = b[i]!;
+          sa += va; sb += vb; saa += va * va; sbb += vb * vb; sab += va * vb;
+        }
+      }
+      const n = V * V;
+      const ma = sa / n, mb = sb / n;
+      const va = saa / n - ma * ma, vb = sbb / n - mb * mb, cov = sab / n - ma * mb;
+      suma += ((2 * ma * mb + C1) * (2 * cov + C2)) / ((ma * ma + mb * mb + C1) * (va + vb + C2));
+      bloques++;
+    }
+  }
+  return bloques ? suma / bloques : 1;
 }
 
 function extensionDe(contentType: string): string {

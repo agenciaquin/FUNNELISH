@@ -64,16 +64,27 @@ export interface Perfil {
 export const LADO_MINIMO_IMAGEN = 1440;
 
 /**
- * Escalones de una foto: se baja CALIDAD antes que TAMAÑO, porque lo que vende
+ * Escalones de una foto, de MÁS a MENOS calidad. Se baja CALIDAD antes que TAMAÑO, porque lo que vende
  * es la textura de la prenda y 18 de 22 fotos medidas ya miden ≤ 1600 px.
  */
 export const ESCALONES_FOTO: readonly Escalon[] = [
+  { lado: 1920, calidad: 90 },
   { lado: 1920, calidad: 85 },
   { lado: 1920, calidad: 80 },
+  { lado: 1600, calidad: 85 },
   { lado: 1920, calidad: 75 },
+  { lado: 1600, calidad: 80 },
   { lado: 1600, calidad: 75 },
   { lado: 1440, calidad: 75 },
 ];
+
+/**
+ * Parecido mínimo con el original (SSIM, grises a 1290 px) que debe tener lo que
+ * se guarda en los niveles 1 y 2. El compresor lo MIDE en cada subida: el orden de
+ * los escalones va de más a menos calidad y se elige el más ligero que lo cumple y cabe.
+ * (Medido: una foto de 3 264 px a 1600/q75 quedaba en 0,93 con el orden antiguo.)
+ */
+export const SSIM_MINIMO = 0.95;
 
 /**
  * Escalones de un gráfico con texto: q90 con croma 4:4:4 y solo se baja el
