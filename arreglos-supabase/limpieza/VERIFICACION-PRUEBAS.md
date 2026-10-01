@@ -6,7 +6,10 @@
 **Lo que no se tocó:** Supabase real. No se lanzó ningún script contra producción, ni en simulacro: escriben sus CSV
 en esta carpeta del repo. Todo lo que tiene `--ejecutar` se probó contra un **Supabase FALSO** en `127.0.0.1`.
 
-## Veredicto por paso
+> **Este veredicto es el de la primera verificación y ya no vale.** El vigente está en la
+> [Segunda verificación](#segunda-verificación) (más abajo).
+
+## Veredicto por paso (primera verificación)
 
 | # | Paso | Veredicto | Qué falta |
 | --- | --- | --- | --- |
@@ -278,3 +281,149 @@ si en Storage no están los bytes de la fase 1. Se rompe por F1 y F2.
   (`simulacro-falso.mjs`, `segunda-pasada.mjs`, `a5-relanzar.mjs`, `recomprimir-muestra.ts`, `transparencia.ts`,
   `navegador.mjs`, `ssim-2p.ts`, `guardia.mjs`).
 - Salidas: `salida-*.txt` en esa misma carpeta.
+
+---
+
+# Segunda verificación
+
+**Fecha:** 30-09-2026, por la noche · **Qué se revisó:** las correcciones de F1–F9 (`PLAN-LIMPIEZA.md` §13), la
+prueba v2 del desarrollador (`parchear-v2.cjs` y `simulacro-falso-v2.mjs`) y `CRUCE-RESULTADO-2026-09-30.md`.
+
+**Lo que no se tocó:** Supabase real. Todas las ejecuciones fueron contra el falso de 127.0.0.1, con `guardia.mjs`.
+
+## Veredicto por paso
+
+| Paso | Veredicto | Condición o motivo |
+| --- | --- | --- |
+| **A2: mover a `_borrar/`** | **LISTO PARA EJECUTAR** | (1) Ejecutarlo antes de que caduque el cruce de hoy (`CRUCE-RESULTADO-2026-09-30.md`). (2) Que **una persona** compruebe que la lista del simulacro de ese día son exactamente los 18 de la consulta 3: el script no lo comprueba (N1, N3). Mover se deshace bien (probado) |
+| **A2: purga** | **NO LISTO** | N2: si la comprobación posterior al borrado falla, el vídeo queda borrado sin registro y `restaurar` no lo devuelve (reproducido). También sigue abierto el hueco de quin-comercial |
+| **Prueba con `plantillas`** | **LISTO PARA EJECUTAR** | Con las copias en el disco definitivo (F4 ya permite moverlas) |
+| **A5 sin D5** | **LISTO PARA EJECUTAR** | De madrugada, y viendo `vecu4` en un móvil antes de la fase 2 |
+| **A3** | **LISTO PARA EJECUTAR** | Solo la fase 1, y con la revisión a ojo del PLAN §8. El margen de SSIM es fino (§3, punto 4) |
+| **A4** | **LISTO PARA EJECUTAR** | Zona por zona, con la misma revisión |
+| **Caché (fase 2)** | **LISTO PARA EJECUTAR** | A los 7 días de la fase 1, si no hay incidencias |
+| **A1** | **NO LISTO** | N1: la «prueba del SQL» no comprueba nada. El único resultado real, `CRUCE-RESULTADO-2026-09-30.md`, **no contiene la consulta 4**, y A1 lo acepta igual |
+
+## 1 · Qué se ejecutó
+
+Todo desde `…\scratchpad\pruebas-limpieza\`.
+
+| Prueba | Comando | Resultado |
+| --- | --- | --- |
+| Mi prueba original, adaptada por mí (ver más abajo) | `node simulacro-falso-v3.mjs` | **146/147 ok** (la que falla es N1) |
+| Escenario limpio para lo nuevo | `node escenario-registro.mjs` | **10/13 ok** (las 3 que fallan son N1 y N2) |
+| Qué acepta `exigirRevisionSql` (`comun.ts` real, red cortada) | `tsx prueba-sql-unidad.ts --tablas-revisadas <fichero>` | Acepta 5 de 6 ficheros, ninguno de ellos una prueba (N1) |
+| F1 | `node segunda-pasada.mjs` (sin cambios) | **14/14 ok** |
+| F2 | `node a5-relanzar.mjs` (sin cambios) | **12/12 ok** |
+| Muestra de 38 imágenes | `tsx recomprimir-muestra.ts` | **254/255 ok**, igual que antes: la que falla es la medida con ffmpeg (0,9495), que no decide |
+| Transparencia | `tsx transparencia.ts` | **166/166 ok** |
+
+**Qué cambié en mi prueba para la v3.** La hice a partir de mi `simulacro-falso.mjs`, sin usar la v2:
+
+- **POST en el falso:** sin `x-upsert: true`, falla con `Duplicate` si el objeto ya existe.
+- **La «prueba del SQL»:** el CSV que da *Export* en el editor SQL de Supabase para la consulta 2.
+- **Reloj desplazado** con `PRUEBA_DIAS`, metido en `guardia.mjs`. Así los 14 días se prueban sin editar el registro.
+- **Fallo inyectado:** un `GET` que responde 500 justo después de un `DELETE`.
+- **Casos nuevos:** A1 borra y se restaura, la purga en el límite de 13,9 y 14,1 días, restaurar desde la carpeta
+  movida para A1, A3/A4 y A5, F8 en una carpeta de copias vacía, y si la prueba SQL dice algo distinto de 0.
+
+**Dos casos de la v3 pasan sin probar nada:**
+
+- «Se niega con `tablas-ilegibles.csv`» pasa solo porque, en ese momento, el vídeo ya estaba en `_borrar/`.
+- «Restaurar recupera un purgado cuya comprobación falló» pasa solo porque usa un registro de una purga anterior.
+
+Por eso los repetí en `escenario-registro.mjs`, partiendo de cero, y **ahí fallan**: son N1 y N2.
+
+## 2 · Revisión de la v2 del desarrollador
+
+- **No debilita ningún caso mío.** Solo sustituye `'catalogo_variables'` por un fichero, añade el `POST` y añade
+  casos nuevos. Mis scripts originales siguen intactos (la hora de modificación es anterior a la v2).
+- **El `POST` del falso se comporta como el real:** sin `x-upsert: true` y con el objeto ya existente, devuelve 400
+  `Duplicate`. El `PUT` sobre un objeto que no existe sigue dando 404, que no está comprobado en el Supabase real.
+  No importa: `restaurar` decide entre `PUT` y `POST` según `existe()`.
+- **Dos debilidades:**
+  - El fichero SQL inventado de la v2 incluye «consulta 3: 0 filas» y «consulta 4: 0 filas», lo que hace parecer que
+    se comprueban. El código no los lee (N1).
+  - Los 14 días se simulan reescribiendo la fecha en `ejecuciones.jsonl`. Eso prueba el cálculo, no el reloj. Mi v3
+    lo prueba con el reloj y da el mismo resultado.
+- **Un caso que pasaba sin probar nada**, ya en mi original: «restaurar a1 devuelve el original» después de que A1
+  se negara. Pasa porque nunca se borró nada. En la v2 y en la v3 está cubierto por un caso de verdad (A1 borra y
+  luego se restaura).
+
+## 3 · F1–F9: cada uno con un caso que lo reproduce
+
+| Fallo | ¿Arreglado? | Evidencia |
+| --- | --- | --- |
+| F1 | **Sí** | Relanzar el simulacro deja una sola medición, no pisa `salida/`, la fase 2 fija el año y la nueva fase 1 no sube una segunda compresión (`segunda-pasada` 14/14) |
+| F2 | **Sí** | `a5.json` conserva el vídeo sustituido; la fase 2 y `restaurar` funcionan (`a5-relanzar` 12/12) |
+| F3 | **Sí**, salvo N2 | `restaurar a1` y `restaurar a2` tras purgar recrean con `POST` los bytes, el `Content-Type` y la caché originales (v3) |
+| F4 | **Sí** | Con la carpeta de copias movida, `restaurar` funciona para A3/A4 (`plantillas` y `chat-saliente`), A1 y A5, y `a34`/`a5 --ejecutar` funcionan desde la nueva ubicación (v3) |
+| F5 | **Sí en la forma, no en el fondo** | Sin el fichero, A1 se niega con código 1. Pero el fichero no se valida (N1) |
+| F6 | **Sí** | El vídeo citado con `%2F` en una celda con «50% OFF» ya no sale como huérfano. Las 7 comprobaciones del cruce están ok. El orden por clave primaria solo lo comprobé leyendo `comun.ts:193-200` |
+| F7 | **Sí** | `restaurar` devuelve el `cacheControl` original (`max-age=3600` o `31536000`) y el `Content-Type` original |
+| F8 | **Sí** | A5 en una carpeta vacía crea `resultados/a5.json` |
+| F9 | **Sí**, con N2 | Código de salida 1; purga solo a partir de 14 días (13,9 no borra, 14,1 sí); la purga no vuelve a bajar el vídeo; hay comprobación tras escribir. A5 vuelve a cruzar con `--ejecutar`, comprobado solo leyendo (`a5:145`) |
+
+## 4 · Fallos nuevos
+
+**N1 · ALTO · `--tablas-revisadas` acepta cualquier fichero que contenga los dos nombres** (`comun.ts:251-267`; la
+comprobación está en la línea 262). Solo mira tres cosas: que el fichero existe, que tiene menos de 24 h por su fecha
+de modificación y que contiene los nombres de las tablas. No lee los resultados.
+
+Probado con `comun.ts` real:
+
+| Fichero pasado como «prueba» | Resultado |
+| --- | --- |
+| `CRUCE-RESULTADO-2026-09-30.md` | ACEPTADA |
+| `tablas-ilegibles.csv` (lo genera el propio `inventario.ts`) | ACEPTADA |
+| `PLAN-LIMPIEZA.md` | ACEPTADA |
+| `a1-resumen.json` | ACEPTADA |
+| Una exportación que dice `catalogo_variables,7` | ACEPTADA |
+
+En el escenario limpio, A2 **movió** un vídeo usando como «prueba» `tablas-ilegibles.csv`.
+
+Además:
+
+- la consulta 3 (los vídeos) y la consulta 4 (`_originales/`) no se exigen;
+- la fecha de modificación se renueva con solo copiar o editar el fichero.
+
+**¿Lo puede producir una persona desde el editor SQL?** Sí: el CSV que exporta el editor para la consulta 2 se
+acepta. El problema no es el formato, es que la comprobación no prueba nada. **Arreglo propuesto:** leer el resultado
+(las dos tablas con 0 en la consulta 2, 0 filas en la consulta 3 para A2 y en la consulta 4 para A1), o pedir que lo
+confirme una persona, con su firma en el registro.
+
+**N2 · ALTO · Si la comprobación tras escribir falla, la escritura ya hecha no queda en el registro**
+(`comun.ts:495-512`). `anotarRegistro` va **después** de la comprobación, así que, si esta lanza (un 500, un corte de
+red), el `DELETE` ya está hecho y no consta en ninguna parte.
+
+**Reproducido** (`escenario-registro.mjs`): la purga borra el vídeo, la comprobación da 500, el proceso se para y
+`restaurar --tarea a2 --ejecutar` dice «0 purgados en el registro». El vídeo **no vuelve**, aunque su copia esté en
+disco.
+
+- En A1 no se nota: `restaurar` también busca en las copias del disco (probado).
+- En A3/A4 y A5 tampoco: `restaurar` lee `a34.jsonl` o `a5.json`, no el registro.
+- **Arreglo:** apuntar la intención antes de escribir y el resultado después, o anotar también cuando la comprobación
+  falla.
+
+**N3 · MEDIO · La prueba del SQL no está ligada a la lista que se mueve.** La consulta 3 lleva los 18 nombres
+escritos a mano. A2 mueve lo que salga en el simulacro **de ese día**. Si aparece un huérfano nuevo, se mueve sin que
+el SQL lo haya mirado. Hoy son los mismos 18.
+
+**N4 · BAJO · `restaurar` en simulacro gasta egress.** Para comparar, la función `devolver` baja entero cada objeto
+que existe (`restaurar.ts:158-159`). `restaurar --tarea a1` sin `--ruta` baja los 723 originales, casi 1 GB, cada vez
+que se lanza, y `--tarea a34` hace lo mismo con todas las incluidas.
+
+## 5 · Huecos que siguen abiertos
+
+- **Supabase real:**
+  - `PUT` sobre un objeto que no existe;
+  - si la CDN se invalida al sobrescribir;
+  - si el bucket tiene `allowed_mime_types` que rechacen `image/jpeg` en un `.png`.
+- **Fuera de este PC:**
+  - el envío por WhatsApp de una plantilla con un JPEG llamado `.png`;
+  - la revisión a ojo en móvil;
+  - la base de quin-comercial.
+- **No volví a cruzar contra la base real** (no lancé nada contra producción). El cruce de hoy es el de
+  `CRUCE-RESULTADO-2026-09-30.md`, que hizo el desarrollador con la herramienta MCP. No lo pude repetir.
+- **Copias de fotos de clientes:** las de mis pruebas se borraron al terminar. Quedan en el scratchpad las de la v2
+  del desarrollador (`copias-B-v2-disco-no-temporal`).
