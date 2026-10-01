@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { CACHE_UN_ANO, optimizarImagen } from '@/lib/optimizar-imagen-servidor';
 
 export const maxDuration = 60;
 
@@ -16,12 +17,21 @@ export async function POST(req: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const ext = (file.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
-    const ruta = `embudos/${slug}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
+
+    // Se comprime aquí y no solo en el navegador: así queda cubierta cualquier
+    // subida, venga del panel, de una integración o de una llamada suelta.
+    const img = await optimizarImagen(buffer, file.type);
+
+    const ruta = `embudos/${slug}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${img.ext}`;
 
     const supabase = createServerSupabaseClient();
     const { error } = await supabase.storage
-      .from('chat-media').upload(ruta, buffer, { contentType: file.type, upsert: false });
+      .from('chat-media')
+      .upload(ruta, img.buffer, {
+        contentType: img.contentType,
+        cacheControl: CACHE_UN_ANO,
+        upsert: false,
+      });
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
