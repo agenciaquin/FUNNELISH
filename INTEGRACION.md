@@ -22,7 +22,13 @@ Worktree: `C:\Users\Tati\AppData\Local\Temp\claude\D--PROYECTO-IA-FUNNELISH\729b
 | `124c505` | `fix(promos)`: abrir solo la compra de /promos y cerrar su administración (**fallo 13**, y parte del 12) |
 | `34896a0` | `fix(promos)`: el token del vendedor principal ya no sale en /promos (**fallo 12**) |
 | `802c3de` | `fix(promos)`: límite de envíos en los pedidos de /promos (**fallo 14**) |
-| (este) | `docs`: este documento |
+| `99ec3dc` | `docs`: este documento |
+| `c006b73` | `fix(promos)`: `?v=__principal__` no puede sacar el token del principal (auditoría, fallo 1, **bloqueante**) |
+| `4bfdd59` | `fix(bot)`: el anti-duplicados ya no deja filas vacías que callan al bot (auditoría, fallo 2) |
+| (este) | `docs`: §6 completado según la auditoría (fallo 3) |
+
+Auditoría: `AUDIT-INTEGRACION.md` (copia principal), **REQUIERE CORRECCIONES**; los tres puntos están corregidos
+en los tres últimos commits.
 
 Las dos uniones entraron **sin conflictos de texto**. Las reglas de Z6 se cumplen solas: en bot, embudos y
 webhooks no hubo que elegir (git unió los cambios de v174 con los de las otras ramas), y en compresión ganan los
@@ -70,6 +76,18 @@ Quien lo abría (el dueño) veía «PRODUCTO VENDIDO (descontar 1)»… y cualqu
   mandan los clientes), y `/api/promociones/vender` lee el token de la cookie, no del cuerpo. La página nunca lo
   conoce ni lo pinta.
 - **Vendedores (`?v=<código>`):** igual que antes. Su link sigue llevando su propio token (decisión de dirección).
+- **`?v=__principal__` no entra en modo vendedor** (`c006b73`): las dos páginas de `/promos` descartan ese
+  código antes de consultar y en la consulta. Sin esto, el token del principal salía en el `?k=` de cada
+  producto. Son las únicas consultas a `vendedores_promo` desde páginas públicas.
+
+### Anti-duplicados del webhook (auditoría, fallo 2) → **cerrado**
+El anti-duplicados de `bloqueantes` insertaba una fila de cliente vacía para cualquier mensaje. Con ubicación,
+reacción o contacto no se rellenaba nunca, y la espera de 12 s la tomaba por un mensaje nuevo: **el bot no
+respondía al texto anterior**. Ahora el duplicado se detecta al guardar el mensaje de verdad, con INSERT
+(`23505` = reintento de Meta). En archivos, la fila se pone **antes de descargar**, para que un reintento no suba
+otra copia a Storage. La nota de voz usa `-audio`, la transcripción el id normal, el texto adjunto `-caption`.
+Efecto menor que queda: en un reintento de texto el contador de no leídos del chat sube 1 de más (se actualiza
+antes de guardar el mensaje, que va detrás de crear la conversación por si hay clave ajena).
 
 **Qué cambia para cada uno:**
 
@@ -102,7 +120,8 @@ cron `promo-cierre` es otra cosa y no hace nada). No se tocó, y no se le copió
 | --- | --- | --- |
 | `middleware-api.ts` (con `next start`) | **384/384** | **584/584** |
 | `crons.ts` sin clave · con clave (con `next start`) | **56/56 · 84/84** | **52/52 · 78/78** |
-| `promos-token.ts` (nueva, fallo 12) | **17/17** (con las páginas de v174: 14/17, detecta la fuga) | — |
+| `promos-token.ts` (nueva, fallo 12 + `?v=__principal__`) | **23/23** (con las páginas de v174: 14/17; sin `c006b73`: 17/23) | — |
+| `webhook-duplicados.ts` (nueva, ruta real del webhook) | **16/16** (con el webhook anterior: 13/16, el bot se calla) | — |
 | `promociones-sesion.ts` (nueva, fallo 13) | **28/28** | — |
 | `promociones-limite.ts` (nueva, fallo 14) | **16/16** | — |
 | `carrito-sesion.ts` | 17/17 | — |
@@ -158,9 +177,10 @@ documentos.**
    si ya existe (si quinchat y quin-comercial compartieran base, ya estaría). Sin ella no se corta nada, pero
    **ni `/api/pedidos` ni los pedidos de /promos tienen límite**.
 3. **Token nuevo para `__principal__` (rotación).** El actual está en miles de mensajes de clientes y ha estado
-   a la vista. Se cambia **justo después de publicar** (paso E.2), no antes: la versión vieja lee el token de la
-   base en cada visita, así que si se cambia antes, la seguiría repartiendo a todos los visitantes hasta que
-   entre la nueva. Con aprobación, en el editor SQL de Supabase:
+   a la vista. Se cambia **solo después de publicar una versión que incluya `c006b73`** (el cierre de
+   `/promos?v=__principal__`, paso E.2). Antes no sirve de nada: la versión vieja lee el token de la base en
+   cada visita y lo sigue repartiendo, y sin `c006b73` el token nuevo saldría por `?v=__principal__`. Con
+   aprobación, en el editor SQL de Supabase:
    ```sql
    update vendedores_promo
       set token = replace(gen_random_uuid()::text, '-', '')
@@ -180,10 +200,17 @@ documentos.**
 
 ### B · Variables en Vercel (antes de publicar)
 
+> **Una variable nueva o cambiada no surte efecto hasta la siguiente publicación.** Crearla después de publicar
+> no hace nada hasta volver a publicar (botón *Redeploy* del último despliegue, en el panel de Vercel). Lo mismo
+> para **dar marcha atrás**: borrar `WHATSAPP_APP_SECRET` porque era la equivocada, o quitar `BOT_IA=off` tras
+> la primera hora, **exige volver a publicar**. Mientras tanto Meta reintenta y los clientes no reciben
+> respuesta. La otra salida es volver al despliegue anterior desde el panel, que conserva las variables con
+> que se publicó.
+
 | Variable | `quinchat-agencia-quin` | `quinchat-comercial` | Si falta o está mal |
 | --- | --- | --- | --- |
 | `CRON_SECRET` | Ya existe: comprobar | **NO existe: crearla** | Sin ella **no corre ningún cron** de esa app |
-| `WHATSAPP_APP_SECRET` | Crear (Meta → la app → Configuración → Básica → Clave secreta) | Crear (la misma clave de la app de Meta de la agencia) | Sin ella funciona como hoy, sin firma. **Con una clave equivocada se rechazan TODOS los mensajes** |
+| `WHATSAPP_APP_SECRET` | Crear (Meta → la app → Configuración → Básica → Clave secreta) | **Antes de crearla, comprobar en Meta qué app tiene como URL de webhook la de comercial** (`www.klixmant.shop/api/whatsapp/webhook`) y poner la clave de **esa** app. No está comprobado que sea la de la agencia: su panel muestra el callback de `quinchat-agencia-quin`. **Si no se sabe, no crearla** (sin ella funciona como hoy) | Sin ella funciona como hoy, sin firma. **Con la clave de otra app se rechazan TODOS los mensajes** de esa app (401) |
 | `FUNNELISH_WEBHOOK_TOKEN` | Crear una cadena larga al azar | Crear otra (puede ser distinta) | **Con la variable y sin cambiar la URL en Funnelish, se cortan las ventas de Funnelish** (ver C) |
 | `BOT_IA` | Opcional: `off` para la primera hora | Igual | Vacía = bot encendido |
 | `BOT_TOPE_DIARIO` | Opcional (por defecto 80) | Igual | `0` o un texto lo desactivan |
@@ -212,9 +239,18 @@ documentos.**
 1. Registros de ejecución de los dos proyectos abiertos; marcha atrás a mano desde el panel si hace falta.
 2. En cuanto la versión nueva responda: pasos A.3 y A.4 (rotar los tokens) y activar los teléfonos del dueño.
 3. Un WhatsApp de prueba a **cada línea** de quinchat (confirmación y ventas): si aparece
-   `[Webhook] aviso rechazado`, la clave de Meta está mal o la línea es de otra app.
-4. Un pedido de prueba en `/promos` con un número de la agencia: llega la plantilla, baja el stock, el chat
-   queda con el bot apagado. Anular el pedido después.
+   `[Webhook] aviso rechazado`, la clave de Meta está mal o la línea es de otra app (marcha atrás: ver la nota
+   de B, hay que volver a publicar). Probar también **texto y, enseguida, un pin de ubicación**: el bot tiene
+   que responder al texto.
+4. **Pedido de prueba en `/promos` (escribe en producción).** Crea un pedido real, manda una plantilla real,
+   deja el chat con el bot apagado y **descuenta stock real**. Anular el pedido **no** devuelve el stock
+   (ninguna ruta de pedidos toca `promociones`). Para no tocar el stock de verdad:
+   - en el panel de Promociones, crear un producto temporal «PRUEBA – NO COMPRAR» con una talla **sin número
+     de stock** (esas tallas no llevan control y no se descuenta nada), activo solo durante la prueba;
+   - pedirlo desde `/promos` con un número de la agencia y comprobar que llega la plantilla;
+   - borrar el producto, marcar el pedido como cancelado y volver a encender el bot en ese chat.
+   Si no se quiere escribir nada en producción, **saltarse este paso**: las rutas están probadas en local
+   (`promociones-limite.ts`, `middleware-api.ts`), salvo el envío real de la plantilla.
 5. Desde un teléfono **sin** activar, abrir una ficha de `/promos`: **no** debe salir «PRODUCTO VENDIDO».
    Desde un teléfono activado, sí.
 6. Subir una foto por el panel (embudos) y comprobar en los registros que no hay `ERR_DLOPEN_FAILED`.
@@ -228,3 +264,9 @@ documentos.**
 - **17 ·** Los links de vendedor siguen llevando el token del vendedor a todos los clientes de ese vendedor
   (decisión de dirección). Con él se puede descontar stock con `/api/promociones/vender`. Se podría aplicar la
   misma cookie que al principal. **Baja.**
+- **18 ·** quin-comercial tiene el mismo anti-duplicados con fila marcadora al principio que se corrigió en
+  quinchat (`4bfdd59`): una ubicación o una reacción durante la espera puede dejar sin respuesta al texto
+  anterior. Allí ya está en producción (no lo trae esta rama). **Media.**
+- Vistos por el auditor y ya conocidos: si `promoId` no existe, `/promociones/pedido` crea el pedido igual con
+  el precio del navegador (parte del 16); el descuento de stock es leer-modificar-escribir (dos compras a la vez
+  pueden vender la última unidad dos veces; ya era así en v174).
