@@ -5,6 +5,10 @@ import { uploadWhatsAppMedia, sendMediaMessage, sendTextMessage } from '@/lib/wh
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { entrarLinea } from '@/lib/whatsapp-contexto';
 import { subirArchivo } from '@/lib/subir-archivo';
+import { optimizarImagen } from '@/lib/optimizar-imagen-servidor';
+
+// La compresión de la foto añade 1,5–3 s (LEY DE PESO).
+export const maxDuration = 60;
 
 /**
  * POST /api/whatsapp/send-media
@@ -64,23 +68,30 @@ export async function POST(req: NextRequest) {
     // y A META VA EL MISMO BUFFER COMPRIMIDO. El peso NO rechaza (LEY §1 punto 4):
     // si no cabe se envía la mejor versión y la respuesta lleva un `aviso`. Audio y
     // vídeo siguen igual (PENDIENTE: la compresión de vídeo es la tarea de WebCodecs).
+    // Primero se COMPRIME Y SE VALIDA (422/415/413) y solo después se sube nada:
+    // si la imagen es imposible para Meta no queda ningún archivo huérfano en Storage.
+    let comprimida: Awaited<ReturnType<typeof optimizarImagen>> | undefined;
+    if (waType === 'image') {
+      comprimida = await optimizarImagen(buffer, mimeType, 'foto-whatsapp');
+      if (comprimida.fallo) {
+        return NextResponse.json({ error: 'No se pudo leer la imagen: el archivo está dañado o no es una imagen. Expórtala de nuevo como JPG o PNG e inténtalo otra vez.', codigo: 'ILEGIBLE' }, { status: 422 });
+      }
+      // Lo imposible para Meta se dice con lo que hay que hacer.
+      if (comprimida.contentType !== 'image/jpeg' && comprimida.contentType !== 'image/png') {
+        return NextResponse.json({ error: 'WhatsApp solo admite imágenes JPG o PNG. Convierte la imagen a uno de esos formatos y vuelve a enviarla.', codigo: 'FORMATO' }, { status: 415 });
+      }
+      if (comprimida.buffer.length > 5 * 1024 * 1024) {
+        return NextResponse.json({ error: `Meta no admite imágenes de más de 5 MB y esta pesa ${(comprimida.buffer.length / 1048576).toFixed(1)} MB incluso comprimida. Recórtala o usa una versión más pequeña.`, codigo: 'LIMITE_META' }, { status: 413 });
+      }
+    }
     const r = await subirArchivo({
-      supabase, bucket: 'chat-media', prefijo: String(to), buffer, contentType: mimeType,
-      tipo: 'foto-whatsapp', rechazarIlegible: waType === 'image', origen: 'chat-saliente',
+      supabase, bucket: 'chat-media', prefijo: String(to),
+      buffer: comprimida?.buffer ?? buffer, contentType: comprimida?.contentType ?? mimeType,
+      tipo: 'foto-whatsapp', origen: 'chat-saliente', comprimir: false,
     });
-    if (r.ilegible) {
-      return NextResponse.json({ error: 'No se pudo leer la imagen: el archivo está dañado o no es una imagen. Expórtala de nuevo como JPG o PNG e inténtalo otra vez.', codigo: 'ILEGIBLE' }, { status: 422 });
-    }
-    // Lo imposible para Meta se dice con lo que hay que hacer.
-    if (waType === 'image' && r.contentType !== 'image/jpeg' && r.contentType !== 'image/png') {
-      return NextResponse.json({ error: 'WhatsApp solo admite imágenes JPG o PNG. Convierte la imagen a uno de esos formatos y vuelve a enviarla.', codigo: 'FORMATO' }, { status: 415 });
-    }
-    if (waType === 'image' && r.buffer.length > 5 * 1024 * 1024) {
-      return NextResponse.json({ error: `Meta no admite imágenes de más de 5 MB y esta pesa ${(r.buffer.length / 1048576).toFixed(1)} MB incluso comprimida. Recórtala o usa una versión más pequeña.`, codigo: 'LIMITE_META' }, { status: 413 });
-    }
     buffer = r.buffer;
     mimeType = r.contentType;
-    aviso = r.aviso;
+    aviso = comprimida?.aviso;
     if (r.subido) permanentUrl = r.url ?? null;
     else console.warn('[Supabase Storage] upload failed:', r.error);
   }

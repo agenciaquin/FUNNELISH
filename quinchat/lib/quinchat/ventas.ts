@@ -1117,7 +1117,7 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
             // La IA recibe más abajo el buffer ORIGINAL. Sticker sin recomprimir.
             const r = await subirArchivo({
               supabase, bucket: 'chat-media', prefijo: `ventas/${from}`,
-              buffer: media.buffer, contentType: media.mimeType, tipo: 'foto-whatsapp',
+              buffer: media.buffer, contentType: media.mimeType, tipo: 'foto-entrante',
               origen: 'ventas-entrante', comprimir: m.type !== 'sticker',
             });
             if (r.subido) publicUrl = r.url ?? null;

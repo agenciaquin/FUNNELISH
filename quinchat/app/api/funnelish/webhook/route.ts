@@ -316,6 +316,9 @@ async function generarCollagePack(supabase: any, productos: string[], imagenes: 
   }
 }
 
+// El collage ahora lo codifica sharp (LEY DE PESO): suma 1,5–3 s al pedido.
+export const maxDuration = 60;
+
 // ── POST — Receive Funnelish purchase webhook ──────────────────────────────────
 // Entrada pública: exige el token. El checkout propio (`/api/pedidos`) llama
 // directo a `procesarPedidoFunnelish`, sin pasar por aquí.
