@@ -1,0 +1,11 @@
+zona,candidatas,incluidas,mb_antes,mb_despues,ahorro_mb,ssim_min,ssim_medio,desde_original,no_caben,graficos,huerfanas,ahorro_mb_huerfanas,excluidas,mb_excluidas,motivos_exclusion,cache_1_ano
+catalogo,56,56,30,11.7,18.3,0.950,0.966,43,0,0,8,4,0,0,,43
+catalogo-imagenes,199,199,202.5,38.8,163.7,0.950,0.969,0,3,5,25,24.1,0,0,,1
+chat-saliente,289,289,352.2,54,298.2,0.950,0.973,0,47,25,8,8.6,0,0,,0
+embudos,128,111,52.4,25.6,26.8,0.950,0.964,84,22,1,59,16.2,17,4.9,no ahorra: 17,84
+embudos/chat,15,15,5.7,3.1,2.5,0.961,0.967,15,0,0,0,0,0,0,,15
+entrantes,4,0,0,0,0,,,0,0,0,0,0,4,1.7,animada (71 fotogramas): 2 | animada (75 fotogramas): 1 | animada (79 fotogramas): 1,0
+packs,20,20,21.9,3.7,18.2,0.966,0.974,0,0,0,0,0,0,0,,0
+plantillas,1,1,1.1,0.2,0.9,0.973,0.973,0,0,0,0,0,0,0,,0
+plantillas-images,13,13,12.3,2.8,9.6,0.953,0.967,0,0,1,12,9,0,0,,0
+ventas,21,20,9.2,6.2,3,0.956,0.984,0,0,0,4,0.5,1,0.7,animada (88 fotogramas): 1,0

@@ -1,0 +1,21 @@
+zona,ruta,uso,usos,mb_hoy,mbps_hoy,resolucion,segundos,codec,incluido,motivo,mb_nuevo,paso,ssim
+chat-saliente,57311·····76/1784566991484-mjzh6.mp4,chat,messages.content,2.9,2.73,720x1296,9,h264,false,ya cumple el tope,,,
+chat-saliente,57324·····91/1788042411793-6uedo.mp4,chat,messages.content | messages.reply_to,2.9,2.73,720x1296,9,h264,false,ya cumple el tope,,,
+embudos,embudos/america-fc-copia/media-1786210884664-1dy1k.mp4,landing,funnels.miniatura_url,1.9,1.98,478x850,8,h264,false,ya cumple el tope,,,
+embudos,embudos/america-fc-copia/media-1786210918223-njgwa.mp4,landing,funnels.imagen_detalle,23,11.13,1080x1920,17,h264,true,cumple,1.6,"CRF 26 ≤1,8M",0.980
+embudos/chat,embudos/chat/media-1785275143601-6gyik.mp4,chat,messages.content,45.1,12.16,1080x1920,31,h264,true,cumple · necesita D5 (historial de clientes),5.3,CRF 26,0.965
+embudos/chat,embudos/chat/media-1785462612524-cbhth.mp4,chat,messages.content,10.1,4.95,1080x1920,17,h264,true,cumple · necesita D5 (historial de clientes),3,CRF 26,0.981
+embudos/chat,embudos/chat/media-1785606920243-4w72l.mp4,chat,messages.content,8.7,9.16,1080x1920,8,h264,false,ya cumple el tope,,,
+embudos/chat,embudos/chat/media-1785697559371-cykx6.mp4,chat,messages.content,30.6,9.83,1080x1920,26,h264,true,cumple · necesita D5 (historial de clientes),4.5,CRF 26,0.976
+embudos/chat,embudos/chat/media-1785697647918-pten4.mp4,chat,messages.content,16.3,10.62,1080x1920,13,h264,true,cumple · necesita D5 (historial de clientes),1.5,CRF 26,0.977
+embudos/chat,embudos/chat/media-1785766009385-8cq0i.mp4,chat,messages.content,10.1,4.95,1080x1920,17,h264,true,cumple · necesita D5 (historial de clientes),3,CRF 26,0.981
+embudos/chat,embudos/chat/media-1785900641316-klukz.mp4,chat,messages.content,10.1,4.95,1080x1920,17,h264,true,cumple · necesita D5 (historial de clientes),3,CRF 26,0.981
+embudos/chat,embudos/chat/media-1785900675245-knk23.mp4,chat,messages.content,10.9,4.97,1080x1920,18,h264,true,cumple · necesita D5 (historial de clientes),3.9,CRF 26,0.976
+embudos/chat,embudos/chat/media-1786130892173-umz4u.mp4,chat,messages.content,36.6,11.72,1080x1920,26,h264,true,cumple · necesita D5 (historial de clientes),3.2,CRF 26,0.974
+embudos/chat,embudos/chat/media-1786131990707-gyxwp.mp4,chat,messages.content,44.1,19.81,1080x1920,19,h264,true,cumple · necesita D5 (historial de clientes),2.5,CRF 26,0.968
+embudos,embudos/formula-1/media-1786741288718-pzdjz.mp4,landing,funnels.imagen_clientes,2.7,0.53,720x204,42,h264,false,ya cumple el tope,,,
+embudos,embudos/spiderman-tend/media-1785815073231-vecu4.mp4,landing,funnels.miniatura_url,9.3,5.55,1080x1920,14,h264,true,cumple,3.3,"2 pasadas 1,9M slow",0.951
+entrantes,entrantes/57320·····80/1788041532540-w0qfi.mp4,chat,messages.content,9.6,2.8,720x1280,29,h264,false,ya cumple el tope,,,
+ventas,ventas/57305·····09/1784933440186-4s6j2.mp4,chat,messages.content,1.9,1.71,576x1024,9,h264,false,ya cumple el tope,,,
+ventas,ventas/57312·····76/1786883665738-xxxvb.mp4,chat,messages.content,10.4,1.46,480x848,60,h264,true,cumple,4.6,CRF 26,0.981
+ventas,ventas/57322·····50/1786828761864-nk9x8.mp4,chat,messages.content,1.2,1.69,474x850,6,h264,false,ya cumple el tope,,,

@@ -66,3 +66,10 @@ Resume en español, breve:
 - qué cambió en cada app;
 - cómo se comprobó y qué no se pudo comprobar;
 - qué hay que configurar antes de publicar.
+
+
+## ⚖️ LEY DE PESO (obligatoria, 30-09-2026)
+Todo archivo que se suba, guarde, genere o sirva (foto, PNG, JPG, SVG, GIF, vídeo, collage…) llega **por debajo
+de su tope y sin pérdida visible** (SSIM ≥ 0,95). Topes, escalones y excepciones: **`LEY-DE-PESO.md`**, que lees
+antes de tocar cualquier cosa que escriba archivos. El orden de trabajo lo marca **`TABLERO-AGENTES.md`**.
+Ningún archivo que escriba en Storage queda sin prueba de peso; ninguna compresión se desactiva "para que funcione".

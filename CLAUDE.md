@@ -134,3 +134,11 @@ Decidido por dirección el 30-09-2026. Aplica a `quinchat/`, `quin-comercial/` y
 6. Con `sharp` van **todas** sus piezas en `outputFileTracingIncludes`, incluido `./node_modules/@img/**/*`
    (observación 1). Una publicación que no incluya `sharp` rompe esta ley: así pasó del 31-08 al 30-09 sin que
    nadie lo notara.
+
+---
+
+## ⚖️ LEY DE PESO · Todo archivo entra ligero (30-09-2026)
+
+Amplía la LEY de imágenes a **todos los formatos** (fotos, PNG, SVG, GIF, vídeo…) con un **tope máximo por
+archivo** y sin pérdida visible de calidad. Si algo no cabe, **se acepta por niveles**, no se rechaza. Topes y
+reglas en **`LEY-DE-PESO.md`**. El orden de trabajo de los agentes está en **`TABLERO-AGENTES.md`**.

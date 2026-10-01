@@ -1,0 +1,42 @@
+{
+  "fecha": "2026-10-01T01:58:55.324Z",
+  "archivos": 723,
+  "mb": 1010.1,
+  "columnasQueApuntan": [],
+  "tablasIlegibles": [
+    "catalogo_categorias",
+    "catalogo_variables"
+  ],
+  "porCondicion": {
+    "no hace falta: el vivo no se recomprime desde aquí (al ejecutar se mide su SSIM antes de borrar)": {
+      "archivos": 573,
+      "mb": 657
+    },
+    "fuente de A3/A4: borrar DESPUÉS de recomprimir y verificar": {
+      "archivos": 142,
+      "mb": 342.9
+    },
+    "CONSERVAR: el vivo ya está bajo SSIM 0,95 frente al original; decidir si se recupera": {
+      "archivos": 8,
+      "mb": 10.3
+    }
+  },
+  "porZona": {
+    "catalogo": {
+      "archivos": 293,
+      "mb": 373
+    },
+    "embudos": {
+      "archivos": 338,
+      "mb": 443.3
+    },
+    "embudos/chat": {
+      "archivos": 15,
+      "mb": 75.4
+    },
+    "packs": {
+      "archivos": 77,
+      "mb": 118.5
+    }
+  }
+}

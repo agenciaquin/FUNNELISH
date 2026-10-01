@@ -1,0 +1,3 @@
+tabla,columnas,motivo
+catalogo_categorias,tenant_id | nombre | columnas,"GET catalogo_categorias?select=%22tenant_id%22%2C%22nombre%22%2C%22columnas%22&limit=1000&offset=0: 403 {""code"":""42501"",""details"":null,""hint"":""Grant the require"
+catalogo_variables,tenant_id | nombre | icono | opciones,"GET catalogo_variables?select=%22tenant_id%22%2C%22nombre%22%2C%22icono%22%2C%22opciones%22&limit=1000&offset=0: 403 {""code"":""42501"",""details"":null,""hint"":""Gran"

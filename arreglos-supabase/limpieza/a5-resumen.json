@@ -1,0 +1,12 @@
+{
+  "fecha": "2026-10-01T01:48:49.089Z",
+  "tablasIlegibles": [
+    "catalogo_categorias",
+    "catalogo_variables"
+  ],
+  "enUso": 20,
+  "sobreTope": 12,
+  "incluidos": 12,
+  "mbAntes": 256.6,
+  "mbDespues": 39.4
+}
