@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   ESCALONES_FOTO, ESCALONES_GRAFICO, LADO_MINIMO_IMAGEN, PERFILES,
-  ESCALONES_RESCATE_FOTO, ESCALONES_RESCATE_GRAFICO, TOLERANCIA,
+  ESCALONES_RESCATE_FOTO, ESCALONES_RESCATE_GRAFICO, SSIM_MINIMO, TOLERANCIA,
   cumpleTope, formatearPeso, mensajeAviso, mensajeSupera, nivelDe, topeConTolerancia, topeDe, type TipoArchivo,
 } from '../lib/ley-peso.js';
 
@@ -44,7 +44,9 @@ comprobar('hay un perfil por cada tipo esperado', Object.keys(PERFILES).length =
 
 // 2 · Escalones y suelo.
 const e = ESCALONES_FOTO.map((x) => `${x.lado}/q${x.calidad}`).join(' ');
-comprobar('escalones de foto en el orden de la ley', e === '1920/q85 1920/q80 1920/q75 1600/q75 1440/q75', e);
+// De más a menos calidad: el compresor elige el más ligero con SSIM >= 0,95 que quepa (F1).
+comprobar('escalones de foto de más a menos calidad', e === '1920/q90 1920/q85 1920/q80 1600/q85 1920/q75 1600/q80 1600/q75 1440/q75', e);
+comprobar('SSIM mínimo de la ley = 0,95', SSIM_MINIMO === 0.95);
 comprobar('escalones de gráfico: q90 con croma 4:4:4', ESCALONES_GRAFICO.every((x) => x.calidad === 90 && x.croma444 === true));
 comprobar('suelo de 1440 px', LADO_MINIMO_IMAGEN === 1440);
 comprobar('ningún escalón baja del suelo',
