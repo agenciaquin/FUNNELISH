@@ -1,4 +1,5 @@
-import sharp, { type Sharp } from 'sharp';
+import sharp from 'sharp';
+import { ESCALONES_FOTO, PERFILES, cumpleTope, topeDe, type CodigoPeso, type TipoArchivo } from './ley-peso';
 
 /**
  * Comprime una foto EN EL SERVIDOR, justo antes de guardarla en Storage.
@@ -35,17 +36,20 @@ import sharp, { type Sharp } from 'sharp';
  * estas fotos estaban guardadas como PNG sin pérdida y como JPEG sobrecodificado.
  */
 
-/** Ancho o alto máximo. No recorta: conserva la proporción. */
-const LADO_MAX = 1920;
 
-/** Calidad JPEG. 85 con mozjpeg es visualmente indistinguible del original. */
-const CALIDAD = 85;
-
-/** Por debajo de esto no compensa recomprimir. */
-const MINIMO_BYTES = 200 * 1024;
-
-/** Si no baja al menos esto, se conserva el original: no vale la pena perder calidad a cambio de nada. */
-const AHORRO_MINIMO = 0.1;
+/*
+ * LEY DE PESO (30-09-2026): CON TOPE, EL TOPE MANDA
+ * -------------------------------------------------
+ * Antes este compresor aplicaba un único perfil (1920 / q85) y se rendía si no
+ * ahorraba un 10 %; con eso 5 de 22 fotos reales se quedaban por encima de
+ * 250 kB. Ahora el perfil es una ESCALERA (`lib/ley-peso.ts`, la única fuente
+ * de las cifras): se prueba un escalón tras otro y se para en el primero que
+ * cabe. Se baja calidad antes que tamaño y nunca por debajo de 1440 px.
+ *
+ * Si ni el último escalón cabe NO se lanza ni se rechaza aquí: se devuelve la
+ * mejor versión con `cumple: false` y `codigo: 'SUPERA_TOPE'`, y quien llama
+ * decide (el panel rechaza; los entrantes guardan y alertan: LEY §1 punto 4).
+ */
 
 export interface ImagenOptimizada {
   buffer: Buffer;
@@ -53,104 +57,136 @@ export interface ImagenOptimizada {
   /** Extensión que corresponde al `contentType`, sin punto. */
   ext: string;
   optimizada: boolean;
+  /** Tipo de la ley con el que se midió el resultado. */
+  tipo: TipoArchivo;
+  /** Tope en bytes de ese tipo. */
+  tope: number;
+  /** ¿`buffer` pesa lo que permite el tope? */
+  cumple: boolean;
+  /** `SUPERA_TOPE` si no cabe ni en el último escalón. */
+  codigo?: CodigoPeso;
+  /** Peso y tope en texto, listo para enseñar. Solo si no cumple. */
+  mensaje?: string;
+  /** Escalón con el que se guardó (`1920/q80`), si se comprimió. */
+  escalon?: string;
+  /** El compresor falló (archivo corrupto, formato ilegible). Se devuelve el original. */
+  fallo?: boolean;
+}
+
+/** Mejor versión conseguida hasta el momento, mientras se bajan escalones. */
+interface Candidato {
+  buf: Buffer;
+  ct: string;
+  escalon: string;
 }
 
 /**
- * Devuelve la versión liviana de la imagen, o la original intacta si no se puede
- * o no compensa. **Nunca lanza**: ante cualquier duda, se sube lo que llegó.
+ * Devuelve la versión liviana de la imagen, la original intacta si ya cabe y
+ * su formato vale, o la mejor conseguida con `cumple: false` si no cabe.
+ * **Nunca lanza**: ante un archivo ilegible devuelve el original con
+ * `fallo: true` (y `cumple` dirá la verdad sobre su peso).
+ *
+ * `tipo` elige el tope y los escalones. Por defecto `foto-web`; las rutas
+ * pasarán el suyo cuando se conecten (P13 y siguientes).
  */
 export async function optimizarImagen(
   buffer: Buffer,
   contentType: string,
+  tipo: TipoArchivo = 'foto-web',
 ): Promise<ImagenOptimizada> {
-  const original: ImagenOptimizada = {
-    buffer,
-    contentType,
-    ext: extensionDe(contentType),
-    optimizada: false,
+  // GIF y SVG se dejan tal cual (recomprimirlos los rompe) pero se miden con SU
+  // tope, no con el de las fotos. Su tratamiento propio es de P7 y P14.
+  const ct = contentType.toLowerCase();
+  const tipoMedido: TipoArchivo = ct === 'image/gif' ? 'gif' : ct === 'image/svg+xml' ? 'svg' : tipo;
+
+  const resultado = (
+    buf: Buffer, tipoContenido: string, optimizada: boolean, extra: Partial<ImagenOptimizada> = {},
+  ): ImagenOptimizada => {
+    const v = cumpleTope(tipoMedido, buf.length);
+    return {
+      buffer: buf, contentType: tipoContenido, ext: extensionDe(tipoContenido), optimizada,
+      tipo: tipoMedido, tope: v.tope, cumple: v.cumple, codigo: v.codigo, mensaje: v.mensaje, ...extra,
+    };
   };
+  const original = () => resultado(buffer, contentType, false);
 
-  // GIF animado y SVG se dejan tal cual: recomprimirlos los rompe o los empeora.
-  if (
-    !contentType.startsWith('image/') ||
-    contentType === 'image/gif' ||
-    contentType === 'image/svg+xml'
-  ) {
-    return original;
-  }
+  if (!ct.startsWith('image/') || tipoMedido === 'gif' || tipoMedido === 'svg') return original();
 
-  // El umbral de tamaño NO aplica al WebP. Aquí no es una cuestión de peso sino
-  // de compatibilidad: Meta acepta un WebP y luego no entrega el mensaje, así
-  // que hay que convertirlo aunque pese 20 kB.
-  //
+  // WebP: se convierte SIEMPRE, aunque pese 20 kB. Aquí no es cuestión de peso
+  // sino de compatibilidad: Meta acepta un WebP y luego no entrega el mensaje.
   // Esto no es hipotético: había 6 imágenes en `embudos/remarketing/` subidas
-  // como WebP, de 95 a 167 kB, y las campañas de remarketing se envían por
-  // WhatsApp. Llegaron ahí porque `imagen-comprimir.ts` devuelve el original
-  // cuando el JPEG le sale más grande — que es lo normal partiendo de un WebP.
-  const esWebp = contentType.startsWith('image/webp');
+  // como WebP, de 95 a 167 kB, y las campañas se envían por WhatsApp.
+  const esJpeg = ct === 'image/jpeg' || ct === 'image/jpg';
+  const esPng = ct === 'image/png';
 
-  if (!esWebp && buffer.length < MINIMO_BYTES) return original;
+  // Si el original ya cabe y su formato vale (JPEG o PNG), no se toca: una
+  // segunda pasada solo quitaría calidad a cambio de nada.
+  if ((esJpeg || esPng) && buffer.length <= topeDe(tipoMedido)) return original();
 
   try {
-    const imagen = sharp(buffer, { failOn: 'none' });
-    const meta = await imagen.metadata();
+    const meta = await sharp(buffer, { failOn: 'none' }).metadata();
 
     // OJO: `hasAlpha` dice si EXISTE el canal alfa, no si se usa. Casi cualquier
     // herramienta de diseño exporta PNG con un canal alfa completamente opaco, y
     // mirando solo `hasAlpha` esas fotos se iban por la vía PNG y se perdía el
-    // ahorro grande — que es justo el caso que más abunda en el bucket.
-    //
-    // `stats().isOpaque` lo resuelve: recorre los píxeles y dice si el alfa
-    // aporta algo. Solo se consulta cuando hay canal, para no pagarlo siempre.
-    const conTransparencia = meta.hasAlpha === true && !(await sharp(buffer, { failOn: 'none' }).stats()).isOpaque;
+    // ahorro grande. `stats().isOpaque` recorre los píxeles y lo resuelve; solo
+    // se consulta cuando hay canal, para no pagarlo siempre.
+    const alfaReal = meta.hasAlpha === true && !(await sharp(buffer, { failOn: 'none' }).stats()).isOpaque;
 
-    const redimensionada = imagen
-      .rotate() // aplica la orientación EXIF antes de que sharp la descarte
-      .resize({ width: LADO_MAX, height: LADO_MAX, fit: 'inside', withoutEnlargement: true });
+    // Lo que manda un cliente con transparencia (un sticker) sale JPG sobre
+    // blanco: 24 kB frente a 350 kB en PNG, medido. El resto conserva el alfa.
+    const viaPng = alfaReal && tipoMedido !== 'foto-entrante';
 
-    const salida = conTransparencia
-      ? await comprimirConAlfa(redimensionada, buffer.length)
-      : await redimensionada.jpeg({ quality: CALIDAD, mozjpeg: true }).toBuffer();
+    const escalones = PERFILES[tipoMedido].escalones ?? ESCALONES_FOTO;
+    const tope = topeDe(tipoMedido);
+    const base = sharp(buffer, { failOn: 'none' }).rotate(); // aplica el EXIF antes de que sharp lo descarte
 
-    // Del WebP se sale siempre, aunque el JPEG pese más: un archivo que no se
-    // entrega no sirve de nada por liviano que sea.
-    const ahorro = (buffer.length - salida.length) / buffer.length;
-    if (!esWebp && ahorro < AHORRO_MINIMO) return original;
+    // El original compite solo si ya tiene un formato válido para esta vía.
+    let mejor: Candidato | null = (viaPng && esPng) || (!viaPng && esJpeg)
+      ? { buf: buffer, ct: contentType, escalon: 'original' }
+      : null;
 
-    return conTransparencia
-      ? { buffer: salida, contentType: 'image/png', ext: 'png', optimizada: true }
-      : { buffer: salida, contentType: 'image/jpeg', ext: 'jpg', optimizada: true };
-  } catch {
+    /** Anota el intento y dice si cabe. */
+    const probar = (buf: Buffer, tipoContenido: string, escalon: string): boolean => {
+      if (!mejor || buf.length < mejor.buf.length) mejor = { buf, ct: tipoContenido, escalon };
+      return buf.length <= tope;
+    };
+
+    if (viaPng) {
+      // PNG sin pérdida y, si no cabe, con paleta (un logo ni se entera; una foto
+      // con alfa sí, pero es un caso raro). Solo se baja el tamaño: la calidad no
+      // es una opción en PNG. Un WebP con alfa puede engordar x10 a PNG sin
+      // pérdida (700 kB -> 7.463 kB), de ahí el segundo intento.
+      const lados = [...new Set(escalones.map((e) => e.lado))];
+      for (const lado of lados) {
+        const redim = base.clone().resize({ width: lado, height: lado, fit: 'inside', withoutEnlargement: true });
+        if (probar(await redim.clone().png({ compressionLevel: 9 }).toBuffer(), 'image/png', `${lado}/png`)) break;
+        if (probar(await redim.clone().png({ compressionLevel: 9, palette: true, quality: 90 }).toBuffer(), 'image/png', `${lado}/png-paleta`)) break;
+      }
+    } else {
+      for (const e of escalones) {
+        let img = base.clone().resize({ width: e.lado, height: e.lado, fit: 'inside', withoutEnlargement: true });
+        if (alfaReal) img = img.flatten({ background: '#ffffff' });
+        const buf = await img
+          .jpeg({ quality: e.calidad, mozjpeg: true, chromaSubsampling: e.croma444 ? '4:4:4' : '4:2:0' })
+          .toBuffer();
+        if (probar(buf, 'image/jpeg', `${e.lado}/q${e.calidad}${e.croma444 ? '/444' : ''}`)) break;
+      }
+    }
+
+    const elegido = mejor as Candidato | null;
+    // Sin candidato (no debería pasar) o el mejor es el propio original: se devuelve tal cual.
+    if (!elegido || elegido.buf === buffer) return original();
+    return resultado(elegido.buf, elegido.ct, true, { escalon: elegido.escalon });
+  } catch (e) {
     // Un archivo corrupto o un formato que sharp no entiende no debe tumbar la
-    // subida: se guarda el original y ya lo recogerá el backfill si hace falta.
-    return original;
+    // subida (LEY §1 punto 5: no en silencio, queda el aviso en el registro).
+    // Se devuelve el original marcado como fallo; `cumple` dirá si además pesa de más.
+    console.warn('[ley-peso]', JSON.stringify({
+      estado: 'COMPRESOR_FALLO', tipo: tipoMedido, bytes: buffer.length, motivo: String((e as Error)?.message ?? e),
+    }));
+    return { ...original(), fallo: true };
   }
-}
-
-/**
- * Comprime una imagen CON TRANSPARENCIA, que obliga a salir en PNG.
- *
- * Se intenta primero PNG sin pérdida, que es lo que conviene a un logo. Pero si
- * la entrada era un WebP —formato que comprime la transparencia con pérdida— el
- * PNG puede salir MUCHO más grande. Medido sobre una imagen con alfa de 700 kB:
- *
- *   png sin pérdida : 7.463 kB   (x10,7)
- *   png con paleta  :   914 kB   (x1,3)
- *
- * Por eso, y solo cuando el resultado engorda, se reintenta con `palette: true`.
- * Cuantiza a 256 colores —un logo ni se entera; una foto con alfa sí, pero es un
- * caso raro y la alternativa es multiplicar el peso por diez— y, comprobado
- * sobre sharp 0.35.4 —la versión que instalan estas rutas—, **conserva el canal
- * alfa**. Lo verifica la prueba «webp con alfa conserva transparencia».
- *
- * Se devuelve el más pequeño de los dos. Un logo normal ni llega al reintento.
- */
-async function comprimirConAlfa(img: Sharp, bytesOriginales: number): Promise<Buffer> {
-  const sinPerdida = await img.clone().png({ compressionLevel: 9 }).toBuffer();
-  if (sinPerdida.length <= bytesOriginales) return sinPerdida;
-
-  const conPaleta = await img.clone().png({ compressionLevel: 9, palette: true, quality: 90 }).toBuffer();
-  return conPaleta.length < sinPerdida.length ? conPaleta : sinPerdida;
 }
 
 function extensionDe(contentType: string): string {
