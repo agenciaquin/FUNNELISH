@@ -101,11 +101,26 @@ const TEST_WHITELIST = new Set([
 // Funnelish envía las variantes concatenadas en variant_name, ej: "ROJO / NEGRO / HOMBRE - M".
 // Separamos colores de talla y armamos el producto combinado "ROJO TOYOTA + NEGRO TOYOTA".
 const COLORES_CONOCIDOS = [
-  'AZUL OSCURO', 'AZUL REY', 'AZUL NAVY', 'AZUL', 'ROJO', 'NEGRO',
+  'AZUL OSCURO', 'AZUL CLARO', 'AZUL REY', 'AZUL NAVY', 'AZUL', 'ROJO', 'NEGRO ROTOS', 'NEGRO',
   'BLANCO MARFIL', 'MARFIL', 'BLANCO', 'AMARILLO', 'BEIGE', 'VERDE OSCURO', 'VERDE', 'GRIS', 'COCOA',
+  'CELESTE', 'HUMO', 'JEANS',
 ];
 
-function parsePack(productoNombre: string, variantName: string): {
+// Lee los colores REALES del catálogo del cliente para reconocerlos en los packs,
+// sin depender de una lista fija. Si falla, se usa solo la lista base de respaldo.
+async function coloresDelCatalogo(supabase: any): Promise<string[]> {
+  try {
+    const { data } = await supabase.from('catalogo_colores').select('color');
+    const set = new Set<string>();
+    for (const r of (data ?? [])) {
+      const c = String((r as any)?.color ?? '').toUpperCase().trim();
+      if (c) set.add(c);
+    }
+    return [...set];
+  } catch { return []; }
+}
+
+function parsePack(productoNombre: string, variantName: string, coloresConocidos: string[] = COLORES_CONOCIDOS): {
   esPack: boolean; familia: string; colores: string[]; productos: string[]; productoFinal: string; tallaFinal: string;
 } {
   const nombreUp = productoNombre.toUpperCase();
@@ -140,7 +155,7 @@ function parsePack(productoNombre: string, variantName: string): {
       tallas.push(p); // TODAS las tallas (un polo puede ser S y otro M)
     } else {
       // Solo tomar colores reconocidos (evita meter basura como color)
-      const color = COLORES_CONOCIDOS.find(c => pUp.includes(c));
+      const color = coloresConocidos.find(c => pUp.includes(c));
       if (color) colores.push(color);
     }
   }
@@ -398,7 +413,15 @@ export async function procesarPedidoFunnelish(req: NextRequest, base?: BaseLinea
   }
 
   // ── PACK X2: separar colores y talla; armar producto combinado ────────────────
-  const pack = parsePack(productoNombre, variantName);
+  // Cliente/tenant de esta venta (se usa también más abajo para imágenes, etc.).
+  const supabase = base?.tenantId ? supabaseTenant(base.tenantId) : createServerSupabaseClient();
+  // Colores reconocidos = los del catálogo del cliente (dinámico) + lista base de respaldo,
+  // ordenados por nombre más largo primero (así "AZUL CLARO" gana sobre "AZUL").
+  const coloresCatalogo = await coloresDelCatalogo(supabase);
+  const listaColores = [...new Set([...coloresCatalogo, ...COLORES_CONOCIDOS].map(c => c.toUpperCase().trim()))]
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  const pack = parsePack(productoNombre, variantName, listaColores);
   const packProductos = pack.esPack ? pack.productos : [];
   if (pack.esPack) {
     productoNombre = pack.productoFinal;   // ej: "ROJO TOYOTA + NEGRO TOYOTA"
@@ -411,8 +434,6 @@ export async function procesarPedidoFunnelish(req: NextRequest, base?: BaseLinea
   const nombreImagenPrincipal = packProductos[0] ?? productoNombre;
 
   const mensaje = buildMensaje({ nombre, telefono: tel10, direccion, ciudad, departamento, correo, talla, producto: productoNombre, valor, extras: extrasTexto, marca: saludoMarca });
-
-  const supabase = base?.tenantId ? supabaseTenant(base.tenantId) : createServerSupabaseClient();
 
   // Buscar imagen(es). Para packs, una foto POR COLOR (estricto) para no repetir color.
   let imageUrl: string;
