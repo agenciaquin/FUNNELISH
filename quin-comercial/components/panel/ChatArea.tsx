@@ -166,6 +166,7 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
 
   // Menú de un mensaje (responder / copiar / eliminar) y mensaje citado
   const [menuMsg, setMenuMsg]   = useState<Message | null>(null);
+  const [copiadoId, setCopiadoId] = useState<string | null>(null);
   const [citando, setCitando]   = useState<Message | null>(null);
   const [corrigiendo, setCorrigiendo] = useState<Message | null>(null);
   const [fotoAmpliada, setFotoAmpliada] = useState<string | null>(null);
@@ -312,6 +313,39 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
 
     try { await navigator.clipboard.writeText(textoDe(m)); }
     catch { alert('No se pudo copiar.'); }
+  }
+
+  /** Copia el texto de un mensaje. Botón visible, sirve en PC y celular. */
+  async function copiarTexto(m: Message) {
+    const t = textoDe(m);
+    const marcarOk = () => {
+      setCopiadoId(m.id);
+      setTimeout(() => setCopiadoId(v => (v === m.id ? null : v)), 1500);
+    };
+    try {
+      await navigator.clipboard.writeText(t);
+      marcarOk();
+      return;
+    } catch { /* respaldo abajo */ }
+    // Respaldo para navegadores/WebViews sin API de portapapeles (algunos móviles)
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = t;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '0';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, t.length);
+      document.execCommand('copy');
+      ta.remove();
+      marcarOk();
+    } catch {
+      alert('No se pudo copiar.');
+    }
   }
 
   async function eliminarMensaje(m: Message) {
@@ -1354,9 +1388,24 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
                 ) : (
                   <>
                     <span className="whitespace-pre-wrap break-words">{msg.content}</span>
-                    <div className={`text-[9px] mt-1.5 text-right ${isOutgoing ? 'text-white/40' : 'text-[#6B6B6B]'}`}>
-                      {formatMsgTime(msg.created_at)}
-                      {isOutgoing && <Ticks status={msg.status} error={msg.error_envio} />}
+                    <div className="flex items-center justify-between gap-2 mt-1.5">
+                      {((msg.content || '').includes('\n') || (msg.content || '').trim().length >= 20) ? (
+                        <button
+                          onClick={e => { e.stopPropagation(); copiarTexto(msg); }}
+                          className={`flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded-md transition-colors shrink-0 ${
+                            isOutgoing
+                              ? 'bg-white/20 text-white hover:bg-white/30 active:bg-white/40'
+                              : 'bg-[#EAF6F4] text-[#00847A] hover:bg-[#DCEEEB] active:bg-[#CDE6E2]'
+                          }`}
+                          aria-label="Copiar texto"
+                        >
+                          {copiadoId === msg.id ? '✓ Copiado' : '📋 Copiar'}
+                        </button>
+                      ) : <span />}
+                      <span className={`text-[9px] ${isOutgoing ? 'text-white/40' : 'text-[#6B6B6B]'}`}>
+                        {formatMsgTime(msg.created_at)}
+                        {isOutgoing && <Ticks status={msg.status} error={msg.error_envio} />}
+                      </span>
                     </div>
                   </>
                 )}

@@ -2,14 +2,16 @@
 // que desplegar. Sirve para confirmar, desde /api/version, que el `vercel --prod`
 // SÍ quedó en vivo (si el número que ves en la web coincide con el último, los
 // cambios ya están activos para TODOS los bots de los clientes).
-export const VERSION = 'v173';
+export const VERSION = 'v175';
 
 // Fecha aproximada de esta versión (referencia para ti, no afecta nada).
 export const VERSION_FECHA = '2026-08-30';
 
 // Resumen corto de lo último que entró en esta versión.
 export const VERSION_CAMBIOS = [
-  'Confirmaciones · cada VENTA NUEVA que entra por Funnelish (aunque el cliente todavía no confirme) le manda un aviso de WhatsApp al ASESOR del cliente (el número de "Mi WhatsApp / avisos" = wa_numero_dueno del tenant): "✅ Nueva venta ingresada / {nombre} / {celular} / Revisa el chat y confírmala ✅". Se dispara UNA sola vez por venta (ya filtra duplicados y re-envíos) y sale desde el mismo WhatsApp del bot. Requiere que el asesor mantenga abierta la ventana de 24h escribiéndole al bot. Aditivo: no toca la confirmación al cliente ni las plantillas de Meta.',
+  'Packs · el PACK X2 ahora reconoce los colores LEYÉNDOLOS del catálogo de cada cliente (dinámico), no de una lista fija. Antes, colores como CELESTE, HUMO o JEANS (bermudas) no se reconocían y el pack no se armaba cuando el cliente compraba dos; ahora cualquier color del catálogo funciona, incluso los nuevos que se agreguen. Además se corrige que "AZUL CLARO" y "NEGRO ROTOS" ya no se confundan con Azul/Negro (empareja primero el nombre más largo). Aditivo: no cambia la confirmación ni las plantillas.',
+  'Chat · las burbujas de texto (como el bloque de datos del cliente: nombre, teléfono, dirección…) ahora tienen un botón "📋 Copiar" VISIBLE que copia todo el texto de un toque, y sirve igual en PC y en celular (antes tocaba clic derecho o mantener pulsado). Al copiar muestra "✓ Copiado". Solo aparece en mensajes que valen la pena copiar (varias líneas o textos largos), no en respuestas cortas.',
+  'Confirmaciones · cada VENTA NUEVA que entra por Funnelish (aunque el cliente todavía no confirme) le manda un aviso de WhatsApp al ASESOR del cliente (el número de "Mi WhatsApp / avisos" = wa_numero_dueno del tenant): "✅ Nueva venta ingresada / {nombre} / {celular} / Revisa el chat y confírmala ✅". Se dispara UNA sola vez por venta (ya filtra duplicados y re-envíos), TAMBIÉN cuando el cliente no tiene WhatsApp válido (la venta igual entró y hay que revisarla), y sale desde el mismo WhatsApp del bot. Requiere que el asesor mantenga abierta la ventana de 24h escribiéndole al bot. Aditivo: no toca la confirmación al cliente ni las plantillas de Meta.',
   'Confirmaciones · el saludo del mensaje ahora es POR CLIENTE (ya no dice "klixmant" fijo): sale de un dato del tenant. Para Skioo dice "te saluda Isaac de Skioo". OJO: esto cambia lo que se ve en QuinChat y el texto plano; el mensaje que le llega al CLIENTE viene de la plantilla aprobada de Meta y hay que editarla en el Administrador de WhatsApp para que también diga la marca correcta.',
   'Confirmaciones · las ventas que llegan de Funnelish ahora hacen que el bot ENVÍE la confirmación y se APAGUE (modo "solo"): la conversación queda como PENDIENTE POR CONFIRMACIÓN para que la cierre un humano, igual que en los embudos internos. (Se puede invertir con ?modo=agente en la URL del webhook.)',
   'Confirmaciones · nuevo webhook de Funnelish POR CLIENTE: /api/funnelish/webhook/<slug>. Ahora las ventas que llegan de Funnelish a la tienda del cliente (ej. Skioo) se confirman por SU propio WhatsApp del bot, igual que las ventas de los embudos internos. Aditivo: no toca el webhook anterior.',
