@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maqueta · Conversaciones · QUINCHAT</title>
+<style>
+  :root{
+    --teal:#00A89D; --teal-d:#00847A; --teal-l:#e6f7f5; --teal-xl:#f2fbfa;
+    --ink:#0D0D0D; --muted:#6B6B6B; --soft:#9A9A9A; --line:#E8E8E8; --bg:#FAF9F6; --card:#fff;
+    --green:#15803D; --orange:#EA580C; --red:#DC2626; --violet:#8B5CF6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#eef1f0;color:var(--ink);font-size:13.5px}
+  .tag{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:50;background:#fff4d6;color:#9a6a00;border:1px solid #f0d38a;border-radius:999px;padding:4px 14px;font-size:11.5px;font-weight:600}
+  .app{display:flex;height:100vh;overflow:hidden}
+
+  /* Sidebar QUINCHAT (se conserva el real) */
+  .side{width:72px;background:linear-gradient(180deg,#00A89D,#00847A);color:#fff;display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:6px;flex-shrink:0}
+  .side .logo{width:42px;height:42px;border-radius:12px;background:#fff;color:var(--teal-d);display:grid;place-items:center;font-weight:800;font-size:13px;margin-bottom:10px}
+  .side .it{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;font-size:18px;opacity:.8;cursor:default}
+  .side .it.on{background:rgba(255,255,255,.2);opacity:1}
+  .side .lbl{font-size:8px;opacity:.75;margin-top:-4px}
+
+  /* Columna 1: lista */
+  .list{width:340px;background:var(--card);border-right:1px solid var(--line);display:flex;flex-direction:column;flex-shrink:0}
+  .list .top{padding:12px 14px;border-bottom:1px solid var(--line)}
+  .list h2{font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:space-between}
+  .count{font-size:11px;color:var(--muted);font-weight:600;background:var(--teal-l);color:var(--teal-d);border-radius:999px;padding:2px 9px}
+  .search{margin-top:10px;display:flex;align-items:center;gap:7px;background:#f5f6f6;border:1px solid var(--line);border-radius:10px;padding:7px 10px;color:var(--soft);font-size:12.5px}
+  .tabs{display:flex;gap:6px;padding:10px 14px 8px;overflow-x:auto;border-bottom:1px solid var(--line)}
+  .tabs span{font-size:11px;padding:5px 10px;border-radius:8px;border:1px solid var(--line);white-space:nowrap;color:#30514e;cursor:default}
+  .tabs .on{background:var(--teal);color:#fff;border-color:var(--teal);font-weight:600}
+  .convos{flex:1;overflow-y:auto}
+  .cv{display:flex;gap:10px;padding:11px 14px;border-bottom:1px solid #f4f4f4;cursor:default;position:relative}
+  .cv:hover{background:#fafafa}
+  .cv.sel{background:var(--teal-xl)}
+  .cv.sel::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--teal)}
+  .av{width:42px;height:42px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;color:#fff;font-weight:700;font-size:15px}
+  .cv .mid{flex:1;min-width:0}
+  .cv .nm{display:flex;justify-content:space-between;gap:6px}
+  .cv .nm b{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cv .nm .hr{font-size:10.5px;color:var(--soft);flex-shrink:0}
+  .cv .last{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+  .cv .meta{display:flex;align-items:center;gap:6px;margin-top:5px;flex-wrap:wrap}
+  .pill{font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:999px}
+  .p-emb{background:#eef4ff;color:#2f80ed}
+  .p-bot{background:var(--teal-l);color:var(--teal-d)}
+  .p-hum{background:#f1f1f1;color:#555}
+  .dotbot{font-size:9.5px;color:var(--green);font-weight:700}
+  .badge{background:var(--teal);color:#fff;font-size:10px;font-weight:700;border-radius:999px;min-width:18px;height:18px;display:grid;place-items:center;padding:0 5px}
+
+  /* Columna 2: chat */
+  .chat{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg)}
+  .chead{display:flex;align-items:center;gap:11px;padding:10px 16px;background:#fff;border-bottom:1px solid var(--line)}
+  .chead .nm b{font-size:14px;font-weight:700}
+  .chead .nm .sub{font-size:11px;color:var(--soft)}
+  .chead .sp{flex:1}
+  .toggle{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:600;color:var(--teal-d);background:var(--teal-l);border-radius:999px;padding:5px 11px}
+  .sw{width:30px;height:17px;border-radius:999px;background:var(--teal);position:relative}
+  .sw::after{content:"";position:absolute;right:2px;top:2px;width:13px;height:13px;border-radius:50%;background:#fff}
+  .hbtn{width:32px;height:32px;border-radius:9px;border:1px solid var(--line);background:#fff;display:grid;place-items:center;color:var(--muted);font-size:14px}
+  .body{flex:1;overflow-y:auto;padding:18px 16px;display:flex;flex-direction:column;gap:10px}
+  .day{align-self:center;background:#fff;border:1px solid var(--line);color:var(--muted);font-size:10.5px;padding:3px 12px;border-radius:999px}
+  .msg{max-width:64%;padding:9px 12px;border-radius:14px;font-size:13px;line-height:1.35;position:relative}
+  .msg .t{font-size:9.5px;color:var(--soft);display:block;text-align:right;margin-top:3px}
+  .in{align-self:flex-start;background:#fff;border:1px solid var(--line);border-bottom-left-radius:4px}
+  .out{align-self:flex-end;background:var(--teal);color:#fff;border-bottom-right-radius:4px}
+  .out .t{color:rgba(255,255,255,.75)}
+  .botlbl{font-size:9px;font-weight:700;color:var(--teal-d);opacity:.8;margin-bottom:2px;display:block}
+  .out .botlbl{color:rgba(255,255,255,.85)}
+  .inputbar{display:flex;align-items:center;gap:9px;padding:11px 14px;background:#fff;border-top:1px solid var(--line)}
+  .inputbar .plus{width:36px;height:36px;border-radius:50%;background:var(--teal-l);color:var(--teal-d);display:grid;place-items:center;font-size:18px}
+  .inputbar .field{flex:1;background:#f5f6f6;border:1px solid var(--line);border-radius:999px;padding:9px 14px;color:var(--soft);font-size:12.5px}
+  .inputbar .snd{width:38px;height:38px;border-radius:50%;background:var(--teal);color:#fff;display:grid;place-items:center;font-size:16px}
+
+  /* Columna 3: ficha cliente (desplegable) */
+  .info{width:320px;background:#fff;border-left:1px solid var(--line);flex-shrink:0;overflow-y:auto}
+  .info.hide{display:none}
+  .info .ih{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line);font-weight:700;font-size:13.5px}
+  .info .prof{text-align:center;padding:18px 16px 12px}
+  .info .prof .big{width:72px;height:72px;border-radius:50%;margin:0 auto 8px;display:grid;place-items:center;color:#fff;font-weight:800;font-size:26px}
+  .info .prof b{font-size:15px}
+  .info .prof .c{font-size:12px;color:var(--muted);margin-top:2px}
+  .sec{padding:12px 16px;border-top:1px solid var(--line)}
+  .sec .h{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--soft);letter-spacing:.4px;margin-bottom:8px;display:flex;align-items:center;gap:5px}
+  .kv{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0}
+  .kv span:first-child{color:var(--muted)}
+  .chiprow{display:flex;gap:6px;flex-wrap:wrap}
+  .c-conf{background:#e9f9f0;color:var(--green)}
+  .c-wait{background:#fff3df;color:var(--orange)}
+  .c-emb{background:#eef4ff;color:#2f80ed}
+  .pedido{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .pedido .row{display:flex;gap:10px;padding:10px}
+  .pedido .ph{width:52px;height:52px;border-radius:9px;background:#f2f2f2;display:grid;place-items:center;font-size:20px;flex-shrink:0}
+  .pedido .vbtn{display:block;text-align:center;padding:9px;background:var(--teal-l);color:var(--teal-d);font-weight:700;font-size:12px;border-top:1px solid var(--line)}
+  .empty{font-size:12px;color:var(--soft);font-style:italic}
+
+  @media(max-width:1100px){ .info{position:absolute;right:0;top:0;bottom:0;box-shadow:-8px 0 24px rgba(0,0,0,.08);z-index:20} }
+  @media(max-width:820px){ .list{width:300px} }
+</style>
+</head>
+<body>
+<span class="tag">● MAQUETA — datos de ejemplo · identidad QUINCHAT · nada conectado a producción</span>
+
+<div class="app">
+  <!-- Sidebar real de QUINCHAT (se conserva) -->
+  <div class="side">
+    <div class="logo">QUIN</div>
+    <div class="it">🏠</div>
+    <div class="it on">💬<div class="lbl">Chat</div></div>
+    <div class="it">🛒</div>
+    <div class="it">📊</div>
+    <div class="it">🚀</div>
+    <div class="it">🏆</div>
+    <div class="it">📣</div>
+  </div>
+
+  <!-- Columna 1: lista de conversaciones -->
+  <div class="list">
+    <div class="top">
+      <h2>Chat WhatsApp <span class="count">346 / 359</span></h2>
+      <div class="search">🔍 Buscar conversación…</div>
+    </div>
+    <div class="tabs">
+      <span class="on">Todos</span><span>No leído</span><span>🤖 Interacción bot</span>
+      <span>Venta realizada</span><span>Humano</span><span>Oficina</span>
+    </div>
+    <div class="convos">
+      <!-- seleccionada -->
+      <div class="cv sel">
+        <div class="av" style="background:#8B5CF6">C</div>
+        <div class="mid">
+          <div class="nm"><b>Carlos Pérez</b><span class="hr">10:21 a.m.</span></div>
+          <div class="last">Sí, confirmo el pedido</div>
+          <div class="meta"><span class="pill p-bot">Chatbot</span><span class="dotbot">● Bot activo</span></div>
+        </div>
+      </div>
+      <div class="cv">
+        <div class="av" style="background:#00A89D">L</div>
+        <div class="mid">
+          <div class="nm"><b>Laura Gómez</b><span class="hr">10:33 a.m.</span></div>
+          <div class="last">¿Tienen talla M disponible todavía?</div>
+          <div class="meta"><span class="pill p-emb">Embudo</span><span class="dotbot">● Bot activo</span></div>
+        </div>
+        <span class="badge">2</span>
+      </div>
+      <div class="cv">
+        <div class="av" style="background:#f59e0b">D</div>
+        <div class="mid">
+          <div class="nm"><b>Daniela Ossa</b><span class="hr">10:15 a.m.</span></div>
+          <div class="last">🛍️ Buzo Nacional</div>
+          <div class="meta"><span class="pill p-bot">Chatbot</span><span class="dotbot">● Bot activo</span></div>
+        </div>
+      </div>
+      <div class="cv">
+        <div class="av" style="background:#2f80ed">A</div>
+        <div class="mid">
+          <div class="nm"><b>Andrés Martínez</b><span class="hr">9:50 a.m.</span></div>
+          <div class="last">Con gusto Andrés. Tu pedido queda confi…</div>
+          <div class="meta"><span class="pill p-emb">Embudo</span><span class="pill c-conf">Venta realizada</span></div>
+        </div>
+      </div>
+      <div class="cv">
+        <div class="av" style="background:#DC2626">M</div>
+        <div class="mid">
+          <div class="nm"><b>Mariana Acosta</b><span class="hr">9:44 a.m.</span></div>
+          <div class="last">Quiero hacer un pedido, ¿me pued…</div>
+          <div class="meta"><span class="pill p-hum">Humano</span></div>
+        </div>
+        <span class="badge">3</span>
+      </div>
+      <div class="cv">
+        <div class="av" style="background:#15803D">N</div>
+        <div class="mid">
+          <div class="nm"><b>Nicolás Duarte</b><span class="hr">9:32 a.m.</span></div>
+          <div class="last">📷 Foto</div>
+          <div class="meta"><span class="pill p-bot">Chatbot</span><span class="dotbot">● Bot activo</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Columna 2: chat -->
+  <div class="chat">
+    <div class="chead">
+      <div class="av" style="background:#8B5CF6;width:40px;height:40px">C</div>
+      <div class="nm"><b>Carlos Pérez</b><div class="sub">+57 315 987 6543 · Embudo</div></div>
+      <div class="sp"></div>
+      <div class="toggle">Bot activo <span class="sw"></span></div>
+      <div class="hbtn">🏷️</div>
+      <div class="hbtn">🔍</div>
+      <div class="hbtn" onclick="document.getElementById('info').classList.toggle('hide')" title="Mostrar/ocultar ficha">👤</div>
+    </div>
+    <div class="body">
+      <div class="day">HOY</div>
+      <div class="msg out"><span class="botlbl">🤖 Quino</span>¡Hola Carlos! Soy el asistente de la tienda. Recibimos tu pedido #QN-10851 del <b>Buzo Mercedes</b> talla L.<span class="t">9:58 a.m. ✓✓</span></div>
+      <div class="msg out"><span class="botlbl">🤖 Quino</span>¿Me confirmas que la dirección es <b>Carrera 70 #12-05</b>, en Medellín?<span class="t">9:58 a.m. ✓✓</span></div>
+      <div class="msg in">Sí, esa es<span class="t">10:15 a.m.</span></div>
+      <div class="msg out"><span class="botlbl">🤖 Quino</span>Perfecto. El total es <b>$159.900</b> con pago contra entrega. ¿Lo confirmo así?<span class="t">10:16 a.m. ✓✓</span></div>
+      <div class="msg in">Sí, confirmo el pedido<span class="t">10:21 a.m.</span></div>
+    </div>
+    <div class="inputbar">
+      <div class="plus">＋</div>
+      <div class="field">Escribe un mensaje…</div>
+      <div class="hbtn" style="border:none">🎤</div>
+      <div class="snd">➤</div>
+    </div>
+  </div>
+
+  <!-- Columna 3: ficha cliente (desplegable) -->
+  <div class="info" id="info">
+    <div class="ih"><span>👤 Información del cliente</span><span style="cursor:pointer;color:var(--soft)" onclick="document.getElementById('info').classList.add('hide')">✕</span></div>
+    <div class="prof">
+      <div class="big" style="background:#8B5CF6">C</div>
+      <b>Carlos Pérez</b>
+      <div class="c">+57 315 987 6543</div>
+      <div class="c">carlos@correo.com</div>
+    </div>
+
+    <div class="sec">
+      <div class="h">🏷️ Etiquetas</div>
+      <div class="chiprow"><span class="pill c-conf">Confirmado</span><span class="pill" style="background:#f1f1f1;color:#555">+ Agregar</span></div>
+    </div>
+
+    <div class="sec">
+      <div class="h">💬 Estado de la conversación</div>
+      <div class="chiprow" style="margin-bottom:8px"><span class="pill c-wait">Esperando cliente</span><span class="pill c-emb">Embudo</span></div>
+      <div class="kv"><span>Bot en este chat</span><span style="color:var(--teal-d);font-weight:700">● Activo</span></div>
+    </div>
+
+    <div class="sec">
+      <div class="h">📦 Pedido relacionado</div>
+      <div class="pedido">
+        <div class="row">
+          <div class="ph">🧥</div>
+          <div>
+            <div style="display:flex;gap:7px;align-items:center;margin-bottom:3px"><b style="font-size:12.5px">#QN-10851</b><span class="pill c-conf">Confirmado</span></div>
+            <div style="font-size:12.5px">Buzo Mercedes</div>
+            <div style="font-size:11px;color:var(--muted)">Talla L · x1 · <b>$159.900</b></div>
+          </div>
+        </div>
+        <div class="vbtn">🧾 Ver pedido</div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="h">🎯 De dónde llegó</div>
+      <div class="kv"><span>Embudo</span><span>Nacional 02</span></div>
+      <div class="kv"><span>Campaña</span><span>COL · Fútbol 01</span></div>
+      <div class="kv"><span>Plataforma</span><span>🔵 Meta</span></div>
+      <div class="kv"><span>Anuncio</span><span>Carrusel Nacional 01</span></div>
+    </div>
+
+    <div class="sec">
+      <div class="h">ℹ️ Nota</div>
+      <div class="empty">Cuando un dato no exista, aquí se mostrará "Sin información disponible" — nunca inventado.</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

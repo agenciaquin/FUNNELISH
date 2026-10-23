@@ -212,7 +212,7 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
   const activeLabelEtq = etiquetas.find(e => e.nombre === labelFilter);
 
   return (
-    <div className={`${selectedId ? 'hidden md:flex' : 'flex'} w-full md:w-[290px] flex-col min-h-0 h-full bg-[#FAF9F6] border-r border-[#E8E8E8] shrink-0`}>
+    <div className={`${selectedId ? 'hidden md:flex' : 'flex'} w-full md:w-[340px] flex-col min-h-0 h-full bg-[#FAF9F6] border-r border-[#E8E8E8] shrink-0`}>
 
       {/* ── Header ── */}
       <div className="px-4 pt-4 pb-3 border-b border-[#E8E8E8]">
@@ -610,6 +610,13 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
                         )}
                         <span className="w-2 h-2 rounded-full shrink-0" style={{ background: cfg.color }} title={cfg.label} />
                       </div>
+                    </div>
+
+                    {/* Row 2.5: estado del bot (activo azul / apagado rojo) */}
+                    <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[9px] font-bold" style={{ color: conv.bot_enabled ? '#2f80ed' : '#9CA3AF' }}>
+                        ● {conv.bot_enabled ? 'Bot activo' : 'Bot apagado'}
+                      </span>
                     </div>
 
                     {/* Row 3: chips de etiqueta (puede haber varias) */}

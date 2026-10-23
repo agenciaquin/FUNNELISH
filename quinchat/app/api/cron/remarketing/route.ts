@@ -12,7 +12,7 @@ import { sendRecordatorioTemplate, sendTextMessage } from '@/lib/whatsapp';
 //  - Tras el 2do recordatorio sin respuesta → etiqueta HUMANO (revisión humana).
 
 const HORAS = (h: number) => h * 3_600_000;
-const SKIP_LABELS = ['PEDIDO CANCELADO', 'PEDIDO PROGRAMADO', 'VENTA REALIZADA', 'ANULADO EN EFFI'];
+const SKIP_LABELS = ['PEDIDO CANCELADO', 'PEDIDO PROGRAMADO', 'VENTA REALIZADA', 'ANULADO EN EFFI', 'NO ENVIAR RECORDATORIO', 'ABONO POR VERIFICAR', 'VENDEDOR'];
 
 function autorizado(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;

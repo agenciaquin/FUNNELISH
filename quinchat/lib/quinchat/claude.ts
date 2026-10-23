@@ -8,9 +8,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt } from './systemPrompt';
 import type { ChatRequest, ChatResponse } from './types';
 
-// Modelo del bot. Por defecto Haiku 4.5: rápido y ~70% más barato que Sonnet,
-// suficiente para tomar pedidos, confirmar datos y responder objeciones.
-// Para volver a Sonnet, define en Vercel la variable:  QUINCHAT_MODEL=claude-sonnet-4-6
+// Modelo del bot. Haiku 5.5 (más inteligente que 4.5). Antes emitía el marcador
+// [[HUMANO]] de más y pasaba chats a asesor; se blindó en ventas.ts (solo hace
+// handoff si la respuesta es REALMENTE un handoff, y el prompt restringe su uso).
+// Para volver a 4.5 al instante sin tocar código: en Vercel QUINCHAT_MODEL=claude-haiku-4-5-20251001.
 const MODEL = process.env.QUINCHAT_MODEL || 'claude-haiku-4-5-20251001';
 
 // Instancia singleton — se crea una vez por proceso en Vercel

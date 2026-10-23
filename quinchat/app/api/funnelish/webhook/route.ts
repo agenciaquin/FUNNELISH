@@ -7,6 +7,7 @@ import { isCompleteAddress, getAddressQuestion } from '@/lib/address';
 import { lineaTalla } from '@/lib/formato-pedido';
 import { validateAddressLupap, getLupapMessage } from '@/lib/lupap';
 import Jimp from 'jimp';
+import { prendasPorPrecio } from '@/lib/prendas';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -92,6 +93,19 @@ const COLORES_CONOCIDOS = [
   'BLANCO MARFIL', 'MARFIL', 'BLANCO', 'AMARILLO', 'BEIGE', 'VERDE OSCURO', 'VERDE', 'GRIS', 'COCOA',
 ];
 
+// Extrae TODOS los colores que aparezcan en un texto, en orden de aparición.
+// Ej: "VERDE- ROJO - NEGRO" → ["VERDE","ROJO","NEGRO"]. Maneja solapes
+// (ej. "AZUL OSCURO" no se cuenta también como "AZUL").
+function extraerColoresDe(texto: string): string[] {
+  let scan = ` ${String(texto).toUpperCase()} `;
+  const found: { color: string; pos: number }[] = [];
+  for (const c of COLORES_CONOCIDOS) {
+    const idx = scan.indexOf(c);
+    if (idx >= 0) { found.push({ color: c, pos: idx }); scan = scan.split(c).join(' '.repeat(c.length)); }
+  }
+  return found.sort((a, b) => a.pos - b.pos).map(f => f.color);
+}
+
 function parsePack(productoNombre: string, variantName: string): {
   esPack: boolean; cantidad: number; familia: string; colores: string[]; productos: string[]; productoFinal: string; tallaFinal: string;
 } {
@@ -99,18 +113,20 @@ function parsePack(productoNombre: string, variantName: string): {
 
   // Cuántas prendas trae el combo. En Funnelish el nombre varía mucho:
   // "PACK X2 REDBULL", "DOS COLORES UNA TALLA REDBULL", "2 COLORES ...", etc.
+  // Cantidad por "PACK X2/X3", o por "2/3/4 COLORES", "2/3/4 PRENDAS", "TRES PRENDAS", etc.
+  const NUM: Record<string, number> = { DOS: 2, TRES: 3, CUATRO: 4, '2': 2, '3': 3, '4': 4 };
   const packMatch = nombreUp.match(/PACK\s*X?\s*(\d)/);
   let cantidad = packMatch ? parseInt(packMatch[1], 10) : 0;
   if (!cantidad) {
-    if (/\b(DOS|2)\s+COLORES\b/.test(nombreUp))       cantidad = 2;
-    else if (/\b(TRES|3)\s+COLORES\b/.test(nombreUp)) cantidad = 3;
+    const m = nombreUp.match(/\b(DOS|TRES|CUATRO|2|3|4)\s+(COLORES|PRENDAS|UNIDADES)\b/);
+    if (m) cantidad = NUM[m[1]] ?? 0;
   }
 
   // Quitar del nombre las palabras de mercadeo para quedarnos con la familia real
-  // ("DOS COLORES UNA TALLA REDBULL" → "REDBULL").
+  // ("TRES PRENDAS POLO CLASIC" → "POLO CLASIC"; "DOS COLORES UNA TALLA REDBULL" → "REDBULL").
   const familia = nombreUp
     .replace(/PACK\s*X?\s*\d/g, ' ')
-    .replace(/\b(DOS|TRES|2|3)\s+COLORES\b/g, ' ')
+    .replace(/\b(DOS|TRES|CUATRO|2|3|4)\s+(COLORES|PRENDAS|UNIDADES)\b/g, ' ')
     .replace(/\b(UNA|MISMA|IGUAL)\s+TALLA\b/g, ' ')
     .replace(/\bCOMBO\b/g, ' ')
     .replace(/\s+/g, ' ')
@@ -119,18 +135,15 @@ function parsePack(productoNombre: string, variantName: string): {
   const colores: string[] = [];
   let talla = '';
   for (const p of partes) {
-    const pUp    = p.toUpperCase();
-    const limpio = pUp.replace(/[^A-Z0-9]/g, '');
+    const pUp = p.toUpperCase();
+    // Extraer TODOS los colores de la parte (una sola variante puede traer "VERDE- ROJO - NEGRO").
+    for (const c of extraerColoresDe(p)) if (!colores.includes(c)) colores.push(c);
     // Talla = contiene HOMBRE/DAMA/CABALLERO, o es un token de talla puro.
-    const esTalla = /\b(HOMBRE|DAMA|CABALLERO)\b/.test(pUp) || /^(XS|S|M|L|XL|XXL|XXXL)$/.test(limpio);
-    if (esTalla) {
-      if (!talla) talla = p;
-    } else {
-      // Solo tomar colores reconocidos (evita meter basura como color)
-      const color = COLORES_CONOCIDOS.find(c => pUp.includes(c));
-      if (color) colores.push(color);
-    }
+    const esTalla = /\b(HOMBRE|DAMA|CABALLERO)\b/.test(pUp) || /^(XS|S|M|L|XL|2XL|XXL|3XL|XXXL)$/.test(pUp.replace(/[^A-Z0-9]/g, ''));
+    if (esTalla && !talla) talla = p;
   }
+  // Si el nombre no dijo la cantidad pero vinieron varios colores, el combo es de esos N.
+  if (colores.length > cantidad) cantidad = colores.length;
   const productos = colores.map(c => `${c} ${familia}`.trim());
   return {
     esPack:       cantidad >= 2 && colores.length >= 2, // combo de 2+ prendas con 2+ colores
@@ -183,16 +196,24 @@ async function buscarImagenColor(supabase: any, color: string, familia: string):
   // genéricas (BUZO, MOTO…) las comparten todas.
   const GENERICAS = new Set(['BUZO', 'MOTO', 'REFLECTIVO', 'ESCUDERIA', 'PACK', 'REDBULL']);
   const distintivas = famWords.filter((w: string) => !GENERICAS.has(w));
-  // Entre los del mismo color, el que más comparte con la familia
-  let best: { url: string; score: number; name: string } | null = null;
+  // ¿El producto pedido es REFLECTIVO? Importa para no confundir "HONDA" con
+  // "HONDA REFLECTIVO" (misma marca, foto distinta).
+  const wantReflex = /REFLECTIVO/.test(familia.toUpperCase());
+  // Ranking: 1º marca (distintiva), 2º que coincida reflectivo/no-reflectivo, 3º palabras totales.
+  let best: { url: string; dist: number; reflex: number; all: number; name: string } | null = null;
   for (const r of cands) {
     const nU    = (r.nombre_producto ?? '').toUpperCase();
-    const score = famWords.filter((w: string) => nU.includes(w)).length;
-    if (!best || score > best.score) best = { url: r.url_imagen as string, score, name: nU };
+    const dist  = distintivas.filter((w: string) => nU.includes(w)).length;
+    const reflex = (/REFLECTIVO/.test(nU) === wantReflex) ? 1 : 0;
+    const all   = famWords.filter((w: string) => nU.includes(w)).length;
+    const mejor = !best || dist > best.dist
+      || (dist === best.dist && reflex > best.reflex)
+      || (dist === best.dist && reflex === best.reflex && all > best.all);
+    if (mejor) best = { url: r.url_imagen as string, dist, reflex, all, name: nU };
   }
   // El match DEBE incluir la palabra distintiva de la familia; si no, es de otra
   // familia (foto equivocada) → mejor null y que caiga a la imagen del embudo.
-  if (best && distintivas.length > 0 && !distintivas.some((w: string) => best!.name.includes(w))) return null;
+  if (best && distintivas.length > 0 && best.dist === 0) return null;
   return best?.url ?? null;
 }
 
@@ -240,21 +261,29 @@ async function buscarImagenProducto(supabase: any, nombre: string): Promise<stri
       // Palabras GENÉRICAS (comunes a muchas familias) y de COLOR: no identifican
       // la marca. La palabra DISTINTIVA (PULSAR, HONDA, FERRARI…) es la que manda.
       const GENERICAS = new Set(['BUZO', 'MOTO', 'REFLECTIVO', 'ESCUDERIA', 'PACK',
+        'PAREJA', 'DUO', 'COMBO', 'CUELLO', 'ALTO', 'HOMBRE', 'DAMA', 'MUJER', 'CABALLERO', 'UNISEX',
         'NEGRO', 'ROJO', 'AZUL', 'BLANCO', 'MARFIL', 'AMARILLO', 'BEIGE', 'VERDE',
         'GRIS', 'OSCURO', 'NAVY', 'COCOA', 'REDBULL']);
       const distintivas = words.filter((w: string) => !GENERICAS.has(w));
-      let best: { url: string; score: number; name: string } | null = null;
+      const wantReflex = /REFLECTIVO/.test(nombre.toUpperCase());
+      // El ranking se hace por PALABRAS DISTINTIVAS (marca/familia): así "PAREJA
+      // NACIONAL LIBERTADORES" nunca agarra "PAREJA STITCH" (comparten solo PAREJA).
+      // Luego desempata por reflectivo/no-reflectivo (HONDA vs HONDA REFLECTIVO)
+      // y por último por todas las palabras (incluye color).
+      let best: { url: string; d: number; reflex: number; c: number; name: string } | null = null;
       for (const row of allColors) {
         if (!row.nombre_producto || !row.url_imagen) continue;
-        const name  = (row.nombre_producto as string).toUpperCase();
-        const score = words.filter((w: string) => name.includes(w)).length;
-        if (score > 0 && (!best || score > best.score)) best = { url: row.url_imagen as string, score, name };
-      }
-      // El match DEBE incluir la palabra distintiva (marca/familia). Si no la tiene,
-      // es de OTRA familia (ej. Honda para un Pulsar) → se descarta para no mostrar
-      // la foto equivocada; se cae a la imagen del embudo.
-      if (best && distintivas.length > 0 && !distintivas.some((w: string) => best!.name.includes(w))) {
-        best = null;
+        const name = (row.nombre_producto as string).toUpperCase();
+        const d = distintivas.length > 0 ? distintivas.filter((w: string) => name.includes(w)).length : 0;
+        const reflex = (/REFLECTIVO/.test(name) === wantReflex) ? 1 : 0;
+        const c = words.filter((w: string) => name.includes(w)).length;
+        // Si el producto tiene palabras distintivas, la foto DEBE compartir al menos una.
+        if (distintivas.length > 0 && d === 0) continue;
+        if (distintivas.length === 0 && c === 0) continue;
+        const mejor = !best || d > best.d
+          || (d === best.d && reflex > best.reflex)
+          || (d === best.d && reflex === best.reflex && c > best.c);
+        if (mejor) best = { url: row.url_imagen as string, d, reflex, c, name };
       }
       if (best) return best.url;
     }
@@ -325,7 +354,19 @@ export async function POST(req: NextRequest) {
   const lastName   = String(body.last_name   ?? '').trim();
   const nombre     = [firstName, lastName].filter(Boolean).join(' ') || '—';
 
-  const tel10      = normalizePhone(body.phone);
+  // El celular puede llegar en distintos campos según el embudo/checkout de Funnelish.
+  // Se prueban todos y se usa el primero que sea un celular colombiano válido.
+  const posiblesTel = [
+    body.phone, body.shipping_phone, body.billing_phone, body.customer_phone,
+    body?.customer?.phone, body?.contact?.phone, body?.shipping?.phone, body?.billing?.phone,
+    body?.customer?.phone_number, body.phone_number, body.telefono,
+  ];
+  let tel10 = '';
+  for (const p of posiblesTel) {
+    const n = normalizePhone(p);
+    if (/^3\d{9}$/.test(n)) { tel10 = n; break; }
+  }
+  if (!tel10) tel10 = normalizePhone(body.phone); // respaldo: lo que haya en phone
   const waPhone    = `57${tel10}`;
 
   const direccion    = String(body.address          ?? body.shipping_address ?? '—').trim();
@@ -358,6 +399,7 @@ export async function POST(req: NextRequest) {
       `⚠️ *PEDIDO SIN WHATSAPP VÁLIDO* — revísalo manualmente\n` +
       `Nombre: ${nombre}\n` +
       `Teléfono (como llegó): ${body.phone ?? '—'}\n` +
+      `Otros campos tel: shipping_phone=${body.shipping_phone ?? '—'} · customer.phone=${body?.customer?.phone ?? '—'} · phone_number=${body.phone_number ?? '—'}\n` +
       `Dirección: ${direccion}\n` +
       `Ciudad: ${ciudad}\n` +
       `Departamento: ${departamento}\n` +
@@ -371,6 +413,10 @@ export async function POST(req: NextRequest) {
 
   // ── PACK X2: separar colores y talla; armar producto combinado ────────────────
   const pack = parsePack(productoNombre, variantName);
+  // "PAREJA" (o DUO/COMBO): pack de 2 prendas del MISMO diseño. parsePack no lo
+  // detecta (solo PACK X2 / DOS COLORES), así que se manejaba como 1 sola prenda y
+  // el bot mandaba una foto. Aquí lo marcamos para mostrar las DOS prendas.
+  const esParejaMismoDiseno = !pack.esPack && /\b(PAREJA|DUO|COMBO)\b/i.test(productoNombre);
   const packProductos = pack.esPack ? pack.productos : [];
   if (pack.esPack) {
     productoNombre = pack.productoFinal;   // ej: "ROJO TOYOTA + NEGRO TOYOTA"
@@ -381,15 +427,13 @@ export async function POST(req: NextRequest) {
     productoNombre = `${productoNombre} - ${pack.colores[0]}`; // mostrar el color: "... - NEGRO"
   }
 
-  // Pack de NUESTRO embudo (trae fotos por prenda): cada prenda puede llevar una
-  // talla DISTINTA. Se reconstruye la talla POR PRENDA para no perder ninguna
-  // (antes solo mostraba la primera, ej. "M" en vez de "M" y "XXL").
-  const esPackDelEmbudo = Array.isArray(body.imagenes)
-    && body.imagenes.filter((u: any) => typeof u === 'string' && u.startsWith('http')).length >= 2;
-  if (esPackDelEmbudo) {
-    const perPrenda = tallaPorPrenda(variantName);
-    if (perPrenda && /\s\+\s/.test(perPrenda)) talla = perPrenda;
-  }
+  // Packs y PAREJAS (2 tallas): cada prenda puede llevar una talla DISTINTA. Se
+  // reconstruye la talla POR PRENDA SIEMPRE que la variante traiga 2+ tallas, para
+  // no perder ninguna (antes solo pasaba con packs de 2+ fotos del embudo, así que
+  // una "PAREJA 2 TALLAS" como "ROJO / XL CABALLERO / S DAMA" se quedaba solo con
+  // "XL CABALLERO" y la confirmación perdía la talla "S DAMA").
+  const perPrenda = tallaPorPrenda(variantName);
+  if (perPrenda && /\s\+\s/.test(perPrenda)) talla = perPrenda;
   const nombreImagenPrincipal = packProductos[0] ?? productoNombre;
 
   const mensaje = buildMensaje({ nombre, telefono: tel10, direccion, ciudad, departamento, correo, talla, producto: productoNombre, valor });
@@ -404,14 +448,29 @@ export async function POST(req: NextRequest) {
   // con error 131047 en números inactivos). Esta bandera lo evita.
   let esCollage = false;
   if (pack.esPack) {
-    imageUrl = (await buscarImagenColor(supabase, pack.colores[0], pack.familia))
-             ?? await buscarImagenProducto(supabase, packProductos[0]);
-    segundaImagenUrl = pack.colores[1]
-      ? ((await buscarImagenColor(supabase, pack.colores[1], pack.familia))
-         ?? await buscarImagenProducto(supabase, packProductos[1]))
-      : null;
-    // Si ambas fotos resultaron iguales (un color sin foto), no repetir
-    if (segundaImagenUrl && segundaImagenUrl === imageUrl) segundaImagenUrl = null;
+    // Buscar la foto de CADA color del combo (hasta 3) para mostrarlas TODAS.
+    const imgs: string[] = [];
+    for (let i = 0; i < pack.colores.length && i < 3; i++) {
+      const u = (await buscarImagenColor(supabase, pack.colores[i], pack.familia))
+             ?? await buscarImagenProducto(supabase, packProductos[i] ?? `${pack.colores[i]} ${pack.familia}`);
+      if (u && u.startsWith('http') && u !== FALLBACK_IMAGE && !imgs.includes(u)) imgs.push(u);
+    }
+    if (pack.colores.length >= 3 && imgs.length >= 2) {
+      // Combo de 3+ prendas → un solo collage con todas las fotos.
+      const collage = await generarCollagePack(supabase, pack.productos.slice(0, 3), imgs.slice(0, 3));
+      if (collage) { imageUrl = collage; segundaImagenUrl = null; esCollage = true; }
+      else { imageUrl = imgs[0] ?? null; segundaImagenUrl = imgs[1] ?? null; }
+    } else {
+      imageUrl = imgs[0]
+        ?? (await buscarImagenColor(supabase, pack.colores[0], pack.familia))
+        ?? await buscarImagenProducto(supabase, packProductos[0]);
+      segundaImagenUrl = imgs[1] ?? (pack.colores[1]
+        ? ((await buscarImagenColor(supabase, pack.colores[1], pack.familia))
+           ?? await buscarImagenProducto(supabase, packProductos[1]))
+        : null);
+      // Si ambas fotos resultaron iguales (un color sin foto), no repetir
+      if (segundaImagenUrl && segundaImagenUrl === imageUrl) segundaImagenUrl = null;
+    }
   } else if (pack.colores.length === 1) {
     // Producto individual con color → buscar la foto de ESE color (no una al azar)
     imageUrl = (await buscarImagenColor(supabase, pack.colores[0], pack.familia))
@@ -464,6 +523,15 @@ export async function POST(req: NextRequest) {
     if (collage) { imageUrl = collage; segundaImagenUrl = null; esCollage = true; } // collage OK → no enviar 2da por separado
   }
 
+  // PAREJA (2 prendas del MISMO diseño): mostrar la prenda DOS veces en un collage
+  // para que el cliente vea claro que son 2. (Antes solo salía 1 foto.)
+  if (esParejaMismoDiseno && !esCollage
+      && imageUrl && imageUrl.startsWith('http') && imageUrl !== FALLBACK_IMAGE) {
+    const collagePareja = await generarCollagePack(supabase, [productoNombre, productoNombre], [imageUrl, imageUrl]);
+    if (collagePareja) { imageUrl = collagePareja; segundaImagenUrl = null; esCollage = true; }
+    else { segundaImagenUrl = imageUrl; } // sin collage → al menos enviar la 2da foto suelta
+  }
+
   const now = new Date().toISOString();
 
   // ── Origen del tráfico (de qué campaña vino este pedido) ─────────────────────
@@ -474,10 +542,21 @@ export async function POST(req: NextRequest) {
     const v = meta?.[clave] ?? body?.[clave] ?? meta?.[clave.toUpperCase()] ?? '';
     return String(v ?? '').trim();
   };
-  const utmSource   = buscarUtm('utm_source');
-  const utmMedium   = buscarUtm('utm_medium');
-  const utmCampaign = buscarUtm('utm_campaign');
-  const referrer    = buscarUtm('referrer');
+  let utmSource   = buscarUtm('utm_source');
+  const utmMedium = buscarUtm('utm_medium');
+  let utmCampaign = buscarUtm('utm_campaign');
+  const referrer  = buscarUtm('referrer');
+
+  // El checkout "classic" de Funnelish NO manda utm_source/utm_campaign sueltos:
+  // los deja dentro de la URL del referrer (…?utm_source=fb&utm_id=120…&utm_campaign=120…&fbclid=…).
+  // Si llegaron vacíos pero el referrer los trae, los rescatamos para no perder la atribución.
+  const sacarDeRef = (re: RegExp): string => (referrer.match(re)?.[1] ?? '').trim();
+  if (!utmCampaign && referrer) {
+    utmCampaign = sacarDeRef(/utm_campaign=([0-9]+)/i) || sacarDeRef(/utm_id=([0-9]+)/i);
+  }
+  if (!utmSource && referrer) {
+    utmSource = sacarDeRef(/utm_source=([^&]+)/i) || (/fbclid=/i.test(referrer) ? 'fb' : '');
+  }
 
   console.log(`[Funnelish] origen: source=${utmSource || '—'} campaign=${utmCampaign || '—'}`);
 
@@ -495,7 +574,10 @@ export async function POST(req: NextRequest) {
     telefono:    tel10,
     nombre,
     producto:    productoNombre,
-    cantidad:    pack.cantidad, // prendas del pedido (PACK X2 = 2) → para el monedero de metas
+    // Prendas del pedido: el MAYOR entre lo detectado en el nombre (PACK/PAREJA)
+    // y lo que indica el PRECIO total ($219.900=2, $310.000=3…). El precio es el
+    // dato más fiable aunque el nombre no diga la cantidad.
+    cantidad:    Math.max(esParejaMismoDiseno ? 2 : pack.cantidad, prendasPorPrecio(Number(montoRaw) || 0, productoNombre)),
     foto_producto: fotoProducto,
     talla,
     valor,

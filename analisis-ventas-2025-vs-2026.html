@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Análisis de Ventas 2025 vs 2026 · Agencia QUIN</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --azul:#1E49E0; --azul2:#3B82F6; --azul-ink:#0B1640; --azul-dark:#0A1336; --azul-dark2:#111C4E;
+  --verde:#16A34A; --verde2:#22C55E; --naranja:#F59E0B; --rojo:#E23B3B;
+  --bg:#EEF2FB; --card:#FFFFFF; --ink:#0B1640; --muted:#64739A; --line:#E4EAF6;
+  --shadow:0 18px 50px rgba(18,38,90,.12);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--azul-dark);font-family:'Inter',system-ui,Arial,sans-serif;color:var(--ink)}
+.deck{position:fixed;inset:0;overflow:hidden}
+.slide{position:absolute;inset:0;display:flex;flex-direction:column;padding:clamp(24px,3.2vw,60px) clamp(28px,4vw,80px) clamp(44px,4vw,70px);
+  background:var(--bg);opacity:0;visibility:hidden;transform:translateX(40px) scale(.99);
+  transition:opacity .5s ease,transform .5s ease,visibility .5s;will-change:opacity,transform}
+.slide.active{opacity:1;visibility:visible;transform:none;z-index:2}
+.slide.dark{background:radial-gradient(130% 120% at 15% 0%,#15245e 0%,var(--azul-dark) 55%,#060c24 100%);color:#fff}
+/* Header de slide */
+.s-head{display:flex;align-items:center;gap:16px;margin-bottom:clamp(12px,1.6vw,26px);flex:0 0 auto}
+.s-kicker{font-size:clamp(11px,1vw,14px);font-weight:800;letter-spacing:.22em;color:var(--azul);text-transform:uppercase}
+.s-title{font-size:clamp(22px,2.6vw,42px);font-weight:900;line-height:1.05;letter-spacing:-.5px}
+.s-title .accent{color:var(--azul)}
+.dark .s-kicker{color:#7FA6FF}
+.s-head .brandtag{margin-left:auto;font-size:clamp(10px,.9vw,13px);font-weight:800;letter-spacing:.14em;color:var(--muted);text-transform:uppercase}
+.dark .brandtag{color:#9FB4E6}
+.s-body{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+/* Portada */
+.cover{justify-content:center;align-items:flex-start}
+.cover .logo{display:flex;align-items:center;gap:14px;margin-bottom:clamp(18px,3vw,42px)}
+.cover .logo .mark{width:clamp(44px,3.4vw,62px);height:clamp(44px,3.4vw,62px);border-radius:16px;background:linear-gradient(135deg,var(--azul),#5B8CFF);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:clamp(20px,1.8vw,30px);color:#fff;box-shadow:0 10px 30px rgba(30,73,224,.5)}
+.cover .logo .name{font-weight:900;letter-spacing:.2em;font-size:clamp(13px,1.1vw,17px);color:#CFE0FF}
+.cover h1{font-size:clamp(40px,7vw,104px);font-weight:900;line-height:.98;letter-spacing:-2px}
+.cover h1 .vs{display:inline-block;color:#6E8BFF}
+.cover h1 .y25{color:#fff}.cover h1 .y26{color:#53E6A9}
+.cover .sub{margin-top:clamp(16px,2vw,30px);font-size:clamp(16px,1.8vw,30px);font-weight:600;color:#AFC4F2;letter-spacing:.02em}
+.cover .sub b{color:#fff}
+.cover .meta{margin-top:clamp(26px,3vw,54px);display:flex;gap:clamp(12px,1.4vw,22px);flex-wrap:wrap}
+.cover .chip{padding:10px 18px;border:1px solid rgba(255,255,255,.18);border-radius:999px;font-size:clamp(12px,1vw,15px);font-weight:700;color:#DCE7FF;background:rgba(255,255,255,.05)}
+.cover .glow{position:absolute;right:-8%;top:-10%;width:60vw;height:60vw;background:radial-gradient(circle,rgba(46,120,255,.35),transparent 60%);filter:blur(10px);pointer-events:none}
+/* Tarjetas */
+.grid{display:grid;gap:clamp(12px,1.3vw,22px)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);padding:clamp(16px,1.6vw,30px);display:flex;flex-direction:column;justify-content:center;min-height:0}
+.card .lbl{font-size:clamp(11px,.95vw,15px);font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.card .big{font-size:clamp(30px,3.6vw,64px);font-weight:900;line-height:1;margin-top:6px;letter-spacing:-1px}
+.card .unit{font-size:clamp(12px,1vw,16px);font-weight:700;color:var(--muted);margin-top:6px}
+.card.azul{background:linear-gradient(140deg,#1E49E0,#3f73ff);color:#fff;border:none}
+.card.azul .lbl,.card.azul .unit{color:#d7e3ff}
+.card.verde .big{color:var(--verde)} .card.rojo .big{color:var(--rojo)} .card.naranja .big{color:var(--naranja)}
+.pos{color:var(--verde)} .neg{color:var(--rojo)} .mid{color:var(--naranja)}
+.chart-wrap{flex:1 1 auto;min-height:0;background:var(--card);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);padding:clamp(12px,1.2vw,22px);position:relative;display:flex}
+.chart-wrap canvas{width:100%!important;height:100%!important}
+.note{font-size:clamp(11px,.9vw,14px);color:var(--muted);margin-top:10px;font-weight:600}
+.note b{color:var(--naranja)}
+/* progreso inferior y hud */
+.hud{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;align-items:center;gap:14px;padding:10px clamp(20px,3vw,44px);pointer-events:none}
+.progress{position:fixed;left:0;bottom:0;height:5px;background:linear-gradient(90deg,var(--azul),#53E6A9);z-index:60;transition:width .5s ease}
+.dots{display:flex;gap:7px;margin:0 auto;pointer-events:auto}
+.dot{width:9px;height:9px;border-radius:50%;background:#C3CFEA;cursor:pointer;transition:.3s;border:none}
+.dot.on{background:var(--azul);transform:scale(1.35)}
+.dark ~ .hud .dot{background:rgba(255,255,255,.3)}
+.counter{font-weight:800;font-size:13px;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:999px;padding:6px 14px;box-shadow:var(--shadow);pointer-events:auto}
+.hint{font-weight:600;font-size:12px;color:var(--muted)}
+.nav-btn{position:fixed;top:50%;transform:translateY(-50%);z-index:55;width:clamp(40px,3vw,54px);height:clamp(40px,3vw,54px);border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.85);backdrop-filter:blur(6px);color:var(--azul);font-size:22px;font-weight:800;cursor:pointer;box-shadow:var(--shadow);transition:.2s;display:flex;align-items:center;justify-content:center}
+.nav-btn:hover{background:#fff;transform:translateY(-50%) scale(1.07)}
+.nav-btn.prev{left:14px}.nav-btn.next{right:14px}
+/* listas / rankings */
+.rank{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:clamp(9px,1vw,16px) clamp(12px,1.2vw,20px);box-shadow:0 8px 24px rgba(18,38,90,.07)}
+.rank .pos{width:clamp(30px,2.4vw,42px);height:clamp(30px,2.4vw,42px);border-radius:12px;background:var(--azul);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:clamp(14px,1.3vw,20px);flex:0 0 auto}
+.rank .mes{font-weight:800;font-size:clamp(14px,1.3vw,20px);flex:1}
+.rank .val{font-weight:900;font-size:clamp(15px,1.4vw,22px);color:var(--azul)}
+.rank .sub{font-size:clamp(10px,.9vw,13px);color:var(--muted);font-weight:700}
+.rank.top1 .pos{background:linear-gradient(135deg,#F7B500,#FFD35B);color:#5a4400}
+/* matriz semaforo */
+.matrix{display:grid;grid-template-columns:repeat(4,1fr);gap:clamp(8px,1vw,16px);flex:1;min-height:0}
+.cell{border-radius:16px;padding:clamp(10px,1.1vw,18px);display:flex;flex-direction:column;justify-content:space-between;color:#fff;box-shadow:0 8px 22px rgba(18,38,90,.12);min-height:0}
+.cell .m{font-weight:900;font-size:clamp(13px,1.2vw,19px);letter-spacing:.02em}
+.cell .p{font-weight:900;font-size:clamp(16px,1.7vw,26px)}
+.cell .t{font-weight:800;font-size:clamp(9px,.82vw,12px);text-transform:uppercase;letter-spacing:.04em;opacity:.95}
+.c-fuerte{background:linear-gradient(135deg,#0f9d58,#19c173)}
+.c-crece{background:linear-gradient(135deg,#43b36b,#67d98c)}
+.c-estable{background:linear-gradient(135deg,#eb9b12,#f6b93b)}
+.c-cae{background:linear-gradient(135deg,#e05a3b,#f07a5e)}
+.c-caefuerte{background:linear-gradient(135deg,#c62828,#e23b3b)}
+.c-parcial{background:linear-gradient(135deg,#5a6b8c,#8094b8)}
+.c-sin{background:linear-gradient(135deg,#9aa6c2,#bcc6dd)}
+/* insights */
+.insight{background:var(--card);border:1px solid var(--line);border-left:6px solid var(--azul);border-radius:16px;padding:clamp(12px,1.2vw,20px);box-shadow:0 8px 22px rgba(18,38,90,.07);display:flex;flex-direction:column;gap:4px}
+.insight .it{font-weight:900;font-size:clamp(13px,1.15vw,18px)}
+.insight .inum{font-weight:900;font-size:clamp(20px,2vw,34px);color:var(--azul);line-height:1}
+.insight .idesc{font-size:clamp(11px,.95vw,15px);color:var(--muted);font-weight:600}
+.insight.g{border-left-color:var(--verde)} .insight.g .inum{color:var(--verde)}
+.insight.o{border-left-color:var(--naranja)} .insight.o .inum{color:var(--naranja)}
+.insight.r{border-left-color:var(--rojo)} .insight.r .inum{color:var(--rojo)}
+/* oportunidades/alertas */
+.col-box{background:var(--card);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);padding:clamp(16px,1.6vw,28px);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.col-box h3{font-size:clamp(16px,1.6vw,26px);font-weight:900;margin-bottom:14px;display:flex;align-items:center;gap:10px}
+.col-box.op h3{color:var(--verde)} .col-box.al h3{color:var(--rojo)}
+.li{display:flex;gap:12px;padding:clamp(8px,.9vw,14px) 0;border-bottom:1px dashed var(--line);font-size:clamp(12px,1.1vw,18px);font-weight:600;align-items:flex-start}
+.li:last-child{border-bottom:none}
+.li .ic{font-size:clamp(16px,1.4vw,22px);flex:0 0 auto}
+.li b{font-weight:900}
+/* proyeccion escenarios */
+.esc{background:var(--card);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);padding:clamp(14px,1.5vw,26px);display:flex;flex-direction:column;gap:6px;text-align:center}
+.esc .name{font-weight:900;font-size:clamp(13px,1.2vw,18px);text-transform:uppercase;letter-spacing:.08em}
+.esc .tot{font-weight:900;font-size:clamp(28px,3vw,52px);line-height:1}
+.esc .sub{font-size:clamp(11px,.95vw,15px);color:var(--muted);font-weight:700}
+.esc.cons{border-top:5px solid var(--naranja)} .esc.cons .tot{color:var(--naranja)}
+.esc.base{border-top:5px solid var(--azul)} .esc.base .tot{color:var(--azul)}
+.esc.agr{border-top:5px solid var(--verde)} .esc.agr .tot{color:var(--verde)}
+.warn{display:inline-block;background:#FFF3DF;color:#9A6400;border:1px solid #F6D9A0;font-weight:800;font-size:clamp(11px,1vw,15px);padding:7px 14px;border-radius:999px}
+/* meta */
+.meta-wrap{flex:1;display:flex;flex-direction:column;justify-content:center;gap:clamp(16px,2vw,32px)}
+.bar-track{height:clamp(44px,5vw,80px);background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);border-radius:999px;overflow:hidden;position:relative}
+.bar-fill{height:100%;background:linear-gradient(90deg,#1E49E0,#53E6A9);border-radius:999px;display:flex;align-items:center;justify-content:flex-end;padding-right:22px;color:#042;font-weight:900;font-size:clamp(16px,1.8vw,30px);width:0;transition:width 1.4s cubic-bezier(.2,.8,.2,1)}
+.meta-stats{display:flex;gap:clamp(14px,2vw,40px);flex-wrap:wrap}
+.meta-stats .ms{flex:1;min-width:180px}
+.meta-stats .ms .l{font-size:clamp(12px,1vw,16px);color:#A9BEEE;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+.meta-stats .ms .v{font-size:clamp(28px,3.2vw,58px);font-weight:900;line-height:1}
+/* conclusion */
+.concl-list{display:flex;flex-direction:column;gap:clamp(10px,1.2vw,18px);flex:1;justify-content:center}
+.concl{display:flex;gap:16px;align-items:center;font-size:clamp(16px,1.7vw,28px);font-weight:700;color:#E7EEFF}
+.concl .n{width:clamp(34px,2.6vw,46px);height:clamp(34px,2.6vw,46px);border-radius:12px;background:rgba(83,230,169,.18);color:#53E6A9;display:flex;align-items:center;justify-content:center;font-weight:900;flex:0 0 auto}
+.flow{margin-top:clamp(18px,2.5vw,40px);font-size:clamp(22px,3.2vw,56px);font-weight:900;letter-spacing:.02em;background:linear-gradient(90deg,#53E6A9,#5B8CFF);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.sig{margin-top:14px;font-weight:900;letter-spacing:.22em;color:#9FB4E6;font-size:clamp(12px,1.1vw,16px)}
+@media(max-width:820px){
+  .nav-btn{display:none}
+  .cover h1{font-size:14vw}
+}
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+  <!-- 1 PORTADA -->
+  <section class="slide dark cover active">
+    <div class="glow"></div>
+    <div class="logo"><div class="mark">Q</div><div class="name">AGENCIA&nbsp;QUIN</div></div>
+    <h1>ANÁLISIS DE VENTAS<br><span class="y25">2025</span> <span class="vs">VS</span> <span class="y26">2026</span></h1>
+    <div class="sub">Tendencias&nbsp;•&nbsp;Crecimiento&nbsp;•&nbsp;Oportunidades</div>
+    <div class="meta">
+      <span class="chip">📊 Comparativo mensual</span>
+      <span class="chip">📈 Enero – Septiembre comparable</span>
+      <span class="chip">🗓️ 2026 hasta el 6 de octubre</span>
+    </div>
+  </section>
+
+  <!-- 2 RESUMEN EJECUTIVO -->
+  <section class="slide">
+    <div class="s-head"><div><div class="s-kicker">Visión general</div><div class="s-title">Resumen <span class="accent">ejecutivo</span></div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body">
+      <div class="grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:clamp(10px,1.2vw,18px)">
+        <div class="card azul"><div class="lbl">Total 2025 · Ventas</div><div class="big" id="r-v25"></div><div class="unit">remisiones válidas</div></div>
+        <div class="card azul"><div class="lbl">Total 2025 · Prendas</div><div class="big" id="r-p25"></div><div class="unit">unidades vendidas</div></div>
+        <div class="card"><div class="lbl">2026 · Ventas <span style="color:var(--naranja)">(al 6-oct)</span></div><div class="big" id="r-v26"></div><div class="unit">remisiones válidas</div></div>
+        <div class="card"><div class="lbl">2026 · Prendas <span style="color:var(--naranja)">(al 6-oct)</span></div><div class="big" id="r-p26"></div><div class="unit">unidades vendidas</div></div>
+      </div>
+      <div class="grid" style="grid-template-columns:repeat(4,1fr);flex:1;min-height:0">
+        <div class="card"><div class="lbl">Promedio mensual ventas</div><div class="big" id="r-prom25"></div><div class="unit">2025 · <span id="r-prom26"></span> en 2026</div></div>
+        <div class="card"><div class="lbl">Prendas por venta</div><div class="big" id="r-ppv25"></div><div class="unit">2025 · <span id="r-ppv26"></span> en 2026</div></div>
+        <div class="card"><div class="lbl">Mejor mes</div><div class="big" style="font-size:clamp(22px,2.4vw,40px)" id="r-best25"></div><div class="unit" id="r-best26"></div></div>
+        <div class="card verde"><div class="lbl">Ene–Sep · Crecimiento ventas</div><div class="big" id="r-growth"></div><div class="unit">2026 vs 2025 (comparable)</div></div>
+      </div>
+      <div class="note">Comparaciones interanuales principales calculadas sobre <b>enero–septiembre</b> de ambos años, porque octubre 2026 está incompleto (hasta el 6).</div>
+    </div>
+  </section>
+
+  <!-- 3 VENTAS MENSUALES -->
+  <section class="slide">
+    <div class="s-head"><div><div class="s-kicker">Comportamiento mensual</div><div class="s-title">Ventas mensuales <span class="accent">2025 vs 2026</span></div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body">
+      <div class="chart-wrap"><canvas id="c-ventas"></canvas></div>
+      <div class="note">Pasa el mouse sobre cada mes para ver la diferencia y el % de variación. <b>Octubre 2026 es dato parcial (hasta el 6 de octubre)</b>.</div>
+    </div>
+  </section>
+
+  <!-- 4 PRENDAS -->
+  <section class="slide">
+    <div class="s-head"><div><div class="s-kicker">Unidades vendidas</div><div class="s-title">Prendas vendidas <span class="accent">2025 vs 2026</span></div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body">
+      <div class="chart-wrap"><canvas id="c-prendas"></canvas></div>
+      <div class="note">Picos destacados: <b>marzo y junio 2026</b> · <b>octubre y diciembre 2025</b>. Octubre 2026 es parcial.</div>
+    </div>
+  </section>
+
+  <!-- 5 CRECIMIENTO INTERANUAL -->
+  <section class="slide">
+    <div class="s-head"><div><div class="s-kicker">Variación interanual</div><div class="s-title">Crecimiento de ventas <span class="accent">2026 vs 2025</span></div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body">
+      <div class="chart-wrap"><canvas id="c-crecimiento"></canvas></div>
+      <div class="note"><b>Verde</b> creció · <b>Naranja</b> estable (±10%) · <b>Rojo</b> cayó. Octubre se excluye de la lectura principal por ser dato parcial.</div>
+    </div>
+  </section>
+
+  <!-- 6 COMPARATIVO ENE-SEP -->
+  <section class="slide">
+    <div class="s-head"><div><div class="s-kicker">Periodo comparable</div><div class="s-title">Comparativo <span class="accent">enero – septiembre</span></div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body" style="display:grid;grid-template-columns:1.05fr 1fr;gap:clamp(12px,1.4vw,22px)">
+      <div style="display:flex;flex-direction:column;gap:clamp(10px,1.2vw,18px);min-height:0">
+        <div class="grid" style="grid-template-columns:1fr 1fr;gap:clamp(10px,1.2vw,18px);flex:1">
+          <div class="card"><div class="lbl">Ventas Ene–Sep 2025</div><div class="big" id="es-v25"></div></div>
+          <div class="card azul"><div class="lbl">Ventas Ene–Sep 2026</div><div class="big" id="es-v26"></div></div>
+          <div class="card verde"><div class="lbl">Diferencia ventas</div><div class="big" id="es-vdif"></div><div class="unit" id="es-vpct"></div></div>
+          <div class="card verde"><div class="lbl">Diferencia prendas</div><div class="big" id="es-pdif"></div><div class="unit" id="es-ppct"></div></div>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="c-enesep"></canvas></div>
+    </div>
+  </section>
+
+  <!-- 7 TENDENCIA ACUMULADA -->
+  <section class="slide">
+    <div class="s-head"><div><div class="s-kicker">Ritmo del año</div><div class="s-title">Tendencia <span class="accent">acumulada</span> de ventas</div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body">
+      <div class="chart-wrap"><canvas id="c-acumulada"></canvas></div>
+      <div class="note">Suma progresiva mes a mes. Muestra en qué punto 2026 lleva ventaja o cede terreno frente a 2025.</div>
+    </div>
+  </section>
+
+  <!-- 8 MEJORES MESES -->
+  <section class="slide">
+    <div class="s-head"><div><div class="s-kicker">Ranking</div><div class="s-title">Mejores meses <span class="accent">por ventas</span></div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body" style="display:grid;grid-template-columns:1fr 1fr;gap:clamp(16px,2vw,40px)">
+      <div style="display:flex;flex-direction:column;min-height:0">
+        <h3 style="font-size:clamp(14px,1.4vw,20px);font-weight:900;color:var(--azul);margin-bottom:12px">TOP 5 · 2025</h3>
+        <div id="top25" style="display:flex;flex-direction:column;gap:clamp(8px,1vw,14px);flex:1;justify-content:center"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;min-height:0">
+        <h3 style="font-size:clamp(14px,1.4vw,20px);font-weight:900;color:var(--verde);margin-bottom:12px">TOP 5 · 2026</h3>
+        <div id="top26" style="display:flex;flex-direction:column;gap:clamp(8px,1vw,14px);flex:1;justify-content:center"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9 EFICIENCIA -->
+  <section class="slide">
+    <div class="s-head"><div><div class="s-kicker">Ticket por pedido</div><div class="s-title">Eficiencia · <span class="accent">prendas por venta</span></div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body">
+      <div class="chart-wrap"><canvas id="c-eficiencia"></canvas></div>
+      <div class="note">Promedio de prendas por cada pedido. Entre más alto, más unidades lleva cada cliente.</div>
+    </div>
+  </section>
+
+  <!-- 10 MAPA DE TENDENCIAS -->
+  <section class="slide">
+    <div class="s-head"><div><div class="s-kicker">Semáforo mensual</div><div class="s-title">Mapa de <span class="accent">tendencias</span> 2026 vs 2025</div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body">
+      <div class="matrix" id="matrix"></div>
+      <div class="note" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:14px">
+        <span style="color:var(--verde);font-weight:900">● Fuerte crecimiento / Crecimiento</span>
+        <span style="color:var(--naranja);font-weight:900">● Estable (±10%)</span>
+        <span style="color:var(--rojo);font-weight:900">● Caída / Caída fuerte</span>
+        <span style="color:#6b7aa0;font-weight:900">● Dato parcial / sin dato</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11 ANALISIS AUTOMATICO -->
+  <section class="slide">
+    <div class="s-head"><div><div class="s-kicker">Lectura de los datos</div><div class="s-title">Análisis <span class="accent">automático</span></div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body">
+      <div class="grid" id="insights" style="grid-template-columns:repeat(5,1fr);flex:1;min-height:0"></div>
+      <div class="note">Insights calculados directamente desde las cifras de ventas y prendas (enero–septiembre comparable).</div>
+    </div>
+  </section>
+
+  <!-- 12 OPORTUNIDADES / ALERTAS -->
+  <section class="slide">
+    <div class="s-head"><div><div class="s-kicker">Enfoque estratégico</div><div class="s-title">Oportunidades <span class="accent">&</span> alertas</div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body" style="display:grid;grid-template-columns:1fr 1fr;gap:clamp(14px,1.6vw,26px)">
+      <div class="col-box op"><h3>✅ Oportunidades</h3><div id="ops"></div></div>
+      <div class="col-box al"><h3>⚠️ Alertas</h3><div id="alerts"></div></div>
+    </div>
+  </section>
+
+  <!-- 13 PROYECCION -->
+  <section class="slide">
+    <div class="s-head"><div><div class="s-kicker">Escenarios de cierre</div><div class="s-title">Proyección <span class="accent">cierre 2026</span></div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body">
+      <div style="margin-bottom:clamp(8px,1vw,14px)"><span class="warn">⚠️ PROYECCIÓN — NO ES UN DATO REAL</span></div>
+
+      <!-- Octubre a ritmo del día 5 -->
+      <div class="card" style="flex-direction:row;align-items:center;gap:clamp(14px,2vw,34px);flex-wrap:wrap;margin-bottom:clamp(10px,1.2vw,16px);border-left:6px solid var(--naranja)">
+        <div style="flex:1;min-width:200px">
+          <div class="lbl">Octubre 2026 · al 6 de octubre (real, 6 días)</div>
+          <div class="big" style="font-size:clamp(24px,2.6vw,42px)" id="oc-real"></div>
+        </div>
+        <div style="font-size:clamp(22px,2vw,34px);color:var(--muted);font-weight:900">→</div>
+        <div style="flex:1;min-width:200px">
+          <div class="lbl">Proyección cierre octubre (ritmo actual)</div>
+          <div class="big" style="font-size:clamp(24px,2.6vw,42px);color:var(--naranja)" id="oc-proj"></div>
+          <div class="unit" id="oc-vs"></div>
+        </div>
+      </div>
+
+      <div class="lbl" style="margin:2px 0 8px">Total anual 2026 proyectado (3 escenarios)</div>
+      <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:clamp(12px,1.4vw,22px);flex:1;min-height:0">
+        <div class="esc cons"><div class="name">Conservador</div><div class="tot" id="pr-cons-v"></div><div class="sub">ventas · <span id="pr-cons-p"></span> prendas</div></div>
+        <div class="esc base"><div class="name">Base</div><div class="tot" id="pr-base-v"></div><div class="sub">ventas · <span id="pr-base-p"></span> prendas</div></div>
+        <div class="esc agr"><div class="name">Agresivo</div><div class="tot" id="pr-agr-v"></div><div class="sub">ventas · <span id="pr-agr-p"></span> prendas</div></div>
+      </div>
+      <div class="note" id="pr-metodo" style="margin-top:12px"></div>
+    </div>
+  </section>
+
+  <!-- 14 META VISUAL -->
+  <section class="slide dark">
+    <div class="s-head"><div><div class="s-kicker" style="color:#7FA6FF">Tablero ejecutivo</div><div class="s-title" style="color:#fff">¿PODEMOS <span style="color:#53E6A9">SUPERAR 2025</span>?</div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body meta-wrap">
+      <div class="meta-stats">
+        <div class="ms"><div class="l">Total 2025</div><div class="v" id="m-2025" style="color:#fff"></div></div>
+        <div class="ms"><div class="l">2026 actual (al 6-oct)</div><div class="v" id="m-2026" style="color:#53E6A9"></div></div>
+        <div class="ms"><div class="l">Faltan para superar 2025</div><div class="v" id="m-falta" style="color:#FFC24B"></div></div>
+      </div>
+      <div>
+        <div class="bar-track"><div class="bar-fill" id="m-bar"></div></div>
+        <div style="margin-top:10px;font-weight:700;color:#A9BEEE" id="m-pct-txt"></div>
+      </div>
+      <div class="note" style="color:#9FB4E6">El total 2026 incluye ventas hasta el 6 de octubre; aún faltan octubre (completo), noviembre y diciembre — el <b style="color:#53E6A9">trimestre históricamente más fuerte</b>.</div>
+    </div>
+  </section>
+
+  <!-- 15 DÍA A DÍA Q4 2025 -->
+  <section class="slide">
+    <div class="s-head"><div><div class="s-kicker">Detalle diario · datos reales</div><div class="s-title">Día a día · <span class="accent">Oct – Dic 2025</span></div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body">
+      <div class="chart-wrap"><canvas id="c-daily25"></canvas></div>
+      <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:clamp(10px,1.2vw,18px);margin-top:12px;flex:0 0 auto">
+        <div class="card" style="padding:clamp(10px,1vw,16px)"><div class="lbl">Octubre 2025</div><div class="big" style="font-size:clamp(18px,1.8vw,28px)" id="d25-o"></div></div>
+        <div class="card" style="padding:clamp(10px,1vw,16px)"><div class="lbl">Noviembre 2025</div><div class="big" style="font-size:clamp(18px,1.8vw,28px)" id="d25-n"></div></div>
+        <div class="card" style="padding:clamp(10px,1vw,16px)"><div class="lbl">Diciembre 2025</div><div class="big" style="font-size:clamp(18px,1.8vw,28px)" id="d25-d"></div></div>
+      </div>
+      <div class="note">Ventas por día dentro de cada mes (eje X = día del mes). Diciembre concentró sus ventas en los primeros ~20 días.</div>
+    </div>
+  </section>
+
+  <!-- 16 OCTUBRE 2026 vs 2025 DÍA A DÍA -->
+  <section class="slide">
+    <div class="s-head"><div><div class="s-kicker">Arranque de octubre</div><div class="s-title">Octubre día a día · <span class="accent">2026 vs 2025</span></div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body" style="display:grid;grid-template-columns:1.2fr .95fr;gap:clamp(12px,1.4vw,22px)">
+      <div class="chart-wrap"><canvas id="c-daily26"></canvas></div>
+      <div style="display:flex;flex-direction:column;gap:clamp(10px,1.2vw,16px);min-height:0">
+        <div class="card"><div class="lbl">Primeros 6 días · 2026</div><div class="big" id="d26-cum"></div><div class="unit">vs <span id="d26-cum25"></span> en 2025 → <b id="d26-pace"></b></div></div>
+        <div class="card naranja"><div class="lbl">Proyección cierre octubre</div><div class="big" id="d26-proj"></div><div class="unit" id="d26-projvs"></div></div>
+        <div class="card" style="background:#F4F7FF"><div class="lbl">Ritmo diario promedio</div><div class="big" style="font-size:clamp(20px,2vw,32px)" id="d26-rit"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 17 CONCLUSION -->
+  <section class="slide dark">
+    <div class="s-head"><div><div class="s-kicker" style="color:#7FA6FF">Cierre</div><div class="s-title" style="color:#fff">2026 TODAVÍA TIENE <span style="color:#53E6A9">MUCHO POTENCIAL</span></div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body" style="justify-content:center">
+      <div class="concl-list" id="concl"></div>
+      <div class="flow">MEDIR → ENTENDER → AJUSTAR → CRECER</div>
+      <div class="sig">AGENCIA&nbsp;QUIN</div>
+    </div>
+  </section>
+
+  <!-- 18 ANEXO · OCTUBRE 2025 DÍA A DÍA -->
+  <section class="slide">
+    <div class="s-head"><div><div class="s-kicker">Anexo · detalle diario 2025</div><div class="s-title">Octubre 2025 · <span class="accent">día a día completo</span></div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body">
+      <div class="chart-wrap"><canvas id="c-oct25det"></canvas></div>
+      <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:clamp(10px,1.2vw,18px);margin-top:12px;flex:0 0 auto">
+        <div class="card azul"><div class="lbl">Total octubre</div><div class="big" style="font-size:clamp(20px,2vw,34px)" id="ao-tot"></div><div class="unit" id="ao-totp"></div></div>
+        <div class="card"><div class="lbl">Mejor día</div><div class="big" style="font-size:clamp(18px,1.8vw,28px)" id="ao-best"></div></div>
+        <div class="card"><div class="lbl">Promedio diario</div><div class="big" style="font-size:clamp(18px,1.8vw,28px)" id="ao-avg"></div></div>
+      </div>
+      <div class="note">Ventas (barras) y prendas (en el tooltip) por cada día de octubre 2025.</div>
+    </div>
+  </section>
+
+  <!-- 19 ANEXO · NOVIEMBRE 2025 DÍA A DÍA -->
+  <section class="slide">
+    <div class="s-head"><div><div class="s-kicker">Anexo · detalle diario 2025</div><div class="s-title">Noviembre 2025 · <span class="accent">día a día completo</span></div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body">
+      <div class="chart-wrap"><canvas id="c-nov25det"></canvas></div>
+      <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:clamp(10px,1.2vw,18px);margin-top:12px;flex:0 0 auto">
+        <div class="card azul"><div class="lbl">Total noviembre</div><div class="big" style="font-size:clamp(20px,2vw,34px)" id="an-tot"></div><div class="unit" id="an-totp"></div></div>
+        <div class="card"><div class="lbl">Mejor día</div><div class="big" style="font-size:clamp(18px,1.8vw,28px)" id="an-best"></div></div>
+        <div class="card"><div class="lbl">Promedio diario</div><div class="big" style="font-size:clamp(18px,1.8vw,28px)" id="an-avg"></div></div>
+      </div>
+      <div class="note">Ventas (barras) y prendas (en el tooltip) por cada día de noviembre 2025.</div>
+    </div>
+  </section>
+
+  <!-- 20 ANEXO · DICIEMBRE 2025 DÍA A DÍA -->
+  <section class="slide">
+    <div class="s-head"><div><div class="s-kicker">Anexo · detalle diario 2025</div><div class="s-title">Diciembre 2025 · <span class="accent">día a día completo</span></div></div><div class="brandtag">Agencia QUIN</div></div>
+    <div class="s-body">
+      <div class="chart-wrap"><canvas id="c-dic25det"></canvas></div>
+      <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:clamp(10px,1.2vw,18px);margin-top:12px;flex:0 0 auto">
+        <div class="card azul"><div class="lbl">Total diciembre</div><div class="big" style="font-size:clamp(20px,2vw,34px)" id="ad-tot"></div><div class="unit" id="ad-totp"></div></div>
+        <div class="card"><div class="lbl">Mejor día</div><div class="big" style="font-size:clamp(18px,1.8vw,28px)" id="ad-best"></div></div>
+        <div class="card"><div class="lbl">Promedio diario</div><div class="big" style="font-size:clamp(18px,1.8vw,28px)" id="ad-avg"></div></div>
+      </div>
+      <div class="note">Diciembre 2025 concentró sus ventas en los primeros ~20 días (cierre de temporada).</div>
+    </div>
+  </section>
+
+</div>
+
+<button class="nav-btn prev" onclick="go(cur-1)" aria-label="Anterior">‹</button>
+<button class="nav-btn next" onclick="go(cur+1)" aria-label="Siguiente">›</button>
+<div class="progress" id="prog"></div>
+<div class="hud">
+  <div class="counter"><span id="cNow">1</span> / <span id="cTot"></span></div>
+  <div class="dots" id="dots"></div>
+  <div class="hint">← → navegar · <b>F</b> pantalla completa</div>
+</div>
+
+<script>
+/* ===================== DATOS ORIGINALES ===================== */
+const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+const ventas2025 = [254,741,667,1510,1501,1728,1647,1535,1469,2302,2207,2270];
+const prendas2025= [442,1242,1138,2020,2150,2634,2514,2286,2258,3728,3545,3606];
+const ventas2026 = [1012,1948,2221,1427,1667,3058,1856,1142,1272,273]; // Oct parcial (al 6-oct, 6 días)
+
+/* ===== DETALLE DÍA A DÍA (datos reales de las remisiones) ===== */
+const dOct25V=[50,55,42,40,50,59,49,85,54,125,25,53,109,77,107,79,40,45,93,85,38,113,118,104,76,68,135,80,77,57,114];
+const dOct25P=[72,80,70,54,74,83,78,174,90,176,71,83,152,156,190,125,67,66,146,127,60,188,201,188,116,110,216,124,131,90,170];
+const dNov25V=[38,62,99,94,73,50,97,38,57,138,86,80,57,99,91,23,71,64,75,68,78,57,68,93,89,63,58,79,27,135];
+const dNov25P=[61,91,155,139,124,67,157,52,79,265,154,136,112,151,149,34,120,95,110,126,116,83,99,144,139,93,109,123,40,222];
+const dDic25V=[100,75,123,108,92,49,48,107,125,95,128,117,120,138,140,159,151,138,143,99,7,8,0,0,0,0,0,0,0,0,0];
+const dDic25P=[212,104,188,180,144,68,75,169,208,137,208,182,187,216,217,234,250,197,220,134,7,69,0,0,0,0,0,0,0,0,0];
+const dOct26V=[56,45,29,61,49,33];  // octubre 2026 día a día (al 6-oct)
+const dOct26P=[88,114,42,89,76,55];
+const NDIAS26=dOct26V.length;       // días con registro en octubre 2026
+const prendas2026= [1448,2717,3369,2149,2522,4316,2497,1610,2070,464];
+const OCT_IDX = 9;            // octubre
+const COMP = 9;              // meses comparables: ene..sep (0..8)
+
+/* ===================== HELPERS ===================== */
+const sum = a => a.reduce((x,y)=>x+(y||0),0);
+const nf = n => Math.round(n).toLocaleString('es-CO');
+const nf1 = n => Number(n).toLocaleString('es-CO',{minimumFractionDigits:1,maximumFractionDigits:1});
+const pct = n => (n>=0?'+':'') + nf1(n) + '%';
+const COLORS = {azul:'#1E49E0', azul2:'#3B82F6', verde:'#16A34A', verde2:'#22C55E', naranja:'#F59E0B', rojo:'#E23B3B', gris:'#94A3B8'};
+
+/* ===================== CÁLCULOS ===================== */
+const tot = {
+  v25: sum(ventas2025), p25: sum(prendas2025),
+  v26: sum(ventas2026), p26: sum(prendas2026)
+};
+const prom25 = tot.v25/12;
+const prom26 = tot.v26/ventas2026.length;
+const ppv25 = tot.p25/tot.v25;
+const ppv26 = tot.p26/tot.v26;
+
+// mejor mes
+function mejor(arr){let i=0;for(let k=1;k<arr.length;k++)if((arr[k]||0)>(arr[i]||0))i=k;return i;}
+const best25=mejor(ventas2025), best26=mejor(ventas2026);
+
+// Ene-Sep comparable
+const v25cs=sum(ventas2025.slice(0,COMP)), v26cs=sum(ventas2026.slice(0,COMP));
+const p25cs=sum(prendas2025.slice(0,COMP)), p26cs=sum(prendas2026.slice(0,COMP));
+const growthV = (v26cs-v25cs)/v25cs*100;
+const growthP = (p26cs-p25cs)/p25cs*100;
+
+// crecimiento mensual
+const growth = ventas2026.map((v,i)=> v==null?null:(v-ventas2025[i])/ventas2025[i]*100);
+
+// acumulados
+function acum(arr){let s=0;return arr.map(v=> v==null?null:(s+=v));}
+const acum25=acum(ventas2025), acum26=acum(ventas2026);
+function acumCS(arr){let s=0;return arr.slice(0,COMP).map(v=>(s+=v));}
+const acum25cs=acumCS(ventas2025), acum26cs=acumCS(ventas2026);
+
+// prendas por venta por mes
+const ppvMes25=ventas2025.map((v,i)=> v? prendas2025[i]/v : null);
+const ppvMes26=ventas2026.map((v,i)=> v? prendas2026[i]/v : null);
+
+// ranking top5
+function top5(arrV,arrP){return arrV.map((v,i)=>({i,v,p:arrP[i]})).filter(o=>o.v!=null).sort((a,b)=>b.v-a.v).slice(0,5);}
+const t25=top5(ventas2025,prendas2025), t26=top5(ventas2026,prendas2026);
+
+// meta
+const faltan = Math.max(0, tot.v25 - tot.v26);
+const avance = tot.v26/tot.v25*100;
+
+/* ===================== RENDER ESTÁTICO ===================== */
+document.getElementById('r-v25').textContent=nf(tot.v25);
+document.getElementById('r-p25').textContent=nf(tot.p25);
+document.getElementById('r-v26').textContent=nf(tot.v26);
+document.getElementById('r-p26').textContent=nf(tot.p26);
+document.getElementById('r-prom25').textContent=nf(prom25);
+document.getElementById('r-prom26').textContent=nf(prom26);
+document.getElementById('r-ppv25').textContent=nf1(ppv25);
+document.getElementById('r-ppv26').textContent=nf1(ppv26);
+document.getElementById('r-best25').textContent=meses[best25]+' 2025 · '+nf(ventas2025[best25]);
+document.getElementById('r-best26').textContent='Mejor 2026: '+meses[best26]+' · '+nf(ventas2026[best26])+' ventas';
+document.getElementById('r-growth').textContent=pct(growthV);
+
+// ene-sep
+document.getElementById('es-v25').textContent=nf(v25cs);
+document.getElementById('es-v26').textContent=nf(v26cs);
+document.getElementById('es-vdif').textContent=(v26cs-v25cs>=0?'+':'')+nf(v26cs-v25cs);
+document.getElementById('es-vpct').textContent='Crecimiento '+pct(growthV);
+document.getElementById('es-pdif').textContent=(p26cs-p25cs>=0?'+':'')+nf(p26cs-p25cs);
+document.getElementById('es-ppct').textContent='Prendas '+pct(growthP);
+
+// rankings
+function renderRank(el,list){el.innerHTML=list.map((o,k)=>`
+  <div class="rank ${k===0?'top1':''}"><div class="pos">${k+1}</div>
+  <div class="mes">${meses[o.i]}<div class="sub">${nf(o.p)} prendas</div></div>
+  <div class="val">${nf(o.v)}</div></div>`).join('');}
+renderRank(document.getElementById('top25'),t25);
+renderRank(document.getElementById('top26'),t26);
+
+// matriz
+function clasif(g){
+  if(g==null) return {t:'DATO PARCIAL',c:'c-parcial'};
+  if(g>=30) return {t:'FUERTE CRECIMIENTO',c:'c-fuerte'};
+  if(g>=10) return {t:'CRECIMIENTO',c:'c-crece'};
+  if(g>-10) return {t:'ESTABLE',c:'c-estable'};
+  if(g>-30) return {t:'CAÍDA',c:'c-cae'};
+  return {t:'CAÍDA FUERTE',c:'c-caefuerte'};
+}
+document.getElementById('matrix').innerHTML=meses.map((m,i)=>{
+  let info;
+  if(i===OCT_IDX) info={t:'DATO PARCIAL',c:'c-parcial'};
+  else if(ventas2026[i]==null) info={t:'SIN DATO',c:'c-sin'};
+  else info=clasif(growth[i]);
+  const g=ventas2026[i]==null?'—':(i===OCT_IDX?'parcial':pct(growth[i]));
+  return `<div class="cell ${info.c}"><div class="m">${m}</div><div class="p">${g}</div><div class="t">${info.t}</div></div>`;
+}).join('');
+
+// insights automáticos
+const desacPostJun = (ventas2026[5]-ventas2026[8])/ventas2026[5]*100; // jun vs sep
+const q4_2025 = sum(ventas2025.slice(9));
+const insights=[
+  {cls:'g',it:'2026 arranca más fuerte',num:pct(growthV),desc:'Ventas ene–sep por encima de 2025 ('+nf(v26cs)+' vs '+nf(v25cs)+').'},
+  {cls:'',it:'Pico del periodo',num:nf(ventas2026[best26]),desc:'El mejor mes fue '+meses[best26]+' 2026, el más alto de ambos años.'},
+  {cls:'o',it:'Desaceleración 2do semestre',num:pct(-desacPostJun),desc:'Tras junio, las ventas bajan hacia julio–septiembre.'},
+  {cls:'r',it:'Meses bajo 2025',num:'Ago · Sep',desc:'Agosto ('+pct(growth[7])+') y septiembre ('+pct(growth[8])+') quedaron por debajo del año anterior.'},
+  {cls:'g',it:'Potencial último trimestre',num:nf(q4_2025),desc:'En 2025 el Oct–Dic sumó esas ventas: el tramo más fuerte aún está por delante.'}
+];
+document.getElementById('insights').innerHTML=insights.map(x=>`
+  <div class="insight ${x.cls}"><div class="it">${x.it}</div><div class="inum">${x.num}</div><div class="idesc">${x.desc}</div></div>`).join('');
+
+// oportunidades / alertas
+const ops=[
+  ['📈','<b>Segundo semestre fuerte:</b> Oct–Dic fue el tramo top de 2025 ('+nf(q4_2025)+' ventas).'],
+  ['🎯','<b>Superar 2025 es alcanzable:</b> faltan '+nf(faltan)+' ventas y queda casi todo el Q4.'],
+  ['🔥','<b>Base sólida:</b> ene–sep 2026 ya creció '+pct(growthV)+' frente a 2025.'],
+  ['🧾','<b>Volumen por pedido estable:</b> ~'+nf1(ppv26)+' prendas por venta — margen para subir el ticket.']
+];
+const alerts=[
+  ['📉','<b>Caída tras el pico:</b> de junio ('+nf(ventas2026[5])+') a septiembre ('+nf(ventas2026[8])+') hay una baja marcada.'],
+  ['🟠','<b>Ago y Sep bajo 2025:</b> '+pct(growth[7])+' y '+pct(growth[8])+' — hay que reactivar esos meses.'],
+  ['⚖️','<b>Dependencia de picos:</b> junio concentra buena parte del volumen del semestre.'],
+  ['🎟️','<b>Ticket levemente menor:</b> prendas por venta bajó de '+nf1(ppv25)+' (2025) a '+nf1(ppv26)+' (2026).']
+];
+document.getElementById('ops').innerHTML=ops.map(o=>`<div class="li"><span class="ic">${o[0]}</span><span>${o[1]}</span></div>`).join('');
+document.getElementById('alerts').innerHTML=alerts.map(o=>`<div class="li"><span class="ic">${o[0]}</span><span>${o[1]}</span></div>`).join('');
+
+// ----- Octubre: proyección a cierre usando la FORMA REAL de 2025 -----
+// En 2025, los primeros N días (N=6) pesaron cierto % del mes completo.
+// Se aplica esa misma proporción a lo acumulado de 2026.
+const cum26V=sum(dOct26V), cum25NV=sum(dOct25V.slice(0,NDIAS26)), full25V=sum(dOct25V);
+const cum26P=sum(dOct26P), cum25NP=sum(dOct25P.slice(0,NDIAS26)), full25P=sum(dOct25P);
+const octProjV = Math.round(cum26V*full25V/cum25NV);
+const octProjP = Math.round(cum26P*full25P/cum25NP);
+const octVs25V = (octProjV-full25V)/full25V*100;
+const paceVs25 = (cum26V-cum25NV)/cum25NV*100; // ritmo primeros 6 días 2026 vs 2025
+
+// ----- Proyección total anual 2026: ene-sep real + oct (ritmo) + nov/dic -----
+const novDic25V = ventas2025[10]+ventas2025[11];
+const novDic25P = prendas2025[10]+prendas2025[11];
+const fV=growthV/100, fP=growthP/100;
+const totalV = fac => v26cs + octProjV + Math.round(novDic25V*(1+fac));
+const totalP = fac => p26cs + octProjP + Math.round(novDic25P*(1+fac));
+const esc={ consV:totalV(0), consP:totalP(0), baseV:totalV(fV/2), baseP:totalP(fP/2), agrV:totalV(fV), agrP:totalP(fP) };
+
+// octubre card
+document.getElementById('oc-real').innerHTML=nf(ventas2026[OCT_IDX])+' ventas <span style="font-size:.55em;color:var(--muted);font-weight:700">· '+nf(prendas2026[OCT_IDX])+' prendas</span>';
+document.getElementById('oc-proj').innerHTML='≈ '+nf(octProjV)+' ventas <span style="font-size:.55em;color:var(--muted);font-weight:700">· '+nf(octProjP)+' prendas</span>';
+document.getElementById('oc-vs').innerHTML='vs '+nf(ventas2025[OCT_IDX])+' en octubre 2025 → <b class="'+(octVs25V>=0?'pos':'neg')+'">'+pct(octVs25V)+'</b>';
+
+// escenarios total anual
+document.getElementById('pr-cons-v').textContent=nf(esc.consV);
+document.getElementById('pr-cons-p').textContent=nf(esc.consP);
+document.getElementById('pr-base-v').textContent=nf(esc.baseV);
+document.getElementById('pr-base-p').textContent=nf(esc.baseP);
+document.getElementById('pr-agr-v').textContent=nf(esc.agrV);
+document.getElementById('pr-agr-p').textContent=nf(esc.agrP);
+document.getElementById('pr-metodo').innerHTML='<b>Metodología:</b> <b>Octubre</b> se proyecta con la <b>forma real de 2025</b>: los 6 primeros días de 2025 fueron '+nf(cum25NV)+' y el mes cerró en '+nf(full25V)+'; aplicando esa misma proporción a los '+nf(cum26V)+' de 2026 → ≈ '+nf(octProjV)+'. <b>Nov–Dic</b> parten de 2025 ('+nf(novDic25V)+' ventas): <b>Conservador</b> = igual a 2025 · <b>Base</b> = +'+nf1(growthV/2)+'% · <b>Agresivo</b> = +'+nf1(growthV)+'% (ritmo ene–sep). Más lo real de ene–sep 2026 ('+nf(v26cs)+').';
+
+// meta
+document.getElementById('m-2025').textContent=nf(tot.v25);
+document.getElementById('m-2026').textContent=nf(tot.v26);
+document.getElementById('m-falta').textContent=nf(faltan);
+document.getElementById('m-pct-txt').innerHTML='Avance sobre el total 2025: <b style="color:#53E6A9">'+nf1(avance)+'%</b>';
+
+// conclusiones
+const concl=[
+  'Enero–septiembre 2026 creció '+pct(growthV)+' en ventas frente a 2025: la base del año es más alta.',
+  'El pico de '+meses[best26]+' ('+nf(ventas2026[best26])+') demuestra la capacidad de alcanzar meses récord.',
+  'La desaceleración de julio–septiembre es la prioridad a corregir con reactivación comercial.',
+  'Con el Q4 (el tramo más fuerte históricamente) aún por delante, superar las '+nf(tot.v25)+' ventas de 2025 es alcanzable.'
+];
+document.getElementById('concl').innerHTML=concl.map((c,i)=>`<div class="concl"><div class="n">${i+1}</div><div>${c}</div></div>`).join('');
+
+// ----- KPIs día a día -----
+const bestDayIdx=a=>{let i=0;for(let k=1;k<a.length;k++)if(a[k]>a[i])i=k;return i;};
+const avgAct=a=>{const nz=a.filter(x=>x>0);return nz.length?nz.reduce((s,x)=>s+x,0)/nz.length:0;};
+function kpiMes(id,arr){const bi=bestDayIdx(arr);document.getElementById(id).innerHTML='Mejor día: '+(bi+1)+' · '+nf(arr[bi])+' <span style="font-size:.5em;color:var(--muted);font-weight:700">· prom '+nf1(avgAct(arr))+'/día</span>';}
+kpiMes('d25-o',dOct25V); kpiMes('d25-n',dNov25V); kpiMes('d25-d',dDic25V);
+document.getElementById('d26-cum').textContent=nf(cum26V)+' ventas';
+document.getElementById('d26-cum25').textContent=nf(cum25NV);
+const pEl=document.getElementById('d26-pace'); pEl.textContent=pct(paceVs25); pEl.className=paceVs25>=0?'pos':'neg';
+document.getElementById('d26-proj').textContent='≈ '+nf(octProjV)+' ventas';
+document.getElementById('d26-projvs').innerHTML='vs '+nf(full25V)+' en octubre 2025 → <b class="'+(octVs25V>=0?'pos':'neg')+'">'+pct(octVs25V)+'</b>';
+document.getElementById('d26-rit').innerHTML='2026: '+nf1(cum26V/NDIAS26)+'/día &nbsp;·&nbsp; 2025: '+nf1(cum25NV/NDIAS26)+'/día';
+
+// Anexos: KPIs por mes 2025
+function anexoKPI(p,V,P){
+  document.getElementById(p+'-tot').textContent=nf(sum(V))+' ventas';
+  document.getElementById(p+'-totp').textContent=nf(sum(P))+' prendas';
+  const bi=bestDayIdx(V);
+  document.getElementById(p+'-best').innerHTML='Día '+(bi+1)+' · '+nf(V[bi])+' <span style="font-size:.55em;color:var(--muted);font-weight:700">ventas</span>';
+  document.getElementById(p+'-avg').innerHTML=nf1(avgAct(V))+' <span style="font-size:.55em;color:var(--muted);font-weight:700">ventas/día</span>';
+}
+anexoKPI('ao',dOct25V,dOct25P); anexoKPI('an',dNov25V,dNov25P); anexoKPI('ad',dDic25V,dDic25P);
+
+/* ===================== CHART.JS ===================== */
+Chart.defaults.font.family="'Inter',sans-serif";
+Chart.defaults.font.size=14;
+Chart.defaults.color='#53618a';
+const built={};
+const tip={backgroundColor:'#0B1640',titleColor:'#fff',bodyColor:'#DCE7FF',borderColor:'#2a3e86',borderWidth:1,padding:12,cornerRadius:10,titleFont:{weight:'800',size:15},bodyFont:{size:14},displayColors:true};
+
+function gridOpts(){return {grid:{color:'#EEF1F9'},ticks:{color:'#6b7aa0',font:{weight:'600'}}};}
+
+function buildChart(id){
+  if(built[id])return; built[id]=true;
+  if(id==='c-ventas'){
+    new Chart(ventasCtx(),{type:'line',data:{labels:meses,datasets:[
+      {label:'2025',data:ventas2025,borderColor:COLORS.azul,backgroundColor:'rgba(30,73,224,.08)',borderWidth:4,fill:true,tension:.35,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:COLORS.azul},
+      {label:'2026',data:ventas2026,borderColor:COLORS.verde,backgroundColor:'rgba(22,163,74,.08)',borderWidth:4,fill:true,tension:.35,
+        pointRadius:ctx=>ctx.dataIndex===OCT_IDX?8:5,pointHoverRadius:9,
+        pointBackgroundColor:ctx=>ctx.dataIndex===OCT_IDX?COLORS.naranja:COLORS.verde,
+        pointStyle:ctx=>ctx.dataIndex===OCT_IDX?'rectRot':'circle'}
+    ]},options:lineOpts('Ventas',(i)=>{
+        const a=ventas2025[i],b=ventas2026[i];let extra=[];
+        if(b!=null){const d=b-a;const p=(d/a*100);extra=['Diferencia: '+(d>=0?'+':'')+nf(d),'Variación: '+pct(p)];if(i===OCT_IDX)extra.push('⚠ Parcial al 6-oct · proyec. cierre ~'+nf(octProjV));}
+        return extra;})});
+  }
+  else if(id==='c-prendas'){
+    new Chart(ctx('c-prendas'),{type:'bar',data:{labels:meses,datasets:[
+      {label:'2025',data:prendas2025,backgroundColor:COLORS.azul,borderRadius:6,maxBarThickness:34},
+      {label:'2026',data:prendas2026,backgroundColor:prendas2026.map((_,i)=>i===OCT_IDX?COLORS.naranja:COLORS.verde),borderRadius:6,maxBarThickness:34}
+    ]},options:barOpts('Prendas',(i)=>i===OCT_IDX?['⚠ Octubre parcial (al 6-oct)']:[])});
+  }
+  else if(id==='c-crecimiento'){
+    const labels=meses.slice(0,COMP);
+    const data=growth.slice(0,COMP);
+    new Chart(ctx('c-crecimiento'),{type:'bar',data:{labels,datasets:[{label:'Crecimiento %',data,
+      backgroundColor:data.map(g=> g>=10?COLORS.verde: g>-10?COLORS.naranja:COLORS.rojo),borderRadius:8,maxBarThickness:70}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+        tooltip:{...tip,callbacks:{label:c=>'Variación 2026 vs 2025: '+pct(c.raw)}}},
+        scales:{y:{...gridOpts(),ticks:{callback:v=>v+'%',color:'#6b7aa0',font:{weight:'600'}}},x:gridOpts()}}});
+  }
+  else if(id==='c-enesep'){
+    new Chart(ctx('c-enesep'),{type:'bar',data:{labels:['Ventas','Prendas'],datasets:[
+      {label:'Ene–Sep 2025',data:[v25cs,p25cs],backgroundColor:COLORS.azul,borderRadius:8,maxBarThickness:90},
+      {label:'Ene–Sep 2026',data:[v26cs,p26cs],backgroundColor:COLORS.verde,borderRadius:8,maxBarThickness:90}
+    ]},options:barOpts('',()=>[])});
+  }
+  else if(id==='c-acumulada'){
+    new Chart(ctx('c-acumulada'),{type:'line',data:{labels:meses,datasets:[
+      {label:'2025 acumulado',data:acum25,borderColor:COLORS.azul,backgroundColor:'rgba(30,73,224,.07)',borderWidth:4,fill:true,tension:.3,pointRadius:3,pointHoverRadius:7},
+      {label:'2026 acumulado',data:acum26,borderColor:COLORS.verde,backgroundColor:'rgba(22,163,74,.07)',borderWidth:4,fill:true,tension:.3,
+        pointRadius:ctx=>ctx.dataIndex===OCT_IDX?7:3,pointHoverRadius:8,pointBackgroundColor:ctx=>ctx.dataIndex===OCT_IDX?COLORS.naranja:COLORS.verde}
+    ]},options:lineOpts('Ventas acumuladas',(i)=>i===OCT_IDX?['⚠ 2026 parcial desde aquí']:[])});
+  }
+  else if(id==='c-oct25det'){ monthBars('c-oct25det',dOct25V,dOct25P,COLORS.azul,31); }
+  else if(id==='c-nov25det'){ monthBars('c-nov25det',dNov25V,dNov25P,COLORS.naranja,30); }
+  else if(id==='c-dic25det'){ monthBars('c-dic25det',dDic25V,dDic25P,COLORS.verde,31); }
+  else if(id==='c-daily25'){
+    const dias=Array.from({length:31},(_,i)=>i+1);
+    new Chart(ctx('c-daily25'),{type:'line',data:{labels:dias,datasets:[
+      {label:'Octubre',data:dOct25V,borderColor:COLORS.azul,backgroundColor:'rgba(30,73,224,.06)',borderWidth:3,tension:.3,pointRadius:2,pointHoverRadius:6,fill:false},
+      {label:'Noviembre',data:dNov25V,borderColor:COLORS.naranja,borderWidth:3,tension:.3,pointRadius:2,pointHoverRadius:6,fill:false},
+      {label:'Diciembre',data:dDic25V,borderColor:COLORS.verde,borderWidth:3,tension:.3,pointRadius:2,pointHoverRadius:6,fill:false}
+    ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'top',labels:{usePointStyle:true,font:{weight:'700',size:15},padding:18}},
+        tooltip:{...tip,callbacks:{title:it=>'Día '+it[0].label,label:c=>c.dataset.label+': '+(c.raw==null?'—':nf(c.raw))+' ventas'}}},
+      scales:{y:{...gridOpts(),ticks:{callback:v=>nf(v),color:'#6b7aa0',font:{weight:'600'}}},x:{...gridOpts(),title:{display:true,text:'Día del mes',color:'#6b7aa0',font:{weight:'700'}}}}}});
+  }
+  else if(id==='c-daily26'){
+    const dias=dOct26V.map((_,i)=>'Día '+(i+1));
+    new Chart(ctx('c-daily26'),{type:'bar',data:{labels:dias,datasets:[
+      {label:'2025',data:dOct25V.slice(0,NDIAS26),backgroundColor:COLORS.azul,borderRadius:6,maxBarThickness:48},
+      {label:'2026',data:dOct26V,backgroundColor:COLORS.verde,borderRadius:6,maxBarThickness:48}
+    ]},options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'top',labels:{usePointStyle:true,font:{weight:'700',size:15},padding:18}},
+        tooltip:{...tip,callbacks:{label:c=>c.dataset.label+': '+nf(c.raw)+' ventas',
+          afterBody:it=>{const i=it[0].dataIndex;const a=dOct25V[i],b=dOct26V[i];const d=b-a;return ['Diferencia: '+(d>=0?'+':'')+nf(d),'Variación: '+pct(d/a*100)];}}}},
+      scales:{y:{...gridOpts(),ticks:{callback:v=>nf(v),color:'#6b7aa0',font:{weight:'600'}}},x:gridOpts()}}});
+  }
+  else if(id==='c-eficiencia'){
+    new Chart(ctx('c-eficiencia'),{type:'line',data:{labels:meses,datasets:[
+      {label:'2025',data:ppvMes25,borderColor:COLORS.azul,borderWidth:4,tension:.35,pointRadius:4,pointHoverRadius:8,fill:false},
+      {label:'2026',data:ppvMes26,borderColor:COLORS.verde,borderWidth:4,tension:.35,pointRadius:4,pointHoverRadius:8,fill:false,
+        pointBackgroundColor:ctx=>ctx.dataIndex===OCT_IDX?COLORS.naranja:COLORS.verde}
+    ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'top',labels:{usePointStyle:true,font:{weight:'700'},padding:18}},
+        tooltip:{...tip,callbacks:{label:c=>c.dataset.label+': '+nf1(c.raw)+' prendas/venta'}}},
+      scales:{y:{...gridOpts(),ticks:{callback:v=>nf1(v),color:'#6b7aa0',font:{weight:'600'}}},x:gridOpts()}}});
+  }
+}
+let _cv;function ventasCtx(){_cv=document.getElementById('c-ventas').getContext('2d');return _cv;}
+function ctx(id){return document.getElementById(id).getContext('2d');}
+
+function lineOpts(unit,extraFn){return {responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+  plugins:{legend:{position:'top',labels:{usePointStyle:true,pointStyle:'circle',font:{weight:'700',size:15},padding:20}},
+    tooltip:{...tip,callbacks:{
+      title:items=>meses[items[0].dataIndex]+((items[0].dataIndex===OCT_IDX)?'  (parcial)':''),
+      label:c=>c.dataset.label+': '+(c.raw==null?'—':nf(c.raw)),
+      afterBody:items=>extraFn(items[0].dataIndex)
+    }}},
+  scales:{y:{...gridOpts(),ticks:{callback:v=>nf(v),color:'#6b7aa0',font:{weight:'600'}}},x:gridOpts()}};}
+
+function barOpts(unit,extraFn){return {responsive:true,maintainAspectRatio:false,
+  plugins:{legend:{position:'top',labels:{usePointStyle:true,font:{weight:'700',size:15},padding:18}},
+    tooltip:{...tip,callbacks:{label:c=>c.dataset.label+': '+nf(c.raw),afterBody:items=>extraFn(items[0].dataIndex)}}},
+  scales:{y:{...gridOpts(),ticks:{callback:v=>nf(v),color:'#6b7aa0',font:{weight:'600'}}},x:gridOpts()}};}
+
+function monthBars(canvasId,V,P,color,ndays){
+  const labels=Array.from({length:ndays},(_,i)=>i+1);
+  new Chart(ctx(canvasId),{type:'bar',data:{labels,datasets:[{label:'Ventas',data:V.slice(0,ndays),backgroundColor:color,borderRadius:5,maxBarThickness:26}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+      tooltip:{...tip,callbacks:{title:it=>'Día '+it[0].label,label:c=>nf(c.raw)+' ventas',afterBody:it=>['Prendas: '+nf(P[it[0].dataIndex]||0)]}}},
+      scales:{y:{...gridOpts(),ticks:{callback:v=>nf(v),color:'#6b7aa0',font:{weight:'600'}}},x:{...gridOpts(),title:{display:true,text:'Día del mes',color:'#6b7aa0',font:{weight:'700'}}}}}});
+}
+const chartBySlide={2:'c-ventas',3:'c-prendas',4:'c-crecimiento',5:'c-enesep',6:'c-acumulada',8:'c-eficiencia',14:'c-daily25',15:'c-daily26',17:'c-oct25det',18:'c-nov25det',19:'c-dic25det'};
+
+/* ===================== NAVEGACIÓN ===================== */
+const slides=[...document.querySelectorAll('.slide')];
+const TOTAL=slides.length;
+let cur=0;
+document.getElementById('cTot').textContent=TOTAL;
+const dotsEl=document.getElementById('dots');
+slides.forEach((_,i)=>{const b=document.createElement('button');b.className='dot'+(i===0?' on':'');b.onclick=()=>go(i);dotsEl.appendChild(b);});
+const dotEls=[...dotsEl.children];
+
+function go(n){
+  n=Math.max(0,Math.min(TOTAL-1,n));
+  slides[cur].classList.remove('active');
+  dotEls[cur].classList.remove('on');
+  cur=n;
+  slides[cur].classList.add('active');
+  dotEls[cur].classList.add('on');
+  document.getElementById('cNow').textContent=cur+1;
+  document.getElementById('prog').style.width=((cur+1)/TOTAL*100)+'%';
+  if(chartBySlide[cur]) setTimeout(()=>buildChart(chartBySlide[cur]),120);
+  if(cur===13){ setTimeout(()=>{document.getElementById('m-bar').style.width=Math.min(100,avance)+'%';document.getElementById('m-bar').textContent=nf1(avance)+'%';},250);}
+}
+document.getElementById('prog').style.width=(1/TOTAL*100)+'%';
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' '){e.preventDefault();go(cur+1);}
+  else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();go(cur-1);}
+  else if(e.key==='Home'){go(0);} else if(e.key==='End'){go(TOTAL-1);}
+  else if(e.key==='f'||e.key==='F'){toggleFs();}
+});
+function toggleFs(){if(!document.fullscreenElement)document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();else document.exitFullscreen&&document.exitFullscreen();}
+
+// swipe táctil
+let tx=0;
+document.addEventListener('touchstart',e=>tx=e.touches[0].clientX,{passive:true});
+document.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-tx;if(Math.abs(dx)>60)go(cur+(dx<0?1:-1));},{passive:true});
+
+window.addEventListener('resize',()=>{/* Chart.js responsive ajusta solo */});
+</script>
+</body>
+</html>

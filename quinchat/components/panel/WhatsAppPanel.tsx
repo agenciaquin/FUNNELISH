@@ -5,6 +5,7 @@ import Sidebar, { type PanelSection } from './Sidebar';
 import { confirmarSalida, haySinGuardar } from '@/lib/panel/cambios';
 import ConversationList from './ConversationList';
 import ChatArea from './ChatArea';
+import ClienteInfo from './ClienteInfo';
 import MonederoFlotante from './MonederoFlotante';
 import { createBrowserSupabaseClient } from '@/lib/supabase';
 import type { Conversation, Message } from '@/lib/panel/types';
@@ -27,6 +28,9 @@ const EmbudosPanel       = dynamic(() => import('./EmbudosPanel'),        { ssr:
 const PedidosPanel       = dynamic(() => import('./PedidosPanel'),        { ssr: false });
 const SeguimientoPanel   = dynamic(() => import('./SeguimientoPanel'),    { ssr: false });
 const RemarketingPanel   = dynamic(() => import('./RemarketingPanel'),     { ssr: false });
+const PromocionesPanel   = dynamic(() => import('./PromocionesPanel'),     { ssr: false });
+const VendedoresLinksPanel = dynamic(() => import('./VendedoresLinksPanel'), { ssr: false });
+const ColeccionesPanel   = dynamic(() => import('./ColeccionesPanel'),       { ssr: false });
 const VentasPanel        = dynamic(() => import('./VentasPanel'),         { ssr: false });
 const MetasPanel         = dynamic(() => import('./MetasPanel'),          { ssr: false });
 const VendedoresPanel    = dynamic(() => import('./VendedoresPanel'),     { ssr: false });
@@ -72,6 +76,7 @@ export default function WhatsAppPanel({ userName }: Props) {
   const [messages, setMessages]           = useState<Message[]>([]);
   const [loading, setLoading]             = useState(true);
   const [mobileSidebar, setMobileSidebar] = useState(false); // menú lateral en móvil
+  const [showInfo, setShowInfo]           = useState(false);  // ficha del cliente (columna derecha, desplegable)
   const [refrescando, setRefrescando]     = useState(false);
   // Cambiar este número fuerza a recrear las suscripciones en vivo
   const [conexion, setConexion]           = useState(0);
@@ -354,7 +359,16 @@ export default function WhatsAppPanel({ userName }: Props) {
             onMessageSent={(msg) => setMessages(prev => [...prev, msg])}
             onConversationsUpdate={loadConversations}
             onBack={() => { setSelectedId(null); setMessages([]); }}
+            infoVisible={showInfo}
+            onToggleInfo={() => setShowInfo(v => !v)}
           />
+          {selectedConversation && showInfo && (
+            <ClienteInfo
+              key={selectedConversation.id}
+              conversation={selectedConversation}
+              onClose={() => setShowInfo(false)}
+            />
+          )}
         </>
       )}
 
@@ -387,6 +401,9 @@ export default function WhatsAppPanel({ userName }: Props) {
         />
       )}
       {activeSection === 'remarketing'   && <RemarketingPanel />}
+      {activeSection === 'promociones'   && <PromocionesPanel />}
+      {activeSection === 'vendedores_links' && <VendedoresLinksPanel />}
+      {activeSection === 'colecciones'   && <ColeccionesPanel />}
       {activeSection === 'entrenamiento' && <EntrenamientoPanel />}
       {activeSection === 'plantillas'    && <PlantillasPanel />}
       {activeSection === 'disparadores'  && <DisparadoresPanel />}

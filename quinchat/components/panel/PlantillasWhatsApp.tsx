@@ -30,6 +30,8 @@ export default function PlantillasWhatsApp() {
   const [categoria, setCategoria] = useState<'MARKETING' | 'UTILITY'>('MARKETING');
   const [cuerpo, setCuerpo]       = useState('');
   const [pie, setPie]             = useState('');
+  const [botonTexto, setBotonTexto] = useState('');
+  const [botonUrl, setBotonUrl]     = useState('');
   const [imagen, setImagen]       = useState<{ base64: string; mime: string; nombre: string } | null>(null);
   const [ejemplos, setEjemplos]   = useState<string[]>([]);
   const [guardando, setGuardando] = useState(false);
@@ -73,6 +75,7 @@ export default function PlantillasWhatsApp() {
 
   function limpiar() {
     setNombre(''); setCuerpo(''); setPie(''); setImagen(null);
+    setBotonTexto(''); setBotonUrl('');
     setEjemplos([]); setCategoria('MARKETING'); setAviso(null);
   }
 
@@ -89,6 +92,7 @@ export default function PlantillasWhatsApp() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nombre, categoria, idioma: 'es', cuerpo, pie, ejemplos,
+          botonUrl: botonUrl.trim() ? { texto: botonTexto.trim() || 'Ver más', url: botonUrl.trim() } : null,
           imagenBase64: imagen?.base64, imagenMime: imagen?.mime,
         }),
       });
@@ -207,6 +211,15 @@ export default function PlantillasWhatsApp() {
               <label className="block text-xs font-semibold text-gray-400 mb-1.5">Pie de página (opcional)</label>
               <input value={pie} onChange={e => setPie(e.target.value)} maxLength={60} placeholder="Klixmant — Moda para motociclistas" className={inputCls} />
             </div>
+
+            <div className="rounded-lg border border-[#252525] p-3">
+              <label className="block text-xs font-semibold text-gray-400 mb-1.5">🔘 Botón de enlace (opcional)</label>
+              <p className="text-[10px] text-gray-600 mb-2">Un botón que abre tu página. Ideal para la promo. Déjalo vacío si no lo quieres.</p>
+              <div className="grid grid-cols-2 gap-2">
+                <input value={botonTexto} onChange={e => setBotonTexto(e.target.value)} maxLength={25} placeholder="Texto: Ver promociones" className={inputCls} />
+                <input value={botonUrl} onChange={e => setBotonUrl(e.target.value)} placeholder="https://pedido.klixmant.shop/promos" className={inputCls} />
+              </div>
+            </div>
           </div>
 
           <div>
@@ -225,6 +238,11 @@ export default function PlantillasWhatsApp() {
                   </p>
                   {pie && <p className="text-[11px] text-[#8696A0] mt-1.5">{pie}</p>}
                 </div>
+                {botonUrl.trim() && (
+                  <div className="border-t border-[#E9E9E9] text-center py-2 text-[13px] font-semibold text-[#00A5F4]">
+                    🔗 {botonTexto.trim() || 'Ver más'}
+                  </div>
+                )}
               </div>
             </div>
 

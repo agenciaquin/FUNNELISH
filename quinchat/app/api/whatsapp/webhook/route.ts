@@ -367,9 +367,12 @@ async function marcarHumanoYNotificar(supabase: any, from: string) {
   await supabase.from('conversations').update({ bot_enabled: false }).eq('id', from);
   if (!esNuevo) return; // ya estaba marcado → no repetir aviso
   const tel = from.replace(/^57/, '');
-  const cliente = conv?.contact_name && conv.contact_name !== 'Desconocido'
-    ? `${conv.contact_name} (${tel})` : tel;
-  const aviso = `🔔 El cliente ${cliente} necesita de tu asistencia para confirmar la compra.`;
+  const nombre = conv?.contact_name && conv.contact_name !== 'Desconocido'
+    ? conv.contact_name : 'El cliente';
+  const aviso =
+    `🔔 *LILIBETH*\n` +
+    `El cliente *${nombre}* (cel: ${tel}) NECESITA SOPORTE HUMANO.\n` +
+    `Atiéndelo de forma rápida para no perder la venta 🙏`;
   await notificarSoporte(aviso);
 }
 
@@ -1307,9 +1310,13 @@ export async function POST(req: NextRequest) {
     // Así evitamos que el pedido quede pendiente y el remarketing lo vuelva a pinchar.
     if (!isConfirmo) {
       const t = text.trim().toLowerCase();
-      const afirmativo =
-        /\b(s[ií]|claro|correcto|listo|dale|okay|ok|perfecto|as[ií] est[aá] bien|as[ií] esta bien|as[ií] es|todo bien|todo correcto|est[aá] bien|de una|obvio|confirmado|as[ií] qued[oó] bien)\b/.test(t)
-        && !/\bno\b/.test(t);
+      // Un mensaje que es SOLO emoji afirmativo (👍 👌 ✅ 🙏 💚 🤝) cuenta como "sí".
+      // Muchos clientes confirman con el pulgar arriba y antes quedaba sin marcar.
+      const soloEmojiAfirm = t.length > 0
+        && /^[\s👍👌🙏✅☑️✔️💚💚🤝🆗👍🏻👍🏼👍🏽👍🏾👍🏿👌🏻👌🏼👌🏽👌🏾👌🏿]+$/u.test(text.trim());
+      const afirmativo = soloEmojiAfirm
+        || (/\b(s[ií]|claro|correcto|listo|dale|okay|ok|perfecto|as[ií] est[aá] bien|as[ií] esta bien|as[ií] es|todo bien|todo correcto|est[aá] bien|de una|obvio|confirmado|as[ií] qued[oó] bien)\b/.test(t)
+            && !/\bno\b/.test(t));
       if (afirmativo) {
         const { data: ultBot } = await supabase.from('messages')
           .select('content').eq('conversation_id', from).in('role', ['assistant', 'agent'])
@@ -1363,13 +1370,28 @@ export async function POST(req: NextRequest) {
         };
 
         if (yaPreguntamos) {
-          const quiereAmbos = /\b(los dos|las dos|ambos|ambas|los 2|las 2|todo|todos|si.*dos)\b/i.test(textLower);
+          const quiereAmbos = /\b(los dos|las dos|ambos|ambas|los 2|las 2|quiero (?:los )?2|todo|todos|s[ií].*dos)\b/i.test(textLower);
 
-          // ¿Mencionó uno en concreto? (por color o por talla)
-          const elegido = lista.find((p: any) => {
-            const palabras = String(p.producto ?? '').toUpperCase().split(/\s+/).filter((w: string) => w.length >= 4);
-            return palabras.some((w: string) => textLower.includes(w.toLowerCase()));
-          });
+          // Detectar cuál pedido eligió: 1) por talla mencionada (si solo uno la tiene),
+          // 2) por número (1/2), 3) por palabra del producto (color/nombre distinto).
+          let elegido: any = null;
+          const up = textLower.toUpperCase();
+          const tm = up.match(/\b(XXXXL|XXXL|XXL|4XL|3XL|2XL|XL|XS|S|M|L)\b/);
+          if (tm) {
+            const t = ({ '2XL': 'XXL', '3XL': 'XXXL', '4XL': 'XXXXL' } as Record<string, string>)[tm[1]] ?? tm[1];
+            const cands = lista.filter((p: any) => String(p.talla ?? '').toUpperCase().includes(t));
+            if (cands.length === 1) elegido = cands[0];
+          }
+          if (!elegido) {
+            const nm = textLower.match(/\b([12])\b/);
+            if (nm) { const i = parseInt(nm[1], 10) - 1; if (i >= 0 && i < lista.length) elegido = lista[i]; }
+          }
+          if (!elegido) {
+            elegido = lista.find((p: any) => {
+              const palabras = String(p.producto ?? '').toUpperCase().split(/\s+/).filter((w: string) => w.length >= 4);
+              return palabras.some((w: string) => textLower.includes(w.toLowerCase()));
+            });
+          }
 
           if (quiereAmbos) {
             const incompletos = lista.filter((p: any) => faltantesDe(p).length > 0);
@@ -1412,7 +1434,15 @@ export async function POST(req: NextRequest) {
             continue;
           }
 
-          // No se entendió la respuesta → volver a preguntar de forma corta
+          // No se entendió. Si ya lo habíamos repetido antes, NO insistir: pasar a humano.
+          const { count: repes } = await supabase.from('messages')
+            .select('id', { count: 'exact', head: true })
+            .eq('conversation_id', from).in('role', ['assistant', 'agent'])
+            .ilike('content', '%no te entend%');
+          if ((repes ?? 0) >= 1) {
+            await marcarHumanoYNotificar(supabase, from);
+            continue;
+          }
           const opciones = lista.map((p: any, i: number) => `${i + 1}️⃣ *${p.producto}*${p.talla && p.talla !== 'Por confirmar' ? ` — talla ${p.talla}` : ''}`).join('\n');
           const msg = `Disculpa, no te entendí 😅 Como tienes dos pedidos, dime por favor: ¿quieres *los dos* o solo uno?\n\n${opciones}`;
           const w = await sendTextMessage(from, msg);
@@ -1600,9 +1630,11 @@ export async function POST(req: NextRequest) {
         // ── 1.b El cliente CORRIGE la dirección después de haber confirmado ────
         // Debe guardarse en BD y avisarse al admin: si no, se despacha a la vieja.
         const dirNuevaConf = isCompleteAddress(text);
+        // Dato de dirección suelto: torre, apto, barrio, conjunto, ciudadela, etc.
+        // NO exige número (un conjunto/barrio puede ser solo nombre, ej "Ciudadela Confacasanare").
         const dirParcialConf = !dirNuevaConf &&
-          /\b(calle|carrera|diagonal|transversal|avenida|cl|cra|cr|kr|diag|av|cll|conjunto|conj|edificio|manzana|barrio|torre|apto|apartamento|interior|vereda)\b/i.test(text) &&
-          /\d/.test(text);
+          text.trim().length >= 3 && text.trim().length < 90 &&
+          /\b(calle|carrera|diagonal|transversal|avenida|cl|cra|cr|kr|diag|av|cll|conjunto|conj|edificio|edif|manzana|mz|bloque|blq|torre|apto|apartamento|apartaestudio|interior|int|casa|barrio|urbanizaci[oó]n|urb|ciudadela|vereda|kil[oó]metro|km|cuadra|etapa|lote)\b/i.test(text);
 
         if ((dirNuevaConf || dirParcialConf) && confirmedPedido.id) {
           const base  = (confirmedPedido.direccion ?? '').trim();
@@ -1753,7 +1785,10 @@ export async function POST(req: NextRequest) {
             const currentCount = currentProd.split('+').length;
             const newCount = Math.min(currentCount + 1, 3);
             const combinedProd = `${currentProd.trim()} + ${matchAdd.nombre_producto}`;
-            const promoValor = PROMO_PRICES_CONF[newCount] ?? '$325.000';
+            // Usar el valor REAL del pedido (cada embudo tiene su precio); nunca pisarlo
+            // con un precio fijo del código para no cambiarle el valor al cliente.
+            const valorConfReal = String(confirmedPedido.valor ?? '').trim();
+            const promoValor = /\d/.test(valorConfReal) ? valorConfReal : (PROMO_PRICES_CONF[newCount] ?? '$325.000');
 
             await updateProductoConf(combinedProd, promoValor);
 
@@ -1794,9 +1829,8 @@ export async function POST(req: NextRequest) {
           'está mal', 'esta mal', 'equivocad', 'esa no', 'ese no',
         ].some(w => textLower.includes(w));
         if (quejaFoto) {
-          const msg = 'Con mucho gusto 🙌 te paso con una asesora para enviarte exactamente lo que necesitas y dejar tu pedido perfecto 😊';
-          const wamid = await sendTextMessage(from, msg);
-          await saveAndSend(supabase, from, msg, 'text', wamid);
+          // Handoff SILENCIOSO: no se le dice nada al cliente; solo se apaga el bot
+          // y se alerta a Lilibeth para que lo atienda rápido.
           await marcarHumanoYNotificar(supabase, from);
           continue;
         }
@@ -1941,6 +1975,7 @@ export async function POST(req: NextRequest) {
           `⚠️ MUY IMPORTANTE — CUANDO CONFIRMES UN CAMBIO del pedido (color, talla, dirección, ciudad o correo), además de responderle al cliente, termina tu mensaje con una línea aparte EXACTAMENTE así (es para el sistema, el cliente NO la ve):\n` +
           `[[ACTUALIZAR]]{"producto":"NOMBRE DEL PRODUCTO CON EL COLOR NUEVO","talla":"","direccion":"","ciudad":"","departamento":"","correo":""}\n` +
           `Incluye SOLO los campos que cambiaron (los demás déjalos en ""). Si cambió el color, en "producto" pon el nombre del producto con el color nuevo (ej: "ESCUDERIA RED BULL - ROJO"). Sin esa línea, el cambio NO queda registrado y despachan el pedido equivocado.\n` +
+          `📍 DIRECCIÓN POR PARTES — OBLIGATORIO: si el cliente completa o corrige su dirección (aunque sea por pedazos: torre, apartamento, casa, barrio, conjunto, ciudadela…), ARMA la dirección COMPLETA juntando lo que ya tenía + lo nuevo, y ponla en "direccion" del [[ACTUALIZAR]]. Si en tu mensaje le muestras al cliente la dirección final (ej. "Recibirás tu pedido en: ..."), esa MISMA dirección completa DEBE ir en [[ACTUALIZAR]] "direccion". NUNCA le muestres una dirección corregida sin guardarla con [[ACTUALIZAR]].\n` +
           `Si el cliente pide la foto de su producto: responde "En un momento te la enviamos 📸" — NUNCA digas que no puedes enviar fotos.\n` +
           `Si el cliente quiere ver catálogo de otros productos completamente diferentes: dile que lo pasarás con un asesor.\n` +
           `Sé amable, breve y tranquilizador.\n\n` +
@@ -2408,11 +2443,15 @@ export async function POST(req: NextRequest) {
           const finalItems = matchedItems.slice(0, Math.max(itemCount, matchedItems.length > 3 ? 3 : matchedItems.length));
           const realCount = Math.min(finalItems.length, 3);
           const combinedProduct = finalItems.map(i => i.nombre_producto).join(' + ');
-          const promoValue = PROMO_PRICES[realCount] ?? PROMO_PRICES[3];
+          // El precio REAL es el que trae el pedido (cada embudo tiene su propio precio
+          // de pack). NUNCA lo pisamos con un precio fijo del código: eso hacía que el
+          // bot cambiara el valor en plena conversación (ej. $164.900 → $219.900).
+          const valorPedido = String(pendingPedido.valor ?? '').trim();
+          const promoValue = /\d/.test(valorPedido) ? valorPedido : (PROMO_PRICES[realCount] ?? PROMO_PRICES[3]);
 
-          // Actualizar pedido en DB con combo + precio promo
+          // Actualizar SOLO el producto combinado; el valor real del pedido se conserva.
           await supabase.from('clientes_funnelish')
-            .update({ producto: combinedProduct, valor: promoValue })
+            .update({ producto: combinedProduct })
             .eq('id', pendingPedido.id);
 
           // Enviar foto de cada prenda
@@ -2496,8 +2535,10 @@ export async function POST(req: NextRequest) {
         const currentCount = (pendingPedido.producto ?? '').split('+').length;
         const newCount = Math.min(currentCount + 1, 3);
         const combinedProd = `${pendingPedido.producto.trim()} + ${matchPend.nombre_producto}`;
-        const promoValor = PROMO_PRICES[newCount] ?? '$325.000';
-        await supabase.from('clientes_funnelish').update({ producto: combinedProd, valor: promoValor }).eq('id', pendingPedido.id);
+        // Precio REAL del pedido (no un fijo del código): así el bot no cambia el valor.
+        const valorPendReal = String(pendingPedido.valor ?? '').trim();
+        const promoValor = /\d/.test(valorPendReal) ? valorPendReal : (PROMO_PRICES[newCount] ?? '$325.000');
+        await supabase.from('clientes_funnelish').update({ producto: combinedProd }).eq('id', pendingPedido.id);
         if (matchPend.url_imagen && matchPend.url_imagen !== FALLBACK_IMAGE) {
           const imgWamid = await sendImageByUrl(from, matchPend.url_imagen, matchPend.nombre_producto);
           await saveAndSend(supabase, from, matchPend.url_imagen, 'image', imgWamid);
@@ -2536,11 +2577,8 @@ export async function POST(req: NextRequest) {
     ].some(w => textLower.includes(w));
 
     if (marcaEsDistinta || insisteCorreccion) {
-      const msg = marcaEsDistinta
-        ? `¡Claro! 😊 Para dejártelo en *${(marcaMencionada ?? '').toUpperCase()}* te paso con un asesor y te lo confirmamos exacto en un momentico 🙌`
-        : `Disculpa la confusión 🙏 te paso con un asesor para dejar tu pedido tal cual lo quieres 😊`;
-      const wamid = await sendTextMessage(from, msg);
-      await saveAndSend(supabase, from, msg, 'text', wamid);
+      // Handoff SILENCIOSO: no se le avisa nada al cliente (para no revelar que el
+      // bot se apaga). Solo se apaga el bot y se alerta a Lilibeth en su chat.
       await marcarHumanoYNotificar(supabase, from);
       continue;
     }
@@ -2591,10 +2629,8 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        // No hay colores en DB para esta familia (puede ser otra marca) → asesor
-        const msg = `Para cambiar el modelo, te paso con un asesor 😊 Un momento.`;
-        const wamid = await sendTextMessage(from, msg);
-        await saveAndSend(supabase, from, msg, 'text', wamid);
+        // No hay colores en DB para esta familia (puede ser otra marca) → asesor.
+        // Handoff silencioso: sin mensaje al cliente, solo aviso a Lilibeth.
         await marcarHumanoYNotificar(supabase, from);
         continue;
       }
@@ -2782,6 +2818,7 @@ export async function POST(req: NextRequest) {
     const sysPrompt =
       `Eres Josué de Klixmant. Hablas con un cliente que ya tiene un pedido activo.\n` +
       `Pedido: *${pendingPedido.producto}* — Valor: *${pendingPedido.valor}*\n` +
+      `💰 VALOR FIJO: el valor a pagar de este pedido es EXACTAMENTE *${pendingPedido.valor}*. NUNCA lo cambies, ni lo subas ni lo bajes, ni inventes precios de promo (nada de "2 prendas $219.900" u otros montos). Si el cliente pregunta el precio o dice que decía otro valor, responde SIEMPRE con *${pendingPedido.valor}* — ese es el precio real de su pedido.\n` +
       (pendingPedido.abono_recibido
         ? `IMPORTANTE: el cliente YA ENVIÓ el comprobante del abono. NUNCA se lo vuelvas a pedir ni digas que quedas pendiente de él.\n`
         : '') +

@@ -25,7 +25,7 @@ export const maxDuration = 60;
  */
 
 const H = (n: number) => n * 3_600_000;
-const SKIP = ['VENTA REALIZADA', 'ANULADO EN EFFI', 'PEDIDO PROGRAMADO', 'PEDIDO CANCELADO', 'HUMANO', 'VENDEDOR', 'ABONO POR VERIFICAR'];
+const SKIP = ['VENTA REALIZADA', 'ANULADO EN EFFI', 'PEDIDO PROGRAMADO', 'PEDIDO CANCELADO', 'HUMANO', 'VENDEDOR', 'ABONO POR VERIFICAR', 'NO ENVIAR RECORDATORIO'];
 const SILENCIO_1 = 3;   // horas de silencio para el 1er mensaje
 const ESPERA_2   = 6;   // horas tras el 1º para el 2º
 const MAX_INTENTOS = 2;

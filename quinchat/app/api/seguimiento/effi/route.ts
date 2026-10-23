@@ -5,13 +5,24 @@ export const dynamic = 'force-dynamic';
 
 const ESTADOS_VALIDOS = ['entregada', 'en_camino', 'devuelta', 'novedad', 'anulada'];
 
-/** Devuelve todas las guías de Effi guardadas (teléfono → estado + flete). */
+/** Devuelve TODAS las guías de Effi guardadas (teléfono → estado + flete).
+ *  Se pagina de a 1000 porque Supabase devuelve máximo 1000 filas por consulta;
+ *  si hay más guías que eso, sin paginar el cruce dejaba ventas como "sin subir"
+ *  aunque sí estuvieran en Effi. */
 export async function GET() {
   const supabase = createServerSupabaseClient();
-  const { data, error } = await supabase
-    .from('effi_guias').select('telefono, estado, flete, motivo');
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ guias: data ?? [] });
+  const todas: any[] = [];
+  const PAGE = 1000;
+  for (let desde = 0; desde < 100000; desde += PAGE) {
+    const { data, error } = await supabase
+      .from('effi_guias').select('telefono, estado, flete, motivo')
+      .range(desde, desde + PAGE - 1);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!data || data.length === 0) break;
+    todas.push(...data);
+    if (data.length < PAGE) break;
+  }
+  return NextResponse.json({ guias: todas });
 }
 
 /**

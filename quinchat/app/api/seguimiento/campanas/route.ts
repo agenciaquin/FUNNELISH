@@ -54,13 +54,26 @@ export async function GET(req: NextRequest) {
     }
   } catch { /* sin Effi, se muestran las métricas sin entrega */ }
 
+  // ── Prendas vendidas por teléfono (de los pedidos confirmados) ───────────────
+  const prendasPorTel = new Map<string, number>();
+  try {
+    let pq = supabase.from('clientes_funnelish').select('telefono, cantidad').eq('confirmado', true);
+    if (desde) pq = pq.gte('created_at', `${desde}T00:00:00`);
+    if (hasta) pq = pq.lte('created_at', `${hasta}T23:59:59`);
+    const { data: peds } = await pq.limit(10000);
+    for (const p of peds ?? []) {
+      const t = String((p as any).telefono ?? '').replace(/\D/g, '').slice(-10);
+      if (t.length === 10) prendasPorTel.set(t, (prendasPorTel.get(t) ?? 0) + (Number((p as any).cantidad) || 1));
+    }
+  } catch { /* sin pedidos, prendas = 0 */ }
+
   // Agrupar por anuncio_id
-  type Grupo = { mensajes: number; ventas: number; entregadas: number; devueltas: number; enCamino: number; flete: number };
+  type Grupo = { mensajes: number; ventas: number; prendas: number; entregadas: number; devueltas: number; enCamino: number; flete: number };
   const mapa = new Map<string, Grupo>();
   for (const c of data ?? []) {
     const id = String((c as any).anuncio_id ?? '').trim();
     if (!id) continue;
-    if (!mapa.has(id)) mapa.set(id, { mensajes: 0, ventas: 0, entregadas: 0, devueltas: 0, enCamino: 0, flete: 0 });
+    if (!mapa.has(id)) mapa.set(id, { mensajes: 0, ventas: 0, prendas: 0, entregadas: 0, devueltas: 0, enCamino: 0, flete: 0 });
     const g = mapa.get(id)!;
     g.mensajes++;
     const esVenta = String((c as any).label ?? '').toUpperCase().includes('VENTA REALIZADA');
@@ -68,6 +81,7 @@ export async function GET(req: NextRequest) {
       g.ventas++;
       // Cruce con Effi por el teléfono (el id de la conversación es 57 + teléfono)
       const tel = String((c as any).id ?? '').replace(/^57/, '').slice(-10);
+      g.prendas += prendasPorTel.get(tel) ?? 1; // si no cruza, cuenta al menos 1 prenda
       const ef = effiPorTel.get(tel);
       if (ef) {
         g.flete += ef.flete;
@@ -93,6 +107,7 @@ export async function GET(req: NextRequest) {
         producto: nombrePorId.get(id) ?? '—',
         mensajes: g.mensajes,
         ventas: g.ventas,
+        prendas: g.prendas,
         conversion: g.mensajes ? Math.round((g.ventas / g.mensajes) * 100) : 0,
         // Datos de Meta (null si no hay token o el anuncio no tiene gasto en el rango)
         estado: ad?.estado ?? null,
@@ -128,10 +143,12 @@ export async function GET(req: NextRequest) {
   // Totales para la cabecera del informe
   const totalGasto = campanas.reduce((s, c) => s + (c.gasto ?? 0), 0);
   const totalVentas = campanas.reduce((s, c) => s + c.ventas, 0);
+  const totalPrendas = campanas.reduce((s, c) => s + c.prendas, 0);
   const totalMensajes = campanas.reduce((s, c) => s + c.mensajes, 0);
   const resumen = {
     gasto: totalGasto,
     ventas: totalVentas,
+    prendas: totalPrendas,
     mensajes: totalMensajes,
     costoPorVenta: totalVentas > 0 ? Math.round(totalGasto / totalVentas) : 0,
     costoPorMensaje: totalMensajes > 0 ? Math.round(totalGasto / totalMensajes) : 0,

@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maqueta · Pedidos y estadísticas · QUINCHAT</title>
+<style>
+  :root{
+    --teal:#0ea5a0; --teal-d:#0b8a86; --teal-l:#e6f7f5;
+    --blue:#2f80ed; --green:#22b07d; --orange:#f59e0b; --red:#ef4444;
+    --ink:#0f2e2c; --muted:#6b8683; --line:#e7edec; --bg:#f3f7f6; --card:#fff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);padding:22px;font-size:14px}
+  .wrap{max-width:1280px;margin:0 auto}
+  .tagmaqueta{display:inline-block;background:#fff4d6;color:#9a6a00;border:1px solid #f0d38a;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:600;margin-bottom:14px}
+  h1{font-size:22px;font-weight:700}
+  .sub{color:var(--muted);font-size:13px;margin-top:2px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 3px rgba(16,46,44,.05)}
+  /* ---- Fila 1: filtros ---- */
+  .bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:14px 0 18px}
+  .filters{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .pill{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;display:flex;align-items:center;gap:8px;color:#30514e}
+  .pill b{color:var(--ink)}
+  .quick{display:flex;gap:6px}
+  .quick span{padding:6px 11px;border-radius:8px;border:1px solid var(--line);background:#fff;font-size:12px;cursor:default}
+  .quick .on{background:var(--teal);color:#fff;border-color:var(--teal)}
+  .btn{background:var(--teal);color:#fff;border:none;border-radius:10px;padding:9px 16px;font-weight:600;font-size:13px}
+  .upd{font-size:11px;color:var(--muted);text-align:right;margin-top:4px}
+  /* ---- Fila 2: KPIs ---- */
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+  .kpi{padding:14px}
+  .kpi .top{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px;font-weight:600}
+  .kpi .ico{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:14px}
+  .kpi .val{font-size:24px;font-weight:800;margin:6px 0 2px;letter-spacing:-.5px}
+  .delta{font-size:12px;font-weight:700}
+  .up{color:var(--green)} .down{color:var(--red)}
+  .spark{margin-top:8px}
+  .mini{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+  .mini span{font-size:10.5px;color:var(--muted);display:flex;align-items:center;gap:3px}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+  /* ---- grids ---- */
+  .row{display:grid;gap:12px;margin-top:12px}
+  .r-2{grid-template-columns:1.5fr 1fr}
+  .r-2b{grid-template-columns:1fr 1fr}
+  .panel{padding:16px}
+  .panel h3{font-size:15px;font-weight:700;display:flex;align-items:center;gap:7px}
+  .panel .ph{color:var(--muted);font-size:12px;margin:2px 0 12px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.3px}
+  td.num,th.num{text-align:right}
+  .chip{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700}
+  .c-funne{background:#eef4ff;color:#2f80ed}
+  .c-embu{background:var(--teal-l);color:var(--teal-d)}
+  .c-wa{background:#e9f9f0;color:#1e9e63}
+  .c-conf{background:#e9f9f0;color:#1e9e63}
+  .c-pend{background:#fff3df;color:#b4770a}
+  .legend{display:flex;gap:14px;margin-top:10px;font-size:11.5px;color:var(--muted)}
+  .legend b{color:var(--ink)}
+  .note{font-size:11px;color:var(--muted);margin-top:10px;background:#fafcfc;border:1px dashed var(--line);border-radius:10px;padding:8px 10px}
+  /* calendario */
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:8px}
+  .cal .h{font-size:10px;color:var(--muted);text-align:center;font-weight:600}
+  .cal .d{border:1px solid var(--line);border-radius:8px;min-height:46px;padding:5px;font-size:11px;position:relative}
+  .cal .d .n{font-weight:700;font-size:11px}
+  .cal .d .q{font-size:10px;color:var(--teal-d);font-weight:700}
+  .cal .d.sel{border-color:var(--teal);background:var(--teal-l)}
+  .cal .d.out{opacity:.35}
+  .cdots{position:absolute;bottom:5px;left:5px;display:flex;gap:3px}
+  .footer-note{margin-top:16px;font-size:11.5px;color:var(--muted);text-align:center}
+  @media(max-width:1000px){.kpis{grid-template-columns:repeat(3,1fr)}.r-2,.r-2b{grid-template-columns:1fr}}
+  @media(max-width:620px){.kpis{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <span class="tagmaqueta">● MAQUETA — datos de ejemplo (basados en tus cifras reales). Nada de esto está conectado a producción.</span>
+
+  <!-- FILA 1 -->
+  <div>
+    <h1>Pedidos y estadísticas</h1>
+    <div class="sub">Analiza tus ventas, confirmaciones y resultados por canal.</div>
+  </div>
+
+  <div class="bar">
+    <div class="filters">
+      <span class="pill">📅 <b>01 oct – 10 oct 2026</b></span>
+      <div class="quick">
+        <span>Hoy</span><span>Ayer</span><span class="on">7 días</span><span>15 días</span><span>30 días</span><span>Este mes</span><span>Mes anterior</span><span>Personalizado</span>
+      </div>
+    </div>
+  </div>
+  <div class="bar" style="margin-top:-6px">
+    <div class="filters">
+      <span class="pill">Canal de venta: <b>Todos ▾</b></span>
+      <span class="pill">Fuente publicitaria: <b>Todas ▾</b></span>
+      <span class="pill">Campaña: <b>Todas ▾</b></span>
+      <span class="pill">Estado: <b>Todos ▾</b></span>
+    </div>
+    <div style="text-align:right">
+      <button class="btn">↻ Actualizar</button>
+      <div class="upd">Última actualización: 10/10/2026 14:32</div>
+    </div>
+  </div>
+
+  <!-- FILA 2 — KPIs -->
+  <div class="kpis">
+    <!-- recibidos -->
+    <div class="card kpi">
+      <div class="top"><span class="ico" style="background:#eef4ff;color:#2f80ed">📥</span>Pedidos recibidos</div>
+      <div class="val">29</div>
+      <div class="delta up">▲ +16% <span style="color:var(--muted);font-weight:500">vs 7 días previos</span></div>
+      <svg class="spark" width="100%" height="26" viewBox="0 0 120 26" preserveAspectRatio="none"><polyline fill="none" stroke="#2f80ed" stroke-width="2" points="0,18 20,14 40,16 60,8 80,12 100,6 120,10"/></svg>
+      <div class="mini"><span><i class="dot" style="background:#010101"></i>TikTok 18</span><span><i class="dot" style="background:#2f80ed"></i>Meta 9</span><span>Otros 2</span></div>
+    </div>
+    <!-- confirmados -->
+    <div class="card kpi">
+      <div class="top"><span class="ico" style="background:#e9f9f0;color:#1e9e63">✅</span>Confirmados</div>
+      <div class="val">19</div>
+      <div class="delta up">▲ +27% <span style="color:var(--muted);font-weight:500">vs 7 días previos</span></div>
+      <svg class="spark" width="100%" height="26" viewBox="0 0 120 26" preserveAspectRatio="none"><polyline fill="none" stroke="#22b07d" stroke-width="2" points="0,20 20,16 40,14 60,12 80,10 100,7 120,6"/></svg>
+      <div class="mini"><span><i class="dot" style="background:#010101"></i>12</span><span><i class="dot" style="background:#2f80ed"></i>6</span><span>Otros 1</span></div>
+    </div>
+    <!-- por confirmar -->
+    <div class="card kpi">
+      <div class="top"><span class="ico" style="background:#fff3df;color:#b4770a">⏳</span>Por confirmar</div>
+      <div class="val">8</div>
+      <div class="delta down">▼ -10% <span style="color:var(--muted);font-weight:500">vs 7 días previos</span></div>
+      <svg class="spark" width="100%" height="26" viewBox="0 0 120 26" preserveAspectRatio="none"><polyline fill="none" stroke="#f59e0b" stroke-width="2" points="0,8 20,10 40,9 60,12 80,11 100,14 120,13"/></svg>
+      <div class="mini"><span>TikTok 5</span><span>Meta 2</span><span>Otros 1</span></div>
+    </div>
+    <!-- cancelados -->
+    <div class="card kpi">
+      <div class="top"><span class="ico" style="background:#fdeaea;color:#d14343">✖</span>Cancelados</div>
+      <div class="val">2</div>
+      <div class="delta up">▼ -33% <span style="color:var(--muted);font-weight:500">vs 7 días previos</span></div>
+      <svg class="spark" width="100%" height="26" viewBox="0 0 120 26" preserveAspectRatio="none"><polyline fill="none" stroke="#ef4444" stroke-width="2" points="0,10 20,9 40,12 60,8 80,13 100,11 120,14"/></svg>
+      <div class="mini"><span>TikTok 1</span><span>Meta 1</span><span>Otros 0</span></div>
+    </div>
+    <!-- valor -->
+    <div class="card kpi">
+      <div class="top"><span class="ico" style="background:var(--teal-l);color:var(--teal-d)">💰</span>Valor vendido</div>
+      <div class="val" style="font-size:19px">$2.558.100</div>
+      <div class="delta up">▲ +21% <span style="color:var(--muted);font-weight:500">vs 7 días previos</span></div>
+      <svg class="spark" width="100%" height="26" viewBox="0 0 120 26" preserveAspectRatio="none"><polyline fill="none" stroke="#0ea5a0" stroke-width="2" points="0,18 20,13 40,15 60,9 80,11 100,5 120,7"/></svg>
+      <div class="mini"><span>confirmados · no es dinero recaudado</span></div>
+    </div>
+    <!-- tasa -->
+    <div class="card kpi">
+      <div class="top"><span class="ico" style="background:#eef4ff;color:#2f80ed">🎯</span>Tasa de confirmación</div>
+      <div class="val">65.5%</div>
+      <div class="delta up">▲ +8% <span style="color:var(--muted);font-weight:500">vs 7 días previos</span></div>
+      <div style="display:flex;justify-content:center;margin-top:4px">
+        <svg width="62" height="62" viewBox="0 0 42 42"><circle cx="21" cy="21" r="16" fill="none" stroke="#eef2f1" stroke-width="6"/><circle cx="21" cy="21" r="16" fill="none" stroke="#22b07d" stroke-width="6" stroke-dasharray="65.8 100" stroke-dashoffset="25" transform="rotate(-90 21 21)" stroke-linecap="round"/><text x="21" y="24" text-anchor="middle" font-size="9" font-weight="700" fill="#0f2e2c">65%</text></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- FILA 3 — evolución + canal -->
+  <div class="row r-2">
+    <div class="card panel">
+      <h3>📈 Evolución de pedidos</h3>
+      <div class="ph">Recibidos, confirmados, pendientes y cancelados en el período.</div>
+      <svg width="100%" height="200" viewBox="0 0 560 200" preserveAspectRatio="none">
+        <line x1="0" y1="160" x2="560" y2="160" stroke="#eef2f1"/>
+        <line x1="0" y1="110" x2="560" y2="110" stroke="#f4f7f6"/>
+        <line x1="0" y1="60" x2="560" y2="60" stroke="#f4f7f6"/>
+        <polyline fill="none" stroke="#2f80ed" stroke-width="2.5" points="10,70 100,40 190,55 280,62 370,48 460,35 550,42"/>
+        <polyline fill="none" stroke="#22b07d" stroke-width="2.5" points="10,120 100,100 190,112 280,118 370,95 460,88 550,96"/>
+        <polyline fill="none" stroke="#f59e0b" stroke-width="2.5" points="10,150 100,145 190,150 280,140 370,148 460,150 550,146"/>
+        <polyline fill="none" stroke="#ef4444" stroke-width="2.5" points="10,158 100,156 190,159 280,154 370,158 460,157 550,159"/>
+      </svg>
+      <div class="legend"><span>🔵 <b>Recibidos</b></span><span>🟢 <b>Confirmados</b></span><span>🟠 <b>Pendientes</b></span><span>🔴 <b>Cancelados</b></span></div>
+      <div class="ph" style="margin-top:6px">Vista por día · semana · mes · clic en un punto para filtrar.</div>
+    </div>
+
+    <div class="card panel">
+      <h3>🏷️ Pedidos por canal de venta</h3>
+      <div class="ph">Origen del pedido (3 canales que sí suman).</div>
+      <table>
+        <tr><th>Canal</th><th class="num">Total</th><th class="num">Conf.</th><th class="num">% Conf.</th></tr>
+        <tr><td><span class="chip c-funne">Funnelish</span></td><td class="num">12</td><td class="num">8</td><td class="num">66.7%</td></tr>
+        <tr><td><span class="chip c-embu">Embudos QuinChat</span></td><td class="num">9</td><td class="num">6</td><td class="num">66.7%</td></tr>
+        <tr><td><span class="chip c-wa">WhatsApp (bot)</span></td><td class="num">8</td><td class="num">5</td><td class="num">62.5%</td></tr>
+        <tr style="font-weight:700"><td>Total</td><td class="num">29</td><td class="num">19</td><td class="num">65.5%</td></tr>
+      </table>
+      <div class="note">🎟️ <b>Promociones</b> (links de vendedores) se muestran aparte y <b>NO</b> se suman a estas estadísticas, según lo acordado.</div>
+    </div>
+  </div>
+
+  <!-- FILA 5 — publicidad + calendario -->
+  <div class="row r-2b">
+    <div class="card panel">
+      <h3>📣 Rendimiento por fuente publicitaria</h3>
+      <div class="ph">Por origen de la publicidad (atribución real por UTM).</div>
+      <table>
+        <tr><th>Fuente</th><th class="num">Total</th><th class="num">Conf.</th><th class="num">% Conf.</th><th class="num">Valor</th></tr>
+        <tr><td>⬛ TikTok Ads</td><td class="num">18</td><td class="num">12</td><td class="num">66.7%</td><td class="num">$1.680.200</td></tr>
+        <tr><td>🔵 Meta Ads</td><td class="num">9</td><td class="num">6</td><td class="num">66.7%</td><td class="num">$780.900</td></tr>
+        <tr><td>🌱 Orgánico</td><td class="num">1</td><td class="num">1</td><td class="num">100%</td><td class="num">$97.000</td></tr>
+        <tr><td>❔ Sin identificar</td><td class="num">1</td><td class="num">0</td><td class="num">0%</td><td class="num">$0</td></tr>
+      </table>
+      <div class="note">No se muestran ROAS / costo por venta salvo que haya inversión publicitaria verificable.</div>
+    </div>
+
+    <div class="card panel">
+      <h3>🗓️ Calendario de ventas</h3>
+      <div class="ph">Resumen diario — Octubre 2026.</div>
+      <div class="cal">
+        <div class="h">D</div><div class="h">L</div><div class="h">M</div><div class="h">M</div><div class="h">J</div><div class="h">V</div><div class="h">S</div>
+        <div class="d out"><div class="n">28</div></div><div class="d out"><div class="n">29</div></div><div class="d out"><div class="n">30</div></div>
+        <div class="d"><div class="n">1</div><div class="q">4</div></div><div class="d"><div class="n">2</div><div class="q">3</div></div><div class="d"><div class="n">3</div><div class="q">3</div></div><div class="d"><div class="n">4</div><div class="q">4</div></div>
+        <div class="d"><div class="n">5</div><div class="q">2</div></div><div class="d sel"><div class="n">6</div><div class="q">4</div></div><div class="d"><div class="n">7</div><div class="q">6</div></div><div class="d"><div class="n">8</div><div class="q">1</div></div><div class="d"><div class="n">9</div><div class="q">3</div></div><div class="d"><div class="n">10</div><div class="q">4</div></div><div class="d"><div class="n">11</div><div class="q">2</div></div>
+        <div class="d"><div class="n">12</div></div><div class="d"><div class="n">13</div></div><div class="d"><div class="n">14</div></div><div class="d"><div class="n">15</div></div><div class="d"><div class="n">16</div></div><div class="d"><div class="n">17</div></div><div class="d"><div class="n">18</div></div>
+      </div>
+      <div class="legend" style="margin-top:12px"><span>🟢 Confirmados</span><span>🟠 Pendientes</span><span>🔴 Cancelados</span><span>Clic en un día → filtra todo el panel</span></div>
+    </div>
+  </div>
+
+  <!-- FILA 4 — confirmadas por día (mejorada, barras apiladas) -->
+  <div class="row">
+    <div class="card panel">
+      <h3>📊 Confirmadas por día</h3>
+      <div class="ph">Barras apiladas: verde confirmados · naranja pendientes · rojo cancelados. Total y % al final.</div>
+      <div id="bars"></div>
+    </div>
+  </div>
+
+  <!-- FILA 7 — tabla -->
+  <div class="row">
+    <div class="card panel">
+      <h3>🧾 Lista de pedidos</h3>
+      <div class="ph">Todos los pedidos del período · búsqueda, orden y filtros combinados · Exportar.</div>
+      <table>
+        <tr><th>Fecha</th><th>Estado</th><th>Cliente</th><th>Producto</th><th>Talla</th><th>Canal</th><th>Fuente</th><th>Campaña</th><th class="num">Valor</th><th></th></tr>
+        <tr><td>10 oct 12:21</td><td><span class="chip c-conf">Confirmado</span></td><td>José Luis Salcedo</td><td>Escudería Mercedes Benz · Blanco Marfil</td><td>M</td><td><span class="chip c-embu">Embudos QuinChat</span></td><td>⬛ TikTok</td><td>VENTAS · FÓRMULA 1</td><td class="num">$129.900</td><td>👁️ ✏️ ⋮</td></tr>
+        <tr><td>10 oct 10:24</td><td><span class="chip c-conf">Confirmado</span></td><td>Leonardo E. Agudelo</td><td>Escudería Mercedes Benz · Blanco Marfil</td><td>XL</td><td><span class="chip c-funne">Funnelish</span></td><td>🔵 Meta</td><td>VENTAS · FÓRMULA 1</td><td class="num">$129.900</td><td>👁️ ✏️ ⋮</td></tr>
+        <tr><td>10 oct 02:31</td><td><span class="chip c-conf">Confirmado</span></td><td>Roberto Jaimes</td><td>Escudería Red Bull · Blanco Marfil</td><td>XXL</td><td><span class="chip c-wa">WhatsApp (bot)</span></td><td>❔ Sin identificar</td><td>—</td><td class="num">$129.900</td><td>👁️ ✏️ ⋮</td></tr>
+        <tr><td>10 oct 01:15</td><td><span class="chip c-pend">Por confirmar</span></td><td>Maicol Álvarez</td><td>Escudería Mercedes Benz · Negro</td><td>M</td><td><span class="chip c-funne">Funnelish</span></td><td>🔵 Meta</td><td>NACIONAL</td><td class="num">$129.900</td><td>👁️ ✏️ ⋮</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="footer-note">Maqueta v1 · QUINCHAT — Agencia Quin · diseño propuesto (Looker/Shopify-style) con tu identidad turquesa. Si te gusta, lo implemento en el código en rama Preview.</div>
+</div>
+
+<script>
+// Barras apiladas "Confirmadas por día" (SVG puro, sin librerías externas)
+const dias=[
+ {d:'Hoy',c:3,p:1,x:0},{d:'10 oct',c:4,p:2,x:0},{d:'9 oct',c:3,p:0,x:0},
+ {d:'8 oct',c:0,p:1,x:0},{d:'7 oct',c:4,p:2,x:0},{d:'6 oct',c:2,p:1,x:1},
+ {d:'5 oct',c:1,p:1,x:0},{d:'4 oct',c:2,p:1,x:0}
+];
+const maxT=Math.max(...dias.map(r=>r.c+r.p+r.x));
+let html='';
+for(const r of dias){
+  const t=r.c+r.p+r.x; const W=560;
+  const w=t? (r.c+r.p+r.x)/maxT*W : 0;
+  const cw=t?r.c/t*w:0, pw=t?r.p/t*w:0, xw=t?r.x/t*w:0;
+  const pct=t?Math.round(r.c/t*100):0;
+  html+=`<div style="display:flex;align-items:center;gap:10px;margin:7px 0">
+    <div style="width:52px;font-size:11.5px;color:var(--muted);text-align:right">${r.d}</div>
+    <svg width="${W}" height="16" style="flex:0 0 auto;max-width:72%">
+      <rect x="0" y="2" width="${cw}" height="12" rx="3" fill="#22b07d"/>
+      <rect x="${cw}" y="2" width="${pw}" height="12" rx="3" fill="#f59e0b"/>
+      <rect x="${cw+pw}" y="2" width="${xw}" height="12" rx="3" fill="#ef4444"/>
+    </svg>
+    <div style="font-size:11.5px;color:#0f2e2c;font-weight:600;white-space:nowrap">${t? t+' pedidos · '+pct+'% conf.' : 'sin pedidos'}</div>
+  </div>`;
+}
+document.getElementById('bars').innerHTML=html;
+</script>
+</body>
+</html>

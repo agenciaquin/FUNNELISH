@@ -118,12 +118,32 @@ function Ticks({ status, error }: { status?: string; error?: string }) {
   );
 }
 
+/** Saca los datos del anuncio (Meta/Facebook) guardados en conversations.anuncio_origen. */
+function parseAnuncio(raw: unknown): { titulo: string; texto: string; url: string; imagen: string; id: string; producto: string } | null {
+  const t = String(raw ?? '');
+  if (!t.trim()) return null;
+  const pick = (label: string) => {
+    const m = t.match(new RegExp(label + ':\\s*(.+)'));
+    return m ? m[1].trim() : '';
+  };
+  const titulo   = pick('Título del anuncio');
+  const texto    = pick('Texto del anuncio');
+  const url      = pick('Página del anuncio');
+  const imagen   = pick('Imagen del anuncio');
+  const id       = pick('ID del anuncio');
+  const producto = (t.match(/PRODUCTO EXACTO DE ESTE ANUNCIO:\s*([^.\n]+)/) || [])[1]?.trim() || '';
+  if (!titulo && !texto && !url && !imagen && !producto) return null;
+  return { titulo, texto, url, imagen, id, producto };
+}
+
 interface Props {
   conversation: Conversation | null;
   messages: Message[];
   onMessageSent: (msg: Message) => void;
   onConversationsUpdate: () => void;
   onBack?: () => void;
+  infoVisible?: boolean;
+  onToggleInfo?: () => void;
 }
 
 /**
@@ -140,11 +160,12 @@ function pieDeFoto(msg: Message): string {
   return i > 0 ? c.slice(i + 2).trim() : '';
 }
 
-export default function ChatArea({ conversation, messages, onMessageSent, onConversationsUpdate, onBack }: Props) {
+export default function ChatArea({ conversation, messages, onMessageSent, onConversationsUpdate, onBack, infoVisible, onToggleInfo }: Props) {
   const [input, setInput]               = useState('');
   const [sending, setSending]           = useState(false);
   const [botEnabled, setBotEnabled]     = useState(true);
   const [botOpen, setBotOpen]           = useState(false);
+  const [menuOpen, setMenuOpen]         = useState(false); // menú ⋮ del encabezado en móvil
   // Notas internas del asesor sobre este chat
   const [notasOpen, setNotasOpen]       = useState(false);
   const [notasText, setNotasText]       = useState('');
@@ -837,7 +858,27 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="relative flex items-center gap-2" onClick={e => e.stopPropagation()}>
+          {/* Mostrar / ocultar la ficha del cliente (columna derecha, desplegable) */}
+          {onToggleInfo && (
+            <button
+              onClick={onToggleInfo}
+              title="Mostrar/ocultar información del cliente"
+              aria-label="Información del cliente"
+              className={`w-9 h-9 rounded-full border flex items-center justify-center text-base leading-none shrink-0 transition-colors ${
+                infoVisible
+                  ? 'bg-[#00A89D]/10 text-[#00A89D] border-[#00A89D]/30'
+                  : 'bg-[#F5F5F5] text-[#6B6B6B] border-[#E8E8E8] hover:bg-[#EEE]'
+              }`}
+            >👤</button>
+          )}
+          {/* En móvil, todo (Notas, Bot, Etiquetas) se agrupa en este menú ⋮ */}
+          <button
+            onClick={() => setMenuOpen(o => !o)}
+            className="md:hidden w-9 h-9 rounded-full border border-[#E8E8E8] bg-[#F5F5F5] text-[#0D0D0D] flex items-center justify-center text-xl leading-none shrink-0"
+            aria-label="Opciones del chat"
+          >⋮</button>
+          <div className={`${menuOpen ? 'flex' : 'hidden'} md:flex flex-col md:flex-row items-stretch md:items-center gap-2 absolute md:static right-0 top-full mt-1 md:mt-0 bg-white md:bg-transparent border md:border-0 border-[#E8E8E8] rounded-xl md:rounded-none shadow-xl md:shadow-none p-2 md:p-0 z-40 w-[250px] md:w-auto`}>
           {/* Notas internas del asesor sobre este chat (no las ve el cliente) */}
           <div className="relative" onClick={e => e.stopPropagation()}>
             <button
@@ -1001,12 +1042,47 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
               </div>
             );
           })()}
-
+          </div>
         </div>
       </div>
 
       {/* ── Messages ── */}
       <div className="flex-1 overflow-y-auto px-5 py-5 space-y-2">
+        {/* 📣 Tarjeta del ANUNCIO del que llegó el cliente (como en WhatsApp normal) */}
+        {(() => {
+          const ad = parseAnuncio((conversation as any)?.anuncio_origen);
+          if (!ad) return null;
+          return (
+            <div className="mx-auto max-w-sm w-full mb-2 rounded-2xl border border-[#E8E8E8] bg-white shadow-sm overflow-hidden">
+              <div className="flex items-center gap-1.5 px-3 pt-2 text-[10px] font-bold text-[#2f80ed] uppercase tracking-wide">
+                📣 Anuncio {ad.producto && <span className="text-[#00847A] normal-case">· {ad.producto}</span>}
+              </div>
+              {ad.imagen && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={ad.imagen}
+                  alt=""
+                  className="w-full max-h-48 object-cover mt-1.5"
+                  loading="lazy"
+                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                />
+              )}
+              <div className="px-3 py-2">
+                {ad.titulo && <div className="text-[12.5px] font-bold text-[#0D0D0D] leading-snug">{ad.titulo}</div>}
+                {ad.texto && <div className="text-[11.5px] text-[#6B6B6B] leading-snug mt-0.5 line-clamp-3">{ad.texto}</div>}
+                {ad.url && (
+                  <a
+                    href={ad.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block mt-1.5 text-[11px] font-semibold text-[#2f80ed] hover:underline break-all"
+                  >🔗 Ver anuncio ↗</a>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {messages.length === 0 && (
           <div className="flex items-center justify-center h-24 text-[#6B6B6B] text-xs">
             Sin mensajes aún

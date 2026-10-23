@@ -225,8 +225,19 @@ const WA_IMAGE_LIMIT = 5_242_880;
  */
 async function comprimirYSubirImagen(imageUrl: string): Promise<string | null> {
   try {
-    const resp = await fetch(urlSegura(imageUrl));
-    if (!resp.ok) return null;
+    // Reintentos ante throttling de Supabase (4xx/5xx intermitentes), igual que
+    // en subirImagenDesdeUrl. Solo se rinde ante un 404 (archivo inexistente).
+    let resp: Response | null = null;
+    const esperas = [800, 1800, 3500];
+    for (let intento = 0; intento < 4; intento++) {
+      try {
+        const r = await fetch(urlSegura(imageUrl), { cache: 'no-store' });
+        if (r.ok) { resp = r; break; }
+        if (r.status === 404) return null;
+      } catch { /* reintentar */ }
+      if (intento < 3) await new Promise(res => setTimeout(res, esperas[intento]));
+    }
+    if (!resp) return null;
     const original = Buffer.from(await resp.arrayBuffer());
 
     const mod: any = await import('jimp');
@@ -282,16 +293,21 @@ function urlSegura(u: string): string {
  * ya no tiene que descargar nada. Comprime solo si la foto pesa demasiado.
  */
 async function subirImagenDesdeUrl(imageUrl: string): Promise<string | null> {
-  // Hasta 2 intentos: cubre tropiezos transitorios de red al bajar/subir.
-  for (let intento = 0; intento < 2; intento++) {
+  // Hasta 4 intentos con espera creciente. Antes se rendía ante un 4xx, pero
+  // cuando Supabase está con throttling devuelve 4xx intermitentes que se
+  // recuperan al reintentar; por eso ahora se reintenta también en 4xx.
+  const esperas = [800, 1800, 3500]; // ms entre intentos
+  for (let intento = 0; intento < 4; intento++) {
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 15000);
-      const resp = await fetch(imageUrl, { signal: ctrl.signal });
+      const resp = await fetch(imageUrl, { signal: ctrl.signal, cache: 'no-store' });
       clearTimeout(t);
       if (!resp.ok) {
-        // 5xx = tropiezo temporal → reintentar; 4xx = archivo no existe → rendirse.
-        if (resp.status >= 500 && intento === 0) { await new Promise(r => setTimeout(r, 700)); continue; }
+        // 404 real = el archivo no existe → no insistir. Cualquier otro (400/429/5xx)
+        // suele ser throttling temporal → reintentar.
+        if (resp.status === 404) return null;
+        if (intento < 3) { await new Promise(r => setTimeout(r, esperas[intento])); continue; }
         return null;
       }
       let ct = (resp.headers.get('content-type') || 'image/jpeg').split(';')[0];
@@ -301,9 +317,9 @@ async function subirImagenDesdeUrl(imageUrl: string): Promise<string | null> {
       const ext = (ct.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
       const id = await uploadWhatsAppMedia(buf, ct, `foto.${ext}`);
       if (id) return id;
-      if (intento === 0) { await new Promise(r => setTimeout(r, 700)); continue; }
+      if (intento < 3) { await new Promise(r => setTimeout(r, esperas[intento])); continue; }
     } catch {
-      if (intento === 0) { await new Promise(r => setTimeout(r, 700)); continue; }
+      if (intento < 3) { await new Promise(r => setTimeout(r, esperas[intento])); continue; }
     }
   }
   return null;

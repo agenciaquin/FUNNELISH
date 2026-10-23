@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef, type MouseEvent } from 'react';
+import { useState, useEffect, useCallback, useRef, type MouseEvent } from 'react';
 import { imgOptim } from '@/lib/funnels';
 import CarritosAbandonados from './CarritosAbandonados';
 
@@ -12,11 +12,24 @@ interface Pedido {
   utm_source: string | null; utm_campaign: string | null;
   campana_nombre?: string | null;
   plataforma?: 'facebook' | 'tiktok' | null;
+  canal?: string; fuente?: string;
   foto?: string | null;
   embudo_slug?: string | null;
   embudo_nombre?: string | null;
   created_at: string;
 }
+
+type Canal = 'todas' | 'embudos' | 'funnelish' | 'whatsapp' | 'promociones';
+interface DesgloseCanal { canal: string; label: string; total: number; confirmados: number; pendientes: number; cancelados: number; valor: number; conversion: number; }
+interface DesgloseFuente { fuente: string; label: string; total: number; confirmados: number; pendientes: number; cancelados: number; valor: number; conversion: number; }
+interface DiaFila { dia: string; total: number; conf: number; pend: number; canc: number; valor: number; }
+
+const CANAL_CHIP: Record<string, string> = {
+  embudos: 'bg-[#e6f7f5] text-[#0b8a86]', funnelish: 'bg-[#eef4ff] text-[#2f80ed]',
+  whatsapp: 'bg-[#e9f9f0] text-[#1e9e63]', promociones: 'bg-[#fff4d6] text-[#9a6a00]',
+  sin_identificar: 'bg-[#f1f1f1] text-[#777]',
+};
+const FUENTE_ICO: Record<string, string> = { tiktok: '⬛', meta: '🔵', organico: '🌱', directo: '➡️', sin_identificar: '❔' };
 
 /** Logo de Facebook (azul). */
 function LogoFacebook() {
@@ -60,6 +73,30 @@ function diaBonito(iso: string) {
   return `${Number(d)} ${meses[Number(m) - 1]}`;
 }
 
+// ── Fechas en zona horaria de Colombia (America/Bogotá, UTC-5) ──────────────
+const hoyBogota = () => new Date(Date.now() - 5 * 3600000).toISOString().slice(0, 10);
+function sumarDias(ymd: string, n: number) {
+  const d = new Date(`${ymd}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+/** Presets del selector de fechas → {desde, hasta} en YYYY-MM-DD (Colombia). */
+function rangoPreset(clave: string): { desde: string; hasta: string } | null {
+  const hoy = hoyBogota();
+  const [y, m] = hoy.split('-').map(Number);
+  switch (clave) {
+    case 'hoy':        return { desde: hoy, hasta: hoy };
+    case 'ayer':       return { desde: sumarDias(hoy, -1), hasta: sumarDias(hoy, -1) };
+    case '15':         return { desde: sumarDias(hoy, -14), hasta: hoy };
+    case 'mes':        return { desde: `${y}-${String(m).padStart(2, '0')}-01`, hasta: hoy };
+    case 'mesprev': {
+      const pm = m === 1 ? 12 : m - 1; const py = m === 1 ? y - 1 : y;
+      const ultimo = new Date(Date.UTC(py, pm, 0)).getUTCDate();
+      return { desde: `${py}-${String(pm).padStart(2, '0')}-01`, hasta: `${py}-${String(pm).padStart(2, '0')}-${String(ultimo).padStart(2, '0')}` };
+    }
+    default: return null;
+  }
+}
+
 function estadoDe(p: Pedido): { texto: string; color: string; fondo: string } {
   const e = String(p.estado ?? '').toLowerCase();
   if (p.confirmado)         return { texto: 'Confirmado', color: '#15803D', fondo: 'rgba(21,128,61,0.10)' };
@@ -77,10 +114,19 @@ interface Props {
 
 export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
-  const [resumen, setResumen] = useState({ total: 0, confirmados: 0, cancelados: 0, vendido: 0 });
+  const [resumen, setResumen] = useState({ total: 0, confirmados: 0, pendientes: 0, cancelados: 0, vendido: 0, tasa: 0 });
+  const [porCanal, setPorCanal]   = useState<DesgloseCanal[]>([]);
+  const [porFuente, setPorFuente] = useState<DesgloseFuente[]>([]);
+  const [porDiaApi, setPorDiaApi] = useState<DiaFila[]>([]);
+  const [comparacion, setComparacion] = useState<Record<string, number> | null>(null);
+  const [promoInfo, setPromoInfo] = useState<{ total: number; confirmados: number }>({ total: 0, confirmados: 0 });
   const [cargando, setCargando] = useState(true);
-  const [canal, setCanal]       = useState<'funnel' | 'whatsapp' | 'todas' | 'funnelish'>('funnel');
+  const [canal, setCanal]       = useState<Canal>('todas');
+  const [fuente, setFuente]     = useState('');
   const [dias, setDias]         = useState(7);
+  const [rango, setRango]       = useState<{ desde: string; hasta: string } | null>(null);
+  const [preset, setPreset]     = useState<string>('7');   // etiqueta del rango activo
+  const [verRango, setVerRango] = useState(false);          // abre inputs de rango personalizado
   const [busca, setBusca]       = useState('');
   const [verCarritos, setVerCarritos] = useState(false);
 
@@ -164,12 +210,19 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   const cargar = useCallback(async () => {
     setCargando(true);
     try {
-      const res  = await fetch(`/api/pedidos/lista?canal=${canal}&dias=${dias}`, { cache: 'no-store' });
+      const rangoQs = rango ? `desde=${rango.desde}&hasta=${rango.hasta}` : `dias=${dias}`;
+      const qs = `canal=${canal}&${rangoQs}${fuente ? `&fuente=${fuente}` : ''}`;
+      const res  = await fetch(`/api/pedidos/lista?${qs}`, { cache: 'no-store' });
       const data = await res.json();
       setPedidos(data.pedidos ?? []);
-      setResumen(data.resumen ?? { total: 0, confirmados: 0, cancelados: 0, vendido: 0 });
+      setResumen(data.resumen ?? { total: 0, confirmados: 0, pendientes: 0, cancelados: 0, vendido: 0, tasa: 0 });
+      setPorCanal(data.porCanal ?? []);
+      setPorFuente(data.porFuente ?? []);
+      setPorDiaApi(data.porDia ?? []);
+      setComparacion(data.comparacion ?? null);
+      setPromoInfo(data.promociones ?? { total: 0, confirmados: 0 });
     } finally { setCargando(false); }
-  }, [canal, dias]);
+  }, [canal, dias, fuente, rango]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
@@ -193,20 +246,8 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
 
   const todosMarcados = filtrados.length > 0 && filtrados.every(p => seleccion.has(p.id));
 
-  // Desglose por día: confirmadas vs por confirmar (números y porcentaje).
-  const porDia = useMemo(() => {
-    const m = new Map<string, { total: number; conf: number; pend: number }>();
-    for (const p of base) {
-      const dia = diaCol(p.created_at);
-      const g = m.get(dia) ?? { total: 0, conf: 0, pend: 0 };
-      g.total++;
-      const e = String(p.estado ?? '').toLowerCase();
-      if (p.confirmado) g.conf++;
-      else if (e !== 'cancelado' && e !== 'duplicado') g.pend++;
-      m.set(dia, g);
-    }
-    return [...m.entries()].sort((a, b) => b[0].localeCompare(a[0]));
-  }, [base]);
+  // Desglose por día (del API: confirmados / pendientes / cancelados).
+  const porDia = porDiaApi;
 
   const chip = (activo: boolean) =>
     `px-3 py-1.5 rounded-lg text-xs border transition-colors ${
@@ -222,9 +263,9 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
 
         <header className="mb-5 pl-10 md:pl-0 flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-[#0D0D0D]">Pedidos</h1>
+            <h1 className="text-xl md:text-2xl font-bold text-[#0D0D0D]">Pedidos y estadísticas</h1>
             <p className="text-xs text-[#6B6B6B] mt-1">
-              Lo que entra por tus páginas de venta, en vivo.
+              Analiza tus ventas, confirmaciones y resultados por canal.
             </p>
           </div>
           <button
@@ -235,18 +276,63 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
         </header>
 
         {/* Filtros */}
-        <div className="flex items-center gap-2 mb-4 flex-wrap">
-          <span className="text-[11px] font-bold text-[#6B6B6B] mr-0.5">Ventas:</span>
-          <button onClick={() => setCanal('funnel')}    className={chip(canal === 'funnel')}>🚀 Funnel</button>
-          <button onClick={() => setCanal('funnelish')} className={chip(canal === 'funnelish')}>📄 Funnelish</button>
-          <button onClick={() => setCanal('whatsapp')}  className={chip(canal === 'whatsapp')}>💬 WhatsApp</button>
-          <button onClick={() => setCanal('todas')}     className={chip(canal === 'todas')}>Todas</button>
-          <span className="w-px h-5 bg-[#E8E8E8] mx-1" />
-          {[1, 7, 30].map(d => (
-            <button key={d} onClick={() => setDias(d)} className={chip(dias === d)}>
-              {d === 1 ? 'Hoy' : `${d} días`}
-            </button>
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <span className="text-[11px] font-bold text-[#6B6B6B] mr-0.5">Canal:</span>
+          <button onClick={() => setCanal('todas')}       className={chip(canal === 'todas')}>Todas</button>
+          <button onClick={() => setCanal('funnelish')}   className={chip(canal === 'funnelish')}>📄 Funnelish</button>
+          <button onClick={() => setCanal('embudos')}     className={chip(canal === 'embudos')}>🚀 Embudos QuinChat</button>
+          <button onClick={() => setCanal('whatsapp')}    className={chip(canal === 'whatsapp')}>💬 WhatsApp</button>
+          <button onClick={() => setCanal('promociones')} className={chip(canal === 'promociones')}>🎟️ Promociones</button>
+        </div>
+
+        {/* Selector de fechas */}
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <span className="text-[11px] font-bold text-[#6B6B6B] mr-0.5">📅 Fechas:</span>
+          {([
+            ['hoy', 'Hoy'], ['ayer', 'Ayer'], ['7', '7 días'], ['15', '15 días'],
+            ['30', '30 días'], ['mes', 'Este mes'], ['mesprev', 'Mes anterior'],
+          ] as [string, string][]).map(([clave, txt]) => (
+            <button
+              key={clave}
+              onClick={() => {
+                setPreset(clave); setVerRango(false);
+                if (clave === '7' || clave === '15' || clave === '30') { setRango(null); setDias(Number(clave)); }
+                else setRango(rangoPreset(clave));
+              }}
+              className={chip(preset === clave && !verRango)}
+            >{txt}</button>
           ))}
+          <button onClick={() => { setVerRango(v => !v); setPreset('custom'); }} className={chip(verRango)}>📆 Personalizado</button>
+          {verRango && (
+            <span className="flex items-center gap-1.5">
+              <input type="date" value={rango?.desde ?? hoyBogota()}
+                onChange={e => setRango(r => ({ desde: e.target.value, hasta: r?.hasta ?? hoyBogota() }))}
+                className="px-2 py-1 rounded-lg border border-[#E8E8E8] text-xs" />
+              <span className="text-[11px] text-[#9A9A9A]">a</span>
+              <input type="date" value={rango?.hasta ?? hoyBogota()}
+                onChange={e => setRango(r => ({ desde: r?.desde ?? hoyBogota(), hasta: e.target.value }))}
+                className="px-2 py-1 rounded-lg border border-[#E8E8E8] text-xs" />
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          <span className="text-[11px] font-bold text-[#6B6B6B] mr-0.5">Fuente:</span>
+          <select
+            value={fuente}
+            onChange={e => setFuente(e.target.value)}
+            className="px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-xs bg-white focus:outline-none focus:border-[#00A89D]"
+          >
+            <option value="">Todas</option>
+            <option value="tiktok">⬛ TikTok Ads</option>
+            <option value="meta">🔵 Meta Ads</option>
+            <option value="organico">🌱 Orgánico</option>
+            <option value="directo">➡️ Directo</option>
+            <option value="sin_identificar">❔ Sin identificar</option>
+          </select>
+          {(fuente || canal !== 'todas') && (
+            <button onClick={() => { setCanal('todas'); setFuente(''); }}
+              className="px-3 py-1.5 rounded-lg text-xs border border-[#E8E8E8] text-[#6B6B6B] hover:bg-[#F5F5F5]">✕ Limpiar filtros</button>
+          )}
           <input
             value={busca}
             onChange={e => setBusca(e.target.value)}
@@ -256,51 +342,133 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
           <button onClick={cargar} title="Actualizar" className="w-8 h-8 rounded-lg text-[#00A89D] hover:bg-[#00A89D]/10">⟳</button>
         </div>
 
-        {/* Resumen */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+        {/* Resumen — 6 indicadores con variación vs período anterior */}
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-5">
           {[
-            { t: 'Pedidos',     v: String(resumenVista.total),       c: '#8B5CF6', i: '🛒' },
-            { t: 'Confirmados', v: String(resumenVista.confirmados), c: '#15803D', i: '✅' },
-            { t: 'Cancelados',  v: String(resumenVista.cancelados),  c: '#DC2626', i: '✖️' },
-            { t: 'Vendido',     v: pesos(resumenVista.vendido),      c: '#00847A', i: '💰' },
-          ].map(k => (
-            <div key={k.t} className="bg-white rounded-2xl border border-[#E8E8E8] p-4 shadow-sm">
-              <div className="flex items-center gap-1.5 mb-1">
-                <span className="text-sm">{k.i}</span>
-                <span className="text-[11px] text-[#6B6B6B]">{k.t}</span>
+            { t: 'Pedidos recibidos', v: String(resumenVista.total),       c: '#2f80ed', i: '📥', d: comparacion?.total },
+            { t: 'Confirmados',       v: String(resumenVista.confirmados), c: '#15803D', i: '✅', d: comparacion?.confirmados },
+            { t: 'Por confirmar',     v: String(resumenVista.pendientes),  c: '#EA580C', i: '⏳', d: null },
+            { t: 'Cancelados',        v: String(resumenVista.cancelados),  c: '#DC2626', i: '✖️', d: comparacion?.cancelados, inv: true },
+            { t: 'Valor vendido',     v: pesos(resumenVista.vendido),      c: '#00847A', i: '💰', d: comparacion?.vendido },
+            { t: 'Tasa confirmación', v: `${resumenVista.tasa}%`,          c: '#2f80ed', i: '🎯', d: null },
+          ].map(k => {
+            const d = k.d as number | null | undefined;
+            const bueno = d == null ? false : k.inv ? d <= 0 : d >= 0;
+            return (
+              <div key={k.t} className="bg-white rounded-2xl border border-[#E8E8E8] p-4 shadow-sm">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="text-sm">{k.i}</span>
+                  <span className="text-[11px] text-[#6B6B6B]">{k.t}</span>
+                </div>
+                <div className="text-lg font-bold" style={{ color: k.c }}>{k.v}</div>
+                {d != null && (
+                  <div className={`text-[10.5px] font-bold mt-0.5 ${bueno ? 'text-[#15803D]' : 'text-[#DC2626]'}`}>
+                    {d >= 0 ? '▲' : '▼'} {Math.abs(d)}% <span className="text-[#9A9A9A] font-normal">vs. período previo</span>
+                  </div>
+                )}
               </div>
-              <div className="text-lg font-bold" style={{ color: k.c }}>{k.v}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
-        {/* Confirmadas por día (números + porcentaje) */}
+        {/* Desgloses: por canal + por fuente publicitaria */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-5">
+          {/* Por canal */}
+          <div className="bg-white rounded-2xl border border-[#E8E8E8] shadow-sm p-4">
+            <h2 className="text-sm font-bold text-[#0D0D0D] mb-1">🏷️ Pedidos por canal de venta</h2>
+            <p className="text-[11px] text-[#6B6B6B] mb-3">Origen del pedido (sin incluir Promociones).</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px]">
+                <thead><tr className="text-[10px] uppercase text-[#9A9A9A] border-b border-[#EEE]">
+                  <th className="text-left py-1.5 font-semibold">Canal</th>
+                  <th className="text-right font-semibold">Total</th>
+                  <th className="text-right font-semibold">Conf.</th>
+                  <th className="text-right font-semibold">% Conf.</th>
+                  <th className="text-right font-semibold">Valor</th>
+                </tr></thead>
+                <tbody>
+                  {porCanal.map(c => (
+                    <tr key={c.canal} className="border-b border-[#F4F4F4] cursor-pointer hover:bg-[#FAFAFA]"
+                        onClick={() => setCanal((c.canal === 'embudos' ? 'embudos' : c.canal === 'sin_identificar' ? 'todas' : c.canal) as Canal)}>
+                      <td className="py-2"><span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${CANAL_CHIP[c.canal] ?? ''}`}>{c.label}</span></td>
+                      <td className="text-right">{c.total}</td>
+                      <td className="text-right text-[#15803D] font-semibold">{c.confirmados}</td>
+                      <td className="text-right">{c.conversion}%</td>
+                      <td className="text-right">{pesos(c.valor)}</td>
+                    </tr>
+                  ))}
+                  {porCanal.length === 0 && <tr><td colSpan={5} className="py-4 text-center text-[#9A9A9A]">Sin datos en el período.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            {promoInfo.total > 0 && (
+              <p className="text-[11px] text-[#9a6a00] mt-3 bg-[#fff8e6] border border-dashed border-[#f0d38a] rounded-lg px-3 py-2">
+                🎟️ Promociones: {promoInfo.total} pedidos ({promoInfo.confirmados} confirmados) — <b>aparte</b>, no suman en estas estadísticas.
+              </p>
+            )}
+          </div>
+
+          {/* Por fuente publicitaria */}
+          <div className="bg-white rounded-2xl border border-[#E8E8E8] shadow-sm p-4">
+            <h2 className="text-sm font-bold text-[#0D0D0D] mb-1">📣 Rendimiento por fuente publicitaria</h2>
+            <p className="text-[11px] text-[#6B6B6B] mb-3">Atribución real por UTM del pedido.</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px]">
+                <thead><tr className="text-[10px] uppercase text-[#9A9A9A] border-b border-[#EEE]">
+                  <th className="text-left py-1.5 font-semibold">Fuente</th>
+                  <th className="text-right font-semibold">Total</th>
+                  <th className="text-right font-semibold">Conf.</th>
+                  <th className="text-right font-semibold">% Conf.</th>
+                  <th className="text-right font-semibold">Valor</th>
+                </tr></thead>
+                <tbody>
+                  {porFuente.map(f => (
+                    <tr key={f.fuente} className="border-b border-[#F4F4F4] cursor-pointer hover:bg-[#FAFAFA]"
+                        onClick={() => setFuente(f.fuente)}>
+                      <td className="py-2">{FUENTE_ICO[f.fuente] ?? ''} {f.label}</td>
+                      <td className="text-right">{f.total}</td>
+                      <td className="text-right text-[#15803D] font-semibold">{f.confirmados}</td>
+                      <td className="text-right">{f.conversion}%</td>
+                      <td className="text-right">{pesos(f.valor)}</td>
+                    </tr>
+                  ))}
+                  {porFuente.length === 0 && <tr><td colSpan={5} className="py-4 text-center text-[#9A9A9A]">Sin datos en el período.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Confirmadas por día (apiladas: confirmados / pendientes / cancelados) */}
         {porDia.length > 0 && (
           <div className="bg-white rounded-2xl border border-[#E8E8E8] shadow-sm p-4 mb-5">
             <div className="flex items-center justify-between mb-3 flex-wrap gap-1">
-              <h2 className="text-sm font-bold text-[#0D0D0D]">📅 Confirmadas por día</h2>
+              <h2 className="text-sm font-bold text-[#0D0D0D]">📊 Confirmadas por día</h2>
               <span className="text-[11px] text-[#6B6B6B]">
-                <span className="text-[#15803D] font-semibold">✅ confirmadas</span> · <span className="text-[#EA580C] font-semibold">⏳ por confirmar</span>
+                <span className="text-[#15803D] font-semibold">✅ confirmados</span> · <span className="text-[#EA580C] font-semibold">⏳ pendientes</span> · <span className="text-[#DC2626] font-semibold">✖️ cancelados</span>
               </span>
             </div>
             <div className="space-y-2.5">
-              {porDia.map(([dia, g]) => {
+              {porDia.map(g => {
                 const pc = g.total ? Math.round((g.conf / g.total) * 100) : 0;
                 const pp = g.total ? Math.round((g.pend / g.total) * 100) : 0;
+                const px = g.total ? Math.round((g.canc / g.total) * 100) : 0;
                 return (
-                  <div key={dia}>
+                  <div key={g.dia}>
                     <div className="flex items-center justify-between text-[11px] mb-1 gap-2">
-                      <span className="font-bold text-[#0D0D0D] w-14 shrink-0">{diaBonito(dia)}</span>
+                      <span className="font-bold text-[#0D0D0D] w-14 shrink-0">{diaBonito(g.dia)}</span>
                       <span className="flex-1 text-right">
-                        <span className="text-[#15803D] font-semibold">✅ {g.conf} ({pc}%)</span>
-                        <span className="mx-1.5 text-[#C9C9C9]">·</span>
-                        <span className="text-[#EA580C] font-semibold">⏳ {g.pend} ({pp}%)</span>
-                        <span className="ml-1.5 text-[#9A9A9A]">de {g.total}</span>
+                        <span className="text-[#15803D] font-semibold">✅ {g.conf}</span>
+                        <span className="mx-1 text-[#C9C9C9]">·</span>
+                        <span className="text-[#EA580C] font-semibold">⏳ {g.pend}</span>
+                        {g.canc > 0 && <><span className="mx-1 text-[#C9C9C9]">·</span><span className="text-[#DC2626] font-semibold">✖️ {g.canc}</span></>}
+                        <span className="ml-1.5 text-[#9A9A9A]">· {g.total} total · {pc}% conf.</span>
                       </span>
                     </div>
-                    <div className="h-2 rounded-full bg-[#F0F0F0] overflow-hidden flex">
+                    <div className="h-2.5 rounded-full bg-[#F0F0F0] overflow-hidden flex">
                       <div className="h-full bg-[#15803D]" style={{ width: `${pc}%` }} />
                       <div className="h-full bg-[#EA580C]" style={{ width: `${pp}%` }} />
+                      <div className="h-full bg-[#DC2626]" style={{ width: `${px}%` }} />
                     </div>
                   </div>
                 );
@@ -345,12 +513,14 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
             </div>
           ) : filtrados.length === 0 ? (
             <p className="text-sm text-[#6B6B6B] py-12 text-center px-6">
-              {canal === 'funnel'
-                ? 'Todavía no hay ventas desde tus páginas (funnel). Aparecerán apenas alguien compre.'
+              {canal === 'embudos'
+                ? 'Todavía no hay ventas desde tus embudos de QuinChat en este período.'
                 : canal === 'funnelish'
-                ? 'Todavía no hay ventas desde la página de Funnelish en este período.'
+                ? 'Todavía no hay ventas desde Funnelish en este período.'
                 : canal === 'whatsapp'
                 ? 'Todavía no hay ventas del bot de WhatsApp en este período.'
+                : canal === 'promociones'
+                ? 'Todavía no hay ventas de Promociones en este período.'
                 : 'No hay ventas en este período.'}
             </p>
           ) : (
@@ -458,6 +628,11 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
                           {p.talla || 'sin talla'}
                           {p.abono > 0 && ` · abono ${p.abono_recibido ? '✅' : '⏳'}`}
                         </span>
+                        {p.canal && (
+                          <span className={`inline-block mt-0.5 text-[9.5px] font-bold px-1.5 py-0.5 rounded-full ${CANAL_CHIP[p.canal] ?? ''}`}>
+                            {p.canal === 'embudos' ? 'Embudos QuinChat' : p.canal === 'funnelish' ? 'Funnelish' : p.canal === 'whatsapp' ? 'WhatsApp' : p.canal === 'promociones' ? 'Promociones' : 'Sin identificar'}
+                          </span>
+                        )}
                       </span>
 
                       {/* Embudo del que vino: nombre + ver (vista previa) + editar */}

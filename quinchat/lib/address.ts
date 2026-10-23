@@ -6,7 +6,9 @@
 /** Devuelve true si la dirección es completa y válida para envío */
 export function isCompleteAddress(addr: string | null | undefined): boolean {
   if (!addr || addr.trim() === '' || addr === '—') return false;
-  const a = addr.toLowerCase().trim();
+  // Normaliza: quita puntos de abreviaturas ("Cl." → "Cl "), comas y saltos de línea
+  // a espacios, para que "Cl. 12 #1-33, Garzón" se detecte igual que "Calle 12 #1-33".
+  const a = addr.toLowerCase().replace(/[.,\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
   if (a.length < 5) return false;
 
   // Prefijos de vía + abreviaturas comunes en Colombia (kra, cra, cll, dg, tv, mz…)

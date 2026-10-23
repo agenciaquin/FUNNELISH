@@ -131,6 +131,7 @@ export interface NuevaPlantilla {
   pie?: string;                 // footer opcional
   headerHandle?: string | null; // si lleva imagen de encabezado
   botones?: string[];           // botones de respuesta rápida (opcional)
+  botonUrl?: { texto: string; url: string } | null; // botón de enlace (opcional)
 }
 
 /** Crea la plantilla en Meta. Queda en revisión hasta que la aprueben. */
@@ -154,11 +155,15 @@ export async function crearPlantilla(p: NuevaPlantilla): Promise<{ ok: boolean; 
 
   if (p.pie?.trim()) components.push({ type: 'FOOTER', text: p.pie.trim() });
 
+  const buttons: any[] = [];
+  if (p.botonUrl?.url?.trim()) {
+    buttons.push({ type: 'URL', text: (p.botonUrl.texto || 'Ver más').slice(0, 25), url: p.botonUrl.url.trim() });
+  }
   if (p.botones && p.botones.length > 0) {
-    components.push({
-      type: 'BUTTONS',
-      buttons: p.botones.slice(0, 3).map(t => ({ type: 'QUICK_REPLY', text: t })),
-    });
+    for (const t of p.botones) buttons.push({ type: 'QUICK_REPLY', text: t });
+  }
+  if (buttons.length > 0) {
+    components.push({ type: 'BUTTONS', buttons: buttons.slice(0, 3) });
   }
 
   try {

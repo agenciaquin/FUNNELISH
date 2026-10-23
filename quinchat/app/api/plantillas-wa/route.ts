@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const {
       nombre, categoria = 'MARKETING', idioma = 'es',
-      cuerpo, ejemplos = [], pie, botones = [], imagenBase64, imagenMime,
+      cuerpo, ejemplos = [], pie, botones = [], botonUrl = null, imagenBase64, imagenMime,
     } = body ?? {};
 
     if (!nombre || !cuerpo) {
@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
       pie,
       headerHandle,
       botones,
+      botonUrl: (botonUrl && botonUrl.url) ? { texto: String(botonUrl.texto ?? ''), url: String(botonUrl.url) } : null,
     });
 
     if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
