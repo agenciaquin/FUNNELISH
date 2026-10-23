@@ -7,22 +7,42 @@
  * - La re-codifica en JPG (liviano y compatible con TODO: web y encabezados de
  *   plantillas de WhatsApp, que NO soportan WebP y rechazan la entrega).
  * - Si el resultado NO pesa menos que el original, devuelve el original intacto.
- * - Videos, GIF (animados), PNG con transparencia y SVG se devuelven SIN TOCAR.
+ * - Video, GIF (animado) y SVG se devuelven SIN TOCAR.
  *
  * No depende de ningún servicio externo ni del optimizador de Vercel: la foto que
  * queda guardada ya es la liviana, así que se ve igual pero carga más rápido.
+ *
+ *
+ * POR QUÉ IMPORTA QUE ESTO PROCESE TAMBIÉN LOS PNG
+ * -----------------------------------------------
+ * Antes se saltaba TODOS los PNG para no ponerle fondo negro a un logo con
+ * transparencia. El efecto colateral era grave: en `EmbudosPanel`, un archivo de
+ * más de 4 MB no cabe en las funciones de Vercel y se sube por enlace firmado,
+ * directo del navegador a Storage, **sin pasar por ningún compresor del
+ * servidor**. Un PNG de 5,5 MB salía de aquí intacto, superaba el umbral y
+ * aterrizaba en el bucket a tamaño completo. De ahí que las imágenes de
+ * `embudos/` pesaran 2.502 kB de media.
+ *
+ * La solución no es dejar de respetar la transparencia, sino mirarla:
+ *
+ *   · PNG sin canal alfa en uso  → a JPG, como cualquier otra foto. Son la
+ *     mayoría: fotos guardadas como PNG por error. Es donde está el ahorro.
+ *   · PNG con transparencia real → se redimensiona y se re-guarda como PNG.
+ *     Pesa menos que el original y el logo conserva su fondo transparente.
+ *
+ * Este es el mismo criterio que aplica `lib/optimizar-imagen-servidor.ts` en el
+ * servidor, para que una foto no acabe recodificada dos veces con reglas
+ * distintas según por dónde entre.
  */
 export async function comprimirImagen(
   file: File,
   opts: { maxLado?: number; calidad?: number } = {},
 ): Promise<File> {
-  const maxLado = opts.maxLado ?? 1600;   // suficiente para pantalla de celular a todo lo ancho
-  const calidad = opts.calidad ?? 0.82;   // 0–1; 0.82 se ve idéntico y pesa mucho menos
+  // Mismo perfil que `lib/optimizar-imagen-servidor.ts`.
+  const maxLado = opts.maxLado ?? 1920;
+  const calidad = opts.calidad ?? 0.85;
 
   // Solo mapas de bits comprimibles. Video, GIF (animado) y SVG se dejan igual.
-  // El PNG SÍ se procesa (antes se saltaba y quedaban fotos de 2+ MB que hacían
-  // lenta la página): se redimensiona y se re-guarda como PNG para conservar la
-  // transparencia de los logos.
   if (
     typeof window === 'undefined' ||
     !file.type.startsWith('image/') ||
@@ -51,9 +71,13 @@ export async function comprimirImagen(
     ctx.drawImage(bitmap, 0, 0, w, h);
     bitmap.close?.();
 
-    // PNG → PNG (conserva transparencia). El resto → JPG (compatible con web y con
-    // los encabezados de plantillas de WhatsApp; WebP hace que Meta no entregue).
-    const tipoSalida = esPng ? 'image/png' : 'image/jpeg';
+    // Solo un PNG con transparencia REAL sale como PNG. Se comprueba sobre el
+    // canvas ya redimensionado, que es mucho menos trabajo que sobre el original.
+    // El resto va a JPG: compatible con web Y con los encabezados de plantillas
+    // de WhatsApp (WebP hace que Meta acepte el envío pero NO entregue).
+    const salePng = esPng && tieneTransparencia(ctx, w, h);
+    const tipoSalida = salePng ? 'image/png' : 'image/jpeg';
+
     const blob: Blob | null = await new Promise((res) =>
       canvas.toBlob(res, tipoSalida, calidad),
     );
@@ -62,9 +86,32 @@ export async function comprimirImagen(
     if (!blob || blob.size >= file.size) return file;
 
     const base = file.name.replace(/\.[^.]+$/, '') || 'foto';
-    const ext  = esPng ? 'png' : 'jpg';
+    const ext  = salePng ? 'png' : 'jpg';
     return new File([blob], `${base}.${ext}`, { type: tipoSalida });
   } catch {
     return file; // ante cualquier duda, la original intacta
+  }
+}
+
+/**
+ * ¿Hay algún píxel no opaco?
+ *
+ * Recorre el canal alfa entero, sin muestrear: un logo puede tener transparencia
+ * solo en una esquina, y saltarse píxeles significaría convertirlo a JPG y
+ * mancharlo de negro. Sobre el canvas ya redimensionado son unos pocos millones
+ * de lecturas, cuestión de milisegundos.
+ *
+ * Si el navegador impide leer el canvas por cualquier motivo, se responde `true`
+ * —"asume que tiene transparencia"— para re-guardarlo como PNG y no arriesgar.
+ */
+function tieneTransparencia(ctx: CanvasRenderingContext2D, w: number, h: number): boolean {
+  try {
+    const { data } = ctx.getImageData(0, 0, w, h);
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i] !== 255) return true;
+    }
+    return false;
+  } catch {
+    return true;
   }
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { CACHE_UN_ANO } from '@/lib/optimizar-imagen-servidor';
 import { r2Configurado, r2Subir } from '@/lib/r2';
 
 export const maxDuration = 120;
@@ -30,9 +31,18 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Supabase (respaldo) ─────────────────────────────────────────────────
+    // El vídeo NO se recodifica aquí: ffmpeg no existe en el runtime de Vercel y
+    // un mp4 de 45 MB no cabe en el límite de tiempo. De eso se encarga el
+    // backfill de `arreglos-supabase/media-api`. Lo que sí se puede hacer gratis
+    // es subir la caché a un año, que ya recorta peticiones al origen.
     const supabase = createServerSupabaseClient();
     const { error } = await supabase.storage
-      .from('chat-media').upload(ruta, buffer, { contentType: file.type, upsert: false });
+      .from('chat-media')
+      .upload(ruta, buffer, {
+        contentType: file.type,
+        cacheControl: CACHE_UN_ANO,
+        upsert: false,
+      });
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
