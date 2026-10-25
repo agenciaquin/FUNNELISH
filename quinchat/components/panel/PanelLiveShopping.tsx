@@ -26,7 +26,7 @@ export default function PanelLiveShopping() {
   const [sel, setSel] = useState<string | null>(null);  // id del live en edición
   const [copiado, setCopiado] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
-  const flash = (t: string) => { setAviso(t); setTimeout(() => setAviso(null), 2200); };
+  const flash = useCallback((t: string) => { setAviso(t); setTimeout(() => setAviso(null), 2200); }, []);
 
   const cargarLives = useCallback(async () => {
     setCargando(true);
@@ -111,7 +111,10 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
       setTimeline((j.timeline ?? []).map((e: any) => ({ tipo: e.tipo, inicio_seg: Number(e.inicio_seg), fin_seg: Number(e.fin_seg), producto_id: e.producto_id, pregunta: e.pregunta ?? '', respuesta: e.respuesta ?? '', autor: e.autor ?? 'Cliente DEMO', texto: e.texto ?? '' })));
     } catch (e: any) { onAviso('No se pudo cargar: ' + e.message); }
     setCargando(false);
-  }, [id, onAviso]);
+    // onAviso es estable (useCallback en el padre); no lo ponemos como dependencia
+    // para que el editor NO se recargue en bucle mientras editas.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
   useEffect(() => { cargar(); }, [cargar]);
 
   const setCampo = (k: keyof LiveFull, v: any) => setLive(l => l ? { ...l, [k]: v } : l);
