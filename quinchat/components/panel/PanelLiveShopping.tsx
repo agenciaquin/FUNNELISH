@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import VentasLive, { ESTADO_UI } from './VentasLive';
+import LineaTiempoVisual from './LineaTiempoVisual';
 
 // ───────────────────────── tipos del editor ─────────────────────────
 type EstadoLive = 'borrador' | 'activo' | 'archivado';
@@ -344,6 +345,7 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
   const [timeline, setTimeline] = useState<EventoTL[]>([]);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
+  const [verLista, setVerLista] = useState(false);
   // Aviso visible DENTRO del editor (antes solo salía en la lista).
   const [aviso, setAviso] = useState<string | null>(null);
   const flash = useCallback((t: string) => { setAviso(t); onAviso(t); setTimeout(() => setAviso(null), 3000); }, [onAviso]);
@@ -523,9 +525,14 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
 
         {/* Línea de tiempo */}
         <section className="bg-white border border-brand-border rounded-2xl p-4 mb-4">
-          <h2 className="font-bold text-brand-black mb-1">Línea de tiempo</h2>
-          <p className="text-xs text-brand-gray-mid mb-3">En qué segundo del video aparece cada producto, pregunta o comentario de ejemplo.</p>
-          <TimelineEditor timeline={timeline} setTimeline={setTimeline} productos={productos} campo={campo} />
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <h2 className="font-bold text-brand-black">Línea de tiempo</h2>
+            <button onClick={() => setVerLista(v => !v)} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-brand-border hover:bg-brand-gray-light">{verLista ? '🎞️ Ver línea visual' : '☰ Ver como lista'}</button>
+          </div>
+          <p className="text-xs text-brand-gray-mid mb-3">Reproduce tu video, pausa en el momento exacto y agrega la pregunta o el producto ahí. Luego pulsa “Guardar todo”.</p>
+          {verLista
+            ? <TimelineEditor timeline={timeline} setTimeline={setTimeline} productos={productos} campo={campo} />
+            : <LineaTiempoVisual videoUrl={live.video_url} duracionInicial={live.duracion_seg} timeline={timeline} setTimeline={setTimeline} productos={productos} />}
         </section>
 
         <ModeracionChat liveId={id} />
