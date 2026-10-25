@@ -1,0 +1,156 @@
+{
+ "version": 1,
+ "duracion": 180,
+ "eventos": [
+  {
+   "inicio": 0,
+   "fin": 60,
+   "tipo": "producto",
+   "contenido": {
+    "productoId": "buzo-urban"
+   }
+  },
+  {
+   "inicio": 6,
+   "fin": 24,
+   "tipo": "pregunta_frecuente",
+   "contenido": {
+    "pregunta": "¿Puedo pagar al recibir?",
+    "respuesta": "Sí. El pedido es contraentrega: pagas cuando te llega."
+   }
+  },
+  {
+   "inicio": 14,
+   "fin": 23,
+   "tipo": "comentario",
+   "contenido": {
+    "autor": "Cliente DEMO",
+    "texto": "¿Lo tienen en talla XL?",
+    "demo": true
+   }
+  },
+  {
+   "inicio": 30,
+   "fin": 39,
+   "tipo": "comentario",
+   "contenido": {
+    "autor": "Cliente DEMO",
+    "texto": "Quiero ver el color gris",
+    "demo": true
+   }
+  },
+  {
+   "inicio": 38,
+   "fin": 47,
+   "tipo": "comentario",
+   "contenido": {
+    "autor": "Cliente DEMO",
+    "texto": "¿Cómo es la tela por dentro?",
+    "demo": true
+   }
+  },
+  {
+   "inicio": 48,
+   "fin": 66,
+   "tipo": "pregunta_frecuente",
+   "contenido": {
+    "pregunta": "¿Cómo elijo mi talla?",
+    "respuesta": "Si dudas entre dos tallas, escríbenos por WhatsApp y te asesoramos."
+   }
+  },
+  {
+   "inicio": 60,
+   "fin": 120,
+   "tipo": "producto",
+   "contenido": {
+    "productoId": "buzo-classic"
+   }
+  },
+  {
+   "inicio": 72,
+   "fin": 81,
+   "tipo": "comentario",
+   "contenido": {
+    "autor": "Cliente DEMO",
+    "texto": "¿Se ve igual al video?",
+    "demo": true
+   }
+  },
+  {
+   "inicio": 82,
+   "fin": 91,
+   "tipo": "comentario",
+   "contenido": {
+    "autor": "Cliente DEMO",
+    "texto": "Me interesa el azul",
+    "demo": true
+   }
+  },
+  {
+   "inicio": 92,
+   "fin": 110,
+   "tipo": "pregunta_frecuente",
+   "contenido": {
+    "pregunta": "¿A qué ciudades envían?",
+    "respuesta": "Enviamos a todo Colombia con Coordinadora, Interrapidísimo o Envía."
+   }
+  },
+  {
+   "inicio": 100,
+   "fin": 109,
+   "tipo": "comentario",
+   "contenido": {
+    "autor": "Cliente DEMO",
+    "texto": "¿Hay pack con otro color?",
+    "demo": true
+   }
+  },
+  {
+   "inicio": 120,
+   "fin": 180,
+   "tipo": "producto",
+   "contenido": {
+    "productoId": "buzo-street"
+   }
+  },
+  {
+   "inicio": 126,
+   "fin": 135,
+   "tipo": "comentario",
+   "contenido": {
+    "autor": "Cliente DEMO",
+    "texto": "Quiero el de color hueso",
+    "demo": true
+   }
+  },
+  {
+   "inicio": 138,
+   "fin": 156,
+   "tipo": "pregunta_frecuente",
+   "contenido": {
+    "pregunta": "¿Qué incluye el Pack x2?",
+    "respuesta": "Dos buzos al precio especial del pack. Lo eliges en la ventana de compra."
+   }
+  },
+  {
+   "inicio": 146,
+   "fin": 155,
+   "tipo": "comentario",
+   "contenido": {
+    "autor": "Cliente DEMO",
+    "texto": "¿Cuánto cuesta el pack?",
+    "demo": true
+   }
+  },
+  {
+   "inicio": 162,
+   "fin": 171,
+   "tipo": "comentario",
+   "contenido": {
+    "autor": "Cliente DEMO",
+    "texto": "Ya voy a pedir el mío",
+    "demo": true
+   }
+  }
+ ]
+}
