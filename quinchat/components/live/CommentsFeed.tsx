@@ -5,10 +5,14 @@ import type { EventoComentario, EventoPregunta } from '@/lib/live/tipos';
 export interface ComentarioPropio {
   id: number;
   texto: string;
-  /** 'yo' = lo escribió el visitante · 'ia' = respuesta del asistente · 'demo' = comentario de ambiente. */
-  autor?: 'yo' | 'ia' | 'demo';
-  /** Nombre a mostrar para los comentarios de ambiente (demo). */
+  /** 'yo' = lo escribió el visitante · 'ia' = asistente · 'demo' = ambiente/pregunta preparada ·
+   *  'publico' = comentario real de otra persona (guardado) · 'faq' = pregunta frecuente del equipo. */
+  autor?: 'yo' | 'ia' | 'demo' | 'publico' | 'faq';
+  /** Nombre a mostrar (demo / público). */
   nombre?: string;
+  /** Solo para 'faq'. */
+  pregunta?: string;
+  respuesta?: string;
   escribiendo?: boolean;
   /** Enlace a WhatsApp cuando el asistente no tiene el dato. */
   waUrl?: string;
@@ -78,6 +82,23 @@ export default function CommentsFeed({ mensajes, propios, logo }: Props) {
               </a>
             )}
           </div>
+        </div>
+      ) : c.autor === 'faq' ? (
+        <div key={c.id} className="live-in flex items-start gap-2 max-w-[94%]">
+          <Avatar className="bg-white">{logo && /* eslint-disable-next-line @next/next/no-img-element */ <img src={logo} alt="" className="w-full h-full object-contain p-0.5" />}</Avatar>
+          <div className="rounded-2xl rounded-tl-md bg-[#00A89D]/90 px-3 py-1.5 text-white">
+            <span className="inline-block text-[9px] font-bold uppercase tracking-wide bg-white text-[#007A72] rounded-full px-2 py-0.5 mb-0.5">✓ Pregunta frecuente · Equipo</span>
+            <p className="text-[13px] font-semibold leading-snug">{c.pregunta}</p>
+            <p className="text-[13px] leading-snug">{c.respuesta}</p>
+          </div>
+        </div>
+      ) : c.autor === 'publico' ? (
+        <div key={c.id} className="live-in flex items-start gap-2 max-w-[90%] text-white">
+          <Avatar className="bg-sky-500/80 text-white">{(c.nombre || 'C').charAt(0).toUpperCase()}</Avatar>
+          <p className={`text-[13px] leading-snug ${sombra}`}>
+            <span className="font-semibold text-white/75">{c.nombre || 'Cliente'}</span>
+            <br />{c.texto}
+          </p>
         </div>
       ) : c.autor === 'demo' ? (
         <div key={c.id} className="live-in flex items-start gap-2 max-w-[90%] text-white">

@@ -255,6 +255,65 @@ export default function PanelLiveShopping() {
   );
 }
 
+// ───────────────────────── moderación del chat del público ─────────────────────────
+function ModeracionChat({ liveId }: { liveId: string }) {
+  const [lista, setLista] = useState<{ id: number; nombre: string; texto: string; segundo: number; estado: 'visible' | 'oculto'; creado_en: string }[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [abierto, setAbierto] = useState(false);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    try { const j = await api(`/api/live-admin/comentarios?live_id=${liveId}`); setLista(j.comentarios ?? []); }
+    catch { setLista([]); }
+    setCargando(false);
+  }, [liveId]);
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const cambiar = async (id: number, estado: 'visible' | 'oculto') => {
+    await api('/api/live-admin/comentarios', { method: 'PATCH', body: JSON.stringify({ id, estado }) }).catch(() => {});
+    setLista(l => l.map(c => c.id === id ? { ...c, estado } : c));
+  };
+  const borrar = async (id: number) => {
+    if (!confirm('¿Borrar este comentario para siempre?')) return;
+    await api(`/api/live-admin/comentarios?id=${id}`, { method: 'DELETE' }).catch(() => {});
+    setLista(l => l.filter(c => c.id !== id));
+  };
+
+  const visibles = lista.filter(c => c.estado === 'visible').length;
+  return (
+    <section className="bg-white border border-brand-border rounded-2xl p-4 mb-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h2 className="font-bold text-brand-black">Comentarios del público</h2>
+          <p className="text-xs text-brand-gray-mid">Lo que escriben los clientes en el live. Se repiten en el mismo segundo del video para quien entre después. {cargando ? '' : `${visibles} visibles · ${lista.length - visibles} ocultos`}</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={cargar} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-brand-border hover:bg-brand-gray-light">↻</button>
+          <button onClick={() => setAbierto(a => !a)} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-brand-border hover:bg-brand-gray-light">{abierto ? 'Ocultar lista' : 'Moderar'}</button>
+        </div>
+      </div>
+      {abierto && (
+        <div className="mt-3 max-h-80 overflow-y-auto space-y-2">
+          {cargando ? <p className="text-sm text-brand-gray-mid">Cargando…</p> : lista.length === 0 ? (
+            <p className="text-sm text-brand-gray-mid">Todavía nadie ha comentado en este live.</p>
+          ) : lista.map(c => (
+            <div key={c.id} className={`flex items-start gap-2 rounded-xl border p-2 ${c.estado === 'oculto' ? 'border-red-200 bg-red-50/50 opacity-70' : 'border-brand-border'}`}>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs"><b>{c.nombre}</b> <span className="text-brand-gray-mid">· seg {Math.round(c.segundo)} · {fechaLarga(c.creado_en)}</span></p>
+                <p className="text-sm break-words">{c.texto}</p>
+              </div>
+              {c.estado === 'visible'
+                ? <button onClick={() => cambiar(c.id, 'oculto')} className="shrink-0 px-2 py-1 rounded-lg text-[11px] font-semibold border border-brand-border">Ocultar</button>
+                : <button onClick={() => cambiar(c.id, 'visible')} className="shrink-0 px-2 py-1 rounded-lg text-[11px] font-semibold border border-brand-border">Mostrar</button>}
+              <button onClick={() => borrar(c.id)} className="shrink-0 px-2 py-1 rounded-lg text-[11px] font-semibold text-red-600 border border-red-200">Borrar</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function duracion(seg: number) {
   const s = Math.max(0, Math.round(seg));
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
@@ -469,6 +528,8 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
           <TimelineEditor timeline={timeline} setTimeline={setTimeline} productos={productos} campo={campo} />
         </section>
 
+        <ModeracionChat liveId={id} />
+
         <button onClick={guardarTodo} disabled={guardando} className="mb-10 px-6 py-3 rounded-lg text-sm font-bold bg-[#00A89D] text-white hover:bg-[#007A72] disabled:opacity-50">
           {guardando ? 'Guardando…' : '💾 Guardar todo (datos, productos y línea de tiempo)'}
         </button>
@@ -601,7 +662,10 @@ function TimelineEditor({ timeline, setTimeline, productos, campo }: {
   timeline: EventoTL[]; setTimeline: (t: EventoTL[]) => void; productos: Producto[]; campo: string;
 }) {
   const set = (i: number, patch: Partial<EventoTL>) => setTimeline(timeline.map((e, j) => j === i ? { ...e, ...patch } : e));
-  const add = (tipo: EventoTL['tipo']) => setTimeline([...timeline, { tipo, inicio_seg: 0, fin_seg: 60, producto_id: productos[0]?.id ?? null, pregunta: '', respuesta: '', autor: 'Cliente DEMO', texto: '' }]);
+  const add = (tipo: EventoTL['tipo']) => setTimeline([...timeline, {
+    tipo, inicio_seg: 0, fin_seg: tipo === 'comentario' ? 10 : 60,
+    producto_id: productos[0]?.id ?? null, pregunta: '', respuesta: '', autor: tipo === 'comentario' ? '' : 'Cliente', texto: '',
+  }]);
   const del = (i: number) => setTimeline(timeline.filter((_, j) => j !== i));
 
   return (
@@ -609,12 +673,12 @@ function TimelineEditor({ timeline, setTimeline, productos, campo }: {
       <div className="flex flex-wrap gap-2 mb-3">
         <button onClick={() => add('producto')} className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-brand-border hover:bg-brand-gray-light">+ Producto</button>
         <button onClick={() => add('pregunta_frecuente')} className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-brand-border hover:bg-brand-gray-light">+ Pregunta frecuente</button>
-        <button onClick={() => add('comentario')} className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-brand-border hover:bg-brand-gray-light">+ Comentario DEMO</button>
+        <button onClick={() => add('comentario')} className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-[#ff3366] text-white hover:opacity-90">+ Pregunta tipo comentario</button>
       </div>
       {[...timeline].map((e, i) => (
         <div key={i} className="border border-brand-border rounded-xl p-2 mb-2">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600">{e.tipo === 'pregunta_frecuente' ? 'Pregunta' : e.tipo === 'comentario' ? 'Comentario' : 'Producto'}</span>
+            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${e.tipo === 'comentario' ? 'bg-pink-100 text-pink-700' : 'bg-neutral-100 text-neutral-600'}`}>{e.tipo === 'pregunta_frecuente' ? 'Pregunta frecuente' : e.tipo === 'comentario' ? 'Pregunta / comentario' : 'Producto'}</span>
             <label className="text-xs">Del seg <input type="number" className="w-16 rounded border border-brand-border px-1.5 py-0.5 text-sm" value={e.inicio_seg} onChange={ev => set(i, { inicio_seg: Number(ev.target.value) })} /></label>
             <label className="text-xs">al <input type="number" className="w-16 rounded border border-brand-border px-1.5 py-0.5 text-sm" value={e.fin_seg} onChange={ev => set(i, { fin_seg: Number(ev.target.value) })} /></label>
             <button onClick={() => del(i)} className="ml-auto text-xs text-red-600">✕</button>
@@ -632,9 +696,12 @@ function TimelineEditor({ timeline, setTimeline, productos, campo }: {
             </div>
           )}
           {e.tipo === 'comentario' && (
-            <div className="flex gap-2">
-              <input className="w-40 rounded-lg border border-brand-border px-2 py-1 text-sm" placeholder="Autor" value={e.autor ?? ''} onChange={ev => set(i, { autor: ev.target.value })} />
-              <input className="flex-1 min-w-0 rounded-lg border border-brand-border px-2 py-1 text-sm" placeholder="Comentario" value={e.texto ?? ''} onChange={ev => set(i, { texto: ev.target.value })} />
+            <div>
+              <div className="flex gap-2">
+                <input className="w-36 rounded-lg border border-brand-border px-2 py-1 text-sm" placeholder="Nombre (ej. Camilo)" value={e.autor ?? ''} onChange={ev => set(i, { autor: ev.target.value })} />
+                <input className="flex-1 min-w-0 rounded-lg border border-brand-border px-2 py-1 text-sm" placeholder="Pregunta (ej. ¿Lo tienen en talla XL?)" maxLength={140} value={e.texto ?? ''} onChange={ev => set(i, { texto: ev.target.value })} />
+              </div>
+              <p className="text-[11px] text-brand-gray-mid mt-1">Aparece en el chat en el segundo “Del” y se queda. Respóndela en el video en ese momento.</p>
             </div>
           )}
         </div>
