@@ -1,6 +1,9 @@
 // Animaciones de QUIN LIVE SHOPPING (se inyectan en LiveShell, no tocan globals.css).
 export const ESTILOS_LIVE = `
 @keyframes live-float { 0%{opacity:0;transform:translate(0,0) scale(.5) rotate(-6deg)} 10%{opacity:1} 45%{transform:translate(calc(var(--dx) * .5),-170px) scale(1.15) rotate(6deg)} 100%{opacity:0;transform:translate(var(--dx),-340px) scale(1.3) rotate(-4deg)} }
+/* Corazones: suben despacio (live-rise) y se balancean a los lados (live-sway). */
+@keyframes live-rise { 0%{opacity:0;transform:translateY(0) scale(.4)} 12%{opacity:1;transform:translateY(-20px) scale(1)} 70%{opacity:.85} 100%{opacity:0;transform:translateY(var(--sube)) scale(1.08)} }
+@keyframes live-sway { from{transform:translateX(calc(var(--sw) * -1))} to{transform:translateX(var(--sw))} }
 @keyframes live-in { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
 @keyframes live-sheet { from{transform:translateY(100%)} to{transform:none} }
 @keyframes live-pop { from{opacity:0;transform:scale(.92)} to{opacity:1;transform:none} }

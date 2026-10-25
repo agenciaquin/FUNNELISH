@@ -41,7 +41,7 @@ export default function LiveOverlay({
   return (
     <div className="absolute inset-0 z-10 flex flex-col justify-between pointer-events-none">
       {/* Encabezado */}
-      <header className="pt-[max(env(safe-area-inset-top),10px)] px-3 pb-10 bg-gradient-to-b from-black/65 to-transparent">
+      <header className="pt-[max(env(safe-area-inset-top),10px)] px-3 pb-6 bg-gradient-to-b from-black/50 to-transparent">
         <div className="flex items-center gap-2.5 pointer-events-auto">
           {live.tienda.logo && /* eslint-disable-next-line @next/next/no-img-element */ <img src={live.tienda.logo} alt="" width={44} height={44} className="w-11 h-11 rounded-full bg-white object-contain p-0.5" />}
           <div className="min-w-0 flex-1 leading-tight">
@@ -65,7 +65,8 @@ export default function LiveOverlay({
 
       {/* Zona inferior */}
       <div>
-        <div className="px-3 pb-2 pt-16 bg-gradient-to-t from-black/70 via-black/35 to-transparent flex flex-col gap-2.5">
+        {/* Degradado suave: solo lo justo para leer los comentarios; el video manda */}
+        <div className="px-3 pb-1.5 pt-10 bg-gradient-to-t from-black/45 via-black/15 to-transparent flex flex-col gap-2">
           {destacado && (
             <ProductCard
               key={destacado.id}
@@ -76,8 +77,8 @@ export default function LiveOverlay({
             />
           )}
           <div className="flex items-end gap-2">
-            <div className="flex-1 min-w-0 h-[26vh] flex flex-col justify-end"><CommentsFeed mensajes={mensajes} propios={propios} logo={live.tienda.logo} /></div>
-            <div className="flex flex-col items-center gap-3 shrink-0">
+            <div className="flex-1 min-w-0 h-[min(24vh,210px)] flex flex-col justify-end"><CommentsFeed mensajes={mensajes} propios={propios} logo={live.tienda.logo} /></div>
+            <div className="flex flex-col items-center gap-2.5 shrink-0 w-[56px]">
               <Reactions />
               <WhatsAppButton numero={live.whatsapp} producto={destacado} seleccion={seleccion} />
             </div>

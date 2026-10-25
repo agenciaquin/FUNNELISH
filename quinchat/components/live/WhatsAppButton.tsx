@@ -38,10 +38,10 @@ export default function WhatsAppButton({ numero, producto, seleccion, className 
       onClick={() => track('buy_whatsapp_click', { productoId: producto?.id, talla: seleccion?.talla, colorId: seleccion?.colorId })}
       className={`pointer-events-auto flex flex-col items-center gap-0.5 active:scale-95 transition-transform ${className}`}
     >
-      <span className="w-16 h-16 rounded-full bg-[#25D366] flex items-center justify-center shadow-[0_6px_18px_rgba(0,0,0,.45)]">
-        <svg viewBox="0 0 24 24" width="38" height="38" fill="#fff" aria-hidden><path d={ICONO_WA} /></svg>
+      <span className="w-[52px] h-[52px] rounded-full bg-[#25D366] flex items-center justify-center shadow-[0_3px_10px_rgba(0,0,0,.35)]">
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="#fff" aria-hidden><path d={ICONO_WA} /></svg>
       </span>
-      <span className="text-[12px] font-bold text-white [text-shadow:0_1px_3px_rgba(0,0,0,.85)]">WhatsApp</span>
+      <span className="text-[10.5px] font-bold text-white [text-shadow:0_1px_3px_rgba(0,0,0,.85)]">WhatsApp</span>
     </a>
   );
 }

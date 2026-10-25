@@ -8,46 +8,39 @@ interface Props {
   /** Posición del producto en el live (01, 02, 03…). */
   indice: number;
   onClick: () => void;
-  onComprar: () => void;
+  /** Se conserva por compatibilidad: la compra principal es el botón ¡COMPRAR! de la barra. */
+  onComprar?: () => void;
 }
 
-const sombra = '[text-shadow:0_1px_3px_rgba(0,0,0,.7)]';
-
-/** Tarjeta flotante del producto destacado (cambia sola según el minuto del video). */
-export default function ProductCard({ producto, indice, onClick, onComprar }: Props) {
+/**
+ * Tarjeta COMPACTA del producto destacado (cambia sola según el minuto del video).
+ * Horizontal, ~90 px de alto, máx. 240 px / 65 % del ancho. Toda la tarjeta es tocable
+ * y abre la compra. Sin botón propio: el principal es ¡COMPRAR! abajo.
+ */
+export default function ProductCard({ producto, onClick }: Props) {
   const foto = producto.colores[0]?.foto;
+  const descuento = producto.precioAntes && producto.precioAntes > producto.precio
+    ? Math.round((1 - producto.precio / producto.precioAntes) * 100) : 0;
   return (
-    <div className="live-pop pointer-events-auto relative flex gap-2.5 w-[80%] max-w-[330px] rounded-2xl border border-white/70 bg-black/70 backdrop-blur-sm p-2 text-white">
-      <span className="absolute -top-px -left-px rounded-tl-2xl rounded-br-xl bg-[#ff3366] px-2 py-0.5 text-[12px] font-extrabold z-10">
-        {String(indice).padStart(2, '0')}
+    <button
+      onClick={onClick}
+      aria-label={`Ver ${producto.nombre}`}
+      className="live-pop pointer-events-auto relative flex items-center gap-2 w-fit max-w-[min(240px,65%)] rounded-xl bg-black/55 backdrop-blur-sm p-2 pr-3 text-left text-white active:scale-[.98] transition-transform"
+    >
+      <span className="relative shrink-0 w-[65px] h-[65px] rounded-lg bg-white overflow-hidden">
+        {foto && /* eslint-disable-next-line @next/next/no-img-element */ <img src={foto} alt="" width={65} height={65} className="w-full h-full object-contain" />}
+        {descuento > 0 && <span className="absolute top-0 right-0 bg-[#ff3366] text-white text-[9px] font-extrabold px-1 rounded-bl-md">-{descuento}%</span>}
       </span>
-      <button onClick={onClick} aria-label={`Ver ${producto.nombre}`} className="shrink-0 self-start">
-        {foto && /* eslint-disable-next-line @next/next/no-img-element */ <img src={foto} alt={producto.nombre} width={84} height={84} className="w-[84px] h-[84px] rounded-xl object-cover bg-white" />}
-      </button>
-      <div className="min-w-0 flex-1 flex flex-col">
-        <button onClick={onClick} className="text-left">
-          <span className={`block text-[14px] font-bold leading-tight truncate ${sombra}`}>{producto.nombre}</span>
-          <span className="flex items-baseline gap-1.5">
-            <span className="text-[20px] font-extrabold leading-tight text-[#ffd33d]">{precioCOP(producto.precio)}</span>
-            {producto.precioAntes && <s className="text-[11px] text-white/60">{precioCOP(producto.precioAntes)}</s>}
-          </span>
-          <span className="block text-[12px] text-white/90 truncate">
-            {producto.promo ? `🔥 ${producto.promo.etiqueta} disponible` : 'Pago contraentrega'}
-          </span>
-        </button>
-        <button onClick={onComprar} className="mt-1.5 h-9 w-full rounded-lg bg-[#ff3366] text-[14px] font-extrabold flex items-center justify-center gap-1.5 active:scale-95 transition-transform">
-          <IconoCarrito /> Comprar
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function IconoCarrito() {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <circle cx="9" cy="20" r="1.4" /><circle cx="18" cy="20" r="1.4" />
-      <path d="M2 3h3l2.4 11.2a1.6 1.6 0 0 0 1.6 1.3h8.6a1.6 1.6 0 0 0 1.6-1.2L21 7H6" />
-    </svg>
+      <span className="min-w-0 flex flex-col">
+        <span className="text-[12.5px] font-bold leading-tight line-clamp-2 [text-shadow:0_1px_2px_rgba(0,0,0,.6)]">{producto.nombre}</span>
+        <span className="flex items-baseline gap-1.5 mt-0.5">
+          <span className="text-[16px] font-extrabold leading-none text-[#ffd33d]">{precioCOP(producto.precio)}</span>
+          {producto.precioAntes ? <s className="text-[10px] text-white/55">{precioCOP(producto.precioAntes)}</s> : null}
+        </span>
+        <span className="text-[10.5px] text-white/80 truncate mt-0.5">
+          {producto.promo ? `🔥 ${producto.promo.etiqueta} disponible` : 'Pago contraentrega'}
+        </span>
+      </span>
+    </button>
   );
 }
