@@ -14,7 +14,7 @@ export async function GET() {
   const supabase = createServerSupabaseClient();
   const { data, error } = await supabase
     .from('live_lives')
-    .select('id, slug, titulo, estado, video_url, whatsapp, etiqueta_grabada, creado_en')
+    .select('id, slug, titulo, estado, video_url, poster_url, whatsapp, etiqueta_grabada, duracion_seg, embudo_slug, creado_en')
     .order('creado_en', { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   // Conteo de productos por live (una sola consulta)

@@ -1,10 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import VentasLive, { ESTADO_UI } from './VentasLive';
 
 // ───────────────────────── tipos del editor ─────────────────────────
 type EstadoLive = 'borrador' | 'activo' | 'archivado';
-interface LiveResumen { id: string; slug: string; titulo: string; estado: EstadoLive; video_url: string | null; whatsapp: string | null; etiqueta_grabada: string | null; productos: number; }
+interface LiveResumen { id: string; slug: string; titulo: string; estado: EstadoLive; video_url: string | null; poster_url: string | null; whatsapp: string | null; etiqueta_grabada: string | null; duracion_seg: number | null; embudo_slug: string | null; creado_en: string; productos: number; }
+interface VentaMini { id: number; foto: string | null; producto: string; valor: number; estado: 'pendiente' | 'confirmado' | 'cancelado'; fecha: string; }
 interface Color { id?: string; nombre: string; hex: string; foto_url: string; }
 interface Producto { id: string; nombre: string; descripcion: string | null; ficha_tela: string | null; ficha_cuidados: string | null; precio: number; precio_antes: number | null; promo_etiqueta: string | null; promo_unidades: number | null; promo_precio: number | null; tallas: string[]; colores: Color[]; }
 interface EventoTL { tipo: 'producto' | 'pregunta_frecuente' | 'comentario'; inicio_seg: number; fin_seg: number; producto_id?: string | null; pregunta?: string; respuesta?: string; autor?: string; texto?: string; }
@@ -52,44 +54,223 @@ export default function PanelLiveShopping() {
     catch (e: any) { flash('No se pudo borrar: ' + e.message); }
   };
 
+  // ── Navegación interna del módulo (sin recargar la app) ──
+  const [vista, setVista] = useState<'inicio' | 'editar' | 'ventas'>('inicio');
+  const [menuAbierto, setMenuAbierto] = useState<string | null>(null);
+  const [resumen, setResumen] = useState<{ hoy: number; mes: number; recientes: VentaMini[] } | null>(null);
+
+  const cargarResumen = useCallback(async () => {
+    try {
+      const j = await api('/api/live-admin/ventas?resumen=1');
+      setResumen({ hoy: j.kpis?.hoy ?? 0, mes: j.kpis?.mes ?? 0, recientes: j.recientes ?? [] });
+    } catch { setResumen({ hoy: 0, mes: 0, recientes: [] }); }
+  }, []);
+  useEffect(() => { cargarResumen(); }, [cargarResumen]);
+
+  const alternarActivo = async (l: LiveResumen) => {
+    const nuevo: EstadoLive = l.estado === 'activo' ? 'borrador' : 'activo';
+    try { await api(`/api/live-admin/lives/${l.id}`, { method: 'PATCH', body: JSON.stringify({ estado: nuevo }) }); flash(nuevo === 'activo' ? 'Live activado (público)' : 'Live desactivado (borrador)'); await cargarLives(); }
+    catch (e: any) { flash('No se pudo cambiar: ' + e.message); }
+  };
+
   if (sel) return <EditorLive id={sel} onVolver={() => { setSel(null); cargarLives(); }} onAviso={flash} />;
+  if (vista === 'ventas') return <VentasLive onVolver={() => { setVista('inicio'); cargarResumen(); }} />;
+
+  const vistaPrevia = lives.find(l => l.estado === 'activo' && l.video_url) ?? lives.find(l => l.video_url);
 
   return (
-    <div className="flex-1 min-w-0 h-full overflow-y-auto bg-brand-ivory p-5 md:p-8">
-      <div className="max-w-3xl mx-auto">
-        <div className="flex items-center gap-3 mb-1">
-          <span className="text-2xl">🎬</span>
-          <h1 className="text-xl font-bold text-brand-black">QUIN LIVE SHOPPING</h1>
+    <div className="flex-1 min-w-0 h-full overflow-y-auto bg-brand-ivory p-4 md:p-8">
+      <style>{`@keyframes pl-float{0%{opacity:0;transform:translateY(0) scale(.6)}15%{opacity:1}100%{opacity:0;transform:translateY(-90px) scale(1.15)}}
+      .pl-h{position:absolute;animation:pl-float 2.6s ease-out infinite}
+      @media (prefers-reduced-motion: reduce){.pl-h{animation:none;opacity:.9}}`}</style>
+      <div className="max-w-6xl mx-auto">
+        {/* Encabezado */}
+        <div className="flex items-center gap-3 mb-6">
+          <span className="w-12 h-12 rounded-2xl bg-white border border-brand-border shadow-sm flex items-center justify-center text-2xl">🎬</span>
+          <div>
+            <h1 className="text-xl md:text-2xl font-extrabold text-brand-black tracking-tight">QUIN LIVE SHOPPING</h1>
+            <p className="text-sm text-brand-gray-mid">Gestiona tus transmisiones grabadas y revisa todas las ventas generadas desde tus lives.</p>
+          </div>
         </div>
-        <p className="text-sm text-brand-gray-mid mb-5">Crea y edita tus lives: video, productos, colores y la línea de tiempo. Los activos quedan públicos en <code>/live/&lt;slug&gt;</code>.</p>
 
-        <button onClick={crearLive} className="mb-5 px-4 py-2 rounded-lg text-sm font-semibold bg-[#00A89D] text-white hover:bg-[#007A72]">+ Nuevo live</button>
+        {aviso && <div className="mb-4 text-sm bg-[#00A89D] text-white rounded-lg px-3 py-2">{aviso}</div>}
 
-        {aviso && <div className="mb-4 text-sm bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">{aviso}</div>}
-        {cargando ? <p className="text-sm text-brand-gray-mid">Cargando…</p> : lives.length === 0 ? (
-          <p className="text-sm text-brand-gray-mid">Todavía no hay lives. Crea el primero con “+ Nuevo live”.</p>
-        ) : lives.map(l => (
-          <div key={l.id} className="bg-white border border-brand-border rounded-2xl p-4 mb-3 shadow-sm">
-            <div className="flex flex-wrap items-center gap-2 justify-between">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-semibold text-brand-black truncate">{l.titulo}</p>
-                  <EstadoChip estado={l.estado} />
+        {vista === 'inicio' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
+            {/* ── Tarjeta EDITAR LIVES ── */}
+            <div className="relative overflow-hidden rounded-3xl border border-violet-100 bg-gradient-to-br from-violet-50 via-white to-violet-100/60 p-5 md:p-6 shadow-[0_8px_30px_rgba(109,40,217,.08)]">
+              <div className="flex gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start gap-3 mb-4">
+                    <span className="w-14 h-14 shrink-0 rounded-2xl bg-violet-100 flex items-center justify-center text-3xl">🎬</span>
+                    <div>
+                      <h2 className="text-xl font-extrabold text-brand-black">Editar lives</h2>
+                      <p className="text-sm text-brand-gray-mid leading-snug">Crea, edita y gestiona tus transmisiones de live shopping.</p>
+                    </div>
+                  </div>
+                  <ul className="space-y-2.5 mb-5">
+                    {['Sube y organiza tus videos', 'Agrega productos y precios', 'Configura la línea de tiempo', 'Activa o desactiva lives'].map(t => (
+                      <li key={t} className="flex items-center gap-2.5 text-sm text-brand-black">
+                        <span className="w-5 h-5 rounded-full bg-violet-600 text-white text-[11px] flex items-center justify-center shrink-0">✓</span>{t}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <p className="text-xs text-brand-gray-mid">/live/{l.slug} · {l.productos} producto{l.productos === 1 ? '' : 's'}</p>
+                {/* Miniatura del live (video real del primer live) */}
+                <div className="hidden sm:block relative w-[150px] h-[230px] shrink-0 rounded-[22px] overflow-hidden bg-neutral-900 border-4 border-neutral-900 shadow-xl">
+                  {vistaPrevia?.video_url
+                    ? <video src={vistaPrevia.video_url} poster={vistaPrevia.poster_url ?? undefined} className="absolute inset-0 w-full h-full object-cover" autoPlay muted loop playsInline preload="metadata" />
+                    : <div className="absolute inset-0 bg-gradient-to-b from-violet-500 to-fuchsia-600" />}
+                  <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/70" />
+                  <span className="absolute top-2 left-2 text-[8px] font-bold bg-black/60 text-white rounded-full px-1.5 py-0.5">● PRESENTACIÓN</span>
+                  <span className="pl-h right-2 bottom-16 text-sm">❤️</span>
+                  <span className="pl-h right-4 bottom-16 text-xs" style={{ animationDelay: '.8s' }}>❤️</span>
+                  <span className="pl-h right-1 bottom-16 text-base" style={{ animationDelay: '1.6s' }}>❤️</span>
+                  <div className="absolute left-2 right-2 bottom-2 rounded-xl bg-black/65 border border-white/20 p-1.5">
+                    <p className="text-[9px] font-bold text-white truncate">{vistaPrevia?.titulo ?? 'Tu live'}</p>
+                    <span className="mt-1 block text-center text-[9px] font-bold text-white bg-[#ff3366] rounded-md py-1">🛒 Comprar</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button onClick={() => setSel(l.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#00A89D] text-white hover:bg-[#007A72]">Editar</button>
-                <button onClick={() => copiar(l.slug)} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-brand-border hover:bg-brand-gray-light">{copiado === l.slug ? '¡Copiado!' : 'Copiar enlace'}</button>
-                <a href={`/live/${l.slug}`} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-brand-border hover:bg-brand-gray-light">Abrir</a>
-                <button onClick={() => borrarLive(l.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50">Borrar</button>
+              <button onClick={() => setVista('editar')} className="w-full md:w-auto md:min-w-[260px] px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-sm shadow-md transition-colors">Ir a editar lives →</button>
+            </div>
+
+            {/* ── Tarjeta VENTAS LIVE ── */}
+            <div className="relative overflow-hidden rounded-3xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-teal-100/60 p-5 md:p-6 shadow-[0_8px_30px_rgba(0,168,157,.10)]">
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start gap-3 mb-4">
+                    <span className="w-14 h-14 shrink-0 rounded-2xl bg-[#00A89D] flex items-center justify-center text-3xl shadow">🛍️</span>
+                    <div>
+                      <h2 className="text-xl font-extrabold text-brand-black">Ventas live</h2>
+                      <p className="text-sm text-brand-gray-mid leading-snug">Revisa todas las ventas generadas desde tus lives.</p>
+                    </div>
+                  </div>
+                  <ul className="space-y-2.5 mb-5">
+                    {['Todas las ventas en un solo lugar', 'Filtra por live, fecha o producto', 'Estado de pedidos en tiempo real', 'Exporta reportes'].map(t => (
+                      <li key={t} className="flex items-center gap-2.5 text-sm text-brand-black">
+                        <span className="w-5 h-5 rounded-full bg-[#00A89D] text-white text-[11px] flex items-center justify-center shrink-0">✓</span>{t}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                {/* Ventas recientes (reales) */}
+                <div className="sm:w-[210px] shrink-0 space-y-2">
+                  {resumen === null ? (
+                    <p className="text-xs text-brand-gray-mid">Cargando ventas…</p>
+                  ) : resumen.recientes.length === 0 ? (
+                    <div className="rounded-2xl bg-white/80 border border-emerald-100 p-3 text-xs text-brand-gray-mid">Aún no hay ventas desde tus lives. Aparecerán aquí apenas entre la primera.</div>
+                  ) : resumen.recientes.map(v => (
+                    <div key={v.id} className="rounded-2xl bg-white border border-emerald-100 p-2 flex gap-2 shadow-sm">
+                      {v.foto ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={v.foto} alt="" className="w-11 h-11 rounded-lg object-cover bg-neutral-100 shrink-0" /> : <span className="w-11 h-11 rounded-lg bg-neutral-100 shrink-0" />}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-semibold text-brand-black truncate">{v.producto}</p>
+                        <p className="text-[12px] font-extrabold">{peso(v.valor)}</p>
+                        <div className="flex items-center justify-between gap-1">
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${ESTADO_UI[v.estado].cls}`}>{ESTADO_UI[v.estado].txt}</span>
+                          <span className="text-[9px] text-brand-gray-mid">{hace(v.fecha)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
+              <button onClick={() => setVista('ventas')} className="w-full md:w-auto md:min-w-[260px] px-6 py-3 rounded-xl bg-[#00847A] hover:bg-[#006B63] text-white font-bold text-sm shadow-md transition-colors">Ver ventas live →</button>
+              {resumen && (resumen.hoy > 0 || resumen.mes > 0) && (
+                <p className="text-[11px] text-brand-gray-mid mt-2">Hoy: {resumen.hoy} pedido{resumen.hoy === 1 ? '' : 's'} · Este mes: {resumen.mes}</p>
+              )}
             </div>
           </div>
-        ))}
+        ) : (
+          <button onClick={() => setVista('inicio')} className="text-sm text-[#00A89D] font-semibold mb-4">← Volver a Live Shopping</button>
+        )}
+
+        {/* ── MIS LIVES ── */}
+        <section className="bg-white border border-brand-border rounded-3xl p-4 md:p-6 shadow-sm mb-10">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-lg font-extrabold text-brand-black">{vista === 'editar' ? 'Administrar lives' : 'Mis lives'}</h2>
+              <p className="text-sm text-brand-gray-mid">Tus transmisiones de live shopping</p>
+            </div>
+            <button onClick={crearLive} className="px-5 py-2.5 rounded-xl text-sm font-bold bg-[#00A89D] text-white hover:bg-[#007A72] shadow-sm">+ Nuevo live</button>
+          </div>
+
+          {cargando ? <p className="text-sm text-brand-gray-mid">Cargando…</p> : lives.length === 0 ? (
+            <p className="text-sm text-brand-gray-mid py-6 text-center">Todavía no hay lives. Crea el primero con “+ Nuevo live”.</p>
+          ) : (
+            <div className="space-y-3">
+              {lives.map(l => (
+                <div key={l.id} className="rounded-2xl border border-brand-border p-3 flex flex-col md:flex-row md:items-center gap-3 hover:shadow-sm transition-shadow">
+                  {/* Miniatura + datos */}
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className="relative w-[96px] h-[64px] md:w-[110px] md:h-[72px] shrink-0 rounded-xl overflow-hidden bg-neutral-200">
+                      {l.video_url
+                        ? <video src={`${l.video_url}#t=1`} poster={l.poster_url ?? undefined} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+                        : <div className="w-full h-full bg-gradient-to-br from-violet-400 to-fuchsia-500 flex items-center justify-center text-2xl">🎬</div>}
+                      {l.duracion_seg ? <span className="absolute bottom-1 right-1 text-[10px] font-bold bg-black/75 text-white rounded px-1">{duracion(l.duracion_seg)}</span> : null}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-bold text-brand-black truncate">{l.titulo}</p>
+                        <EstadoChip estado={l.estado} />
+                      </div>
+                      <p className="text-xs text-brand-gray-mid truncate">/live/{l.slug} · {l.productos} producto{l.productos === 1 ? '' : 's'}</p>
+                      {l.embudo_slug && <p className="text-[11px] text-[#00847A] truncate">Checkout: {l.embudo_slug}</p>}
+                    </div>
+                  </div>
+                  {/* Fecha real */}
+                  <div className="flex items-center gap-2 md:w-[170px] shrink-0 md:border-l md:border-brand-border md:pl-4">
+                    <span className="text-lg">📅</span>
+                    <div className="text-[11px] leading-tight text-brand-gray-mid">
+                      <p>Creado el</p>
+                      <p className="text-brand-black font-semibold">{fechaLarga(l.creado_en)}</p>
+                    </div>
+                  </div>
+                  {/* Acciones */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => setSel(l.id)} className="px-4 py-2 rounded-xl text-xs font-bold bg-[#00A89D] text-white hover:bg-[#007A72]">Editar</button>
+                    <button onClick={() => copiar(l.slug)} className="px-3 py-2 rounded-xl text-xs font-semibold border border-brand-border hover:bg-brand-gray-light whitespace-nowrap">{copiado === l.slug ? '¡Copiado!' : 'Copiar enlace'}</button>
+                    <a href={`/live/${l.slug}`} target="_blank" rel="noopener noreferrer" className="px-3 py-2 rounded-xl text-xs font-semibold border border-brand-border hover:bg-brand-gray-light">Abrir</a>
+                    <div className="relative">
+                      <button onClick={() => setMenuAbierto(menuAbierto === l.id ? null : l.id)} aria-label="Más acciones" className="w-9 h-9 rounded-xl border border-brand-border hover:bg-brand-gray-light font-bold">⋯</button>
+                      {menuAbierto === l.id && (
+                        <>
+                          <span className="fixed inset-0 z-10" onClick={() => setMenuAbierto(null)} />
+                          <div className="absolute right-0 top-10 z-20 w-48 bg-white rounded-xl border border-brand-border shadow-xl overflow-hidden">
+                            <button onClick={() => { setMenuAbierto(null); alternarActivo(l); }} className="w-full text-left px-3 py-2 text-xs hover:bg-brand-gray-light">{l.estado === 'activo' ? '⏸️ Desactivar (borrador)' : '▶️ Activar (público)'}</button>
+                            <button onClick={() => { setMenuAbierto(null); setVista('ventas'); }} className="w-full text-left px-3 py-2 text-xs hover:bg-brand-gray-light">🛍️ Ver ventas live</button>
+                            <button onClick={() => { setMenuAbierto(null); borrarLive(l.id); }} className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50">🗑️ Eliminar</button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );
+}
+
+function duracion(seg: number) {
+  const s = Math.max(0, Math.round(seg));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}` : `${m}:${String(r).padStart(2, '0')}`;
+}
+function fechaLarga(iso: string) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+function hace(iso: string) {
+  const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (min < 1) return 'Ahora';
+  if (min < 60) return `Hace ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `Hace ${h} h`;
+  return `Hace ${Math.round(h / 24)} d`;
 }
 
 function EstadoChip({ estado }: { estado: EstadoLive }) {
