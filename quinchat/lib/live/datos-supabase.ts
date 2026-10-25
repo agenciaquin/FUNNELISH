@@ -50,7 +50,7 @@ export async function buscarLiveDB(slug: string): Promise<LiveConfig | null> {
   const supabase = createServerSupabaseClient();
   const { data: live, error } = await supabase
     .from('live_lives')
-    .select('id, slug, titulo, tienda_nombre, tienda_logo, etiqueta_grabada, video_url, poster_url, whatsapp, modo, estado, comentarios')
+    .select('id, slug, titulo, tienda_nombre, tienda_logo, etiqueta_grabada, video_url, poster_url, whatsapp, modo, estado, comentarios, embudo_slug')
     .eq('slug', slug)
     .maybeSingle();
   if (error || !live || live.estado === 'archivado') return null;
@@ -84,6 +84,7 @@ export async function buscarLiveDB(slug: string): Promise<LiveConfig | null> {
     modo: (live.modo === 'sincronizado' ? 'sincronizado' : 'desde_inicio'),
     productos,
     comentariosAuto: Array.isArray(live.comentarios) ? live.comentarios.map(String).filter(Boolean) : [],
+    embudoSlug: live.embudo_slug ? String(live.embudo_slug) : undefined,
   };
 }
 

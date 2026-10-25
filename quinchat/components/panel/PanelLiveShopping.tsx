@@ -8,7 +8,7 @@ interface LiveResumen { id: string; slug: string; titulo: string; estado: Estado
 interface Color { id?: string; nombre: string; hex: string; foto_url: string; }
 interface Producto { id: string; nombre: string; descripcion: string | null; ficha_tela: string | null; ficha_cuidados: string | null; precio: number; precio_antes: number | null; promo_etiqueta: string | null; promo_unidades: number | null; promo_precio: number | null; tallas: string[]; colores: Color[]; }
 interface EventoTL { tipo: 'producto' | 'pregunta_frecuente' | 'comentario'; inicio_seg: number; fin_seg: number; producto_id?: string | null; pregunta?: string; respuesta?: string; autor?: string; texto?: string; }
-interface LiveFull { id: string; slug: string; titulo: string; estado: EstadoLive; video_url: string | null; poster_url: string | null; whatsapp: string | null; etiqueta_grabada: string | null; duracion_seg: number | null; tienda_nombre: string | null; tienda_logo: string | null; modo: string; comentarios: string[] | null; }
+interface LiveFull { id: string; slug: string; titulo: string; estado: EstadoLive; video_url: string | null; poster_url: string | null; whatsapp: string | null; etiqueta_grabada: string | null; duracion_seg: number | null; tienda_nombre: string | null; tienda_logo: string | null; modo: string; comentarios: string[] | null; embudo_slug: string | null; }
 
 const TALLAS = ['S', 'M', 'L', 'XL'];
 const peso = (n: number) => `$${(Number(n) || 0).toLocaleString('es-CO')}`;
@@ -158,6 +158,7 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
         whatsapp: live.whatsapp, etiqueta_grabada: live.etiqueta_grabada, duracion_seg: live.duracion_seg,
         tienda_nombre: live.tienda_nombre, tienda_logo: live.tienda_logo,
         comentarios: (live.comentarios ?? []).map(s => s.trim()).filter(Boolean),
+        embudo_slug: (live.embudo_slug ?? '').trim() || null,
       }) });
       flash('Datos del live guardados ✅');
     } catch (e: any) { flash('Error: ' + e.message); }
@@ -241,6 +242,10 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
                 <option value="activo">Activo (público)</option>
                 <option value="archivado">Archivado</option>
               </select></label>
+            <label className="text-xs font-semibold text-brand-black md:col-span-2">Checkout del embudo (slug) — opcional
+              <input className={campo} placeholder="ej. motero-tk  (déjalo vacío para usar el checkout propio del live)" value={live.embudo_slug ?? ''} onChange={e => setCampo('embudo_slug', e.target.value.trim())} />
+              <span className="block text-[11px] text-brand-gray-mid font-normal mt-0.5">Si pones el slug de uno de tus embudos, al comprar se abre ESE checkout tal cual (con sus variantes, precios y pedido real).</span>
+            </label>
           </div>
           <button onClick={guardarLive} disabled={guardando} className="mt-3 px-4 py-2 rounded-lg text-sm font-semibold bg-[#00A89D] text-white hover:bg-[#007A72] disabled:opacity-50">Guardar datos del live</button>
         </section>

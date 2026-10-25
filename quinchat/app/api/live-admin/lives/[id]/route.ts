@@ -33,7 +33,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ live, productos, timeline: timeline ?? [] });
 }
 
-const CAMPOS = ['slug', 'titulo', 'tienda_nombre', 'tienda_logo', 'etiqueta_grabada', 'video_url', 'poster_url', 'duracion_seg', 'whatsapp', 'modo', 'estado', 'ciclo_inicio', 'comentarios'];
+const CAMPOS = ['slug', 'titulo', 'tienda_nombre', 'tienda_logo', 'etiqueta_grabada', 'video_url', 'poster_url', 'duracion_seg', 'whatsapp', 'modo', 'estado', 'ciclo_inicio', 'comentarios', 'embudo_slug'];
 
 // PATCH: actualiza campos del live.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

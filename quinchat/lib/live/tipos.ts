@@ -89,6 +89,8 @@ export interface LiveConfig {
   productos: ProductoLive[];
   /** Comentarios "de ambiente" (demo) que van apareciendo solos durante el live. */
   comentariosAuto?: string[];
+  /** Slug del embudo cuyo checkout se usa al comprar (si está vacío, usa el BuySheet propio del live). */
+  embudoSlug?: string;
 }
 
 export interface Seleccion {
