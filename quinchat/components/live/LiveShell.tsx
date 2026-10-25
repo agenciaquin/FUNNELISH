@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { LiveConfig, ProductoLive, Seleccion } from '@/lib/live/tipos';
+import type { Funnel } from '@/lib/funnels';
+import FormularioPedido from '@/components/publico/FormularioPedido';
 import { useTimeline } from '@/lib/live/useTimeline';
 import { track } from '@/lib/live/track';
 import { etiquetaValida, leerEtiqueta } from '@/lib/live/etiqueta';
@@ -20,7 +22,7 @@ import { ESTILOS_LIVE } from './estilos';
  *   · unas pocas acciones (silenciar, reproducir)
  * En escritorio muestra la experiencia dentro de un marco de celular.
  */
-export default function LiveShell({ live }: { live: LiveConfig }) {
+export default function LiveShell({ live, funnel }: { live: LiveConfig; funnel?: Funnel | null }) {
   const router = useRouter();
   const videoRef = useRef<VideoHandle>(null);
   const [tiempo, setTiempo] = useState(0);
@@ -87,6 +89,27 @@ export default function LiveShell({ live }: { live: LiveConfig }) {
   useEffect(() => { track('live_view', { slug: live.slug, modo: live.modo }); }, [live.slug, live.modo]);
   useEffect(() => { if (producto) track('product_shown', { productoId: producto.id, segundo: Math.floor(tiempo) }); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [producto?.id]);
 
+  // Comentarios de AMBIENTE (demo): van apareciendo solos durante el live, como un chat vivo.
+  // Salen de live.comentariosAuto (editables desde el panel). Siempre marcados DEMO.
+  useEffect(() => {
+    const lista = live.comentariosAuto ?? [];
+    if (lista.length === 0) return;
+    const NOMBRES = ['Camilo', 'Daniela', 'Andrés', 'Paola', 'Juan', 'Mateo', 'Valentina', 'Santiago', 'Laura', 'Sebastián', 'Carolina', 'Jhon', 'Kevin', 'Luisa', 'Felipe', 'Natalia'];
+    let i = Math.floor(Math.random() * lista.length);
+    let timer: ReturnType<typeof setTimeout>;
+    const loop = () => {
+      const id = ++idComentario.current;
+      const texto = lista[i % lista.length]; i++;
+      const nombre = NOMBRES[Math.floor(Math.random() * NOMBRES.length)];
+      setPropios(p => [...p.slice(-4), { id, texto, autor: 'demo' as const, nombre }]);
+      quitarEn(id, 9000);
+      timer = setTimeout(loop, 2600 + Math.random() * 2800);
+    };
+    timer = setTimeout(loop, 1500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live.comentariosAuto]);
+
   const alternarSonido = useCallback(() => {
     const nuevo = !silenciado;
     videoRef.current?.setMuted(nuevo);
@@ -129,9 +152,20 @@ export default function LiveShell({ live }: { live: LiveConfig }) {
           onCompartir={compartir}
         />
         {aviso && <div role="status" className="live-pop absolute left-1/2 -translate-x-1/2 top-24 z-40 rounded-full bg-black/80 px-4 py-2 text-[13px] font-semibold">{aviso}</div>}
-        {sheet && (
+        {sheet && (funnel ? (
+          /* Checkout DEL EMBUDO tal cual, dentro de un panel inferior (el video sigue arriba). */
+          <div className="absolute inset-0 z-30 flex flex-col justify-end" onClick={() => setSheet(null)}>
+            <div className="live-sheet bg-white text-black rounded-t-3xl max-h-[88%] overflow-y-auto pb-4" onClick={e => e.stopPropagation()}>
+              <div className="sticky top-0 z-10 bg-white/95 backdrop-blur flex items-center justify-between px-4 py-2 border-b border-neutral-100">
+                <span className="text-xs text-neutral-500">El video sigue arriba ↑</span>
+                <button onClick={() => setSheet(null)} aria-label="Cerrar" className="w-8 h-8 rounded-full bg-neutral-100 text-lg leading-none">×</button>
+              </div>
+              <FormularioPedido funnel={funnel} utms={{}} embebido />
+            </div>
+          </div>
+        ) : (
           <BuySheet live={live} producto={sheet} seleccion={seleccion} onSeleccion={setSeleccion} onCerrar={() => setSheet(null)} />
-        )}
+        ))}
       </main>
     </div>
   );

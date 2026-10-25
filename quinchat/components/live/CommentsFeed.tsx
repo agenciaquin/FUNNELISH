@@ -5,8 +5,10 @@ import type { EventoComentario, EventoPregunta } from '@/lib/live/tipos';
 export interface ComentarioPropio {
   id: number;
   texto: string;
-  /** 'yo' = lo escribió el visitante · 'ia' = respuesta del asistente (maqueta: simulada). */
-  autor?: 'yo' | 'ia';
+  /** 'yo' = lo escribió el visitante · 'ia' = respuesta del asistente · 'demo' = comentario de ambiente. */
+  autor?: 'yo' | 'ia' | 'demo';
+  /** Nombre a mostrar para los comentarios de ambiente (demo). */
+  nombre?: string;
   escribiendo?: boolean;
   /** Enlace a WhatsApp cuando el asistente no tiene el dato. */
   waUrl?: string;
@@ -76,6 +78,15 @@ export default function CommentsFeed({ mensajes, propios, logo }: Props) {
               </a>
             )}
           </div>
+        </div>
+      ) : c.autor === 'demo' ? (
+        <div key={c.id} className="live-in flex items-start gap-2 max-w-[90%] text-white">
+          <Avatar className="bg-white/25 text-white/90">{(c.nombre || 'C').charAt(0).toUpperCase()}</Avatar>
+          <p className={`text-[13px] leading-snug ${sombra}`}>
+            <span className="font-semibold text-white/75">{c.nombre || 'Cliente'}</span>
+            <span className="ml-1.5 text-[8px] font-bold bg-amber-400 text-black rounded px-1 py-px align-middle [text-shadow:none]">DEMO</span>
+            <br />{c.texto}
+          </p>
         </div>
       ) : (
         <div key={c.id} className="live-in flex items-start gap-2 max-w-[90%] text-white">

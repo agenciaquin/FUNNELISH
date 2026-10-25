@@ -27,9 +27,9 @@ export default function BarraInferior({ onComprar, onComentar, onCompartir }: Pr
     <div className="pointer-events-auto flex items-center gap-2 bg-black px-3 pt-2.5 pb-[max(env(safe-area-inset-bottom),10px)]">
       <button
         onClick={onComprar}
-        className="basis-[48%] shrink-0 min-w-0 h-[60px] rounded-full bg-gradient-to-r from-orange-500 via-red-500 to-pink-500 text-white font-extrabold uppercase whitespace-nowrap flex items-center justify-center gap-1.5 shadow-[0_6px_18px_rgba(255,60,80,.45)] active:scale-95 transition-transform text-[clamp(12px,3.9vw,16px)]"
+        className="live-cta basis-[50%] shrink-0 min-w-0 h-[62px] rounded-full bg-gradient-to-r from-amber-400 via-red-500 to-pink-600 text-white font-black uppercase tracking-wide whitespace-nowrap flex items-center justify-center gap-2 shadow-[0_8px_24px_rgba(255,45,95,.6)] ring-2 ring-white/25 active:scale-95 transition-transform text-[clamp(12.5px,4.1vw,17px)]"
       >
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="M6 7h12l1 13H5L6 7z" /><path d="M9 10V6a3 3 0 0 1 6 0v4" />
         </svg>
         Comprar ahora
