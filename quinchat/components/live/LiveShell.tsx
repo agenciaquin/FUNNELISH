@@ -8,6 +8,7 @@ import { track } from '@/lib/live/track';
 import VideoBackground, { type VideoHandle } from './VideoBackground';
 import LiveOverlay from './LiveOverlay';
 import BuySheet from './BuySheet';
+import type { ComentarioPropio } from './CommentsFeed';
 import { ESTILOS_LIVE } from './estilos';
 
 /**
@@ -24,6 +25,32 @@ export default function LiveShell({ live }: { live: LiveConfig }) {
   const [bloqueado, setBloqueado] = useState(false);
   const [seleccion, setSeleccion] = useState<Seleccion>({ productoId: '' });
   const [sheet, setSheet] = useState<ProductoLive | null>(null);
+  const [propios, setPropios] = useState<ComentarioPropio[]>([]);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const idComentario = useRef(0);
+  const temporizadorAviso = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const mostrarAviso = useCallback((txt: string) => {
+    setAviso(txt);
+    if (temporizadorAviso.current) clearTimeout(temporizadorAviso.current);
+    temporizadorAviso.current = setTimeout(() => setAviso(null), 2500);
+  }, []);
+
+  // Comentario del propio visitante: solo se ve en su pantalla (MAQUETA: no se envía a ningún servidor)
+  const comentar = useCallback((texto: string) => {
+    const id = ++idComentario.current;
+    setPropios(p => [...p.slice(-2), { id, texto }]);
+    setTimeout(() => setPropios(p => p.filter(c => c.id !== id)), 9000);
+  }, []);
+
+  const compartir = useCallback(async () => {
+    const url = window.location.href;
+    try {
+      if (navigator.share) { await navigator.share({ title: live.titulo, url }); return; }
+      await navigator.clipboard.writeText(url);
+      mostrarAviso('Enlace copiado');
+    } catch { /* el usuario canceló o el navegador no lo permite */ }
+  }, [live.titulo, mostrarAviso]);
 
   // MODO_REPRODUCCION 'sincronizado': aquí se haría seek a posicionSincronizada(...) al cargar. Preparado, no activo.
   const { producto: evProducto, mensajes } = useTimeline(live.timelineUrl, tiempo);
@@ -68,7 +95,11 @@ export default function LiveShell({ live }: { live: LiveConfig }) {
           onCerrar={cerrar}
           onProductoClick={p => { track('product_click', { productoId: p.id }); setSheet(p); }}
           onComprarAqui={p => { track('buy_here_open', { productoId: p.id }); setSheet(p); }}
+          propios={propios}
+          onComentar={comentar}
+          onCompartir={compartir}
         />
+        {aviso && <div role="status" className="live-pop absolute left-1/2 -translate-x-1/2 top-24 z-40 rounded-full bg-black/80 px-4 py-2 text-[13px] font-semibold">{aviso}</div>}
         {sheet && (
           <BuySheet live={live} producto={sheet} seleccion={seleccion} onSeleccion={setSeleccion} onCerrar={() => setSheet(null)} />
         )}

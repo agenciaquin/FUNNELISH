@@ -27,8 +27,8 @@ export default function Reactions() {
           style={{ ['--dx' as string]: `${p.dx}px`, animation: 'live-float 1.8s ease-out forwards' }}
         >{p.emoji}</span>
       ))}
-      <button onClick={() => lanzar('🔥')} aria-label="Reaccionar con fuego" className="w-11 h-11 rounded-full bg-black/40 backdrop-blur text-xl active:scale-90 transition-transform">🔥</button>
-      <button onClick={() => lanzar('❤️')} aria-label="Reaccionar con corazón" className="w-11 h-11 rounded-full bg-black/40 backdrop-blur text-xl active:scale-90 transition-transform">❤️</button>
+      <button onClick={() => lanzar('🔥')} aria-label="Reaccionar con fuego" className="w-10 h-10 rounded-full bg-black/35 text-[20px] active:scale-90 transition-transform">🔥</button>
+      <button onClick={() => lanzar('❤️')} aria-label="Reaccionar con corazón" className="w-11 h-11 rounded-full bg-black/35 text-[24px] active:scale-90 transition-transform">❤️</button>
     </div>
   );
 }
