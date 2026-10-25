@@ -20,6 +20,12 @@ export interface PromoProducto {
   precioPack: number;
 }
 
+/** Datos reales del producto que el asistente puede usar. Si un dato falta, el asistente NO lo inventa. */
+export interface FichaProducto {
+  tela?: string;
+  cuidados?: string;
+}
+
 export interface ProductoLive {
   id: string;
   nombre: string;
@@ -31,6 +37,7 @@ export interface ProductoLive {
   promo?: PromoProducto;
   tallas: Talla[];
   colores: ColorProducto[];
+  ficha?: FichaProducto;
 }
 
 // ── Línea de tiempo (archivo JSON separado del video) ─────────────────────────

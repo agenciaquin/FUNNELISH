@@ -2,7 +2,15 @@
 
 import type { EventoComentario, EventoPregunta } from '@/lib/live/tipos';
 
-export interface ComentarioPropio { id: number; texto: string }
+export interface ComentarioPropio {
+  id: number;
+  texto: string;
+  /** 'yo' = lo escribió el visitante · 'ia' = respuesta del asistente (maqueta: simulada). */
+  autor?: 'yo' | 'ia';
+  escribiendo?: boolean;
+  /** Enlace a WhatsApp cuando el asistente no tiene el dato. */
+  waUrl?: string;
+}
 
 interface Props {
   mensajes: Array<EventoPregunta | EventoComentario>;
@@ -51,7 +59,25 @@ export default function CommentsFeed({ mensajes, propios, logo }: Props) {
           </div>
         ),
       )}
-      {propios.map(c => (
+      {propios.map(c => c.autor === 'ia' ? (
+        <div key={c.id} className="live-in flex items-start gap-2 max-w-[94%] text-white">
+          <Avatar className="bg-gradient-to-br from-violet-500 to-fuchsia-500 text-[15px]">✨</Avatar>
+          <div className="rounded-2xl rounded-tl-md bg-black/60 border border-violet-300/40 px-3 py-1.5">
+            <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide bg-violet-500 text-white rounded-full px-2 py-0.5 mb-0.5">
+              ✨ Asistente IA
+              <span className="bg-amber-400 text-black rounded px-1 text-[8px]">DEMO</span>
+            </span>
+            {c.escribiendo
+              ? <p className="text-[13px] leading-snug text-white/80">Escribiendo…</p>
+              : <p className="text-[13px] leading-snug">{c.texto}</p>}
+            {c.waUrl && (
+              <a href={c.waUrl} target="_blank" rel="noopener noreferrer" className="pointer-events-auto mt-1 inline-flex items-center gap-1 rounded-full bg-[#25D366] text-black text-[12px] font-bold px-3 py-1">
+                💬 Preguntar por WhatsApp
+              </a>
+            )}
+          </div>
+        </div>
+      ) : (
         <div key={c.id} className="live-in flex items-start gap-2 max-w-[90%] text-white">
           <Avatar className="bg-[#ff3366]">Tú</Avatar>
           <p className={`text-[13px] leading-snug ${sombra}`}><span className="font-semibold text-white/75">Tú</span><br />{c.texto}</p>

@@ -10,7 +10,10 @@ export type EventoLive =
   | 'product_click'
   | 'buy_here_open'
   | 'order_submit'
-  | 'buy_whatsapp_click';
+  | 'buy_whatsapp_click'
+  // Asistente IA (maqueta)
+  | 'ai_question'
+  | 'ai_answer';
 
 export function track(evento: EventoLive, datos: Record<string, unknown> = {}): void {
   // TODO fase 2: fbq('trackCustom', ...) / ttq.track(...) / POST /api/live/evento

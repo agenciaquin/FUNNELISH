@@ -6,6 +6,8 @@ import type { LiveConfig, ProductoLive, Seleccion } from '@/lib/live/tipos';
 import { useTimeline } from '@/lib/live/useTimeline';
 import { track } from '@/lib/live/track';
 import { etiquetaValida, leerEtiqueta } from '@/lib/live/etiqueta';
+import { MAX_PREGUNTAS_IA, esPregunta, responderPregunta } from '@/lib/live/asistente';
+import { mensajeWhatsApp, urlWhatsApp } from './WhatsAppButton';
 import VideoBackground, { type VideoHandle } from './VideoBackground';
 import LiveOverlay from './LiveOverlay';
 import BuySheet from './BuySheet';
@@ -39,12 +41,37 @@ export default function LiveShell({ live }: { live: LiveConfig }) {
     temporizadorAviso.current = setTimeout(() => setAviso(null), 2500);
   }, []);
 
-  // Comentario del propio visitante: solo se ve en su pantalla (MAQUETA: no se envía a ningún servidor)
-  const comentar = useCallback((texto: string) => {
+  const { producto: evProducto, mensajes } = useTimeline(live.timelineUrl, tiempo);
+  const producto = evProducto ? live.productos.find(p => p.id === evProducto.contenido.productoId) ?? null : null;
+
+  // Comentario del propio visitante: solo se ve en su pantalla (MAQUETA: no se envía a ningún servidor).
+  // Si es una pregunta, el asistente responde corto (en la maqueta la respuesta es simulada).
+  const preguntasIA = useRef(0);
+  const quitarEn = (id: number, ms: number) => setTimeout(() => setPropios(p => p.filter(c => c.id !== id)), ms);
+
+  const comentar = useCallback(async (texto: string) => {
     const id = ++idComentario.current;
-    setPropios(p => [...p.slice(-2), { id, texto }]);
-    setTimeout(() => setPropios(p => p.filter(c => c.id !== id)), 9000);
-  }, []);
+    setPropios(p => [...p.slice(-2), { id, texto, autor: 'yo' }]);
+    quitarEn(id, 9000);
+    if (!esPregunta(texto)) return;
+
+    const destino = producto ?? live.productos[0];
+    if (!destino) return;
+    if (preguntasIA.current >= MAX_PREGUNTAS_IA) {
+      mostrarAviso('Llegaste al límite de preguntas. Escríbenos por WhatsApp.');
+      return;
+    }
+    preguntasIA.current += 1;
+    track('ai_question', { productoId: destino.id });
+
+    const idIA = ++idComentario.current;
+    setPropios(p => [...p.slice(-2), { id: idIA, texto: '', autor: 'ia', escribiendo: true }]);
+    const r = await responderPregunta(texto, destino);
+    const waUrl = r.sinDato ? urlWhatsApp(live.whatsapp, mensajeWhatsApp(destino, seleccion)) : undefined;
+    setPropios(p => p.map(c => (c.id === idIA ? { id: idIA, texto: r.texto, autor: 'ia', waUrl } : c)));
+    track('ai_answer', { productoId: destino.id, tema: r.tema, sinDato: r.sinDato });
+    quitarEn(idIA, 16000);
+  }, [producto, live.productos, live.whatsapp, seleccion, mostrarAviso]);
 
   const compartir = useCallback(async () => {
     const url = window.location.href;
@@ -56,8 +83,6 @@ export default function LiveShell({ live }: { live: LiveConfig }) {
   }, [live.titulo, mostrarAviso]);
 
   // MODO_REPRODUCCION 'sincronizado': aquí se haría seek a posicionSincronizada(...) al cargar. Preparado, no activo.
-  const { producto: evProducto, mensajes } = useTimeline(live.timelineUrl, tiempo);
-  const producto = evProducto ? live.productos.find(p => p.id === evProducto.contenido.productoId) ?? null : null;
 
   useEffect(() => { track('live_view', { slug: live.slug, modo: live.modo }); }, [live.slug, live.modo]);
   useEffect(() => { if (producto) track('product_shown', { productoId: producto.id, segundo: Math.floor(tiempo) }); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [producto?.id]);

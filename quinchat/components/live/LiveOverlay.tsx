@@ -76,7 +76,7 @@ export default function LiveOverlay({
             />
           )}
           <div className="flex items-end gap-2">
-            <div className="flex-1 min-w-0"><CommentsFeed mensajes={mensajes} propios={propios} logo={live.tienda.logo} /></div>
+            <div className="flex-1 min-w-0 h-[26vh] flex flex-col justify-end"><CommentsFeed mensajes={mensajes} propios={propios} logo={live.tienda.logo} /></div>
             <div className="flex flex-col items-center gap-3 shrink-0">
               <Reactions />
               <WhatsAppButton numero={live.whatsapp} producto={destacado} seleccion={seleccion} />
