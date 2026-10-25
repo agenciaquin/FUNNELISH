@@ -8,7 +8,7 @@ interface LiveResumen { id: string; slug: string; titulo: string; estado: Estado
 interface Color { id?: string; nombre: string; hex: string; foto_url: string; }
 interface Producto { id: string; nombre: string; descripcion: string | null; ficha_tela: string | null; ficha_cuidados: string | null; precio: number; precio_antes: number | null; promo_etiqueta: string | null; promo_unidades: number | null; promo_precio: number | null; tallas: string[]; colores: Color[]; }
 interface EventoTL { tipo: 'producto' | 'pregunta_frecuente' | 'comentario'; inicio_seg: number; fin_seg: number; producto_id?: string | null; pregunta?: string; respuesta?: string; autor?: string; texto?: string; }
-interface LiveFull { id: string; slug: string; titulo: string; estado: EstadoLive; video_url: string | null; poster_url: string | null; whatsapp: string | null; etiqueta_grabada: string | null; duracion_seg: number | null; tienda_nombre: string | null; tienda_logo: string | null; modo: string; }
+interface LiveFull { id: string; slug: string; titulo: string; estado: EstadoLive; video_url: string | null; poster_url: string | null; whatsapp: string | null; etiqueta_grabada: string | null; duracion_seg: number | null; tienda_nombre: string | null; tienda_logo: string | null; modo: string; comentarios: string[] | null; }
 
 const TALLAS = ['S', 'M', 'L', 'XL'];
 const peso = (n: number) => `$${(Number(n) || 0).toLocaleString('es-CO')}`;
@@ -157,6 +157,7 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
         titulo: live.titulo, slug: live.slug, estado: live.estado, video_url: live.video_url,
         whatsapp: live.whatsapp, etiqueta_grabada: live.etiqueta_grabada, duracion_seg: live.duracion_seg,
         tienda_nombre: live.tienda_nombre, tienda_logo: live.tienda_logo,
+        comentarios: (live.comentarios ?? []).map(s => s.trim()).filter(Boolean),
       }) });
       flash('Datos del live guardados ✅');
     } catch (e: any) { flash('Error: ' + e.message); }
@@ -242,6 +243,18 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
               </select></label>
           </div>
           <button onClick={guardarLive} disabled={guardando} className="mt-3 px-4 py-2 rounded-lg text-sm font-semibold bg-[#00A89D] text-white hover:bg-[#007A72] disabled:opacity-50">Guardar datos del live</button>
+        </section>
+
+        {/* Comentarios de ambiente */}
+        <section className="bg-white border border-brand-border rounded-2xl p-4 mb-4">
+          <h2 className="font-bold text-brand-black mb-1">Comentarios del live (demo)</h2>
+          <p className="text-xs text-brand-gray-mid mb-2">Un comentario por línea. Aparecen solos durante el video, como un chat en vivo (siempre marcados DEMO). Se guardan con el botón “Guardar datos del live”.</p>
+          <textarea
+            className="w-full rounded-lg border border-brand-border px-3 py-2 text-sm min-h-[140px]"
+            placeholder={'me encanta ese buzo 🔥\n¿lo tienen en talla XL?\n¿hacen envío a Medellín?\n¿pago contra entrega?'}
+            value={(live.comentarios ?? []).join('\n')}
+            onChange={e => setCampo('comentarios', e.target.value.split('\n'))}
+          />
         </section>
 
         {/* Productos */}

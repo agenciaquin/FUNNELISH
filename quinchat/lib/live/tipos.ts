@@ -87,6 +87,8 @@ export interface LiveConfig {
   privacidadUrl: string;
   modo: ModoReproduccion;
   productos: ProductoLive[];
+  /** Comentarios "de ambiente" (demo) que van apareciendo solos durante el live. */
+  comentariosAuto?: string[];
 }
 
 export interface Seleccion {
