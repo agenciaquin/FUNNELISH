@@ -30,6 +30,7 @@ export default function middleware(req: NextRequest, event: any) {
     // cliente vea el /p/ en la barra del navegador.
     const interno = pathname.startsWith('/p/')
       || pathname.startsWith('/api/')
+      || pathname.startsWith('/live/')      // QUIN LIVE SHOPPING (público)
       || pathname.startsWith('/_next')
       || pathname === '/tienda'
       || pathname.includes('.');           // archivos: imágenes, iconos, etc.
@@ -47,7 +48,7 @@ export default function middleware(req: NextRequest, event: any) {
   const publicas = [
     '/login', '/api/auth', '/api/whatsapp/webhook', '/api/whatsapp/confirmar',
     '/api/funnelish/webhook', '/api/cron/remarketing', '/api/cron/ventas-seguimiento', '/api/cron/mantener-chat', '/api/cron/vendedores', '/api/cron/objeciones', '/api/cron/apagar-vendidos', '/api/cron/seguimiento-ia', '/api/cron/meta-alertas', '/api/cron/capi', '/api/cron/registros-funnel', '/api/cron/promo-cierre', '/api/pedidos',
-    '/p/', '/manifest.json', '/sw.js', '/icon-', '/apple-touch-icon',
+    '/p/', '/live/', '/live-demo/', '/manifest.json', '/sw.js', '/icon-', '/apple-touch-icon',
     '/logo-agencia-quin', '/logo-quin-app', '/_next/', '/favicon.ico',
   ];
   if (publicas.some(p => pathname.startsWith(p))) return NextResponse.next();
