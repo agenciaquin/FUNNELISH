@@ -12,6 +12,9 @@ interface LiveFull { id: string; slug: string; titulo: string; estado: EstadoLiv
 
 const TALLAS = ['S', 'M', 'L', 'XL'];
 const peso = (n: number) => `$${(Number(n) || 0).toLocaleString('es-CO')}`;
+// Precios: la gente escribe "195.000"; guardamos solo los dígitos → 195000.
+const soloNum = (s: string) => Number(String(s).replace(/\D/g, '')) || 0;
+const verNum = (n: number | null | undefined) => (n == null || n === 0 ? '' : Number(n).toLocaleString('es-CO'));
 
 async function api(url: string, opts?: RequestInit) {
   const r = await fetch(url, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts?.headers || {}) } });
@@ -101,6 +104,9 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
   const [timeline, setTimeline] = useState<EventoTL[]>([]);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
+  // Aviso visible DENTRO del editor (antes solo salía en la lista).
+  const [aviso, setAviso] = useState<string | null>(null);
+  const flash = useCallback((t: string) => { setAviso(t); onAviso(t); setTimeout(() => setAviso(null), 3000); }, [onAviso]);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -109,7 +115,7 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
       setLive(j.live);
       setProductos((j.productos ?? []).map((p: any) => ({ ...p, colores: p.colores ?? [], tallas: p.tallas ?? TALLAS })));
       setTimeline((j.timeline ?? []).map((e: any) => ({ tipo: e.tipo, inicio_seg: Number(e.inicio_seg), fin_seg: Number(e.fin_seg), producto_id: e.producto_id, pregunta: e.pregunta ?? '', respuesta: e.respuesta ?? '', autor: e.autor ?? 'Cliente DEMO', texto: e.texto ?? '' })));
-    } catch (e: any) { onAviso('No se pudo cargar: ' + e.message); }
+    } catch (e: any) { setAviso('No se pudo cargar: ' + e.message); }
     setCargando(false);
     // onAviso es estable (useCallback en el padre); no lo ponemos como dependencia
     // para que el editor NO se recargue en bucle mientras editas.
@@ -128,43 +134,47 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
         whatsapp: live.whatsapp, etiqueta_grabada: live.etiqueta_grabada, duracion_seg: live.duracion_seg,
         tienda_nombre: live.tienda_nombre, tienda_logo: live.tienda_logo,
       }) });
-      onAviso('Datos del live guardados ✅');
-    } catch (e: any) { onAviso('Error: ' + e.message); }
+      flash('Datos del live guardados ✅');
+    } catch (e: any) { flash('Error: ' + e.message); }
     setGuardando(false);
   };
 
-  const guardarContenido = async () => {
+  const cuerpoProducto = (p: Producto) => ({
+    nombre: p.nombre, descripcion: p.descripcion, ficha_tela: p.ficha_tela, ficha_cuidados: p.ficha_cuidados,
+    precio: p.precio, precio_antes: p.precio_antes, promo_etiqueta: p.promo_etiqueta, promo_unidades: p.promo_unidades, promo_precio: p.promo_precio,
+    tallas: p.tallas, colores: p.colores,
+  });
+
+  // UN SOLO botón: guarda los campos de CADA producto, luego los vincula al live y guarda la línea de tiempo.
+  const guardarTodo = async () => {
     setGuardando(true);
     try {
+      for (const p of productos) {
+        await api(`/api/live-admin/productos/${p.id}`, { method: 'PATCH', body: JSON.stringify(cuerpoProducto(p)) });
+      }
       await api(`/api/live-admin/lives/${id}/contenido`, { method: 'PUT', body: JSON.stringify({
         productos: productos.map((p, i) => ({ producto_id: p.id, orden: i })),
         timeline: timeline,
       }) });
-      onAviso('Productos y línea de tiempo guardados ✅');
-    } catch (e: any) { onAviso('Error: ' + e.message); }
+      flash('Todo guardado ✅');
+    } catch (e: any) { flash('Error al guardar: ' + e.message); }
     setGuardando(false);
   };
 
   const agregarProducto = async () => {
     try {
       const j = await api('/api/live-admin/productos', { method: 'POST', body: JSON.stringify({ nombre: 'Buzo nuevo', precio: 129900, tallas: TALLAS }) });
-      // vincular: se guarda al pulsar "Guardar productos y línea de tiempo"; mientras, lo mostramos
-      await cargar();
       const nuevo = { id: j.id, nombre: 'Buzo nuevo', descripcion: '', ficha_tela: '', ficha_cuidados: '', precio: 129900, precio_antes: null, promo_etiqueta: null, promo_unidades: null, promo_precio: null, tallas: TALLAS, colores: [] } as Producto;
-      setProductos(p => p.some(x => x.id === j.id) ? p : [...p, nuevo]);
-      onAviso('Producto creado. No olvides “Guardar productos…”.');
-    } catch (e: any) { onAviso('Error: ' + e.message); }
+      setProductos(p => [...p, nuevo]);
+      flash('Producto agregado. Edítalo y pulsa “Guardar todo” abajo.');
+    } catch (e: any) { flash('Error: ' + e.message); }
   };
 
   const guardarProducto = async (p: Producto) => {
     try {
-      await api(`/api/live-admin/productos/${p.id}`, { method: 'PATCH', body: JSON.stringify({
-        nombre: p.nombre, descripcion: p.descripcion, ficha_tela: p.ficha_tela, ficha_cuidados: p.ficha_cuidados,
-        precio: p.precio, precio_antes: p.precio_antes, promo_etiqueta: p.promo_etiqueta, promo_unidades: p.promo_unidades, promo_precio: p.promo_precio,
-        tallas: p.tallas, colores: p.colores,
-      }) });
-      onAviso('Producto guardado ✅');
-    } catch (e: any) { onAviso('Error: ' + e.message); }
+      await api(`/api/live-admin/productos/${p.id}`, { method: 'PATCH', body: JSON.stringify(cuerpoProducto(p)) });
+      flash('Producto guardado ✅');
+    } catch (e: any) { flash('Error: ' + e.message); }
   };
 
   const quitarProducto = (pid: string) => setProductos(ps => ps.filter(p => p.id !== pid));
@@ -178,6 +188,8 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
     <div className="flex-1 min-w-0 h-full overflow-y-auto bg-brand-ivory p-5 md:p-8">
       <div className="max-w-3xl mx-auto">
         <button onClick={onVolver} className="text-sm text-[#00A89D] font-semibold mb-3">← Volver a la lista</button>
+
+        {aviso && <div className="sticky top-2 z-10 mb-3 text-sm bg-[#00A89D] text-white rounded-lg px-3 py-2 shadow">{aviso}</div>}
 
         {/* Datos del live */}
         <section className="bg-white border border-brand-border rounded-2xl p-4 mb-4">
@@ -220,7 +232,7 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
               onChange={patch => setProd(p.id, patch)}
               onGuardar={() => guardarProducto(p)}
               onQuitar={() => quitarProducto(p.id)}
-              onAviso={onAviso} />
+              onAviso={flash} />
           ))}
         </section>
 
@@ -231,8 +243,8 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
           <TimelineEditor timeline={timeline} setTimeline={setTimeline} productos={productos} campo={campo} />
         </section>
 
-        <button onClick={guardarContenido} disabled={guardando} className="mb-10 px-5 py-2.5 rounded-lg text-sm font-bold bg-[#00A89D] text-white hover:bg-[#007A72] disabled:opacity-50">
-          {guardando ? 'Guardando…' : 'Guardar productos y línea de tiempo'}
+        <button onClick={guardarTodo} disabled={guardando} className="mb-10 px-6 py-3 rounded-lg text-sm font-bold bg-[#00A89D] text-white hover:bg-[#007A72] disabled:opacity-50">
+          {guardando ? 'Guardando…' : '💾 Guardar todo (datos, productos y línea de tiempo)'}
         </button>
       </div>
     </div>
@@ -281,13 +293,13 @@ function ProductoEditor({ p, indice, campo, onChange, onGuardar, onQuitar, onAvi
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <label className="text-xs font-semibold">Nombre<input className={campo} value={p.nombre} onChange={e => onChange({ nombre: e.target.value })} /></label>
             <label className="text-xs font-semibold">Descripción<input className={campo} value={p.descripcion ?? ''} onChange={e => onChange({ descripcion: e.target.value })} /></label>
-            <label className="text-xs font-semibold">Precio<input type="number" className={campo} value={p.precio} onChange={e => onChange({ precio: Number(e.target.value) })} /></label>
-            <label className="text-xs font-semibold">Precio antes (opcional)<input type="number" className={campo} value={p.precio_antes ?? ''} onChange={e => onChange({ precio_antes: e.target.value ? Number(e.target.value) : null })} /></label>
+            <label className="text-xs font-semibold">Precio<input inputMode="numeric" className={campo} value={verNum(p.precio)} onChange={e => onChange({ precio: soloNum(e.target.value) })} /></label>
+            <label className="text-xs font-semibold">Precio antes (opcional)<input inputMode="numeric" className={campo} value={verNum(p.precio_antes)} onChange={e => onChange({ precio_antes: soloNum(e.target.value) || null })} /></label>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <label className="text-xs font-semibold">Promo etiqueta<input className={campo} placeholder="Pack x2" value={p.promo_etiqueta ?? ''} onChange={e => onChange({ promo_etiqueta: e.target.value || null })} /></label>
-            <label className="text-xs font-semibold">Unidades pack<input type="number" className={campo} value={p.promo_unidades ?? ''} onChange={e => onChange({ promo_unidades: e.target.value ? Number(e.target.value) : null })} /></label>
-            <label className="text-xs font-semibold">Precio pack<input type="number" className={campo} value={p.promo_precio ?? ''} onChange={e => onChange({ promo_precio: e.target.value ? Number(e.target.value) : null })} /></label>
+            <label className="text-xs font-semibold">Unidades pack<input inputMode="numeric" className={campo} value={p.promo_unidades ?? ''} onChange={e => onChange({ promo_unidades: soloNum(e.target.value) || null })} /></label>
+            <label className="text-xs font-semibold">Precio pack<input inputMode="numeric" className={campo} value={verNum(p.promo_precio)} onChange={e => onChange({ promo_precio: soloNum(e.target.value) || null })} /></label>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <label className="text-xs font-semibold">Ficha · tela<input className={campo} value={p.ficha_tela ?? ''} onChange={e => onChange({ ficha_tela: e.target.value })} /></label>
