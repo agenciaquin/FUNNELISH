@@ -67,6 +67,8 @@ export type ModoReproduccion = 'desde_inicio' | 'sincronizado';
 export interface LiveConfig {
   slug: string;
   titulo: string;
+  /** Texto de la etiqueta fija del encabezado (editable; nunca se oculta). Por defecto "Presentación grabada". */
+  etiquetaGrabada?: string;
   tienda: { nombre: string; logo?: string };
   /** URL del video (Cloudflare R2). Nunca Supabase Storage. */
   videoUrl: string;

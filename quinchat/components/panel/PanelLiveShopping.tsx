@@ -1,11 +1,27 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LIVES_DEMO } from '@/lib/live/datos-demo';
+import { ETIQUETA_MAX, ETIQUETA_POR_DEFECTO, claveEtiqueta, etiquetaValida, leerEtiqueta } from '@/lib/live/etiqueta';
 
 /** Apartado "QUIN LIVE SHOPPING" del panel — MAQUETA: lista de lives de demo y enlace público. */
 export default function PanelLiveShopping() {
   const [copiado, setCopiado] = useState<string | null>(null);
+  const [etiquetas, setEtiquetas] = useState<Record<string, string>>({});
+  const [guardado, setGuardado] = useState<string | null>(null);
+
+  useEffect(() => {
+    const o: Record<string, string> = {};
+    LIVES_DEMO.forEach(l => { o[l.slug] = leerEtiqueta(l.slug, l.etiquetaGrabada); });
+    setEtiquetas(o);
+  }, []);
+
+  const guardarEtiqueta = (slug: string) => {
+    const v = etiquetaValida(etiquetas[slug]);
+    setEtiquetas(e => ({ ...e, [slug]: v }));
+    try { localStorage.setItem(claveEtiqueta(slug), v); } catch { /* ignorar */ }
+    setGuardado(slug); setTimeout(() => setGuardado(null), 1800);
+  };
 
   const urlPublica = (slug: string) =>
     (typeof window !== 'undefined' ? window.location.origin : '') + `/live/${slug}`;
@@ -41,6 +57,23 @@ export default function PanelLiveShopping() {
                   Abrir maqueta
                 </a>
               </div>
+            </div>
+            <div className="mt-3">
+              <label htmlFor={`etq-${live.slug}`} className="text-xs font-semibold text-brand-black">Etiqueta del encabezado</label>
+              <div className="flex gap-2 mt-1">
+                <input
+                  id={`etq-${live.slug}`}
+                  value={etiquetas[live.slug] ?? ''}
+                  maxLength={ETIQUETA_MAX}
+                  onChange={e => setEtiquetas(o => ({ ...o, [live.slug]: e.target.value }))}
+                  placeholder={ETIQUETA_POR_DEFECTO}
+                  className="flex-1 min-w-0 rounded-lg border border-brand-border px-3 py-1.5 text-sm"
+                />
+                <button onClick={() => guardarEtiqueta(live.slug)} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#00A89D] text-white hover:bg-[#007A72]">
+                  {guardado === live.slug ? '¡Guardado!' : 'Guardar'}
+                </button>
+              </div>
+              <p className="text-[11px] text-brand-gray-mid mt-1">Siempre se muestra en el video. No puede quedar vacía ni decir "en vivo". Por ahora se guarda solo en este navegador.</p>
             </div>
             <p className="mt-3 text-xs font-mono bg-brand-gray-light rounded-lg px-3 py-2 break-all">/live/{live.slug}</p>
           </div>

@@ -44,6 +44,7 @@ export const LIVES_DEMO: LiveConfig[] = [
   {
     slug: 'demo',
     titulo: 'Buzos premium KLIXMANT',
+    etiquetaGrabada: 'Presentación grabada',
     tienda: { nombre: 'KLIXMANT', logo: '/logo-agencia-quin.png' },
     videoUrl: VIDEO_URL,
     timelineUrl: '/live-demo/timeline.json',

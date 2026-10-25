@@ -15,6 +15,7 @@ import WhatsAppButton from './WhatsAppButton';
  */
 interface Props {
   live: LiveConfig;
+  etiqueta: string;
   producto: ProductoLive | null;
   mensajes: Array<EventoPregunta | EventoComentario>;
   propios: ComentarioPropio[];
@@ -31,7 +32,7 @@ interface Props {
 }
 
 export default function LiveOverlay({
-  live, producto, mensajes, propios, seleccion, silenciado, bloqueado,
+  live, etiqueta, producto, mensajes, propios, seleccion, silenciado, bloqueado,
   onSonido, onReproducir, onCerrar, onProductoClick, onComprarAqui, onComentar, onCompartir,
 }: Props) {
   const destacado = producto ?? live.productos[0] ?? null;
@@ -47,7 +48,7 @@ export default function LiveOverlay({
             <p className="text-[17px] font-extrabold truncate [text-shadow:0_1px_3px_rgba(0,0,0,.7)]">{live.tienda.nombre}</p>
             {/* Etiqueta obligatoria: no se puede ocultar */}
             <p className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide bg-black/55 text-white rounded-full px-2.5 py-0.5 mt-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-white/70" /> Presentación grabada
+              <span className="w-1.5 h-1.5 rounded-full bg-white/70" /> {etiqueta}
             </p>
           </div>
           <button onClick={onCerrar} aria-label="Cerrar" className="w-10 h-10 rounded-full bg-black/40 text-[28px] leading-none">×</button>

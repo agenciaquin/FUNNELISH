@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { LiveConfig, ProductoLive, Seleccion } from '@/lib/live/tipos';
 import { useTimeline } from '@/lib/live/useTimeline';
 import { track } from '@/lib/live/track';
+import { etiquetaValida, leerEtiqueta } from '@/lib/live/etiqueta';
 import VideoBackground, { type VideoHandle } from './VideoBackground';
 import LiveOverlay from './LiveOverlay';
 import BuySheet from './BuySheet';
@@ -25,6 +26,8 @@ export default function LiveShell({ live }: { live: LiveConfig }) {
   const [bloqueado, setBloqueado] = useState(false);
   const [seleccion, setSeleccion] = useState<Seleccion>({ productoId: '' });
   const [sheet, setSheet] = useState<ProductoLive | null>(null);
+  const [etiqueta, setEtiqueta] = useState(() => etiquetaValida(live.etiquetaGrabada));
+  useEffect(() => { setEtiqueta(leerEtiqueta(live.slug, live.etiquetaGrabada)); }, [live.slug, live.etiquetaGrabada]);
   const [propios, setPropios] = useState<ComentarioPropio[]>([]);
   const [aviso, setAviso] = useState<string | null>(null);
   const idComentario = useRef(0);
@@ -85,6 +88,7 @@ export default function LiveShell({ live }: { live: LiveConfig }) {
         {/* CAPA 2 */}
         <LiveOverlay
           live={live}
+          etiqueta={etiqueta}
           producto={producto}
           mensajes={mensajes}
           seleccion={seleccion}
