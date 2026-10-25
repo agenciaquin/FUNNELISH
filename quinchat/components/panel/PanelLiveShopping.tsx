@@ -108,6 +108,30 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
   const [aviso, setAviso] = useState<string | null>(null);
   const flash = useCallback((t: string) => { setAviso(t); onAviso(t); setTimeout(() => setAviso(null), 3000); }, [onAviso]);
 
+  // Importar producto desde el catálogo existente (catalogos_bot + colores con foto).
+  const [catOpen, setCatOpen] = useState(false);
+  const [catProds, setCatProds] = useState<{ catalogo_id: string; familia: string; colores: { nombre: string; foto_url: string }[] }[]>([]);
+  const [catCargando, setCatCargando] = useState(false);
+  const [catBusca, setCatBusca] = useState('');
+  const abrirCatalogo = async () => {
+    setCatOpen(true);
+    if (catProds.length) return;
+    setCatCargando(true);
+    try { const j = await api('/api/live-admin/catalogo'); setCatProds(j.productos ?? []); }
+    catch (e: any) { flash('No se pudo cargar el catálogo: ' + e.message); }
+    setCatCargando(false);
+  };
+  const importar = async (c: { catalogo_id: string; familia: string; colores: { nombre: string; foto_url: string }[] }) => {
+    try {
+      const colores: Color[] = c.colores.map(x => ({ nombre: x.nombre, hex: '#888888', foto_url: x.foto_url }));
+      const j = await api('/api/live-admin/productos', { method: 'POST', body: JSON.stringify({ nombre: c.familia, precio: 129900, tallas: TALLAS, colores }) });
+      const nuevo: Producto = { id: j.id, nombre: c.familia, descripcion: '', ficha_tela: '', ficha_cuidados: '', precio: 129900, precio_antes: null, promo_etiqueta: null, promo_unidades: null, promo_precio: null, tallas: TALLAS, colores };
+      setProductos(p => [...p, nuevo]);
+      flash(`"${c.familia}" agregado del catálogo. Ponle precio y pulsa Guardar todo.`);
+      setCatOpen(false);
+    } catch (e: any) { flash('Error: ' + e.message); }
+  };
+
   const cargar = useCallback(async () => {
     setCargando(true);
     try {
@@ -224,7 +248,10 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
         <section className="bg-white border border-brand-border rounded-2xl p-4 mb-4">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-bold text-brand-black">Productos ({productos.length})</h2>
-            <button onClick={agregarProducto} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-brand-border hover:bg-brand-gray-light">+ Agregar producto</button>
+            <div className="flex gap-2">
+              <button onClick={abrirCatalogo} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#00A89D] text-white hover:bg-[#007A72]">📦 Importar de mi catálogo</button>
+              <button onClick={agregarProducto} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-brand-border hover:bg-brand-gray-light">+ En blanco</button>
+            </div>
           </div>
           {productos.length === 0 && <p className="text-sm text-brand-gray-mid">Sin productos. Agrega el primero.</p>}
           {productos.map((p, idx) => (
@@ -247,6 +274,38 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
           {guardando ? 'Guardando…' : '💾 Guardar todo (datos, productos y línea de tiempo)'}
         </button>
       </div>
+
+      {/* Ventana: importar producto del catálogo */}
+      {catOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setCatOpen(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b border-brand-border flex items-center justify-between">
+              <h3 className="font-bold text-brand-black">Importar de mi catálogo</h3>
+              <button onClick={() => setCatOpen(false)} className="w-8 h-8 rounded-full hover:bg-brand-gray-light text-lg">×</button>
+            </div>
+            <div className="p-3 border-b border-brand-border">
+              <input className="w-full rounded-lg border border-brand-border px-3 py-2 text-sm" placeholder="Buscar producto…" value={catBusca} onChange={e => setCatBusca(e.target.value)} />
+            </div>
+            <div className="overflow-y-auto p-3">
+              {catCargando ? <p className="text-sm text-brand-gray-mid">Cargando catálogo…</p> : (
+                catProds.filter(c => c.familia.toLowerCase().includes(catBusca.toLowerCase())).map(c => (
+                  <div key={c.catalogo_id} className="flex items-center gap-3 p-2 border border-brand-border rounded-xl mb-2">
+                    {c.colores[0]?.foto_url
+                      ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={c.colores[0].foto_url} alt="" className="w-12 h-12 rounded object-cover bg-neutral-100 shrink-0" />
+                      : <span className="w-12 h-12 rounded bg-neutral-100 shrink-0" />}
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-sm text-brand-black truncate">{c.familia}</p>
+                      <p className="text-xs text-brand-gray-mid">{c.colores.length} color{c.colores.length === 1 ? '' : 'es'}</p>
+                    </div>
+                    <button onClick={() => importar(c)} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#00A89D] text-white hover:bg-[#007A72] shrink-0">Agregar</button>
+                  </div>
+                ))
+              )}
+              {!catCargando && catProds.length === 0 && <p className="text-sm text-brand-gray-mid">No hay productos en el catálogo.</p>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
