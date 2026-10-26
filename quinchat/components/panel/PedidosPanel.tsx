@@ -255,7 +255,7 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
     }`;
 
   // Carritos abandonados en pantalla completa (con "← Volver")
-  if (verCarritos) return <CarritosAbandonados onClose={() => setVerCarritos(false)} />;
+  if (verCarritos) return <CarritosAbandonados onClose={() => setVerCarritos(false)} onAbrirChat={onAbrirChat} />;
 
   return (
     <div className="flex-1 min-w-0 overflow-y-auto bg-[#FAF9F6]">

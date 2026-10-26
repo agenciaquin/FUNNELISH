@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import ModalConfirm from './ModalConfirm';
+import { createBrowserSupabaseClient } from '@/lib/supabase';
 
 interface Carrito {
   id: string;
@@ -33,8 +34,14 @@ function cuandoFue(iso: string) {
   return `hace ${Math.floor(h / 24)} d`;
 }
 
-export default function CarritosAbandonados({ onClose }: { onClose: () => void }) {
+const supabase = createBrowserSupabaseClient();
+
+/** Info del chat del cliente en QuinChat (si ya escribió). */
+interface ChatInfo { id: string; linea: string | null; ultimo: string | null; noLeidos: number }
+
+export default function CarritosAbandonados({ onClose, onAbrirChat }: { onClose: () => void; onAbrirChat?: (conversationId: string) => void }) {
   const [carritos, setCarritos] = useState<Carrito[]>([]);
+  const [chats, setChats] = useState<Record<string, ChatInfo>>({});   // por teléfono de 10 dígitos
   const [loading, setLoading]   = useState(true);
   const [verRecuperados, setVerRecuperados] = useState(false);
   const [marcando, setMarcando] = useState<string | null>(null);
@@ -59,6 +66,34 @@ export default function CarritosAbandonados({ onClose }: { onClose: () => void }
   }, [verRecuperados]);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  // ¿El cliente ya tiene chat en QuinChat y escribió? (para saber a quién falta escribirle)
+  useEffect(() => {
+    if (!carritos.length) { setChats({}); return; }
+    let vivo = true;
+    (async () => {
+      const tels = [...new Set(carritos.map(c => c.telefono.replace(/\D/g, '').replace(/^57/, '').slice(-10)))];
+      const ids = tels.map(t => `57${t}`);
+      const info: Record<string, ChatInfo> = {};
+      try {
+        for (let i = 0; i < ids.length; i += 100) {
+          const lote = ids.slice(i, i + 100);
+          const [{ data: convs }, { data: msgs }] = await Promise.all([
+            supabase.from('conversations').select('id, linea, unread_count').in('id', lote),
+            supabase.from('messages').select('conversation_id, created_at').in('conversation_id', lote)
+              .eq('role', 'user').order('created_at', { ascending: false }).limit(2000),
+          ]);
+          const ultimo: Record<string, string> = {};
+          for (const m of msgs ?? []) if (!ultimo[m.conversation_id]) ultimo[m.conversation_id] = m.created_at;
+          for (const cv of convs ?? []) {
+            info[String(cv.id).slice(2)] = { id: cv.id, linea: cv.linea ?? null, ultimo: ultimo[cv.id] ?? null, noLeidos: cv.unread_count ?? 0 };
+          }
+        }
+      } catch { /* si falla, solo no se muestra el indicador */ }
+      if (vivo) setChats(info);
+    })();
+    return () => { vivo = false; };
+  }, [carritos]);
 
   async function marcar(id: string, recuperado: boolean) {
     setMarcando(id);
@@ -222,6 +257,9 @@ export default function CarritosAbandonados({ onClose }: { onClose: () => void }
                       return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
                     });
                   const estaAbierto = abierto === c.id;
+                  const chat = chats[tel.slice(-10)];
+                  // Escribió DESPUÉS de dejar el carrito → probablemente ya está en conversación
+                  const escribioDespues = !!(chat?.ultimo && new Date(chat.ultimo) >= new Date(c.created_at));
                   return (
                     <div key={c.id} className={`rounded-xl border p-3 ${sel.has(c.id) ? 'border-[#00A89D] ring-1 ring-[#00A89D]/30' : 'border-[#EFEFEF]'}`}>
                       <div className="flex items-center gap-3">
@@ -240,13 +278,39 @@ export default function CarritosAbandonados({ onClose }: { onClose: () => void }
                           <div className="text-[12px] text-[#6B6B6B] truncate">
                             {c.producto || '—'}{c.talla ? ` · ${c.talla}` : ''} · {pesos(c.valor)}
                           </div>
-                          <div className="text-[12px] text-[#00847A] font-mono">{tel}</div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[12px] text-[#00847A] font-mono">{tel}</span>
+                            {chat ? (
+                              escribioDespues ? (
+                                <span className="text-[10px] font-semibold text-[#15803D] bg-[#DCFCE7] rounded-full px-2 py-0.5">
+                                  💬 Ya escribió · {cuandoFue(chat.ultimo!)}{chat.noLeidos > 0 ? ` · ${chat.noLeidos} sin leer` : ''}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-semibold text-[#6B6B6B] bg-[#F1F1F1] rounded-full px-2 py-0.5">
+                                  Tiene chat · no ha escrito desde el carrito
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-[10px] font-semibold text-[#B45309] bg-[#FEF3C7] rounded-full px-2 py-0.5">Aún no escribe</span>
+                            )}
+                          </div>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
-                          <a href={`https://wa.me/57${tel}?text=${msg}`} target="_blank" rel="noreferrer"
-                            className="px-3 py-1.5 rounded-lg bg-[#25D366] text-white text-xs font-semibold hover:opacity-90">
-                            WhatsApp
-                          </a>
+                          {chat && onAbrirChat ? (
+                            // Abre el chat DENTRO de QuinChat (Chat Funnel o Ventas, según su bandeja)
+                            <button onClick={() => onAbrirChat(chat.id)}
+                              title="Abrir el chat en QuinChat"
+                              className="px-3 py-1.5 rounded-lg bg-[#00A89D] text-white text-xs font-semibold hover:bg-[#00847A]">
+                              💬 Ver chat
+                            </button>
+                          ) : (
+                            // Sin chat en QuinChat todavía: única opción es escribirle por WhatsApp
+                            <a href={`https://wa.me/57${tel}?text=${msg}`} target="_blank" rel="noreferrer"
+                              title="Este cliente aún no tiene chat en QuinChat: se abre WhatsApp"
+                              className="px-3 py-1.5 rounded-lg bg-[#25D366] text-white text-xs font-semibold hover:opacity-90">
+                              WhatsApp ↗
+                            </a>
+                          )}
                           <a href={`tel:+57${tel}`}
                             className="px-2.5 py-1.5 rounded-lg border border-[#E8E8E8] text-[#6B6B6B] text-xs font-medium hover:bg-[#F5F5F5]">
                             📞

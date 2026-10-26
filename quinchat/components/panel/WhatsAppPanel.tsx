@@ -278,6 +278,22 @@ export default function WhatsAppPanel({ userName }: Props) {
     setConversations(prev => prev.map(c => c.id === id ? { ...c, unread_count: 0 } : c));
   }
 
+  // ── Abrir un chat desde otra sección (Pedidos, Carritos, Ventas…) ─────────
+  // Va a la bandeja correcta (Funnel o Ventas) y, si el chat es viejo y no está
+  // en la lista cargada, lo trae para que se vea igual.
+  async function abrirChatDesde(id: string) {
+    let conv = conversations.find(c => c.id === id);
+    if (!conv) {
+      const { data } = await supabase.from('conversations').select('*').eq('id', id).maybeSingle();
+      if (data) {
+        conv = data as Conversation;
+        setConversations(prev => (prev.some(c => c.id === id) ? prev : [data as Conversation, ...prev]));
+      }
+    }
+    setActiveSection(conv?.linea === 'ventas' ? 'chat_ventas' : 'chat');
+    await selectConversation(id);
+  }
+
   // ── Soporte (Lilibeth 3187051499): abre su chat en la LÍNEA del tab actual ──
   // En Funnel abre como funnel (responde por el número del funnel); en WhatsApp
   // abre como ventas. El bot queda apagado en su chat (es soporte, no cliente).
@@ -381,7 +397,7 @@ export default function WhatsAppPanel({ userName }: Props) {
       {activeSection === 'embudos'       && <EmbudosPanel abrirSlug={embudoAEditar} onAbierto={() => setEmbudoAEditar(null)} />}
       {activeSection === 'pedidos'       && (
         <PedidosPanel
-          onAbrirChat={id => { setActiveSection('chat'); selectConversation(id); }}
+          onAbrirChat={id => { abrirChatDesde(id); }}
           onEditarEmbudo={slug => { setEmbudoAEditar(slug); setActiveSection('embudos'); }}
         />
       )}
