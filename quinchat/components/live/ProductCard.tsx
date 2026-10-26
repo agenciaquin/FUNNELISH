@@ -17,7 +17,7 @@ interface Props {
  * Horizontal, ~90 px de alto, máx. 240 px / 65 % del ancho. Toda la tarjeta es tocable
  * y abre la compra. Sin botón propio: el principal es ¡COMPRAR! abajo.
  */
-export default function ProductCard({ producto, onClick }: Props) {
+export default function ProductCard({ producto, onClick, onComprar }: Props) {
   const foto = producto.colores[0]?.foto;
   const descuento = producto.precioAntes && producto.precioAntes > producto.precio
     ? Math.round((1 - producto.precio / producto.precioAntes) * 100) : 0;
@@ -39,6 +39,16 @@ export default function ProductCard({ producto, onClick }: Props) {
         </span>
         <span className="text-[10.5px] text-white/80 truncate mt-0.5">
           {producto.promo ? `🔥 ${producto.promo.etiqueta} disponible` : 'Pago contraentrega'}
+        </span>
+        {/* Botón pequeño y alargado: abre directo la compra */}
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={e => { e.stopPropagation(); (onComprar ?? onClick)(); }}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); (onComprar ?? onClick)(); } }}
+          className="live-cta mt-1.5 block w-full min-w-[120px] rounded-md bg-white text-black text-center text-[11px] font-extrabold uppercase tracking-wide leading-none py-1.5 [text-shadow:none] active:scale-95 transition-transform"
+        >
+          Compra aquí
         </span>
       </span>
     </button>
