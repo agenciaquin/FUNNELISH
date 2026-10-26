@@ -27,6 +27,16 @@ interface Props {
 
 const sombra = '[text-shadow:0_1px_3px_rgba(0,0,0,.85)]';
 
+/** Etiqueta discreta de los comentarios preparados por la tienda: "PREGUNTA" (o "COMENTARIO" si no lo es). */
+function Marca({ texto }: { texto: string }) {
+  const esPregunta = /[?¿]/.test(texto);
+  return (
+    <span className="ml-1.5 text-[8px] font-bold tracking-wide bg-white/20 text-white/90 rounded-full px-1.5 py-px align-middle [text-shadow:none]">
+      {esPregunta ? 'PREGUNTA' : 'COMENTARIO'}
+    </span>
+  );
+}
+
 function Avatar({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
     <span className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-[13px] font-bold overflow-hidden ${className}`}>
@@ -59,7 +69,7 @@ export default function CommentsFeed({ mensajes, propios, logo }: Props) {
             <Avatar className="bg-white/25 text-white/90">C</Avatar>
             <p className={`text-[13px] leading-snug ${sombra}`}>
               <span className="font-semibold text-white/75">{m.contenido.autor}</span>
-              <span className="ml-1.5 text-[8px] font-bold bg-amber-400 text-black rounded px-1 py-px align-middle [text-shadow:none]">DEMO</span>
+              <Marca texto={m.contenido.texto} />
               <br />{m.contenido.texto}
             </p>
           </div>
@@ -105,7 +115,7 @@ export default function CommentsFeed({ mensajes, propios, logo }: Props) {
           <Avatar className="bg-white/25 text-white/90">{(c.nombre || 'C').charAt(0).toUpperCase()}</Avatar>
           <p className={`text-[13px] leading-snug ${sombra}`}>
             <span className="font-semibold text-white/75">{c.nombre || 'Cliente'}</span>
-            <span className="ml-1.5 text-[8px] font-bold bg-amber-400 text-black rounded px-1 py-px align-middle [text-shadow:none]">DEMO</span>
+            <Marca texto={c.texto} />
             <br />{c.texto}
           </p>
         </div>
