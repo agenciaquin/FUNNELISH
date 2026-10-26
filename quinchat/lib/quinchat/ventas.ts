@@ -350,9 +350,14 @@ Cuando muestres un modelo o te pidan el catálogo, usa SIEMPRE esta plantilla:
 3) EL LLAMADO A LA ACCIÓN (va de ÚLTIMO, después de las fotos): en un mensaje aparte, escribe SOLO esta frase exacta:
 Me envías el modelo y color que deseas adquirir, me haces el favor 🤗
 
-NUNCA cierres con "¿Cuál color te llama la atención?" ni parecidas: usa esa frase exacta.
-El sistema se encarga de mandar el gancho, luego las fotos y de último la frase; tú solo
+El sistema se encarga de mandar el gancho, luego las fotos y de último el cierre; tú solo
 escríbelos en ese orden (gancho, luego los [[FOTO]], y al final la frase del cierre).
+🔢 El sistema NUMERA las fotos (1️⃣ Rojo, 2️⃣ Negro…) y cambia tu cierre por una lista
+numerada: "¿Cuál te gustó? 😍 Respóndeme solo con el *número*". Por eso:
+· Si el cliente responde con un NÚMERO ("2", "el 3", "la 1", "2️⃣") justo después de esa
+  lista, es el COLOR que tiene ese número en la lista numerada de tu último mensaje.
+  Confírmalo por su nombre ("¡Buena elección! El *Negro KTM* 🔥") y sigue al PASO 2.
+  ⛔ NUNCA le preguntes "¿a qué te refieres con 2?": la lista está arriba en el chat.
 
 Si encabezas con "BUZOS EN TENDENCIA" solo cuando el cliente no ha dicho qué modelo.
 Si ya dijo el modelo, encabeza con el nombre de ese modelo.
@@ -481,12 +486,15 @@ correo. Es MUY común que el cliente mande su nombre, número y ciudad al princi
   - Si ya tiene nombre + ciudad y falta la dirección:
     "Listo, Nolbetto ✅ Ya tengo tu nombre y Caicedo, Antioquia.
      Solo me falta tu *dirección exacta* (calle/carrera y número) 📍"
-  - Si no tiene casi nada:
-    "Perfecto ✅ Para despacharlo me regalas:
-     Nombre completo:
-     Dirección (calle/carrera y número):
-     Barrio:
-     Ciudad y Departamento:"
+  - Si no tiene casi nada (formulario CORTO, solo 2 cosas — un formulario largo
+    espanta: 2 de cada 3 clientes lo abandonaban):
+    "¡Listo! ✅ Para despacharlo solo me faltan 2 cositas 😊
+     1️⃣ Tu *nombre completo*
+     2️⃣ Tu *dirección con barrio y ciudad*
+     📦 Pagas al recibir · envío gratis"
+  ⛔ NUNCA pidas el CORREO ni el CELULAR en el formulario (el celular ya lo tienes y el
+  correo no es necesario). Si el cliente manda los datos en desorden o en varios
+  mensajes, júntalos tú; si falta el departamento y la ciudad es conocida, dedúcelo.
 
 El CORREO y el BARRIO son OPCIONALES: si el cliente no los pasa, NO se los pidas de
 nuevo ni retrases la venta. Obligatorios: nombre, dirección, ciudad, departamento,
@@ -499,6 +507,18 @@ CONFÍRMASELOS tú para cerrar: "Tienes razón 🙏 ya los tengo: [nombre], [dir
 [ciudad]. Solo me confirmas [lo único que de verdad falte] y despacho de una ✅".
 Si de verdad falta un dato clave (p. ej. la dirección nunca la dio), pídelo SOLO ese,
 reconociendo lo que sí tienes.
+
+🤔 "LO PIENSO" / "DESPUÉS" / "QUEDO PENDIENTE" — NO TE DESPIDAS A LA PRIMERA:
+Si el cliente dice "lo voy a pensar", "después te escribo", "quedo pendiente", "más
+tarde", "en la quincena", "ahorita no tengo plata" o similar, ANTES de despedirte haz
+UN SOLO intento suave (nunca insistas más de una vez):
+· Quita el riesgo: "¡Claro! 😊 Te cuento que *no pagas nada ahora*: pagas solo cuando te
+  llegue a la casa 📦 ¿Te lo dejo separado en tu talla para que no se agote?"
+· O pregunta la duda real: "¿Hay algo que te haga dudar? ¿La talla, el tiempo de entrega
+  o la tela? Te ayudo con eso 🙌"
+· Si dice una FECHA ("el 15", "en la quincena"), ofrécele separarlo para esa fecha.
+· Si después de ese intento igual dice que no, despídete amable y sin presión.
+· ⛔ Si dice claramente "no me interesa" / "ya no quiero", NO insistas: despídete amable.
 
 PASO 4 — CONFIRMACIÓN
 Cuando te manden los datos, arma el pedido y mándalo TODO JUNTO:
@@ -849,6 +869,55 @@ async function enviarFoto(supabase: any, from: string, url: string, pie = '') {
     whatsapp_id: wamid,
     created_at: new Date().toISOString(),
   });
+}
+
+/**
+ * ¿La transcripción de un audio es "basura"? Con audios vacíos o de puro ruido,
+ * Whisper inventa frases típicas ("Gracias.", "¡Suscríbete!", "Subtítulos por…").
+ * En los chats de ventas eran ~1 de cada 6 audios.
+ */
+function esTranscripcionBasura(t: string): boolean {
+  const s = sinTildes(String(t ?? '').toLowerCase()).replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (s.length <= 2) return true;                                    // ".", "eh", "a"
+  if (/subtitul|amara\s*org|suscribete|suscribanse|like y suscr|gracias por ver/.test(s)) return true;
+  // Frases sueltas de relleno, SOLAS (si traen algo más, son reales).
+  return /^(gracias|muchas gracias|musica|aplausos|risas|silencio|hola hola|ok|mmm+|eh+|ah+)$/.test(s);
+}
+
+/** 1 → "1️⃣" … 10 → "🔟" (más de 10 → "11."). */
+function numEmoji(n: number): string {
+  const E = ['0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+  return E[n] ?? `${n}.`;
+}
+
+/** "BLANCO MARFIL" → "Blanco marfil". */
+function tituloColor(c: string): string {
+  const s = String(c ?? '').trim().toLowerCase();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+/**
+ * Color de cada foto del catálogo (url → "ROJO"), para numerarlas en el pie.
+ * Si una foto no está en el catálogo, simplemente no aparece en el mapa.
+ */
+async function coloresDeFotos(supabase: any, urls: string[]): Promise<Map<string, string>> {
+  const mapa = new Map<string, string>();
+  try {
+    const { data } = await supabase.from('catalogo_colores')
+      .select('color, nombre_producto, url_imagen').in('url_imagen', urls);
+    const filas = (data ?? []).filter((r: any) => r.url_imagen && String(r.color ?? '').trim());
+    // Si dos fotos tienen el mismo color (ej. fotos de 2 modelos), se usa el nombre
+    // completo del producto para que el número no sea ambiguo.
+    const conteo = new Map<string, number>();
+    for (const r of filas) { const c = String(r.color).trim().toUpperCase(); conteo.set(c, (conteo.get(c) ?? 0) + 1); }
+    for (const r of filas) {
+      if (mapa.has(String(r.url_imagen))) continue;
+      const col = String(r.color).trim().toUpperCase();
+      const etiqueta = (conteo.get(col) ?? 0) > 1 && r.nombre_producto ? String(r.nombre_producto).trim().toUpperCase() : col;
+      mapa.set(String(r.url_imagen), etiqueta);
+    }
+  } catch { /* sin colores → se envía el catálogo como siempre */ }
+  return mapa;
 }
 
 /**
@@ -1363,6 +1432,7 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
     unread_count: (conv?.unread_count ?? 0) + mensajes.length,
     linea: 'ventas',
     seguimiento_enviado: null, // el cliente volvió a escribir: reinicia el recordatorio
+    seguimiento_n: 0,          // …y el contador de toques de seguimiento
     ...(interaccionBotV ? { interaccion_bot: true } : {}),
   }, { onConflict: 'id' });
 
@@ -1378,6 +1448,7 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
   let yaProcesado = false;
   let hayAudio = false;       // el cliente mandó un audio/nota de voz
   let audioTranscrito = false; // se pudo transcribir → el bot lo responde como texto
+  let audioBasura = false;     // la "transcripción" era ruido ("Gracias.", "¡Suscríbete!")
   const TIPOS_MEDIA = ['image', 'audio', 'video', 'document', 'sticker', 'voice'];
   for (const m of mensajes) {
     if (m.type === 'text') {
@@ -1455,7 +1526,16 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
             // 🎙️ AUDIO: se transcribe la nota de voz para entenderla como texto.
             if (esAudio) {
               const texto = await transcribirAudio(media.buffer, media.mimeType);
-              if (texto) {
+              if (texto && esTranscripcionBasura(texto)) {
+                // Audio vacío/ruido: Whisper "inventa" un "Gracias." o "¡Suscríbete!".
+                // No se le pasa a la IA (si no, reenvía el catálogo sin sentido).
+                audioBasura = true;
+                audioTranscrito = true;
+                await supabase.from('messages').upsert({
+                  id: `in-${m.id}-txt`, conversation_id: from, content: `🎙️ (audio sin voz clara) ${texto}`,
+                  role: 'user', type: 'text', created_at: new Date(Date.now() + 1).toISOString(),
+                }, { onConflict: 'id' });
+              } else if (texto) {
                 textos.push(texto);
                 audioTranscrito = true;
                 // Guardar la transcripción como texto en el historial del panel.
@@ -1520,6 +1600,14 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
     // Si el bot está apagado en este chat, no responde (lo atiende un humano)
     const botOn = conv ? (conv.bot_enabled ?? true) : true;
     if (!botOn) return;
+
+    // 🎙️ Solo llegó un audio que no se entendió (ruido / silencio): se le pide que
+    // lo escriba, en vez de responder algo sin sentido.
+    if (audioBasura && !texto) {
+      await new Promise(r => setTimeout(r, 4000));
+      await responder(supabase, from, 'No alcancé a escuchar bien tu audio 🙈 ¿Me lo escribes por aquí, porfa? 😊');
+      return;
+    }
 
     try { await mostrarEscribiendo(msg.id); } catch { /* ignorar */ }
 
@@ -1824,6 +1912,24 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
       aEnviar = await resolverFotosIntencion(supabase, respuesta);
     }
     const nuevasFotos = pidioFotos ? aEnviar : await fotosNuevas(supabase, from, aEnviar);
+
+    // 🔢 CATÁLOGO CON ELECCIÓN FÁCIL: en la bienvenida/catálogo cada foto lleva su
+    // número y color en el pie ("1️⃣ ROJO"), y el cierre pide responder con el número.
+    // Elegir "2" es mucho más fácil que escribir "modelo y color" (ahí se iba el 59 %).
+    const colores = esGancho && nuevasFotos.length >= 2 ? await coloresDeFotos(supabase, nuevasFotos) : null;
+    if (colores && colores.size >= 2) {
+      const conColor = nuevasFotos.filter(u => colores.has(u));
+      const sinColor = nuevasFotos.filter(u => !colores.has(u));
+      // En paralelo (rápido); el número del pie mantiene el orden claro aunque lleguen desordenadas.
+      await Promise.all([
+        ...conColor.map((url, i) => enviarFoto(supabase, from, url, `${numEmoji(i + 1)} ${colores.get(url)}`).catch(() => {})),
+        ...sinColor.map(url => enviarFoto(supabase, from, url).catch(() => {})),
+      ]);
+      const lista = conColor.map((u, i) => `${numEmoji(i + 1)} ${tituloColor(colores.get(u)!)}`).join('\n');
+      await responder(supabase, from, `¿Cuál te gustó? 😍 Respóndeme solo con el *número* 👇\n\n${lista}`);
+      return;
+    }
+
     // En paralelo: así las fotos llegan todas juntas y rápido (no de a una).
     await Promise.all(nuevasFotos.map(url => enviarFoto(supabase, from, url).catch(() => {})));
     if (cta) await responder(supabase, from, cta);
