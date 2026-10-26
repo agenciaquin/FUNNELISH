@@ -289,7 +289,7 @@ export default function LiveShell({ live, funnel }: { live: LiveConfig; funnel?:
                 <span className="text-xs text-neutral-500">El video sigue arriba ↑</span>
                 <button onClick={() => setSheet(null)} aria-label="Cerrar" className="w-8 h-8 rounded-full bg-neutral-100 text-lg leading-none">×</button>
               </div>
-              <FormularioPedido funnel={funnel} utms={{}} embebido />
+              <FormularioPedido funnel={funnel} utms={{}} embebido compacto />
             </div>
           </div>
         ) : (

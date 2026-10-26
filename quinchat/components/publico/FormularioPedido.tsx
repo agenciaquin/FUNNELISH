@@ -16,9 +16,12 @@ interface Props {
   // barra flotante "COMPLETAR MI PEDIDO" no debe salir hasta que el cliente
   // llegue al formulario.
   embebido?: boolean;
+  // Solo QUIN LIVE: tarjetas de producto más bajitas + animación "toca aquí".
+  // Los embudos normales NO lo pasan, así que se ven igual que siempre.
+  compacto?: boolean;
 }
 
-export default function FormularioPedido({ funnel, utms, embebido }: Props) {
+export default function FormularioPedido({ funnel, utms, embebido, compacto }: Props) {
   const router = useRouter();
   const acento = acentoDe(funnel.color);
 
@@ -432,14 +435,25 @@ export default function FormularioPedido({ funnel, utms, embebido }: Props) {
   return (
     <div ref={contenedorRef}>
       {/* Selección de producto */}
-      <h2 className="text-center font-extrabold text-lg py-3">ELIGE COLOR Y TALLA ⬇️</h2>
+      {compacto && (
+        <style>{`
+          @keyframes qv-toca{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-3px) scale(1.08)}}
+          @keyframes qv-brillo{0%,70%,100%{box-shadow:0 0 0 0 rgba(13,138,62,0)}80%{box-shadow:0 0 0 3px rgba(13,138,62,.35)}}
+          @keyframes qv-dedo{0%,100%{transform:translate(0,0) rotate(-10deg)}50%{transform:translate(-4px,-4px) rotate(-10deg)}}
+          .qv-toca{animation:qv-toca 1.1s ease-in-out infinite}
+          .qv-brillo{animation:qv-brillo 3.2s ease-in-out infinite}
+          .qv-dedo{animation:qv-dedo .9s ease-in-out infinite}
+          @media (prefers-reduced-motion: reduce){.qv-toca,.qv-brillo,.qv-dedo{animation:none}}
+        `}</style>
+      )}
+      <h2 className={`text-center font-extrabold ${compacto ? 'text-[16px] pt-2 pb-1' : 'text-lg py-3'}`}>ELIGE COLOR Y TALLA ⬇️</h2>
       {sinElegir && (
-        <p className="text-center text-[13px] font-extrabold pb-2 animate-bounce" style={{ color: acento.texto }}>
-          👉 Da clic en el color para elegir la talla
+        <p className={`text-center font-extrabold animate-bounce ${compacto ? 'text-[12px] pb-1.5' : 'text-[13px] pb-2'}`} style={{ color: acento.texto }}>
+          {compacto ? '👇 Toca tu buzo favorito para elegir talla' : '👉 Da clic en el color para elegir la talla'}
         </p>
       )}
 
-      <div className="px-3 space-y-2" data-campo="variante">
+      <div className={`px-3 ${compacto ? 'space-y-1.5' : 'space-y-2'}`} data-campo="variante">
         {variantes.map((v, vIdx) => {
           const activa = v.id === varianteId;
           // Pack de 2 → se resalta como "el más vendido" y es el único que palpita.
@@ -447,11 +461,16 @@ export default function FormularioPedido({ funnel, utms, embebido }: Props) {
             || /(^|\s)(pack\s*x?\s*2|x2|dos\s+prendas)/i.test(v.nombre || '')
             || new Set((v.selectores ?? []).map(s => s.grupo?.trim()).filter(Boolean)).size === 2;
           const palpita = sinElegir && esPackX2; // SOLO el pack x2 llama la atención
+          // Live: brillo en cascada (una tarjeta tras otra) mientras no ha elegido.
+          const cascada = compacto && sinElegir;
           return (
             <div
               key={v.id}
-              style={palpita ? { ['--tw-ring-color' as any]: acento.boton } : {}}
-              className={`relative rounded-lg border-2 transition-colors ${activa ? 'border-[#0D8A3E]' : 'border-[#E0E0E0]'} ${palpita ? 'ring-2 ring-offset-2 animate-pulse' : ''}`}
+              style={{
+                ...(palpita ? { ['--tw-ring-color' as any]: acento.boton } : {}),
+                ...(cascada ? { animationDelay: `${vIdx * 0.45}s` } : {}),
+              }}
+              className={`relative ${compacto ? 'rounded-xl' : 'rounded-lg'} border-2 transition-colors ${activa ? 'border-[#0D8A3E]' : 'border-[#E0E0E0]'} ${palpita ? 'ring-2 ring-offset-2 animate-pulse' : ''} ${cascada && !palpita ? 'qv-brillo' : ''}`}
             >
               {esPackX2 && (
                 <span className="absolute -top-2.5 right-2 z-10 bg-[#C1121F] text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full shadow-md whitespace-nowrap">
@@ -460,23 +479,48 @@ export default function FormularioPedido({ funnel, utms, embebido }: Props) {
               )}
               <button
                 onClick={() => { setVarianteId(v.id); setElecciones([]); setErrores(er => ({ ...er, variante: '' })); setSeñalando(null); }}
-                className="w-full flex items-center gap-3 p-3 text-left"
+                className={`w-full flex items-center text-left ${compacto ? 'gap-2.5 px-2.5 py-1.5' : 'gap-3 p-3'}`}
               >
-                <span className={`w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center ${activa ? 'border-[#0D8A3E]' : 'border-[#C9C9C9]'}`}>
-                  {activa && <span className="w-2.5 h-2.5 rounded-full bg-[#0D8A3E]" />}
+                <span className={`${compacto ? 'w-4 h-4' : 'w-5 h-5'} rounded-full border-2 shrink-0 flex items-center justify-center ${activa ? 'border-[#0D8A3E]' : 'border-[#C9C9C9]'}`}>
+                  {activa && <span className={`${compacto ? 'w-2 h-2' : 'w-2.5 h-2.5'} rounded-full bg-[#0D8A3E]`} />}
                 </span>
                 {v.imagen && (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={v.imagen} alt="" className="w-14 h-14 object-cover rounded shrink-0" loading="lazy" />
+                  <img src={v.imagen} alt="" className={`${compacto ? 'w-11 h-11 rounded-md' : 'w-14 h-14 rounded'} object-cover shrink-0`} loading="lazy" />
                 )}
-                <span className="flex-1 font-semibold text-[15px] leading-tight">{v.nombre}</span>
+                {compacto ? (
+                  // Live: nombre en una o dos líneas cortas (sin "BUZO MOTO" repetido en cada tarjeta)
+                  <span className="flex-1 min-w-0">
+                    <span className="block font-bold text-[13px] leading-tight line-clamp-2">
+                      {String(v.nombre || '').replace(/^\s*buzo\s+moto\s+/i, '').replace(/\s+reflectivo\s*$/i, '') || v.nombre}
+                    </span>
+                    {/^\s*buzo\s+moto\s+/i.test(v.nombre || '') && (
+                      <span className="block text-[10.5px] text-[#6B6B6B] leading-tight truncate">Buzo moto{/reflectivo/i.test(v.nombre || '') ? ' · reflectivo' : ''}</span>
+                    )}
+                  </span>
+                ) : (
+                  <span className="flex-1 font-semibold text-[15px] leading-tight">{v.nombre}</span>
+                )}
                 <span className="text-right shrink-0">
                   {v.precioAntes && (
-                    <span className="block text-[13px] text-[#C1121F] line-through">{pesos(v.precioAntes)}</span>
+                    <span className={`block text-[#C1121F] line-through ${compacto ? 'text-[10.5px] leading-tight' : 'text-[13px]'}`}>{pesos(v.precioAntes)}</span>
                   )}
-                  <span className="block font-bold">{pesos(v.precio)}</span>
+                  <span className={`block font-bold ${compacto ? 'text-[14px] leading-tight' : ''}`}>{pesos(v.precio)}</span>
                 </span>
+                {/* Live: llamado a la acción en cada tarjeta mientras no ha elegido */}
+                {compacto && !activa && (
+                  <span
+                    className="qv-toca shrink-0 rounded-full text-white text-[10px] font-extrabold px-2 py-1 leading-none whitespace-nowrap"
+                    style={{ background: acento.boton, animationDelay: `${vIdx * 0.15}s` }}
+                  >
+                    ELEGIR
+                  </span>
+                )}
               </button>
+              {/* Manito animada SOLO en la primera tarjeta, para que sepa dónde tocar */}
+              {compacto && sinElegir && vIdx === 0 && (
+                <span aria-hidden className="qv-dedo pointer-events-none absolute right-2 -bottom-2 text-[22px] drop-shadow">👆</span>
+              )}
 
               {activa && v.armarPack && (
                 <div className="pb-3" data-campo="talla">
