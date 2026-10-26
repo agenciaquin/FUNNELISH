@@ -74,6 +74,10 @@ interface ResumenCamp { gasto: number; ventas: number; mensajes: number; costoPo
 const pesos = (n: number | null | undefined) =>
   n == null ? '—' : '$' + Math.round(n).toLocaleString('es-CO');
 
+/** Costo por prenda = gasto ÷ prendas vendidas (null si no hay datos). */
+const costoPrenda = (gasto: number | null | undefined, prendas: number | null | undefined) =>
+  gasto && gasto > 0 && prendas && prendas > 0 ? gasto / prendas : null;
+
 export default function SeguimientoPanel({ onAbrirChat }: Props) {
   const [tab, setTab] = useState<'campanas' | 'ventas_wa' | 'effi'>('campanas');
   // Costo objetivo por venta (para las recomendaciones apagar/escalar). Se guarda.
@@ -157,7 +161,7 @@ export default function SeguimientoPanel({ onAbrirChat }: Props) {
   const [cargandoCamp, setCargandoCamp] = useState(false);
 
   // ── Orden de la tabla de campañas (clic en la columna) ──────────────────────
-  type CampoOrden = 'mensajes' | 'ventas' | 'prendas' | 'gasto' | 'costoVenta' | 'conversion';
+  type CampoOrden = 'mensajes' | 'ventas' | 'prendas' | 'gasto' | 'costoVenta' | 'costoPrenda' | 'conversion';
   const [orden, setOrden] = useState<{ campo: CampoOrden; dir: 'asc' | 'desc' }>({ campo: 'ventas', dir: 'desc' });
   const ordenarPor = (campo: CampoOrden) =>
     setOrden(o => (o.campo === campo ? { campo, dir: o.dir === 'desc' ? 'asc' : 'desc' } : { campo, dir: 'desc' }));
@@ -165,6 +169,7 @@ export default function SeguimientoPanel({ onAbrirChat }: Props) {
   const valorDe = (c: Campana, campo: CampoOrden): number => {
     if (campo === 'gasto')      return c.gasto ?? -1;
     if (campo === 'costoVenta') return c.costoPorVenta ?? -1;
+    if (campo === 'costoPrenda') return costoPrenda(c.gasto, (c as any).prendas) ?? -1;
     return Number((c as any)[campo] ?? -1);
   };
   const campanasOrdenadas = [...campanas].sort((a, b) => {
@@ -393,7 +398,7 @@ export default function SeguimientoPanel({ onAbrirChat }: Props) {
 
             {/* Resumen del periodo: gasto real de Meta contra ventas confirmadas */}
             {resumenCamp && resumenCamp.gasto > 0 && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
                 <div className="bg-white rounded-xl border border-[#E8E8E8] p-3">
                   <p className="text-[10px] text-[#9A9A9A] uppercase font-bold">Gasto total</p>
                   <p className="text-lg font-extrabold text-[#DC2626]">{pesos(resumenCamp.gasto)}</p>
@@ -406,6 +411,10 @@ export default function SeguimientoPanel({ onAbrirChat }: Props) {
                 <div className="bg-white rounded-xl border border-[#E8E8E8] p-3">
                   <p className="text-[10px] text-[#9A9A9A] uppercase font-bold">Costo por venta</p>
                   <p className="text-lg font-extrabold text-[#0D0D0D]">{pesos(resumenCamp.costoPorVenta)}</p>
+                </div>
+                <div className="bg-white rounded-xl border border-[#E8E8E8] p-3">
+                  <p className="text-[10px] text-[#9A9A9A] uppercase font-bold">Costo por prenda</p>
+                  <p className="text-lg font-extrabold text-[#0D9488]">{pesos(costoPrenda(resumenCamp.gasto, (resumenCamp as any).prendas))}</p>
                 </div>
                 <div className="bg-white rounded-xl border border-[#E8E8E8] p-3">
                   <p className="text-[10px] text-[#9A9A9A] uppercase font-bold">Costo por mensaje</p>
@@ -431,6 +440,7 @@ export default function SeguimientoPanel({ onAbrirChat }: Props) {
                 <button onClick={() => ordenarPor('prendas')} className={`w-16 text-center uppercase tracking-wide hover:text-[#0D0D0D] ${orden.campo === 'prendas' ? 'text-[#0D0D0D]' : ''}`}>Prendas{flecha('prendas')}</button>
                 <button onClick={() => ordenarPor('gasto')} className={`w-20 text-center uppercase tracking-wide hover:text-[#0D0D0D] ${orden.campo === 'gasto' ? 'text-[#0D0D0D]' : ''}`}>Gasto{flecha('gasto')}</button>
                 <button onClick={() => ordenarPor('costoVenta')} className={`w-24 text-center uppercase tracking-wide hover:text-[#0D0D0D] ${orden.campo === 'costoVenta' ? 'text-[#0D0D0D]' : ''}`}>Costo/venta{flecha('costoVenta')}</button>
+                <button onClick={() => ordenarPor('costoPrenda')} className={`w-24 text-center uppercase tracking-wide hover:text-[#0D0D0D] ${orden.campo === 'costoPrenda' ? 'text-[#0D0D0D]' : ''}`}>Costo/prenda{flecha('costoPrenda')}</button>
                 <button onClick={() => ordenarPor('conversion')} className={`w-16 text-center uppercase tracking-wide hover:text-[#0D0D0D] ${orden.campo === 'conversion' ? 'text-[#0D0D0D]' : ''}`}>Conv.{flecha('conversion')}</button>
               </div>
 
@@ -497,7 +507,7 @@ export default function SeguimientoPanel({ onAbrirChat }: Props) {
                           </p>
                         )}
                         <p className="text-[10px] text-[#9A9A9A] md:hidden break-all">
-                          ID: {c.anuncioId} · Gasto: {pesos(c.gasto)} · Costo/venta: {pesos(c.costoPorVenta)}
+                          ID: {c.anuncioId} · Gasto: {pesos(c.gasto)} · Costo/venta: {pesos(c.costoPorVenta)} · Costo/prenda: {pesos(costoPrenda(c.gasto, (c as any).prendas))}
                         </p>
                       </div>
                       <span
@@ -510,6 +520,7 @@ export default function SeguimientoPanel({ onAbrirChat }: Props) {
                       <span className="hidden md:block w-16 text-center text-sm font-bold text-[#0D9488]">{(c as any).prendas ?? 0}</span>
                       <span className="hidden md:block w-20 text-center text-xs font-semibold text-[#DC2626]">{pesos(c.gasto)}</span>
                       <span className="hidden md:block w-24 text-center text-xs font-bold text-[#0D0D0D]">{pesos(c.costoPorVenta)}</span>
+                      <span className="hidden md:block w-24 text-center text-xs font-bold text-[#0D9488]">{pesos(costoPrenda(c.gasto, (c as any).prendas))}</span>
                       <span className="hidden md:block w-16 text-center text-xs font-semibold text-[#00847A]">{c.conversion}%</span>
                       {/* Vista compacta móvil: mensajes/ventas a la derecha */}
                       <div className="md:hidden text-right">
@@ -527,7 +538,7 @@ export default function SeguimientoPanel({ onAbrirChat }: Props) {
             </div>
             <p className="text-[11px] text-[#9A9A9A] mt-3">
               <b>Mensajes</b> = personas que escribieron desde esa campaña · <b>Ventas</b> = chats que cerraron con VENTA REALIZADA ·
-              <b> Prendas</b> = unidades vendidas en esas ventas · <b>Gasto</b> y <b>Costo/venta</b> vienen directo de Meta según el ID del anuncio.
+              <b> Prendas</b> = unidades vendidas en esas ventas · <b>Gasto</b> y <b>Costo/venta</b> vienen directo de Meta según el ID del anuncio · <b>Costo/prenda</b> = gasto ÷ prendas vendidas.
             </p>
           </>
         )}
