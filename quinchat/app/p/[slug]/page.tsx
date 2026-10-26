@@ -24,6 +24,8 @@ import Stock from '@/components/publico/Stock';
 import ResenaGatillo from '@/components/publico/ResenaGatillo';
 import MasVendidoFlotante from '@/components/publico/MasVendidoFlotante';
 import NotifVentas from '@/components/publico/NotifVentas';
+import { buscarLiveDB } from '@/lib/live/datos-supabase';
+import LivePage from '@/app/live/[slug]/page';
 
 // Embudos con temática especial (decoración solo en ESE embudo, por su slug).
 const TEMA_SPIDERMAN = new Set(['spiderman', 'spider-man', 'spiderman-buzo']);
@@ -34,6 +36,11 @@ export const dynamic = 'force-dynamic';
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const f = await obtenerFunnel(slug);
+  if (!f) {
+    // Link corto de un LIVE (solo cuando NO existe un embudo con ese nombre)
+    const live = await buscarLiveDB(slug).catch(() => null);
+    if (live) return { title: `${live.titulo} · ${live.tienda.nombre}`, robots: { index: false, follow: false } };
+  }
   return {
     title: f?.producto ?? 'Klixmant',
     description: f?.titulo ?? 'Compra contra entrega en toda Colombia',
@@ -49,7 +56,13 @@ export default async function PaginaVenta({
   const { slug } = await params;
   const query = await searchParams;
   const f = await obtenerFunnel(slug);
-  if (!f) notFound();
+  if (!f) {
+    // QUIN LIVE SHOPPING con link corto (pedido.klixmant.shop/<live>). Los embudos
+    // SIEMPRE tienen prioridad: esto solo corre cuando no existe un embudo con ese nombre.
+    const live = await buscarLiveDB(slug).catch(() => null);
+    if (live) return <div className="bg-black text-white min-h-[100dvh]"><LivePage params={Promise.resolve({ slug })} /></div>;
+    notFound();
+  }
 
   // El paso 'landing' ahora se registra en el navegador (FunnelTracker): una vez
   // por sesión y solo humanos, para no inflar el conteo con bots ni recargas.

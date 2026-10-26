@@ -42,7 +42,8 @@ export default function PanelLiveShopping() {
   }, []);
   useEffect(() => { cargarLives(); }, [cargarLives]);
 
-  const urlPublica = (slug: string) => (typeof window !== 'undefined' ? window.location.origin : '') + `/live/${slug}`;
+  // Link corto, igual que los embudos (pedido.klixmant.shop/<slug>)
+  const urlPublica = (slug: string) => `https://pedido.klixmant.shop/${slug}`;
   const copiar = async (slug: string) => { try { await navigator.clipboard.writeText(urlPublica(slug)); setCopiado(slug); setTimeout(() => setCopiado(null), 1600); } catch { /* */ } };
 
   const crearLive = async () => {
@@ -215,7 +216,7 @@ export default function PanelLiveShopping() {
                         <p className="font-bold text-brand-black truncate">{l.titulo}</p>
                         <EstadoChip estado={l.estado} />
                       </div>
-                      <p className="text-xs text-brand-gray-mid truncate">/live/{l.slug} · {l.productos} producto{l.productos === 1 ? '' : 's'}</p>
+                      <p className="text-xs text-brand-gray-mid truncate">pedido.klixmant.shop/{l.slug} · {l.productos} producto{l.productos === 1 ? '' : 's'}</p>
                       {l.embudo_slug && <p className="text-[11px] text-[#00847A] truncate">Checkout: {l.embudo_slug}</p>}
                     </div>
                   </div>

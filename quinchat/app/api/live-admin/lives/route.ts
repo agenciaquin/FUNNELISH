@@ -36,8 +36,12 @@ export async function POST(req: NextRequest) {
   const supabase = createServerSupabaseClient();
 
   // slug único
-  const { data: existe } = await supabase.from('live_lives').select('id').eq('slug', slug).maybeSingle();
-  const slugFinal = existe ? `${slug}-${Math.random().toString(36).slice(2, 6)}` : slug;
+  // El slug no puede repetirse con otro live NI con un embudo (comparten el link corto pedido.klixmant.shop/<slug>)
+  const [{ data: existe }, { data: esEmbudo }] = await Promise.all([
+    supabase.from('live_lives').select('id').eq('slug', slug).maybeSingle(),
+    supabase.from('funnels').select('id').eq('slug', slug).maybeSingle(),
+  ]);
+  const slugFinal = (existe || esEmbudo) ? `${slug}-${Math.random().toString(36).slice(2, 6)}` : slug;
 
   const { data, error } = await supabase.from('live_lives').insert({
     slug: slugFinal,

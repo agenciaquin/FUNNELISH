@@ -48,6 +48,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   if (!Object.keys(patch).length) return NextResponse.json({ error: 'nada que actualizar' }, { status: 400 });
   const supabase = createServerSupabaseClient();
+
+  // Slug: formato de link y sin chocar con otro live ni con un embudo (comparten pedido.klixmant.shop/<slug>)
+  if ('slug' in patch) {
+    const s = String(patch.slug ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+    if (!s) return NextResponse.json({ error: 'La dirección (slug) no puede quedar vacía.' }, { status: 400 });
+    const [{ data: otroLive }, { data: embudo }] = await Promise.all([
+      supabase.from('live_lives').select('id').eq('slug', s).neq('id', id).maybeSingle(),
+      supabase.from('funnels').select('id').eq('slug', s).maybeSingle(),
+    ]);
+    if (embudo) return NextResponse.json({ error: `"${s}" ya es el link de un embudo. Elige otro nombre.` }, { status: 409 });
+    if (otroLive) return NextResponse.json({ error: `"${s}" ya lo usa otro live.` }, { status: 409 });
+    patch.slug = s;
+  }
   const { error } = await supabase.from('live_lives').update(patch).eq('id', id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
