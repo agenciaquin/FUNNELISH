@@ -70,7 +70,7 @@ export default function LiveOverlay({
           <span className="w-9 h-9 rounded-full bg-white text-black flex items-center justify-center text-lg">🔊</span>
           <span className="text-left leading-tight">
             <span className="block text-[15px] font-extrabold">Clic aquí para activar el sonido</span>
-            <span className="block text-[11px] text-white/75">Escucha la presentación</span>
+            <span className="block text-[11px] text-white/75">Escucha el live</span>
           </span>
         </button>
       )}
