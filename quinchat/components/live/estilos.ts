@@ -4,6 +4,9 @@ export const ESTILOS_LIVE = `
 /* Corazones: suben despacio (live-rise) y se balancean a los lados (live-sway). */
 @keyframes live-rise { 0%{opacity:0;transform:translateY(0) scale(.4)} 12%{opacity:1;transform:translateY(-20px) scale(1)} 70%{opacity:.85} 100%{opacity:0;transform:translateY(var(--sube)) scale(1.08)} }
 @keyframes live-sway { from{transform:translateX(calc(var(--sw) * -1))} to{transform:translateX(var(--sw))} }
+/* Aviso de sonido: latido suave para que se note sin ser molesto */
+@keyframes live-sonido { 0%,100%{transform:translate(-50%,-50%) scale(1)} 50%{transform:translate(-50%,-50%) scale(1.05)} }
+.live-sonido{animation:live-sonido 1.6s ease-in-out infinite}
 @keyframes live-in { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
 @keyframes live-sheet { from{transform:translateY(100%)} to{transform:none} }
 @keyframes live-pop { from{opacity:0;transform:scale(.92)} to{opacity:1;transform:none} }
@@ -16,5 +19,5 @@ export const ESTILOS_LIVE = `
 .live-pop{animation:live-pop .3s ease-out both}
 .live-sheet{animation:live-sheet .3s ease-out both}
 .live-fade-up{-webkit-mask-image:linear-gradient(to top,#000 55%,transparent);mask-image:linear-gradient(to top,#000 55%,transparent)}
-@media (prefers-reduced-motion: reduce){.live-in,.live-pop,.live-sheet,.live-cta{animation:none}.live-cta::after{display:none}}
+@media (prefers-reduced-motion: reduce){.live-in,.live-pop,.live-sheet,.live-cta,.live-sonido{animation:none}.live-cta::after{display:none}}
 `;

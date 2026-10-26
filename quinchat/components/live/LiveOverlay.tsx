@@ -53,10 +53,27 @@ export default function LiveOverlay({
           </div>
           <button onClick={onCerrar} aria-label="Cerrar" className="w-10 h-10 rounded-full bg-black/40 text-[28px] leading-none">×</button>
         </div>
-        <button onClick={onSonido} className="pointer-events-auto mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-black/55 px-3.5 py-1.5 text-[12px] font-semibold active:scale-95 transition-transform">
-          {silenciado ? '🔊 Activar sonido' : '🔇 Silenciar'}
-        </button>
+        {/* Con sonido: botón pequeño para silenciar. Sin sonido: aviso grande en el centro (abajo). */}
+        {!silenciado && (
+          <button onClick={onSonido} className="pointer-events-auto mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-black/55 px-3.5 py-1.5 text-[12px] font-semibold active:scale-95 transition-transform">
+            🔇 Silenciar
+          </button>
+        )}
       </header>
+
+      {/* Aviso de sonido: centrado y visible, para que el cliente escuche la presentación */}
+      {silenciado && !bloqueado && (
+        <button
+          onClick={onSonido}
+          className="live-sonido pointer-events-auto absolute left-1/2 top-[40%] -translate-x-1/2 -translate-y-1/2 z-20 flex items-center gap-2.5 rounded-2xl bg-black/65 backdrop-blur-sm border border-white/25 px-5 py-3 text-white shadow-[0_6px_24px_rgba(0,0,0,.45)] active:scale-95 transition-transform whitespace-nowrap"
+        >
+          <span className="w-9 h-9 rounded-full bg-white text-black flex items-center justify-center text-lg">🔊</span>
+          <span className="text-left leading-tight">
+            <span className="block text-[15px] font-extrabold">Clic aquí para activar el sonido</span>
+            <span className="block text-[11px] text-white/75">Escucha la presentación</span>
+          </span>
+        </button>
+      )}
 
       {/* Autoplay bloqueado por el navegador */}
       {bloqueado && (
