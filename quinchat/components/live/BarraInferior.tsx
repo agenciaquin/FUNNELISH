@@ -12,7 +12,8 @@ interface Props {
   onCompartir: () => void;
 }
 
-export default function BarraInferior({ onComprar, onComentar, onCompartir }: Props) {
+// onCompartir se conserva en Props por compatibilidad, pero ya no se muestra el botón.
+export default function BarraInferior({ onComprar, onComentar }: Props) {
   const [texto, setTexto] = useState('');
 
   const enviar = (e: React.FormEvent) => {
@@ -35,7 +36,7 @@ export default function BarraInferior({ onComprar, onComentar, onCompartir }: Pr
         </svg>
         ¡COMPRAR!
       </button>
-      <form onSubmit={enviar} className="flex-1 min-w-0">
+      <form onSubmit={enviar} className="flex-1 min-w-0 flex items-center gap-1.5">
         <input
           id="live-comentario"
           value={texto}
@@ -44,14 +45,18 @@ export default function BarraInferior({ onComprar, onComentar, onCompartir }: Pr
           enterKeyHint="send"
           placeholder="Deja tu comentario…"
           aria-label="Escribe un comentario"
-          className="w-full h-[46px] rounded-full border border-white/15 bg-black/40 backdrop-blur-sm px-4 text-[13px] text-white placeholder:text-white/55 focus:outline-none focus:border-white/40"
+          className="flex-1 min-w-0 h-[46px] rounded-full border border-white/15 bg-black/40 backdrop-blur-sm px-4 text-[13px] text-white placeholder:text-white/55 focus:outline-none focus:border-white/40"
         />
+        {/* Ícono de comentario: si hay texto lo envía; si no, abre el teclado para escribir */}
+        <button
+          type={texto.trim() ? 'submit' : 'button'}
+          onClick={() => { if (!texto.trim()) document.getElementById('live-comentario')?.focus(); }}
+          aria-label={texto.trim() ? 'Enviar comentario' : 'Escribir comentario'}
+          className="shrink-0 w-9 h-11 flex items-center justify-center text-[22px] leading-none active:scale-90 transition-transform"
+        >
+          💬
+        </button>
       </form>
-      <button onClick={onCompartir} aria-label="Compartir" className="shrink-0 w-9 h-11 flex items-center justify-center text-white/85 active:scale-90 transition-transform">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M14 4l7 6-7 6v-4c-5 0-8 1.5-10 6 0-6 3-11 10-11V4z" />
-        </svg>
-      </button>
     </div>
   );
 }
