@@ -33,7 +33,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ live, productos, timeline: timeline ?? [] });
 }
 
-const CAMPOS = ['slug', 'titulo', 'tienda_nombre', 'tienda_logo', 'etiqueta_grabada', 'video_url', 'poster_url', 'duracion_seg', 'whatsapp', 'modo', 'estado', 'ciclo_inicio', 'comentarios', 'embudo_slug'];
+const CAMPOS = ['slug', 'titulo', 'tienda_nombre', 'tienda_logo', 'etiqueta_grabada', 'video_url', 'poster_url', 'duracion_seg', 'whatsapp', 'modo', 'estado', 'ciclo_inicio', 'comentarios', 'embudo_slug', 'pixel_meta', 'pixel_tiktok'];
 
 // PATCH: actualiza campos del live.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -45,6 +45,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if ('etiqueta_grabada' in patch) {
     const v = String(patch.etiqueta_grabada ?? '').trim();
     patch.etiqueta_grabada = (!v || /en vivo/i.test(v)) ? 'Presentación grabada' : v.slice(0, 60);
+  }
+  // Píxeles: solo el ID (números/letras). Si pegan el código completo, se extrae el ID.
+  if ('pixel_meta' in patch) {
+    const v = String(patch.pixel_meta ?? '').trim();
+    const id15 = v.match(/\d{10,20}/)?.[0] ?? '';
+    if (v && !id15) return NextResponse.json({ error: 'El Pixel de Meta debe ser el número del píxel (ej. 1234567890123456).' }, { status: 400 });
+    patch.pixel_meta = id15 || null;
+  }
+  if ('pixel_tiktok' in patch) {
+    const v = String(patch.pixel_tiktok ?? '').trim();
+    const idTk = (v.match(/ttq\.load\(\s*['"]([A-Z0-9]{10,30})['"]/i)?.[1] ?? v.match(/^[A-Z0-9]{10,30}$/i)?.[0] ?? '').toUpperCase();
+    if (v && !idTk) return NextResponse.json({ error: 'El Pixel de TikTok debe ser el ID del píxel (ej. CXXXXXXXXXXXXXXXXXXX).' }, { status: 400 });
+    patch.pixel_tiktok = idTk || null;
   }
   if (!Object.keys(patch).length) return NextResponse.json({ error: 'nada que actualizar' }, { status: 400 });
   const supabase = createServerSupabaseClient();

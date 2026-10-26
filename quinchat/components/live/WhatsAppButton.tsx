@@ -35,7 +35,7 @@ export default function WhatsAppButton({ numero, producto, seleccion, className 
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Comprar por WhatsApp"
-      onClick={() => track('buy_whatsapp_click', { productoId: producto?.id, talla: seleccion?.talla, colorId: seleccion?.colorId })}
+      onClick={() => track('buy_whatsapp_click', { productoId: producto?.id, nombre: producto?.nombre, talla: seleccion?.talla, colorId: seleccion?.colorId })}
       className={`pointer-events-auto flex flex-col items-center gap-0.5 active:scale-95 transition-transform ${className}`}
     >
       <span className="w-[52px] h-[52px] rounded-full bg-[#25D366] flex items-center justify-center shadow-[0_3px_10px_rgba(0,0,0,.35)]">

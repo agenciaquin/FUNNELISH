@@ -6,12 +6,12 @@ import LineaTiempoVisual from './LineaTiempoVisual';
 
 // ───────────────────────── tipos del editor ─────────────────────────
 type EstadoLive = 'borrador' | 'activo' | 'archivado';
-interface LiveResumen { id: string; slug: string; titulo: string; estado: EstadoLive; video_url: string | null; poster_url: string | null; whatsapp: string | null; etiqueta_grabada: string | null; duracion_seg: number | null; embudo_slug: string | null; creado_en: string; productos: number; }
+interface LiveResumen { id: string; slug: string; titulo: string; estado: EstadoLive; video_url: string | null; poster_url: string | null; whatsapp: string | null; etiqueta_grabada: string | null; duracion_seg: number | null; embudo_slug: string | null; pixel_meta?: string | null; pixel_tiktok?: string | null; creado_en: string; productos: number; }
 interface VentaMini { id: number; foto: string | null; producto: string; valor: number; estado: 'pendiente' | 'confirmado' | 'cancelado'; fecha: string; }
 interface Color { id?: string; nombre: string; hex: string; foto_url: string; }
 interface Producto { id: string; nombre: string; descripcion: string | null; ficha_tela: string | null; ficha_cuidados: string | null; precio: number; precio_antes: number | null; promo_etiqueta: string | null; promo_unidades: number | null; promo_precio: number | null; tallas: string[]; colores: Color[]; }
 interface EventoTL { tipo: 'producto' | 'pregunta_frecuente' | 'comentario'; inicio_seg: number; fin_seg: number; producto_id?: string | null; pregunta?: string; respuesta?: string; autor?: string; texto?: string; }
-interface LiveFull { id: string; slug: string; titulo: string; estado: EstadoLive; video_url: string | null; poster_url: string | null; whatsapp: string | null; etiqueta_grabada: string | null; duracion_seg: number | null; tienda_nombre: string | null; tienda_logo: string | null; modo: string; comentarios: string[] | null; embudo_slug: string | null; }
+interface LiveFull { id: string; slug: string; titulo: string; estado: EstadoLive; video_url: string | null; poster_url: string | null; whatsapp: string | null; etiqueta_grabada: string | null; duracion_seg: number | null; tienda_nombre: string | null; tienda_logo: string | null; modo: string; comentarios: string[] | null; embudo_slug: string | null; pixel_meta: string | null; pixel_tiktok: string | null; }
 
 const TALLAS = ['S', 'M', 'L', 'XL'];
 const peso = (n: number) => `$${(Number(n) || 0).toLocaleString('es-CO')}`;
@@ -218,6 +218,9 @@ export default function PanelLiveShopping() {
                       </div>
                       <p className="text-xs text-brand-gray-mid truncate">pedido.klixmant.shop/{l.slug} · {l.productos} producto{l.productos === 1 ? '' : 's'}</p>
                       {l.embudo_slug && <p className="text-[11px] text-[#00847A] truncate">Checkout: {l.embudo_slug}</p>}
+                      {(l.pixel_meta || l.pixel_tiktok) && (
+                        <p className="text-[11px] text-brand-gray-mid truncate">📊 Píxel: {[l.pixel_meta && 'Meta ✓', l.pixel_tiktok && 'TikTok ✓'].filter(Boolean).join(' · ')}</p>
+                      )}
                     </div>
                   </div>
                   {/* Fecha real */}
@@ -402,7 +405,12 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
         tienda_nombre: live.tienda_nombre, tienda_logo: live.tienda_logo,
         comentarios: (live.comentarios ?? []).map(s => s.trim()).filter(Boolean),
         embudo_slug: (live.embudo_slug ?? '').trim() || null,
+        pixel_meta: (live.pixel_meta ?? '').trim() || null,
+        pixel_tiktok: (live.pixel_tiktok ?? '').trim() || null,
       }) });
+      // Recargar para ver el ID limpio (si pegaron el código completo del píxel)
+      const j = await api(`/api/live-admin/lives/${id}`).catch(() => null);
+      if (j?.live) setLive(l => l ? { ...l, pixel_meta: j.live.pixel_meta ?? null, pixel_tiktok: j.live.pixel_tiktok ?? null } : l);
       flash('Datos del live guardados ✅');
     } catch (e: any) { flash('Error: ' + e.message); }
     setGuardando(false);
@@ -491,6 +499,32 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
             </label>
           </div>
           <button onClick={guardarLive} disabled={guardando} className="mt-3 px-4 py-2 rounded-lg text-sm font-semibold bg-[#00A89D] text-white hover:bg-[#007A72] disabled:opacity-50">Guardar datos del live</button>
+        </section>
+
+        {/* Píxeles de medición (igual que en los embudos) */}
+        <section className="bg-white border border-brand-border rounded-2xl p-4 mb-4">
+          <h2 className="font-bold text-brand-black mb-1">📊 Píxeles y medición</h2>
+          <p className="text-xs text-brand-gray-mid mb-3">
+            Pega el <b>ID</b> de tu píxel (también puedes pegar el código completo y se extrae el ID solo).
+            Si los dejas vacíos, el live usa los píxeles del embudo del checkout{live.embudo_slug ? <> (<b>{live.embudo_slug}</b>)</> : null}.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label className="text-xs font-semibold text-brand-black">
+              <span className="inline-flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-[#1877F2] text-white text-[10px] font-bold inline-flex items-center justify-center">f</span>Pixel de Meta Ads (ID)</span>
+              <input className={campo} inputMode="numeric" placeholder="ej. 1234567890123456" value={live.pixel_meta ?? ''} onChange={e => setCampo('pixel_meta', e.target.value)} />
+              <span className={`block text-[11px] font-normal mt-0.5 ${live.pixel_meta ? 'text-[#00847A]' : 'text-brand-gray-mid'}`}>{live.pixel_meta ? '✓ Configurado' : 'Sin configurar'}</span>
+            </label>
+            <label className="text-xs font-semibold text-brand-black">
+              <span className="inline-flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-black text-white text-[10px] font-bold inline-flex items-center justify-center">♪</span>Pixel de TikTok Ads (ID)</span>
+              <input className={campo} placeholder="ej. CXXXXXXXXXXXXXXXXXXX" value={live.pixel_tiktok ?? ''} onChange={e => setCampo('pixel_tiktok', e.target.value)} />
+              <span className={`block text-[11px] font-normal mt-0.5 ${live.pixel_tiktok ? 'text-[#00847A]' : 'text-brand-gray-mid'}`}>{live.pixel_tiktok ? '✓ Configurado' : 'Sin configurar'}</span>
+            </label>
+          </div>
+          <div className="mt-3 rounded-lg bg-brand-ivory border border-brand-border px-3 py-2 text-[11.5px] text-brand-black/80 leading-relaxed">
+            <b>Eventos que se envían:</b> PageView y ViewContent al entrar · InitiateCheckout al abrir el checkout (¡COMPRAR!, COMPRA AQUÍ o la tarjeta) ·
+            Purchase / CompletePayment al hacer el pedido · Contact al tocar WhatsApp · personalizados: LiveVideoPlay, LiveSonidoActivado, LiveProductoMostrado.
+          </div>
+          <button onClick={guardarLive} disabled={guardando} className="mt-3 px-4 py-2 rounded-lg text-sm font-semibold bg-[#00A89D] text-white hover:bg-[#007A72] disabled:opacity-50">Guardar píxeles</button>
         </section>
 
         {/* Comentarios de ambiente */}

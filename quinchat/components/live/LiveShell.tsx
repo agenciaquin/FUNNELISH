@@ -203,7 +203,7 @@ export default function LiveShell({ live, funnel }: { live: LiveConfig; funnel?:
   // MODO_REPRODUCCION 'sincronizado': aquí se haría seek a posicionSincronizada(...) al cargar. Preparado, no activo.
 
   useEffect(() => { track('live_view', { slug: live.slug, modo: live.modo }); }, [live.slug, live.modo]);
-  useEffect(() => { if (producto) track('product_shown', { productoId: producto.id, segundo: Math.floor(tiempo) }); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [producto?.id]);
+  useEffect(() => { if (producto) track('product_shown', { productoId: producto.id, nombre: producto.nombre, precio: producto.precio, segundo: Math.floor(tiempo) }); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [producto?.id]);
 
   // Comentarios de AMBIENTE (demo): van apareciendo solos durante el live, como un chat vivo.
   // Salen de live.comentariosAuto (editables desde el panel). Siempre marcados DEMO.
@@ -260,8 +260,8 @@ export default function LiveShell({ live, funnel }: { live: LiveConfig; funnel?:
           onSonido={alternarSonido}
           onReproducir={() => videoRef.current?.reproducir().catch(() => {})}
           onCerrar={cerrar}
-          onProductoClick={p => { track('product_click', { productoId: p.id }); setSheet(p); }}
-          onComprarAqui={p => { track('buy_here_open', { productoId: p.id }); setSheet(p); }}
+          onProductoClick={p => { track('product_click', { productoId: p.id, nombre: p.nombre, precio: p.precio }); setSheet(p); }}
+          onComprarAqui={p => { track('buy_here_open', { productoId: p.id, nombre: p.nombre, precio: p.precio }); setSheet(p); }}
           propios={propios}
           onComentar={comentar}
           onCompartir={compartir}

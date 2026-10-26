@@ -3,6 +3,7 @@ import { buscarLive } from '@/lib/live/datos-demo';
 import { buscarLiveDB } from '@/lib/live/datos-supabase';
 import { obtenerFunnel, type Funnel } from '@/lib/funnels';
 import LiveShell from '@/components/live/LiveShell';
+import Pixeles from '@/components/publico/Pixeles';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,5 +19,20 @@ export default async function LivePage({ params }: { params: Promise<{ slug: str
   let funnel: Funnel | null = null;
   if (live.embudoSlug) funnel = await obtenerFunnel(live.embudoSlug).catch(() => null);
 
-  return <LiveShell live={live} funnel={funnel} />;
+  // Píxeles: los del live; si no tiene, los del embudo del checkout.
+  const pixelMeta = live.pixelMeta || funnel?.pixel_meta || null;
+  const pixelTiktok = live.pixelTiktok || funnel?.pixel_tiktok || null;
+  const p0 = live.productos[0];
+
+  return (
+    <>
+      <Pixeles
+        meta={pixelMeta}
+        tiktok={pixelTiktok}
+        evento="ViewContent"
+        datos={p0 ? { valor: p0.precio, producto: p0.nombre, contentId: funnel?.slug || p0.id } : undefined}
+      />
+      <LiveShell live={live} funnel={funnel} />
+    </>
+  );
 }

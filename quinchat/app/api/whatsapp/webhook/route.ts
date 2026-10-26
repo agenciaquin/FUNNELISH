@@ -2696,9 +2696,15 @@ export async function POST(req: NextRequest) {
     const stillMissingDir   = !isCompleteAddress(currentDireccion) && !isDirOficinaType && !direccionOk;
 
     // ── Cerrar la venta sola ─────────────────────────────────────────────────
-    // El cliente ya había dicho CONFIRMO y solo faltaba un dato. Ya lo dio:
-    // no se le pregunta nada más — se le manda el resumen y el agradecimiento.
-    if (pendingPedido.pidio_confirmar === true && !stillMissingTalla && !stillMissingDir && !isDirOficinaType) {
+    // Caso 1: el cliente ya había dicho CONFIRMO y solo faltaba un dato.
+    // Caso 2: el cliente acaba de dar el ÚNICO dato que faltaba (ej. la talla) y
+    //         con eso el pedido queda completo → ya respondió al mensaje de
+    //         confirmación, no se le vuelve a preguntar "¿todo correcto?".
+    // En ambos: resumen + agradecimiento y la venta queda confirmada.
+    const pedidoCompleto = !stillMissingTalla && !stillMissingDir && !isDirOficinaType;
+    const corrigeAlgo = /\b(no|nop|cambi|corrig|corrij|error|equivoc|mal|pero|otr[oa])\b/i.test(textLower);
+    const completoConEsteDato = clientGaveTalla && !clientGaveDireccion && !corrigeAlgo;
+    const cerrarVentaCompleta = async () => {
       await supabase.from('clientes_funnelish').update({
         confirmado: true, confirmado_at: new Date().toISOString(), estado: 'confirmado',
       }).eq('id', pendingPedido.id);
@@ -2720,6 +2726,9 @@ export async function POST(req: NextRequest) {
 
       const w = await sendTextMessage(from, resumen);
       await saveAndSend(supabase, from, resumen, 'text', w);
+    };
+    if (pedidoCompleto && (pendingPedido.pidio_confirmar === true || completoConEsteDato)) {
+      await cerrarVentaCompleta();
       continue;
     }
 
@@ -2737,7 +2746,10 @@ export async function POST(req: NextRequest) {
     // ── Respuesta fija si el cliente acaba de dar un dato ────────────────────
     let fixedReply: string | null = null;
 
-    if (clientGaveTalla && clientGaveDireccion) {
+    if (clientGaveTalla && clientGaveDireccion && pedidoCompleto && !corrigeAlgo) {
+      await cerrarVentaCompleta();
+      continue;
+    } else if (clientGaveTalla && clientGaveDireccion) {
       fixedReply = stillMissingTalla || stillMissingDir
         ? null // edge case — no debería pasar
         : `✅ ¡Perfecto! Anoté tu talla *${currentTalla}* y tu dirección. Tu pedido: *${pendingPedido.producto}*.\n\n¿Me confirmas que está todo correcto para procesar tu despacho? 😊🚚`;
@@ -2760,6 +2772,10 @@ export async function POST(req: NextRequest) {
       if (lupapMsg) {
         // Lupap encontró un problema → enviar el mensaje específico (no confirmar la dirección)
         fixedReply = lupapMsg;
+      } else if (pedidoCompleto && !corrigeAlgo) {
+        // Dirección verificada y con ella el pedido queda completo → cerrar directo
+        await cerrarVentaCompleta();
+        continue;
       } else {
         // Dirección verificada → confirmar normalmente
         fixedReply = stillMissingTalla

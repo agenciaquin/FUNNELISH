@@ -91,6 +91,10 @@ export interface LiveConfig {
   comentariosAuto?: string[];
   /** Slug del embudo cuyo checkout se usa al comprar (si está vacío, usa el BuySheet propio del live). */
   embudoSlug?: string;
+  /** ID del Pixel de Meta del live (si falta, se usa el del embudo del checkout). */
+  pixelMeta?: string;
+  /** ID del Pixel de TikTok del live (si falta, se usa el del embudo del checkout). */
+  pixelTiktok?: string;
 }
 
 export interface Seleccion {
