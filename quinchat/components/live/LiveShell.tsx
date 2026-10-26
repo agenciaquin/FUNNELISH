@@ -282,12 +282,19 @@ export default function LiveShell({ live, funnel }: { live: LiveConfig; funnel?:
           </div>
         )}
         {sheet && (funnel ? (
-          /* Checkout DEL EMBUDO tal cual, dentro de un panel inferior (el video sigue arriba). */
-          <div className="absolute inset-0 z-30 flex flex-col justify-end" onClick={() => setSheet(null)}>
-            <div className="live-sheet bg-white text-black rounded-t-3xl max-h-[88%] overflow-y-auto pb-4" onClick={e => e.stopPropagation()}>
-              <div className="sticky top-0 z-10 bg-white/95 backdrop-blur flex items-center justify-between px-4 py-2 border-b border-neutral-100">
-                <span className="text-xs text-neutral-500">El video sigue arriba ↑</span>
-                <button onClick={() => setSheet(null)} aria-label="Cerrar" className="w-8 h-8 rounded-full bg-neutral-100 text-lg leading-none">×</button>
+          /* Checkout DEL EMBUDO tal cual, en una tarjeta flotante: el live sigue
+             reproduciéndose detrás y se ve un borde de video por los lados, arriba y abajo. */
+          <div
+            className="absolute inset-0 z-30 flex items-end justify-center bg-black/25 px-3 pt-[max(env(safe-area-inset-top),76px)] pb-[max(env(safe-area-inset-bottom),14px)]"
+            onClick={() => setSheet(null)}
+          >
+            <div
+              className="live-sheet w-full max-w-[440px] max-h-full bg-white text-black rounded-[22px] overflow-y-auto overscroll-contain pb-4 shadow-[0_12px_40px_rgba(0,0,0,.45)] ring-1 ring-white/30"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="sticky top-0 z-10 bg-white/95 backdrop-blur flex items-center justify-between gap-2 pl-4 pr-2.5 py-2.5 border-b border-neutral-100">
+                <span className="text-[14px] font-extrabold text-neutral-900 leading-tight">📦 Completa tus datos de envío</span>
+                <button onClick={() => setSheet(null)} aria-label="Cerrar" className="shrink-0 w-8 h-8 rounded-full bg-neutral-100 text-lg leading-none">×</button>
               </div>
               <FormularioPedido funnel={funnel} utms={{}} embebido compacto />
             </div>
