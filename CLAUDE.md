@@ -45,6 +45,27 @@ Valor a pagar: {valor}
 3. **auditor** → revisa y produce AUDIT.md (APROBADO o REQUIERE CORRECCIONES).
 4. Si hay fallos → implementador corrige → auditor revuelve a revisar.
 
+Ese flujo es el del primer ConfirmaYa en HTML puro. Para **QuinChat** (`quinchat/`, `quin-comercial/`)
+se usa el equipo de abajo, copiado del reporte de ventas y adaptado a este repo.
+
+## Equipo de agentes de QuinChat (`.claude/agents/agente-*`)
+
+| Agente | Hace | No hace |
+|---|---|---|
+| `agente-planeador` | Convierte el pedido en un plan en `docs/PLAN-*.md`: fases chicas, comprobaciones, SQL en borrador, interruptor, reversa y decisiones del dueño | Escribir código, SQL ejecutable o en Supabase, commitear |
+| `agente-desarrollador` | Escribe el código según un plan aprobado y corre typecheck, lint y build | Escribir en Supabase, disparar WhatsApp o crons, commitear |
+| `agente-pruebas` | Verifica lo del desarrollador y simula el flujo real sin tocar clientes reales | Código de producción |
+| `agente-diseno-ux-ui` | Que se entienda y se use bien: tienda, checkout, live y panel; protocolo de celular | Lógica, `app/api`, Supabase, commitear |
+| `agente-diseno-grafico` | Que se vea de marca: color, tipografía, Quino, imágenes, acabado | Lo mismo que UX |
+| `agente-animador-ux-ui` | El movimiento, con CSS y lo que ya existe en `globals.css` | Lo mismo que UX; librerías nuevas sin aprobación |
+| `agente-guardian-seguridad` | Revisa todo antes de commit y push y todo SQL antes de pegarlo; veredicto que bloquea | Escribir código o en Supabase |
+| `agente-ciberseguridad` | Solo seguridad, a fondo: rutas, Supabase, Vercel, WhatsApp/Meta, cuentas, rotación de claves. Sus críticos los hace cumplir el guardián | Escribir código o en Supabase, commitear |
+| `agente-contratos-api` | Que el bot use las APIs como dicen sus contratos (catálogos del reporte, Funnelish, Meta) y que la copia del contrato esté al día | Editar código o el contrato copiado, commitear |
+| `quino-wiki` | Explica la plataforma y mantiene `WIKI-QUINO/` | Implementar o desplegar |
+
+Orden habitual: planeador → guardián del plan → desarrollador → pruebas → diseño (si toca) → guardián →
+el dueño en localhost → commit a `master` (publica) → mirar el despliegue y los registros de ejecución.
+
 ---
 
 ## Observaciones para futuros desarrollos
