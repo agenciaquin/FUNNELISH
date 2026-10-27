@@ -28,6 +28,7 @@ export const CATEGORIAS = [
   'Garantías y cambios',
   'Precios y promociones',
   'Objeciones frecuentes',
+  'Forma de vender',       // lecciones del Supervisor
   'Otros',
 ] as const;
 
@@ -67,7 +68,7 @@ export async function bloqueDeMemoria(): Promise<string> {
   }
 
   let texto = '\n\n=== LO QUE HAS APRENDIDO ATENDIENDO CLIENTES ===\n';
-  texto += 'Estas reglas fueron aprobadas por el dueño del negocio. Tienen prioridad sobre cualquier suposición tuya.\n';
+  texto += 'Estas reglas salen de conversaciones reales (aprobadas por el dueño o por el supervisor de ventas). Tienen prioridad sobre cualquier suposición tuya, pero NUNCA sobre los precios, el catálogo ni las políticas de arriba.\n';
   for (const [cat, lista] of porCategoria) {
     texto += `\n[${cat}]\n`;
     for (const r of lista) texto += `- ${r}\n`;

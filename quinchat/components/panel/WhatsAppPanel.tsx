@@ -36,6 +36,7 @@ const VentasPanel        = dynamic(() => import('./VentasPanel'),         { ssr:
 const MetasPanel         = dynamic(() => import('./MetasPanel'),          { ssr: false });
 const VendedoresPanel    = dynamic(() => import('./VendedoresPanel'),     { ssr: false });
 const ObjecionesPanel    = dynamic(() => import('./ObjecionesPanel'),     { ssr: false });
+const SupervisorPanel    = dynamic(() => import('./SupervisorPanel'),     { ssr: false });
 
 interface Props {
   userName: string;
@@ -411,6 +412,9 @@ export default function WhatsAppPanel({ userName }: Props) {
         <ObjecionesPanel
           onAbrirChat={id => { setActiveSection('chat'); selectConversation(id); }}
         />
+      )}
+      {activeSection === 'supervisor'    && (
+        <SupervisorPanel onAbrirChat={id => { abrirChatDesde(id); }} />
       )}
       {activeSection === 'seguimiento'   && (
         <SeguimientoPanel
