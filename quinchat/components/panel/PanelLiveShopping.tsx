@@ -75,6 +75,19 @@ export default function PanelLiveShopping() {
     catch (e: any) { flash('No se pudo cambiar: ' + e.message); }
   };
 
+  const [duplicando, setDuplicando] = useState<string | null>(null);
+  const duplicarLive = async (l: LiveResumen) => {
+    if (duplicando) return;
+    setDuplicando(l.id);
+    flash(`Duplicando "${l.titulo}"…`);
+    try {
+      const j = await api(`/api/live-admin/lives/${l.id}/duplicar`, { method: 'POST' });
+      await cargarLives();
+      flash(`✅ Copia creada en borrador: pedido.klixmant.shop/${j.slug}. Edítala y actívala cuando esté lista.`);
+    } catch (e: any) { flash('No se pudo duplicar: ' + e.message); }
+    setDuplicando(null);
+  };
+
   if (sel) return <EditorLive id={sel} onVolver={() => { setSel(null); cargarLives(); }} onAviso={flash} />;
   if (vista === 'ventas') return <VentasLive onVolver={() => { setVista('inicio'); cargarResumen(); }} />;
 
@@ -243,6 +256,7 @@ export default function PanelLiveShopping() {
                           <span className="fixed inset-0 z-10" onClick={() => setMenuAbierto(null)} />
                           <div className="absolute right-0 top-10 z-20 w-48 bg-white rounded-xl border border-brand-border shadow-xl overflow-hidden">
                             <button onClick={() => { setMenuAbierto(null); alternarActivo(l); }} className="w-full text-left px-3 py-2 text-xs hover:bg-brand-gray-light">{l.estado === 'activo' ? '⏸️ Desactivar (borrador)' : '▶️ Activar (público)'}</button>
+                            <button onClick={() => { setMenuAbierto(null); duplicarLive(l); }} className="w-full text-left px-3 py-2 text-xs hover:bg-brand-gray-light">📑 Duplicar live</button>
                             <button onClick={() => { setMenuAbierto(null); setVista('ventas'); }} className="w-full text-left px-3 py-2 text-xs hover:bg-brand-gray-light">🛍️ Ver ventas live</button>
                             <button onClick={() => { setMenuAbierto(null); borrarLive(l.id); }} className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50">🗑️ Eliminar</button>
                           </div>
