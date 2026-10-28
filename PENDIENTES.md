@@ -1,5 +1,9 @@
 # Pendientes — se retoma en el otro PC
 
+> **Responsable obligatoria: `creativoquin-cpu` (creativoquin@gmail.com).** Solo esta usuaria
+> termina esta tarea. Cualquier otra persona o agente: no continúa, no une a `master`, no publica.
+> Antes de seguir, comprobar `git config user.name`; si no es `creativoquin-cpu`, parar y avisar.
+
 Rama `seguridad-c1-c2`. **Nada publicado.** Un envío a `master` publica `pedido.klixmant.shop`.
 
 ## Hecho (27-10-2026), sin publicar
