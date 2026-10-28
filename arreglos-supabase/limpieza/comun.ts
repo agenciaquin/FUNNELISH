@@ -18,7 +18,7 @@
  * clave service_role). No se copian a ningún sitio ni se imprimen.
  */
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { appendFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -240,30 +240,163 @@ export function dondeSeUsaPorRuta(refs: Referencias, bucket: string, ruta: strin
   return s ? [...s].filter((x) => !TABLAS_REGISTRO.has(x.split('.')[0]!)).sort() : [];
 }
 
+// ---------------------------------------------------------------- prueba del cruce SQL
+
 /**
- * Las tablas que `service_role` no puede leer solo se dan por revisadas con una
- * PRUEBA de que alguien ejecutó `cruce-solo-lectura.sql`: el fichero con los
- * resultados (`--tablas-revisadas <fichero>`). Tiene que existir, tener menos de
- * 24 h (el cruce vale el día que se hace) y nombrar cada tabla ilegible. Su
- * sha256 y su fecha quedan en el registro de ejecuciones.
- * Si no hay tablas ilegibles, no se pide nada.
+ * PRUEBA DEL CRUCE SQL (formato `cruce-limpieza-v1`)
+ * --------------------------------------------------
+ * El cruce por la API no llega a todo (dos tablas que `service_role` no lee,
+ * otros esquemas). Lo que falta lo cubre una consulta SQL que GENERA EL PROPIO
+ * SIMULACRO (`prueba-cruce-a2.sql`, `prueba-cruce-a1.sql`), con la lista exacta
+ * de lo que se va a tocar: nadie escribe la lista a mano.
+ *
+ * Quien tenga el editor SQL de Supabase la ejecuta. Devuelve UNA fila y UNA
+ * columna, `prueba`, con un JSON así (la fecha la pone la base, no el fichero):
+ *
+ *   {"formato": "cruce-limpieza-v1", "fecha": "2026-10-01T03:00:00Z",
+ *    "consulta2": {"catalogo_categorias": 0, "catalogo_variables": 0},
+ *    "consulta3": {"coincidencias": 0, "videos": ["embudos/…/a.mp4", …]},
+ *    "consulta4": {"filas": 0}}
+ *
+ * Esa celda se guarda en un fichero (copiar el valor, o «Export > CSV»: las dos
+ * formas valen) y se pasa con `--tablas-revisadas <fichero>`.
+ *
+ * Se exige, leyendo los VALORES:
+ *  - el formato `cruce-limpieza-v1` y una sola prueba en el fichero;
+ *  - `fecha` de hace menos de 24 h (y no en el futuro);
+ *  - consulta 2: cada tabla ilegible presente y con 0;
+ *  - A2 (`videos`): consulta 3 con 0 coincidencias, y lo que se va a tocar tiene
+ *    que estar en su lista (lo que no esté, no se toca: ver `cubiertos`);
+ *  - A1 (`originales`): consulta 4 con 0 filas.
+ * Cualquier otro fichero se rechaza. No es una firma criptográfica: prueba que
+ * los resultados dicen 0, no quién los produjo. El sha256 del fichero y la
+ * fecha quedan en el registro de ejecuciones.
  */
-export async function exigirRevisionSql(refs: Referencias): Promise<void> {
-  if (!refs.ilegibles.length) return;
-  const fichero = argumento('--tablas-revisadas');
-  const faltan = refs.ilegibles.map((t) => t.tabla);
-  if (!fichero || !existsSync(fichero)) {
-    throw new Error(`No se ejecuta: el cruce no leyó ${faltan.join(', ')}. Ejecuta cruce-solo-lectura.sql y pasa el fichero de resultados con --tablas-revisadas <fichero>.`);
+export interface PruebaCruce {
+  formato: 'cruce-limpieza-v1';
+  fecha: string;
+  consulta2: Record<string, number>;
+  consulta3?: { coincidencias: number; videos: string[] };
+  consulta4?: { filas: number };
+}
+
+/** Busca la prueba dentro del fichero: el JSON tal cual o dentro de una celda CSV (comillas dobladas). */
+export function leerPruebaCruce(texto: string): PruebaCruce {
+  const candidatos = new Set<string>();
+  for (const t of [texto, texto.replace(/""/g, '"')]) {
+    for (const m of t.matchAll(/\{[^{}]*"formato"\s*:\s*"cruce-limpieza-v1"(?:[^{}]|\{[^{}]*\})*\}/g)) candidatos.add(m[0]);
   }
-  const { mtimeMs } = statSync(fichero);
-  const horas = (Date.now() - mtimeMs) / 3_600_000;
-  if (horas > 24) throw new Error(`El fichero de resultados del SQL tiene ${Math.round(horas)} h: el cruce vale el día que se hace. Vuelve a ejecutarlo.`);
+  const pruebas = [...candidatos].map((c) => { try { return JSON.parse(c) as PruebaCruce; } catch { return null; } }).filter(Boolean) as PruebaCruce[];
+  const distintas = new Set(pruebas.map((p) => JSON.stringify(p)));
+  if (!distintas.size) throw new Error('El fichero no contiene una prueba «cruce-limpieza-v1» (la fila que devuelve prueba-cruce-*.sql).');
+  if (distintas.size > 1) throw new Error('El fichero contiene más de una prueba: pasa solo la de hoy.');
+  return pruebas[0]!;
+}
+
+export interface Exigencia {
+  /** A2: rutas `embudos/…` que se van a mover o purgar. */
+  videos?: string[];
+  /** A1: exigir la consulta 4 (`_originales/`). */
+  originales?: boolean;
+}
+
+/**
+ * Valida la prueba del cruce SQL (ver arriba) y devuelve las rutas cubiertas por
+ * la consulta 3. Lanza si no vale. Se exige SIEMPRE en A1 y A2, haya o no tablas
+ * ilegibles: la consulta 3 también cubre los huecos del cruce por API.
+ */
+export async function exigirRevisionSql(refs: Pick<Referencias, 'ilegibles'>, exige: Exigencia = {}): Promise<Set<string>> {
+  const fichero = argumento('--tablas-revisadas');
+  if (!fichero || !existsSync(fichero)) {
+    throw new Error('No se ejecuta: falta la prueba del cruce SQL. Ejecuta prueba-cruce-a1.sql / prueba-cruce-a2.sql (las genera el simulacro) y pasa el resultado con --tablas-revisadas <fichero>.');
+  }
   const texto = await readFile(fichero, 'utf8');
-  const sinNombrar = faltan.filter((t) => !texto.includes(t));
-  if (sinNombrar.length) throw new Error(`El fichero de resultados no menciona ${sinNombrar.join(', ')}: no prueba que se revisaran.`);
+  const p = leerPruebaCruce(texto);
+  const fecha = Date.parse(p.fecha);
+  if (!Number.isFinite(fecha)) throw new Error(`La prueba no tiene una fecha válida («${p.fecha}»).`);
+  const horas = (Date.now() - fecha) / 3_600_000;
+  if (horas > 24) throw new Error(`La prueba del cruce es de hace ${Math.round(horas)} h: el cruce vale el día que se hace. Vuelve a ejecutarlo.`);
+  if (horas < -0.1) throw new Error(`La prueba del cruce tiene fecha futura (${p.fecha}).`);
+  for (const t of refs.ilegibles.map((x) => x.tabla)) {
+    const v = p.consulta2?.[t];
+    if (v !== 0) throw new Error(`Consulta 2: ${t} ${v == null ? 'no aparece' : `da ${v}`}; tiene que dar 0. No se ejecuta.`);
+  }
+  const cubiertos = new Set((p.consulta3?.videos ?? []).map((r) => r.toLowerCase()));
+  if (exige.videos) {
+    if (!p.consulta3) throw new Error('A2 necesita la consulta 3 (vídeos) en la prueba.');
+    if (p.consulta3.coincidencias !== 0) throw new Error(`Consulta 3: ${p.consulta3.coincidencias} coincidencias; algún vídeo sí está nombrado. No se ejecuta.`);
+  }
+  if (exige.originales) {
+    if (!p.consulta4) throw new Error('A1 necesita la consulta 4 (_originales/) en la prueba.');
+    if (p.consulta4.filas !== 0) throw new Error(`Consulta 4: ${p.consulta4.filas} filas nombran «_originales/». No se ejecuta.`);
+  }
   await anotarRegistro({ tipo: 'prueba-sql', fichero: resolve(fichero), sha256: createHash('sha256').update(texto).digest('hex'),
-    fecha_fichero: new Date(mtimeMs).toISOString(), tablas: faltan });
-  console.log(`Revisión SQL aceptada: ${fichero} (${new Date(mtimeMs).toISOString()})`);
+    fecha_prueba: p.fecha, consulta2: p.consulta2, consulta3: p.consulta3 ? { coincidencias: p.consulta3.coincidencias, videos: p.consulta3.videos.length } : undefined,
+    consulta4: p.consulta4 });
+  console.log(`Prueba del cruce SQL aceptada: ${fichero} (fecha ${p.fecha}; ${cubiertos.size} vídeos cubiertos)`);
+  return cubiertos;
+}
+
+const PATRON_ARCHIVO_SQL = String.raw`(supabase\.co/storage|chat-media|catalogo-imagenes|plantillas-images|\.(mp4|mov|webm|jpe?g|png|webp)\M)`;
+const ESQUEMAS_FUERA = `'pg_catalog', 'information_schema', 'pg_toast', 'storage', 'auth', 'realtime', 'supabase_functions',
+       'supabase_migrations', 'extensions', 'graphql', 'graphql_public', 'pgsodium', 'pgsodium_masks', 'vault', 'net', 'cron', 'pgbouncer'`;
+
+/**
+ * El SQL (solo SELECT) que produce la prueba. Lo escribe el simulacro con la
+ * lista EXACTA de lo que propone, así la consulta 3 cubre lo que se va a mover.
+ */
+export function generarSqlPrueba(videos: string[], titulo: string): string {
+  const lista = videos.map((v) => `'${v.replace(/'/g, "''")}'`).join(',\n    ');
+  return `-- ${titulo}
+-- GENERADO por el simulacro el ${new Date().toISOString()}. No editar a mano: relanzar el simulacro.
+-- SOLO LECTURA (todo SELECT). Devuelve UNA fila con la columna «prueba»: guarda ese valor
+-- (copiar la celda, o Export > CSV) en un fichero y pásalo con --tablas-revisadas <fichero>.
+-- Formato «cruce-limpieza-v1»: ver exigirRevisionSql en comun.ts.
+with videos(ruta) as (
+  select unnest(array[
+    ${lista || ''}
+  ]::text[])
+),
+cols as (
+  select table_schema, table_name, column_name
+  from information_schema.columns
+  where table_schema not in (${ESQUEMAS_FUERA})
+    and data_type in ('text', 'character varying', 'character', 'json', 'jsonb', 'ARRAY', 'USER-DEFINED')
+    and table_name not in ('media_optimizaciones', 'media_optimizaciones_resumen')
+),
+c2 as (
+  select (select count(*) from catalogo_categorias t where to_jsonb(t)::text ~* '${PATRON_ARCHIVO_SQL}') as categorias,
+         (select count(*) from catalogo_variables t where to_jsonb(t)::text ~* '${PATRON_ARCHIVO_SQL}') as variables
+),
+c3 as (
+  select coalesce(sum((xpath('/row/n/text()', query_to_xml(format(
+           'select count(*) as n from %I.%I where %I::text ilike %L',
+           c.table_schema, c.table_name, c.column_name, '%' || regexp_replace(v.ruta, '^.*/', '') || '%'), false, true, '')))[1]::text::int), 0) as n
+  from videos v cross join cols c
+),
+c4 as (
+  select coalesce(sum((xpath('/row/n/text()', query_to_xml(format(
+           'select count(*) as n from %I.%I where %I::text like %L',
+           c.table_schema, c.table_name, c.column_name, '%\\_originales/%'), false, true, '')))[1]::text::int), 0) as n
+  from cols c
+)
+select jsonb_build_object(
+  'formato', 'cruce-limpieza-v1',
+  'fecha', to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+  'consulta2', jsonb_build_object('catalogo_categorias', c2.categorias, 'catalogo_variables', c2.variables),
+  'consulta3', jsonb_build_object('coincidencias', c3.n, 'videos', (select coalesce(jsonb_agg(ruta order by ruta), '[]'::jsonb) from videos)),
+  'consulta4', jsonb_build_object('filas', c4.n)
+)::text as prueba
+from c2, c3, c4;
+`;
+}
+
+/** Escribe el SQL de la prueba junto a los scripts y junto a las copias. */
+export async function guardarSqlPrueba(nombre: string, videos: string[], titulo: string): Promise<void> {
+  const sql = generarSqlPrueba(videos, titulo);
+  await mkdir(join(COPIAS, 'listas'), { recursive: true });
+  await writeFile(join(COPIAS, 'listas', nombre), sql);
+  await writeFile(join(CARPETA_LIMPIEZA, nombre), sql);
 }
 
 // ---------------------------------------------------------------- descargas
@@ -456,7 +589,9 @@ export type Escritura =
  *  - sobrescribir / crear: vuelve a bajar el objeto y compara el sha256 con lo subido;
  *  - mover: el destino existe y el origen ya no;
  *  - borrar: el objeto ya no existe.
- * Y lo anota en el registro de ejecuciones (con la ruta RELATIVA de la copia).
+ * En el registro de ejecuciones (con la ruta RELATIVA de la copia) anota la
+ * INTENCIÓN antes de escribir y el resultado (`hecho` o `fallo`) después, para
+ * que una escritura hecha a medias también se pueda deshacer.
  *
  * `sobrescribir` usa PUT, que en Storage solo actualiza un objeto que existe: así
  * no se crea nada por error. `crear` usa POST sin `x-upsert`, que falla si ya
@@ -468,6 +603,28 @@ export async function escribirStorage(e: Escritura, copia: Descarga): Promise<vo
   const local = createHash('sha256').update(await readFile(copia.archivo)).digest('hex');
   if (local !== copia.sha256) throw new Error(`La copia local de ${e.ruta} no coincide con su sha256: no se escribe.`);
   const ruta = e.ruta.split('/').map(encodeURIComponent).join('/');
+  // INTENCIÓN, antes de tocar nada: si la escritura se hace y luego algo falla
+  // (la comprobación, la red, el proceso), queda constancia y `restaurar` lo
+  // cubre igual. Después se anota el resultado: `hecho` o `fallo`.
+  const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const shaNuevo = e.tipo === 'sobrescribir' || e.tipo === 'crear' ? createHash('sha256').update(e.datos).digest('hex') : undefined;
+  const asiento = {
+    id, tipo: e.tipo, bucket: e.bucket, ruta: e.ruta, destino: e.tipo === 'mover' ? e.destino : undefined,
+    copia_rel: copia.rel, copia_sha256: copia.sha256, copia_content_type: copia.contentType, copia_cache_control: copia.cacheControl,
+    sha256_nuevo: shaNuevo, cache: 'cacheControl' in e ? e.cacheControl : undefined,
+  };
+  await anotarRegistro({ ...asiento, fase: 'intencion' });
+  try {
+    await escribirYComprobar(e, ruta, shaNuevo);
+  } catch (err) {
+    await anotarRegistro({ ...asiento, fase: 'fallo', error: String((err as Error)?.message ?? err).slice(0, 300) });
+    throw err;
+  }
+  await anotarRegistro({ ...asiento, fase: 'hecho' });
+}
+
+/** La petición de escritura y la comprobación posterior (ver `escribirStorage`). */
+async function escribirYComprobar(e: Escritura, ruta: string, shaNuevo: string | undefined): Promise<void> {
   let r: Response;
   if (e.tipo === 'sobrescribir' || e.tipo === 'crear') {
     r = await fetch(`${ENV.url}/storage/v1/object/${e.bucket}/${ruta}`, {
@@ -493,9 +650,7 @@ export async function escribirStorage(e: Escritura, copia: Descarga): Promise<vo
   await r.arrayBuffer().catch(() => undefined);
 
   // Comprobación DESPUÉS de escribir.
-  let shaNuevo: string | undefined;
   if (e.tipo === 'sobrescribir' || e.tipo === 'crear') {
-    shaNuevo = createHash('sha256').update(e.datos).digest('hex');
     const ahora = await bajarEnMemoria(e);
     if (ahora.sha256 !== shaNuevo) throw new Error(`Tras escribir ${e.ruta}, Storage no devuelve lo subido. PARADO: revisar a mano.`);
   } else if (e.tipo === 'mover') {
@@ -505,11 +660,6 @@ export async function escribirStorage(e: Escritura, copia: Descarga): Promise<vo
   } else if (await existe(e)) {
     throw new Error(`Tras borrar ${e.ruta}, sigue existiendo. PARADO: revisar a mano.`);
   }
-  await anotarRegistro({
-    tipo: e.tipo, bucket: e.bucket, ruta: e.ruta, destino: e.tipo === 'mover' ? e.destino : undefined,
-    copia_rel: copia.rel, copia_sha256: copia.sha256, copia_content_type: copia.contentType, copia_cache_control: copia.cacheControl,
-    sha256_nuevo: shaNuevo, cache: 'cacheControl' in e ? e.cacheControl : undefined,
-  });
 }
 
 /** Termina el proceso con código 1 sin cortar en seco (en Windows `process.exit` dentro de un fetch daba 3221226505). */
