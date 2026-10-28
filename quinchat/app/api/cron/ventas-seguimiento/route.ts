@@ -48,7 +48,7 @@ const NO_INTERESADO = /no me interesa|no gracias|ya no (lo )?quiero|no lo quiero
 // Etiquetas donde no se interviene.
 const SKIP_LABEL = /VENTA REALIZADA|CANCELAD|ANULAD|NO INTERES|NO ENVIAR RECORDATORIO|VENDEDOR|HUMANO|PEDIDO PROGRAMADO|ABONO POR VERIFICAR/;
 // La lista numerada que manda el bot con el catálogo ("Respóndeme solo con el número").
-const ES_LISTA_NUMERADA = /resp[oó]ndeme solo con el \*?n[uú]mero/i;
+const ES_LISTA_NUMERADA = /qu[eé] color te gust[oó]\?\s*\n+\s*1️⃣|resp[oó]ndeme solo con el \*?n[uú]mero/i;
 
 /** "*BUZO MOTO KTM REFLECTIVO* 🔥" → "BUZO MOTO KTM REFLECTIVO" (último modelo mostrado). */
 function productoDelChat(textosBot: string[]): string {
