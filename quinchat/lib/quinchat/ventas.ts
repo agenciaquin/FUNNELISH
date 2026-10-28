@@ -355,7 +355,7 @@ Me envías el modelo y color que deseas adquirir, me haces el favor 🤗
 El sistema se encarga de mandar el gancho, luego las fotos y de último el cierre; tú solo
 escríbelos en ese orden (gancho, luego los [[FOTO]], y al final la frase del cierre).
 🔢 El sistema NUMERA las fotos (1️⃣ Rojo, 2️⃣ Negro…) y cambia tu cierre por una lista
-numerada: "¿Cuál te gustó? 😍 Respóndeme solo con el *número*". Por eso:
+numerada: "¿Cuál te gustó? Respóndeme solo con el *número*". Por eso:
 · Si el cliente responde con un NÚMERO ("2", "el 3", "la 1", "2️⃣") justo después de esa
   lista, es el COLOR que tiene ese número en la lista numerada de tu último mensaje.
   Confírmalo por su nombre ("¡Buena elección! El *Negro KTM* 🔥") y sigue al PASO 2.
@@ -1944,7 +1944,7 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
         ...sinColor.map(url => enviarFoto(supabase, from, url).catch(() => {})),
       ]);
       const lista = conColor.map((u, i) => `${numEmoji(i + 1)} ${tituloColor(colores.get(u)!)}`).join('\n');
-      await responder(supabase, from, `¿Cuál te gustó? 😍 Respóndeme solo con el *número* 👇\n\n${lista}`);
+      await responder(supabase, from, `¿Cuál te gustó? Respóndeme solo con el *número*:\n\n${lista}`);
       return;
     }
 

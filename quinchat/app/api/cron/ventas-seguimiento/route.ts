@@ -76,16 +76,16 @@ function primerNombre(contacto: string): string {
 function toque1(nombre: string, producto: string, hayLista: boolean, preguntoTalla: boolean): string {
   const prod = producto ? ` del *${nombreCorto(producto)}*` : '';
   if (preguntoTalla) {
-    return `${nombre ? `${nombre}, ¿` : '¿'}qué talla usas normalmente? 😊 Así te confirmo que esté disponible y te lo dejo listo 🙌`;
+    return `${nombre ? `${nombre}, ¿` : '¿'}qué talla usas normalmente? Así te confirmo que esté disponible y te lo dejo listo.`;
   }
   const variantes = hayLista
     ? [
-        `${nombre ? `${nombre}, ¿` : '¿'}te gustó alguno${prod}? 😍 Respóndeme solo con el *número* del color y te digo las tallas disponibles 👌`,
-        `¿Cuál color te gustó más${prod}? 😊 Con que me mandes el *número* te lo aparto 🙌`,
+        `${nombre ? `${nombre}, ¿` : '¿'}te gustó alguno${prod}? Respóndeme solo con el *número* del color y te digo las tallas disponibles.`,
+        `¿Cuál color te gustó más${prod}? Con que me mandes el *número* te lo aparto.`,
       ]
     : [
-        `${nombre ? `${nombre}, ¿` : '¿'}te gustó algún color${prod}? 😊 Dime cuál y te ayudo con la talla 👌`,
-        `¿Pudiste ver los colores${prod}? 😍 Dime el que más te gustó y te lo dejo listo 🙌`,
+        `${nombre ? `${nombre}, ¿` : '¿'}te gustó algún color${prod}? Dime cuál y te ayudo con la talla.`,
+        `¿Pudiste ver los colores${prod}? Dime el que más te gustó y te lo dejo listo.`,
       ];
   return variantes[Math.floor(Math.random() * variantes.length)];
 }
@@ -93,8 +93,8 @@ function toque1(nombre: string, producto: string, hayLista: boolean, preguntoTal
 function toque2(nombre: string, producto: string): string {
   const prod = producto ? `tu *${nombreCorto(producto)}*` : 'tu pedido';
   const variantes = [
-    `¡Hola${nombre ? ` ${nombre}` : ''}! 👋 Te recuerdo que con nosotros *pagas solo cuando te llegue* 📦 y el envío es *gratis* 🚚 ¿Te dejo listo ${prod}? Solo dime color y talla 😊`,
-    `¡Hola${nombre ? ` ${nombre}` : ''}! 😊 Sigo pendiente por si quieres ${prod}. No pagas nada por adelantado: *pagas al recibir* y el envío es gratis 🚚 ¿Qué color y talla te separo?`,
+    `¡Hola${nombre ? ` ${nombre}` : ''}! Te recuerdo que con nosotros *pagas solo cuando te llegue* y el envío es *gratis* 🚚 ¿Te dejo listo ${prod}? Solo dime color y talla.`,
+    `¡Hola${nombre ? ` ${nombre}` : ''}! Sigo pendiente por si quieres ${prod}. No pagas nada por adelantado: *pagas al recibir* y el envío es gratis 🚚 ¿Qué color y talla te separo?`,
   ];
   return variantes[Math.floor(Math.random() * variantes.length)];
 }
