@@ -1,14 +1,16 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { ESCRITURA_LOCAL_ABIERTA, SERVIDOR_LOCAL, esHostLocal, frenarEscrituras } from '@/lib/freno-local';
 
 /**
  * Server-side Supabase client (service role key — full access, never expose to browser)
  * Use in: API routes, webhook handlers, server components
  */
 export function createServerSupabaseClient() {
-  return createClient(
+  const sb = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
+  return SERVIDOR_LOCAL && !ESCRITURA_LOCAL_ABIERTA ? frenarEscrituras(sb) : sb;
 }
 
 /**
@@ -48,5 +50,8 @@ export function createBrowserSupabaseClient(): SupabaseClient {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { accessToken: async () => await tokenSupabaseNavegador() },
   );
+  if (typeof window !== 'undefined' && esHostLocal(window.location.host) && !ESCRITURA_LOCAL_ABIERTA) {
+    _browserClient = frenarEscrituras(_browserClient);
+  }
   return _browserClient;
 }

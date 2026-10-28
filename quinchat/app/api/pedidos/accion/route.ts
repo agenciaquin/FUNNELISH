@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { haySesion } from '@/lib/live/admin-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +12,7 @@ export const dynamic = 'force-dynamic';
  *   restaurar → vuelve a quedar "por confirmar"
  */
 export async function POST(req: NextRequest) {
+  if (!(await haySesion())) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   const body   = await req.json().catch(() => ({}));
   const ids    = Array.isArray(body?.ids) ? body.ids.map(String).filter(Boolean) : [];
   const accion = String(body?.accion ?? '');

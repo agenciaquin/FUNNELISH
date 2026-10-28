@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { haySesion } from '@/lib/live/admin-guard';
 import { nombresDeAnuncioMeta } from '@/lib/meta-ads';
 import {
   canalDePedido, fuenteDePedido, CANAL_LABEL, FUENTE_LABEL,
@@ -25,6 +26,7 @@ import {
  *  ?dias=7
  */
 export async function GET(req: NextRequest) {
+  if (!(await haySesion())) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   const origen = req.nextUrl.searchParams.get('origen');
   let canal = (req.nextUrl.searchParams.get('canal') ?? '').toLowerCase();
   if (canal === 'funnel') canal = 'embudos';              // compat con el nombre viejo

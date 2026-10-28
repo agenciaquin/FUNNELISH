@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { haySesion } from '@/lib/live/admin-guard';
 
 /**
  * Detalle de un pedido para la ventana del panel, incluyendo las fotos
  * que el bot le envió al cliente (que son las del producto que eligió).
  */
 export async function GET(req: NextRequest) {
+  if (!(await haySesion())) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   const id = req.nextUrl.searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'Falta el pedido.' }, { status: 400 });
 

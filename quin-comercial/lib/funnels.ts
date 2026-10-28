@@ -42,6 +42,7 @@ export function normalizarOpciones(ops: (string | OpcionSelector)[]): OpcionSele
 
 /** Una escudería/categoría que se puede combinar en el pack "arma tu pack". */
 export interface CategoriaPack {
+  catalogoId?: string;         // id del catálogo de origen (los nombres se repiten); falta en packs viejos
   nombre: string;              // "ESCUDERIA RED BULL"
   colores: OpcionSelector[];   // colores de esa escudería (con foto)
 }

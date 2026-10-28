@@ -2015,7 +2015,7 @@ export default function EmbudosPanel() {
                                       .filter((o: any) => o.valor);
                                     return (
                                       <button
-                                        key={nombre}
+                                        key={c.id}
                                         onClick={() => {
                                           if (cols.length === 0) { alert('Ese catálogo no tiene colores con foto.'); return; }
                                           // Agrega los colores nuevos (sin duplicar) y, si el producto no tiene nombre, usa el del catálogo
@@ -2278,7 +2278,10 @@ export default function EmbudosPanel() {
                             alert('No hay escuderías en Catálogos.\n\nEn Catálogos crea las escuderías con sus colores y foto. Luego vuelve aquí.');
                             return;
                           }
-                          setPackSel(new Set((v.armarPack?.categorias ?? []).map((c: any) => String(c.nombre))));
+                          // Por id: los nombres se repiten. Packs guardados antes del id: se reconocen por nombre.
+                          setPackSel(new Set((v.armarPack?.categorias ?? []).flatMap((c: any) => c.catalogoId
+                            ? [String(c.catalogoId)]
+                            : catalogosFull.filter((f: any) => String(f.familia ?? '').trim() === String(c.nombre)).map((f: any) => String(f.id)))));
                           setPackBusca('');
                           setPackPicker({ vi: i, cantidad });
                         }}
@@ -2345,12 +2348,13 @@ export default function EmbudosPanel() {
                           .map((c: any) => {
                             const nombre = String(c.familia ?? '').trim();
                             const nCol = (c.catalogo_colores ?? []).filter((x: any) => x.url_imagen).length;
-                            const checked = packSel.has(nombre);
+                            const id = String(c.id);
+                            const checked = packSel.has(id);
                             return (
-                              <label key={nombre} className="flex items-center gap-2 px-2 py-1.5 text-[12px] cursor-pointer hover:bg-[#FAFAFA]">
+                              <label key={id} className="flex items-center gap-2 px-2 py-1.5 text-[12px] cursor-pointer hover:bg-[#FAFAFA]">
                                 <input
                                   type="checkbox" checked={checked} className="accent-[#7C3AED]"
-                                  onChange={() => setPackSel(prev => { const s = new Set(prev); s.has(nombre) ? s.delete(nombre) : s.add(nombre); return s; })}
+                                  onChange={() => setPackSel(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; })}
                                 />
                                 <span className="flex-1">{nombre}</span>
                                 <span className={`text-[10px] ${nCol === 0 ? 'text-[#C2410C]' : 'text-[#9A9A9A]'}`}>{nCol} colores</span>
@@ -2362,8 +2366,9 @@ export default function EmbudosPanel() {
                         <button
                           onClick={() => {
                             const categorias = catalogosFull
-                              .filter((c: any) => packSel.has(String(c.familia ?? '').trim()))
+                              .filter((c: any) => packSel.has(String(c.id)))
                               .map((c: any) => ({
+                                catalogoId: String(c.id),
                                 nombre: String(c.familia ?? '').trim(),
                                 colores: (c.catalogo_colores ?? [])
                                   .filter((x: any) => x.url_imagen)

@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from 'next';
 import { Montserrat } from 'next/font/google';
 import SessionProvider from '@/components/SessionProvider';
 import PWARegister from '@/components/PWARegister';
+import AvisoLocal from '@/components/AvisoLocal';
+import { ESCRITURA_LOCAL_ABIERTA, SERVIDOR_LOCAL } from '@/lib/freno-local';
 import './globals.css';
 
 const montserrat = Montserrat({
@@ -44,6 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${montserrat.className} bg-[#FAF9F6] text-[#0D0D0D] antialiased`}>
         <PWARegister />
         <SessionProvider>{children}</SessionProvider>
+        <AvisoLocal servidorFrenado={SERVIDOR_LOCAL && !ESCRITURA_LOCAL_ABIERTA} />
       </body>
     </html>
   );
