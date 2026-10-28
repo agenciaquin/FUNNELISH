@@ -12,6 +12,8 @@ import { transcribirAudio } from '@/lib/transcribir';
 import { chat } from '@/lib/quinchat/claude';
 import { prendasDeVenta } from '@/lib/prendas';
 import { bloqueDeMemoria } from '@/lib/memoria';
+import { manejarCuestionarioOficina, CUESTIONARIO_OFICINA } from '@/lib/cuestionario-oficina';
+import { etiquetarOficinaSinAbono } from '@/lib/etiqueta-oficina';
 import { registrarFAQCandidata } from '@/lib/faq';
 
 const ADMIN_VENTAS_HUMANO = '573143534918';
@@ -741,8 +743,10 @@ Ese bloque es para el sistema, el cliente no debe verlo. El precio va sin puntos
 🚫 ABONO EN OFICINA — OBLIGATORIO, NO LO DEJES PASAR:
 Cuando el cliente quiere RECOGER EN OFICINA (Interrapidísimo / "reclamo en oficina" / "recojo en oficina"), el abono de *$5.000* es OBLIGATORIO: la transportadora lo exige para despachar a oficina y se descuenta del total.
 · NUNCA cierres con [[PEDIDO]] un pedido a oficina si el cliente NO ha aceptado y coordinado el abono. Nada de "abono requerido" y confirmar igual: sin abono aceptado, NO se cierra a oficina.
-· Si dice "pago todo en la oficina", "contra entrega en la oficina" o se niega al abono: con MUCHA amabilidad dile que tú con gusto se lo enviarías, pero que para *despacho a oficina* el abono de $5.000 es obligatorio (política de la transportadora, se descuenta del total). Ejemplo: "¡Con gusto te lo enviaría! 😊 Pero para despacho a oficina la transportadora pide un abono de $5.000 obligatorio (se te descuenta del total)."
-· Y ofrécele SIEMPRE la salida amable: "Si prefieres, te lo envío directo a tu *dirección* con pago contra entrega, sin ningún abono 🚚 ¿Cómo lo hacemos?".
+· SIEMPRE pide primero el abono de $5.000 para oficina (se descuenta del total). Si dice "pago todo en la oficina", "contra entrega en la oficina", "no tengo para abonar" o pone cualquier objeción al abono, NO discutas ni insistas: pasa al cuestionario de abajo.
+· Si el cliente NO quiere abonar (objeción al abono), envíale EXACTAMENTE este cuestionario, sin cambiarle nada:
+${CUESTIONARIO_OFICINA}
+  Cuando lo responda, el sistema lo pasa a revisión humana (tú no cierras ese pedido).
 · Solo marca "oficina":true y "abono":5000 cuando el cliente ACEPTE el abono. Si elige domicilio, ciérralo normal sin abono.
 
 💳 PAGO CON TARJETA — SÍ ESTÁ DISPONIBLE (Mercado Pago):
@@ -1632,6 +1636,9 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
       return;
     }
 
+    // ── Oficina sin abono: cuestionario de contraentrega → revisión humana ───
+    if (await manejarCuestionarioOficina(supabase, from, texto, t => responder(supabase, from, t))) return;
+
     // Historial para darle contexto al modelo. Se usan 40 mensajes (no 18) porque
     // el cliente suele dar sus datos (nombre, teléfono, ciudad) AL PRINCIPIO del chat
     // y, en conversaciones largas, con 18 esos datos se salían de la ventana y el bot
@@ -1891,6 +1898,17 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
     // se reenvían aunque ya se hayan enviado antes (si no, se queda sin foto).
     const pidioFotos = /\b(foto|fotos|imagen|im[aá]genes|mu[eé]stra|ens[eé][ñn]a|comparte|comp[aá]rteme|env[ií]a(me)?|mand[aá](me)?|ver(las|lo|la)?)\b/i.test(String(texto ?? ''))
       && /\b(foto|fotos|imagen|im[aá]genes|modelo|color|colores|dise[ñn]o)\b/i.test(String(texto ?? ''));
+    // Si el bot le está pidiendo el ABONO de oficina, se etiqueta "OFICINA SIN ABONO"
+    // (así, si no responde en 5 h, le llega el cuestionario de contraentrega).
+    if (/abono/i.test(respuesta) && /oficina|interrapid/i.test(respuesta)) {
+      try {
+        const { data: cv } = await supabase.from('conversations').select('label').eq('id', from).maybeSingle();
+        if (!/OFICINA CON ABONO|OFICINA REVISAR HUMANO|VENTA REALIZADA/i.test(String(cv?.label ?? ''))) {
+          await etiquetarOficinaSinAbono(supabase, from);
+        }
+      } catch { /* no bloquear la respuesta */ }
+    }
+
     const { gancho, fotos, cta } = partirGanchoFotosCTA(respuesta);
     if (gancho) await responder(supabase, from, gancho);
     // 🛟 RED DE SEGURIDAD de fotos:

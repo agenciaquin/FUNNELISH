@@ -3,24 +3,25 @@ import { createServerSupabaseClient } from '@/lib/supabase';
 import { sendTextMessage } from '@/lib/whatsapp';
 import { conLinea, tipoDeLinea } from '@/lib/whatsapp-contexto';
 import { esVendedor } from '@/lib/vendedores';
+import { CUESTIONARIO_OFICINA } from '@/lib/cuestionario-oficina';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 /**
- * RESCATE DE PEDIDOS DE OFICINA (dentro de la ventana de 24h, GRATIS).
- * A los pedidos etiquetados "OFICINA SIN ABONO" (oficina exige abono en nuestro
- * modelo) se les ofrece cambiar a domicilio para NO tener que abonar — así se
- * salvan los que no quieren/pueden abonar. Se manda UNA sola vez por pedido.
+ * OFICINA SIN ABONO → CUESTIONARIO (dentro de la ventana de 24h, GRATIS).
+ * Regla del negocio: oficina lleva abono de $5.000. Si el cliente pasa más de
+ * 5 h sin responder al mensaje del abono, se le envía el cuestionario de
+ * contraentrega sin abono (5 preguntas). Cuando lo responde, el webhook lo
+ * etiqueta "OFICINA REVISAR HUMANO" y apaga el bot para revisión manual.
+ * Se manda UNA sola vez por pedido (oficina_rescate_at).
  *
- * Ventana: entre 2h y 23.5h desde el último mensaje del cliente (para que sí
- * entregue como mensaje libre). Se ejecuta cada ~30 min por cron-job.org.
+ * Ventana: entre 5h y 23.5h desde el último mensaje del cliente.
+ * Se ejecuta cada ~30 min por cron-job.org.
  */
 
-const MSG_RESCATE = (nombre: string) =>
-  `¡Hola${nombre ? ' ' + nombre : ''}! 😊 Para enviarte tu pedido a la *oficina* necesitamos un abono de *$5.000*.\n` +
-  `Pero si prefieres, cámbialo a una *dirección de tu casa*: envíamela completa y así *no necesitas abonar* 🙌\n` +
-  `Te llega directo con *pago contra entrega* 🚚 ¿Te lo cambiamos a domicilio?`;
+// Mensaje: el cuestionario de contraentrega sin abono (regla del negocio).
+const MSG_RESCATE = (_nombre: string) => CUESTIONARIO_OFICINA;
 
 function autorizado(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -46,7 +47,7 @@ export async function GET(req: NextRequest) {
   const { data: convs } = await supabase
     .from('conversations')
     .select('id, contact_name, label, linea, oficina_rescate_at')
-    .ilike('label', '%OFICINA SIN ABONO%')
+    .or('label.ilike.%OFICINA SIN ABONO%,label.ilike.%PENDIENTE DE ABONO%')
     .neq('bot_enabled', false)
     .is('oficina_rescate_at', null)
     .gte('last_message_time', desde26h)
@@ -66,7 +67,20 @@ export async function GET(req: NextRequest) {
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (!ultCli) continue;
     const horas = (now - new Date(ultCli.created_at).getTime()) / 3_600_000;
-    if (horas < 2 || horas > 23.5) continue; // muy pronto, o ventana ya cerrada
+    if (horas < 5 || horas > 23.5) continue; // aún dentro de las 5 h, o ventana ya cerrada
+
+    // Ya abonó, ya está en revisión o ya se vendió → no se manda.
+    if (/OFICINA CON ABONO|ABONO POR VERIFICAR|OFICINA REVISAR HUMANO|VENTA REALIZADA|PEDIDO CANCELADO/i.test(String((c as any).label ?? ''))) continue;
+    const tel10 = from.replace(/^57/, '').slice(-10);
+    const { data: abonado } = await supabase.from('clientes_funnelish')
+      .select('id').eq('telefono', tel10).eq('abono_recibido', true)
+      .gte('created_at', new Date(now - 7 * 86_400_000).toISOString()).limit(1).maybeSingle();
+    if (abonado) continue;
+    // El cliente se quedó callado: lo último del chat debe ser nuestro.
+    const { data: ultimo } = await supabase.from('messages')
+      .select('role, type').eq('conversation_id', from)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (!ultimo || ultimo.role === 'user') continue;
 
     const phoneId = String((c as any).linea) === 'ventas' ? numeroVentas : numeroFunnel;
     if (!phoneId) continue;

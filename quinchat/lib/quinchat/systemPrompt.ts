@@ -1,3 +1,4 @@
+import { CUESTIONARIO_OFICINA } from '@/lib/cuestionario-oficina';
 // =====================================================
 // QUINCHAT — System prompt del asistente (fallback)
 // El prompt activo se carga desde bot_config en Supabase.
@@ -26,7 +27,9 @@ export const EMPRESA_FAQ = `INFORMACIÓN DE LA EMPRESA (Klixmant) — úsala com
 - Para programar el envío se necesita: nombre y apellido, celular, cédula (opcional), dirección completa con barrio y ciudad, y la talla.
 - Niños: se fabrica sobre pedido con un abono inicial de $30.000 (es producción personalizada).
 - Contra entrega SÍ está disponible en Medellín y en las ciudades principales.
-- Recogida en oficina de la transportadora (Interrapidísimo / "reclamo en oficina"): SÍ se puede, pero requiere un abono OBLIGATORIO de $5.000 que se descuenta del total del pedido. Etiqueta la conversación como "PENDIENTE DE ABONO". ⚠️ El abono a oficina es OBLIGATORIO y NO se deja pasar: NUNCA confirmes ni cierres un pedido a oficina sin que el cliente acepte y coordine el abono (nada de "contra entrega en la oficina" sin abono). Si el cliente NO quiere abonar, con mucha amabilidad explícale que con gusto se lo enviarían pero que para despacho a oficina el abono de $5.000 es obligatorio (política de la transportadora, se descuenta del total), y ofrécele enviarlo a su domicilio con pago contra entrega (SIN abono). Deja que elija.
+- Recogida en oficina de la transportadora (Interrapidísimo / "reclamo en oficina"): SÍ se puede, pero requiere un abono OBLIGATORIO de $5.000 que se descuenta del total del pedido. Etiqueta la conversación como "PENDIENTE DE ABONO". ⚠️ El abono a oficina es OBLIGATORIO y NO se deja pasar: NUNCA confirmes ni cierres un pedido a oficina sin que el cliente acepte y coordine el abono (nada de "contra entrega en la oficina" sin abono). Si el cliente NO quiere abonar o pone cualquier objeción al abono, NO discutas: envíale EXACTAMENTE este cuestionario (sin cambiarle nada) y no cierres el pedido; cuando lo responda, el sistema lo pasa a revisión humana:
+${CUESTIONARIO_OFICINA}
+
 - Recoger directamente en la empresa/local: sí es posible, PERO trabajan sobre pedido (las prendas no están listas de inmediato; se producen una vez confirmada la compra), así que el cliente no puede pasar sin aviso previo — primero se le confirma cuándo su pedido esté listo para entrega.`;
 
 export function getSystemPrompt(_tenantId?: string): string {

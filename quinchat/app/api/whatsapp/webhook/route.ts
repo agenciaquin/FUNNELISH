@@ -14,6 +14,7 @@ import { entrarLinea, tipoDeLinea } from '@/lib/whatsapp-contexto';
 import { atenderVenta } from '@/lib/quinchat/ventas';
 import { esVendedor, vendedorDe, extraerVentas, nombreChat, generoDe, DIAS_NOMINA, LIMITE_INCENTIVO_SEG } from '@/lib/vendedores';
 import { etiquetarOficinaSinAbono, marcarOficinaAbonada, quitarEtiquetaOficina } from '@/lib/etiqueta-oficina';
+import { manejarCuestionarioOficina } from '@/lib/cuestionario-oficina';
 import { ADMINS_VENTAS } from '@/lib/quinchat/registro-venta';
 import { lineaTalla } from '@/lib/formato-pedido';
 
@@ -1078,6 +1079,14 @@ export async function POST(req: NextRequest) {
     try { await mostrarEscribiendo(msgId); } catch { /* no bloquear */ }
 
     const textLower = text.toLowerCase();
+
+    // ── Oficina sin abono: cuestionario de contraentrega → revisión humana ───
+    // Si rechaza el abono de oficina se le manda el cuestionario; cuando lo
+    // responde, queda "OFICINA REVISAR HUMANO" con el bot apagado.
+    if (await manejarCuestionarioOficina(supabase, from, text, async (t) => {
+      const w = await sendTextMessage(from, t);
+      await saveAndSend(supabase, from, t, 'text', w);
+    })) continue;
 
     // ── Audio automático cuando pide oficina o municipio sin cobertura ────────
     const AUDIO_OFICINA   = 'https://bjbjqmbuzpyjvcugbusx.supabase.co/storage/v1/object/public/chat-media/audios-bot/abono-oficina.ogg';

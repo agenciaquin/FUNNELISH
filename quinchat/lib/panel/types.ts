@@ -40,6 +40,7 @@ export const ETIQUETAS_FIJAS: Etiqueta[] = [
   { id: 'revlili',   nombre: 'POR REVISAR LILIBETH',       color: '#EC4899' },
   { id: 'ofisin',    nombre: 'OFICINA SIN ABONO',          color: '#DC2626' },
   { id: 'oficon',    nombre: 'OFICINA CON ABONO',          color: '#15803D' },
+  { id: 'ofirev',    nombre: 'OFICINA REVISAR HUMANO',     color: '#7C3AED' },
 ];
 
 /**
@@ -58,7 +59,7 @@ export const ESTADOS_CONV = [
  * ETIQUETAS ADICIONALES: se suman al estado sin reemplazarlo.
  * Un chat puede estar en "VENTA REALIZADA" y además marcado como "HUMANO".
  */
-export const TAGS_CONV = ['HUMANO', 'PENDIENTE DE ABONO', 'OFICINA SIN ABONO', 'OFICINA CON ABONO'];
+export const TAGS_CONV = ['HUMANO', 'PENDIENTE DE ABONO', 'OFICINA SIN ABONO', 'OFICINA CON ABONO', 'OFICINA REVISAR HUMANO'];
 
 export function parseLabels(label: string | null | undefined): string[] {
   return (label ?? '').split('|').map(s => s.trim()).filter(Boolean);
