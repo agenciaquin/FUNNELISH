@@ -296,7 +296,7 @@ export default function LiveShell({ live, funnel }: { live: LiveConfig; funnel?:
                 <span className="text-[14px] font-extrabold text-neutral-900 leading-tight">📦 Completa tus datos de envío</span>
                 <button onClick={() => setSheet(null)} aria-label="Cerrar" className="shrink-0 w-8 h-8 rounded-full bg-neutral-100 text-lg leading-none">×</button>
               </div>
-              <FormularioPedido funnel={funnel} utms={{}} embebido compacto />
+              <FormularioPedido funnel={funnel} utms={{}} embebido compacto liveSlug={live.slug} />
             </div>
           </div>
         ) : (

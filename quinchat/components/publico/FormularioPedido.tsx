@@ -19,9 +19,11 @@ interface Props {
   // Solo QUIN LIVE: tarjetas de producto más bajitas + animación "toca aquí".
   // Los embudos normales NO lo pasan, así que se ven igual que siempre.
   compacto?: boolean;
+  // Solo QUIN LIVE: slug del live desde donde se compra (para medir con su píxel).
+  liveSlug?: string;
 }
 
-export default function FormularioPedido({ funnel, utms, embebido, compacto }: Props) {
+export default function FormularioPedido({ funnel, utms, embebido, compacto, liveSlug }: Props) {
   const router = useRouter();
   const acento = acentoDe(funnel.color);
 
@@ -371,6 +373,7 @@ export default function FormularioPedido({ funnel, utms, embebido, compacto }: P
     const cuerpo = JSON.stringify({
       referencia,
       slug: funnel.slug,
+      ...(liveSlug ? { live: liveSlug } : {}), // compra hecha desde un live (CAPI con su píxel)
       variante: nombreProducto,
       precio: variante.precio,
       talla: seleccionFinal,

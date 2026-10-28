@@ -96,18 +96,36 @@ export async function POST(req: NextRequest) {
       const { data: f } = await supabase
         .from('funnels').select('pixel_meta, pixel_meta_token')
         .eq('slug', String(b.slug ?? '').trim()).maybeSingle();
+
+      // Destinos: el píxel del embudo y, si la compra vino de un LIVE con su propio
+      // píxel + token, también ese. Un mismo píxel se avisa UNA sola vez.
+      const destinos = new Map<string, { token: string; url: string }>();
       if (f?.pixel_meta && f?.pixel_meta_token) {
+        destinos.set(String(f.pixel_meta).trim(), {
+          token: String(f.pixel_meta_token), url: `https://pedido.klixmant.shop/${String(b.slug ?? '').trim()}`,
+        });
+      }
+      const liveSlug = String(b.live ?? '').trim();
+      if (liveSlug && /^[a-z0-9-]{1,60}$/.test(liveSlug)) {
+        const { data: lv } = await supabase.from('live_lives')
+          .select('pixel_meta, pixel_meta_token').eq('slug', liveSlug).maybeSingle();
+        if (lv?.pixel_meta && lv?.pixel_meta_token && !destinos.has(String(lv.pixel_meta).trim())) {
+          destinos.set(String(lv.pixel_meta).trim(), { token: String(lv.pixel_meta_token), url: `https://pedido.klixmant.shop/${liveSlug}` });
+        }
+      }
+
+      for (const [pixelId, d] of destinos) {
         await enviarCompraMeta({
-          pixelId: f.pixel_meta, token: f.pixel_meta_token,
+          pixelId, token: d.token,
           valor: Number(b.precio ?? 0),
           telefono: tel, nombre: String(b.nombre ?? ''), apellidos: String(b.apellidos ?? ''),
           correo: String(b.correo ?? ''), ciudad: String(b.municipio ?? ''),
           departamento: String(b.departamento ?? ''), producto: String(b.variante ?? ''),
           eventId: referencia,   // mismo id que el píxel del navegador → sin duplicar
           fbc: b.fbc, fbp: b.fbp,
-          urlOrigen: `https://pedido.klixmant.shop/${String(b.slug ?? '').trim()}`,
+          urlOrigen: d.url,
         });
-        console.log(`[Pedidos] CAPI Meta enviado · ${referencia}`);
+        console.log(`[Pedidos] CAPI Meta enviado · ${referencia} · píxel ${pixelId.slice(-4)}`);
       }
     } catch (e) {
       console.warn('[Pedidos] CAPI Meta no se pudo enviar:', e);

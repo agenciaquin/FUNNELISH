@@ -33,7 +33,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ live, productos, timeline: timeline ?? [] });
 }
 
-const CAMPOS = ['slug', 'titulo', 'tienda_nombre', 'tienda_logo', 'etiqueta_grabada', 'video_url', 'poster_url', 'duracion_seg', 'whatsapp', 'modo', 'estado', 'ciclo_inicio', 'comentarios', 'embudo_slug', 'pixel_meta', 'pixel_tiktok'];
+const CAMPOS = ['slug', 'titulo', 'tienda_nombre', 'tienda_logo', 'etiqueta_grabada', 'video_url', 'poster_url', 'duracion_seg', 'whatsapp', 'modo', 'estado', 'ciclo_inicio', 'comentarios', 'embudo_slug', 'pixel_meta', 'pixel_meta_token', 'pixel_tiktok'];
 
 // PATCH: actualiza campos del live.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -52,6 +52,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const id15 = v.match(/\d{10,20}/)?.[0] ?? '';
     if (v && !id15) return NextResponse.json({ error: 'El Pixel de Meta debe ser el número del píxel (ej. 1234567890123456).' }, { status: 400 });
     patch.pixel_meta = id15 || null;
+  }
+  if ('pixel_meta_token' in patch) {
+    // Token de Conversions API: solo letras/números (se quitan espacios y saltos al pegar).
+    const v = String(patch.pixel_meta_token ?? '').replace(/\s+/g, '');
+    if (v && !/^[A-Za-z0-9_-]{20,600}$/.test(v)) return NextResponse.json({ error: 'El token de Meta no parece válido (pégalo completo, sin comillas).' }, { status: 400 });
+    patch.pixel_meta_token = v || null;
   }
   if ('pixel_tiktok' in patch) {
     const v = String(patch.pixel_tiktok ?? '').trim();
