@@ -11,7 +11,7 @@ interface VentaMini { id: number; foto: string | null; producto: string; valor: 
 interface Color { id?: string; nombre: string; hex: string; foto_url: string; }
 interface Producto { id: string; nombre: string; descripcion: string | null; ficha_tela: string | null; ficha_cuidados: string | null; precio: number; precio_antes: number | null; promo_etiqueta: string | null; promo_unidades: number | null; promo_precio: number | null; tallas: string[]; colores: Color[]; }
 interface EventoTL { tipo: 'producto' | 'pregunta_frecuente' | 'comentario'; inicio_seg: number; fin_seg: number; producto_id?: string | null; pregunta?: string; respuesta?: string; autor?: string; texto?: string; }
-interface LiveFull { id: string; slug: string; titulo: string; estado: EstadoLive; video_url: string | null; poster_url: string | null; whatsapp: string | null; etiqueta_grabada: string | null; duracion_seg: number | null; tienda_nombre: string | null; tienda_logo: string | null; modo: string; comentarios: string[] | null; embudo_slug: string | null; pixel_meta: string | null; pixel_meta_token: string | null; pixel_tiktok: string | null; }
+interface LiveFull { id: string; slug: string; titulo: string; estado: EstadoLive; video_url: string | null; poster_url: string | null; whatsapp: string | null; etiqueta_grabada: string | null; duracion_seg: number | null; tienda_nombre: string | null; tienda_logo: string | null; modo: string; comentarios: string[] | null; embudo_slug: string | null; pixel_meta: string | null; pixel_meta_token: string | null; pixel_tiktok: string | null; mostrar_whatsapp: boolean | null; }
 
 const TALLAS = ['S', 'M', 'L', 'XL'];
 const peso = (n: number) => `$${(Number(n) || 0).toLocaleString('es-CO')}`;
@@ -422,6 +422,7 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
         embudo_slug: (live.embudo_slug ?? '').trim() || null,
         pixel_meta: (live.pixel_meta ?? '').trim() || null,
         pixel_meta_token: (live.pixel_meta_token ?? '').trim() || null,
+        mostrar_whatsapp: live.mostrar_whatsapp !== false,
         pixel_tiktok: (live.pixel_tiktok ?? '').trim() || null,
       }) });
       // Recargar para ver el ID limpio (si pegaron el código completo del píxel)
@@ -503,6 +504,11 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
               <input className={campo} value={live.etiqueta_grabada ?? ''} onChange={e => setCampo('etiqueta_grabada', e.target.value)} /></label>
             <label className="text-xs font-semibold text-brand-black">Duración del video (seg)
               <input type="number" className={campo} value={live.duracion_seg ?? 180} onChange={e => setCampo('duracion_seg', Number(e.target.value))} /></label>
+            <label className="text-xs font-semibold text-brand-black flex items-center gap-2 md:col-span-2 cursor-pointer">
+              <input type="checkbox" className="w-4 h-4 accent-[#25D366]" checked={live.mostrar_whatsapp !== false} onChange={e => setCampo('mostrar_whatsapp', e.target.checked)} />
+              Mostrar botón de WhatsApp en el live
+              <span className="font-normal text-brand-gray-mid">(apágalo para que compren solo por el checkout)</span>
+            </label>
             <label className="text-xs font-semibold text-brand-black">Estado
               <select className={campo} value={live.estado} onChange={e => setCampo('estado', e.target.value as EstadoLive)}>
                 <option value="borrador">Borrador (solo tú)</option>

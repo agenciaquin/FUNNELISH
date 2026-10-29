@@ -5,7 +5,7 @@ export const ESTILOS_LIVE = `
 @keyframes live-rise { 0%{opacity:0;transform:translateY(0) scale(.4)} 12%{opacity:1;transform:translateY(-20px) scale(1)} 70%{opacity:.85} 100%{opacity:0;transform:translateY(var(--sube)) scale(1.08)} }
 @keyframes live-sway { from{transform:translateX(calc(var(--sw) * -1))} to{transform:translateX(var(--sw))} }
 /* Aviso de sonido: latido suave para que se note sin ser molesto */
-@keyframes live-sonido { 0%,100%{transform:translate(-50%,-50%) scale(1)} 50%{transform:translate(-50%,-50%) scale(1.05)} }
+@keyframes live-sonido { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
 .live-sonido{animation:live-sonido 1.6s ease-in-out infinite}
 @keyframes live-in { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
 @keyframes live-sheet { from{transform:translateY(100%)} to{transform:none} }

@@ -95,6 +95,8 @@ export interface LiveConfig {
   pixelMeta?: string;
   /** ID del Pixel de TikTok del live (si falta, se usa el del embudo del checkout). */
   pixelTiktok?: string;
+  /** Mostrar el botón de WhatsApp en el live (por defecto sí). */
+  mostrarWhatsapp?: boolean;
 }
 
 export interface Seleccion {

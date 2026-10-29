@@ -63,16 +63,18 @@ export default function LiveOverlay({
 
       {/* Aviso de sonido: centrado y visible, para que el cliente escuche la presentación */}
       {silenciado && !bloqueado && (
-        <button
-          onClick={onSonido}
-          className="live-sonido pointer-events-auto absolute left-1/2 top-[40%] -translate-x-1/2 -translate-y-1/2 z-20 flex items-center gap-2.5 rounded-2xl bg-black/65 backdrop-blur-sm border border-white/25 px-5 py-3 text-white shadow-[0_6px_24px_rgba(0,0,0,.45)] active:scale-95 transition-transform whitespace-nowrap"
-        >
-          <span className="w-9 h-9 rounded-full bg-white text-black flex items-center justify-center text-lg">🔊</span>
-          <span className="text-left leading-tight">
-            <span className="block text-[15px] font-extrabold">Clic aquí para activar el sonido</span>
-            <span className="block text-[11px] text-white/75">Escucha el live</span>
-          </span>
-        </button>
+        <div className="absolute inset-x-0 top-[38%] z-20 flex justify-center px-3 pointer-events-none">
+          <button
+            onClick={onSonido}
+            className="live-sonido pointer-events-auto max-w-full flex items-center gap-2.5 rounded-2xl bg-black/65 backdrop-blur-sm border border-white/25 px-4 py-3 text-white shadow-[0_6px_24px_rgba(0,0,0,.45)] active:scale-95 transition-transform"
+          >
+            <span className="shrink-0 w-9 h-9 rounded-full bg-white text-black flex items-center justify-center text-lg">🔊</span>
+            <span className="text-left leading-tight min-w-0">
+              <span className="block text-[15px] font-extrabold">Clic aquí para activar el sonido</span>
+              <span className="block text-[11px] text-white/75">Escucha el live</span>
+            </span>
+          </button>
+        </div>
       )}
 
       {/* Autoplay bloqueado por el navegador */}
@@ -97,7 +99,7 @@ export default function LiveOverlay({
             <div className="flex-1 min-w-0 h-[min(24vh,210px)] flex flex-col justify-end"><CommentsFeed mensajes={mensajes} propios={propios} logo={live.tienda.logo} /></div>
             <div className="flex flex-col items-center gap-2.5 shrink-0 w-[56px]">
               <Reactions />
-              <WhatsAppButton numero={live.whatsapp} producto={destacado} seleccion={seleccion} />
+              {live.mostrarWhatsapp !== false && <WhatsAppButton numero={live.whatsapp} producto={destacado} seleccion={seleccion} />}
             </div>
           </div>
         </div>
