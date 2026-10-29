@@ -806,7 +806,14 @@ function contextoVentas(anuncio: string, pedidoPrevio: string, promoActiva = fal
   if (anuncio) partes.push(
     `Este cliente llegó de este anuncio:\n${anuncio}\nHáblale DIRECTO de ese producto (salvo que él pida otro distinto).`);
   if (pedidoPrevio) partes.push(
-    `════════ ESTE CLIENTE YA TIENE PEDIDO ════════\n${pedidoPrevio}\nNo se lo vuelvas a tomar. Si pide cambios, usa [[ACTUALIZAR]].`);
+    `════════ ESTE CLIENTE YA TIENE PEDIDO ════════\n${pedidoPrevio}\nNo se lo vuelvas a tomar. Si pide cambios, usa [[ACTUALIZAR]].\n` +
+    `📦 DESPUÉS DE LA VENTA — usa el tiempo del pedido de arriba:\n` +
+    `· Si dice RECIÉN COMPRADO: ⛔ NUNCA preguntes "¿ya te llegó?", "¿ya recibiste?" ni nada parecido: ` +
+    `es imposible que haya llegado. Si el cliente manda un sticker, una bendición, "gracias", "ok" o algo suelto, ` +
+    `responde CORTO y cálido, SIN preguntas (ej. "¡Amén, igualmente! 🙏 Ya quedó tu pedido; cualquier cosa me escribes por aquí"). ` +
+    `Si pregunta cuándo le llega, dile que se despacha y tarda de 3 a 6 días hábiles, y que le llega la guía para rastrearlo.\n` +
+    `· Solo si dice EN CAMINO o más tiempo puedes preguntar con naturalidad si ya le llegó.\n` +
+    `· No le insistas ni le hagas preguntas de cierre: la venta ya está hecha. Menos mensajes es mejor.`);
   return partes.join('\n\n');
 }
 
@@ -1721,9 +1728,21 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
     try {
       const telP = from.replace(/^57/, '').slice(-10);
       const { data: pp } = await supabase.from('clientes_funnelish')
-        .select('producto, talla, valor, direccion, ciudad').eq('telefono', telP)
+        .select('producto, talla, valor, direccion, ciudad, created_at').eq('telefono', telP)
         .order('created_at', { ascending: false }).limit(1).maybeSingle();
-      if (pp) pedidoPrevio = `Producto: ${pp.producto} · Talla: ${pp.talla} · Valor: ${pp.valor} · ${pp.direccion}, ${pp.ciudad}`;
+      if (pp) {
+        // Cuánto hace del pedido: con eso el bot sabe si el paquete PUEDE haber llegado o no.
+        const horas = pp.created_at ? Math.max(0, (Date.now() - new Date(pp.created_at).getTime()) / 3_600_000) : null;
+        const hace = horas == null ? 'fecha desconocida'
+          : horas < 1 ? 'hace menos de 1 hora'
+          : horas < 48 ? `hace ${Math.round(horas)} horas`
+          : `hace ${Math.floor(horas / 24)} días`;
+        const etapa = horas == null ? ''
+          : horas < 72 ? ' → RECIÉN COMPRADO: el paquete TODAVÍA NO HA PODIDO LLEGAR (se despacha y tarda 3 a 6 días hábiles).'
+          : horas < 24 * 8 ? ' → EN CAMINO: puede estar por llegar en estos días.'
+          : ' → Ya debió haber llegado (o está por confirmarse la entrega).';
+        pedidoPrevio = `Producto: ${pp.producto} · Talla: ${pp.talla} · Valor: ${pp.valor} · ${pp.direccion}, ${pp.ciudad}\nPedido hecho ${hace}${etapa}`;
+      }
     } catch { /* si falla, se sigue sin ese dato */ }
 
     // ¿Este cliente tiene una promo de cierre vigente (últimas 24h)? Si sí, el bot
