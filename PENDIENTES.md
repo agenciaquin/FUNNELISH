@@ -29,7 +29,11 @@ Probado en local desde la terminal: las 3 rutas de pedidos sin sesión → `/log
 Hecho: `quinchat/app/api/klixmant/catalogos/route.ts` — vista previa, solo lee. Con `QUINCHAT_API_KEY`
 llama a `/api/v1/catalogos` del reporte; sin llave, **solo en local**, devuelve una muestra de 5 catálogos.
 
-Siguiente paso: el botón «Klixmant» en `components/panel/CatalogosPanel.tsx` (cabecera, junto a
+Hecho el 28-10: botón «Klixmant» con vista previa y `lib/klixmant-identificar.ts` (probado con los
+239 nombres reales). Fotos revisadas (CONTRATO §11): 58 son el cartel «COLOR NO DISPONIBLE»; se
+excluyen en el **reporte**, rama `catalogos-sin-cartel` (commit aecdc97, sin publicar: su `main` publica).
+
+Antes era el siguiente paso: el botón «Klixmant» en `components/panel/CatalogosPanel.tsx` (cabecera, junto a
 «Nuevo Catálogo») que abra la vista previa: catálogos por categoría, casillas para activar categorías
 (no se guardan) y una caja «lo que escribe el cliente → lo que ofrecería el bot».
 
