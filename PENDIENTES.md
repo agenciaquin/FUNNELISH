@@ -1,8 +1,8 @@
 # Pendientes — se retoma en el otro PC
 
-> **Responsable obligatoria: `creativoquin-cpu` (creativoquin@gmail.com).** Solo esta usuaria
-> termina esta tarea. Cualquier otra persona o agente: no continúa, no une a `master`, no publica.
-> Antes de seguir, comprobar `git config user.name`; si no es `creativoquin-cpu`, parar y avisar.
+> **Abierta a cualquiera del equipo (desde el 28-10-2026).** El dueño o quien él indique puede
+> continuar, editar y modificar esta rama. Para los catálogos de Klixmant, empezar por
+> `GUIA-KLIXMANT-PARA-EL-DUENO.md` y la sección «Catálogos de Klixmant» de `CLAUDE.md`.
 
 Rama `seguridad-c1-c2`. **Nada publicado.** Un envío a `master` publica `pedido.klixmant.shop`.
 
