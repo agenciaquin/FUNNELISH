@@ -50,7 +50,7 @@ export async function aprenderDelAsesor(opts: { desde?: Date } = {}) {
   const { data: delAsesor } = await supabase.from('messages')
     .select('conversation_id').eq('role', 'agent').gte('created_at', desde.toISOString()).limit(2000);
   const ids = [...new Set((delAsesor ?? []).map((m: any) => String(m.conversation_id)))];
-  if (!ids.length) return { chats: 0, nuevas: 0, activas: 0, porAprobar: 0, motivo: 'No hay respuestas manuales en el período.' };
+  if (!ids.length) return { chats: 0, nuevas: 0, activas: 0, porAprobar: 0, metodo: 0, motivo: 'No hay respuestas manuales en el período.' };
 
   const { data: convs } = await supabase.from('conversations').select('id, linea, label').in('id', ids.slice(0, 300));
   const deVentas = (convs ?? []).filter((c: any) => c.linea === 'ventas' && !/VENDEDOR/i.test(String(c.label ?? '')));
@@ -67,7 +67,7 @@ export async function aprenderDelAsesor(opts: { desde?: Date } = {}) {
     const vendida = /VENTA REALIZADA|PEDIDO PROGRAMADO/i.test(String(c.label ?? ''));
     bloques.push(`--- CHAT (${vendida ? 'VENDIDO ✅' : 'sin venta aún'}) ---\n${transcripcion(msgs ?? [])}`);
   }
-  if (!bloques.length) return { chats: 0, nuevas: 0, activas: 0, porAprobar: 0, motivo: 'No hay chats de ventas con respuestas manuales.' };
+  if (!bloques.length) return { chats: 0, nuevas: 0, activas: 0, porAprobar: 0, metodo: 0, motivo: 'No hay chats de ventas con respuestas manuales.' };
 
   // Lo que ya sabe el bot (para no repetir)
   const { data: todas } = await supabase.from('memoria_bot').select('regla, estado');
@@ -94,12 +94,20 @@ REGLAS:
 ${activas || '(nada aún)'}
 - Si no hay nada nuevo en una sección, déjala vacía [].`;
 
-  const resp = await chat({
-    messages: [{ role: 'user', content: `Chats del día atendidos a mano:\n\n${bloques.join('\n\n').slice(0, 45000)}` }],
-    tenantId: 'klixmant',
-    systemPrompt: sistema,
-    maxTokens: 4000,
-  });
+  const material = bloques.join('\n\n').slice(0, 40000);
+  // En paralelo: (1) lecciones sueltas y (2) el MÉTODO DE VENTA completo (el flujo).
+  const [resp, metodoRes] = await Promise.all([
+    chat({
+      messages: [{ role: 'user', content: `Chats del día atendidos a mano:\n\n${material}` }],
+      tenantId: 'klixmant',
+      systemPrompt: sistema,
+      maxTokens: 3000,
+    }),
+    construirMetodo(supabase, material, bloques.length).catch((e: any) => {
+      console.error('[Aprender asesor] método:', e?.message);
+      return null;
+    }),
+  ]);
   const j: Extraccion = extraerJSON(resp.message.replace(/^[^{]*/, ''));
 
   // Convertir a reglas de memoria
@@ -112,7 +120,7 @@ ${activas || '(nada aún)'}
   for (const c of (j.cierres ?? []).slice(0, 8)) candidatas.push({ regla: `CIERRE DEL ASESOR: ${String(c).trim()}`, categoria: 'Forma de vender' });
 
   const ahora = new Date().toISOString();
-  const res = { chats: bloques.length, nuevas: 0, activas: 0, porAprobar: 0 };
+  const res = { chats: bloques.length, nuevas: 0, activas: 0, porAprobar: 0, metodo: metodoRes ? metodoRes.pasos : 0 };
   for (const c of candidatas) {
     if (res.nuevas >= MAX_NUEVAS) break;
     const regla = c.regla.slice(0, 600);
@@ -132,4 +140,109 @@ ${activas || '(nada aún)'}
     if (sensible) res.porAprobar++; else res.activas++;
   }
   return res;
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// MÉTODO DE VENTA DEL ASESOR (el flujo completo, paso a paso)
+// Se guarda en ajustes_bot (clave 'metodo_asesor') y se REFINA cada vez que se
+// corre: el modelo recibe el método anterior + los chats nuevos y lo mejora.
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface PasoMetodo { nombre: string; objetivo: string; como: string[]; avanzar_cuando: string }
+export interface MetodoAsesor {
+  resumen: string;
+  pasos: PasoMetodo[];
+  reglas_generales: string[];
+  objeciones: { objecion: string; respuesta: string }[];
+  frases_clave: string[];
+  ejemplo: string;
+}
+
+async function construirMetodo(supabase: any, material: string, nChats: number): Promise<{ pasos: number } | null> {
+  const { data: prev } = await supabase.from('ajustes_bot').select('valor').eq('clave', 'metodo_asesor').maybeSingle();
+  const anterior: MetodoAsesor | null = prev?.valor?.metodo ?? null;
+
+  const sistema =
+`Eres el entrenador del bot de ventas de Klixmant (buzos de motos y escuderías por WhatsApp, pago contra entrega, envío gratis).
+Lee chats donde el ASESOR (el dueño) vendió A MANO y escribe su MÉTODO DE VENTA COMPLETO, de principio a fin, para que el bot lo replique igual.
+Mira el FLUJO: qué hace primero, qué pregunta después, en qué orden pide color/talla/datos, cómo responde dudas, cómo y cuándo cierra, qué hace cuando el cliente se enfría.
+Los mensajes del BOT no son ejemplo: solo los del ASESOR (y cómo reaccionó el cliente). Da más peso a los chats VENDIDOS.
+${anterior ? `\nYA EXISTE un método aprendido antes. ACTUALÍZALO: conserva lo que se confirma, corrige lo que hoy se hizo distinto y agrega lo nuevo. No lo borres sin razón.\nMÉTODO ANTERIOR:\n${JSON.stringify(anterior).slice(0, 6000)}\n` : ''}
+Devuelve ÚNICAMENTE un JSON:
+{
+ "resumen": "en 2 frases, cómo vende el asesor",
+ "pasos": [{"nombre":"ej. Saludo y producto","objetivo":"qué busca lograr","como":["frases REALES o casi textuales que usa el asesor en este paso (2-4)"],"avanzar_cuando":"señal para pasar al siguiente paso"}] (4 a 8 pasos, EN ORDEN, desde el primer mensaje hasta el cierre y la confirmación),
+ "reglas_generales": ["tono, largo de mensajes, emojis, ritmo, qué NUNCA hace (máx 8)"],
+ "objeciones": [{"objecion":"duda típica","respuesta":"cómo la responde el asesor, con sus palabras"}] (máx 8),
+ "frases_clave": ["frases cortas que repite y funcionan (máx 8)"],
+ "ejemplo": "una conversación modelo CORTA (8-14 líneas, CLIENTE:/ASESOR:) que muestre el flujo ideal, sin datos personales"
+}
+REGLAS: español, sin nombres, teléfonos ni direcciones de clientes. Nada de excepciones puntuales (un descuento o regalo a un cliente) como si fueran la regla.`;
+
+  const r = await chat({
+    messages: [{ role: 'user', content: `Chats atendidos a mano por el asesor:\n\n${material}` }],
+    tenantId: 'klixmant',
+    systemPrompt: sistema,
+    maxTokens: 4000,
+  });
+  const j = extraerJSON(r.message.replace(/^[^{]*/, ''));
+  const lista = (x: any, n: number) => (Array.isArray(x) ? x : []).map((v: any) => String(v ?? '').trim()).filter(Boolean).slice(0, n);
+  const metodo: MetodoAsesor = {
+    resumen: String(j.resumen ?? '').slice(0, 500),
+    pasos: (Array.isArray(j.pasos) ? j.pasos : []).slice(0, 8).map((p: any) => ({
+      nombre: String(p?.nombre ?? '').slice(0, 80),
+      objetivo: String(p?.objetivo ?? '').slice(0, 200),
+      como: lista(p?.como, 4).map(t => t.slice(0, 300)),
+      avanzar_cuando: String(p?.avanzar_cuando ?? '').slice(0, 200),
+    })).filter((p: PasoMetodo) => p.nombre),
+    reglas_generales: lista(j.reglas_generales, 8),
+    objeciones: (Array.isArray(j.objeciones) ? j.objeciones : []).slice(0, 8)
+      .map((o: any) => ({ objecion: String(o?.objecion ?? '').slice(0, 150), respuesta: String(o?.respuesta ?? '').slice(0, 400) }))
+      .filter((o: any) => o.objecion && o.respuesta),
+    frases_clave: lista(j.frases_clave, 8),
+    ejemplo: String(j.ejemplo ?? '').slice(0, 1500),
+  };
+  if (metodo.pasos.length < 3) return null; // muy poco material: no se pisa el método anterior
+
+  const historial = [...(prev?.valor?.historial ?? []), ...(anterior ? [{ fecha: prev?.valor?.actualizado ?? null, metodo: anterior }] : [])].slice(-5);
+  await supabase.from('ajustes_bot').upsert({
+    clave: 'metodo_asesor',
+    valor: { activo: prev?.valor?.activo !== false, actualizado: new Date().toISOString(), chats: nChats + Number(prev?.valor?.chats ?? 0), metodo, historial },
+    actualizado_at: new Date().toISOString(),
+  }, { onConflict: 'clave' });
+  cacheMetodo = null;
+  return { pasos: metodo.pasos.length };
+}
+
+let cacheMetodo: { texto: string; leido: number } | null = null;
+
+/** Texto del método para el prompt del bot ('' si no hay o está desactivado). */
+export async function bloqueMetodoAsesor(): Promise<string> {
+  if (cacheMetodo && Date.now() - cacheMetodo.leido < 120_000) return cacheMetodo.texto;
+  let texto = '';
+  try {
+    const supabase = createServerSupabaseClient();
+    const { data } = await supabase.from('ajustes_bot').select('valor').eq('clave', 'metodo_asesor').maybeSingle();
+    const v = data?.valor;
+    const m: MetodoAsesor | null = v?.metodo ?? null;
+    if (m && v?.activo !== false && m.pasos?.length) {
+      texto =
+        `\n\n════════ MÉTODO DE VENTA DEL DUEÑO (aprendido de sus chats reales) ════════\n` +
+        `Vende EXACTAMENTE como él: sigue estos pasos EN ORDEN, con su tono y sus frases. Este método manda sobre el ` +
+        `orden y el estilo genérico de arriba, pero NUNCA sobre los precios, el catálogo, las fotos, los marcadores ` +
+        `([[FOTO]], [[PEDIDO]], [[ACTUALIZAR]], [[HUMANO]]…) ni las políticas (abono de oficina, cuestionario, etc.).\n` +
+        (m.resumen ? `En resumen: ${m.resumen}\n` : '') +
+        m.pasos.map((p, i) =>
+          `\nPASO ${i + 1} — ${p.nombre}\n· Objetivo: ${p.objetivo}\n` +
+          (p.como.length ? `· Cómo lo dice: ${p.como.map(c => `"${c}"`).join(' / ')}\n` : '') +
+          (p.avanzar_cuando ? `· Pasa al siguiente cuando: ${p.avanzar_cuando}\n` : '')).join('') +
+        (m.reglas_generales.length ? `\nREGLAS DE SU ESTILO:\n${m.reglas_generales.map(r => `- ${r}`).join('\n')}\n` : '') +
+        (m.objeciones.length ? `\nCÓMO RESPONDE LAS DUDAS:\n${m.objeciones.map(o => `- "${o.objecion}" → ${o.respuesta}`).join('\n')}\n` : '') +
+        (m.frases_clave.length ? `\nFRASES QUE LE FUNCIONAN: ${m.frases_clave.map(f => `"${f}"`).join(' · ')}\n` : '') +
+        (m.ejemplo ? `\nEJEMPLO DE CONVERSACIÓN IDEAL (guía de ritmo y tono, no lo copies palabra por palabra):\n${m.ejemplo}\n` : '');
+    }
+  } catch { /* sin método: el bot sigue normal */ }
+  cacheMetodo = { texto, leido: Date.now() };
+  return texto;
 }

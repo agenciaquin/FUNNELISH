@@ -33,6 +33,17 @@ export default function SupervisorPanel({ onAbrirChat }: { onAbrirChat?: (id: st
   const [abierta, setAbierta] = useState<string | null>(null);
   const [modo, setModo] = useState<{ activo: boolean; hasta: string | null } | null>(null);
   const [aprendiendo, setAprendiendo] = useState(false);
+  const [metodo, setMetodo] = useState<{ metodo: any; activo: boolean; actualizado: string | null; chats: number } | null>(null);
+  const [verMetodo, setVerMetodo] = useState(false);
+  const cargarMetodo = useCallback(async () => {
+    try { const r = await fetch('/api/supervisor/metodo', { cache: 'no-store' }); if (r.ok) setMetodo(await r.json()); } catch { /* ignorar */ }
+  }, []);
+  useEffect(() => { cargarMetodo(); }, [cargarMetodo]);
+  async function alternarMetodo() {
+    if (!metodo) return;
+    await fetch('/api/supervisor/metodo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activo: !metodo.activo }) });
+    await cargarMetodo();
+  }
 
   const cargarModo = useCallback(async () => {
     try { const r = await fetch('/api/supervisor/modo', { cache: 'no-store' }); if (r.ok) setModo(await r.json()); } catch { /* ignorar */ }
@@ -55,9 +66,9 @@ export default function SupervisorPanel({ onAbrirChat }: { onAbrirChat?: (id: st
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || 'Error');
       setAviso(j.chats
-        ? `📚 Leí ${j.chats} chat(s) que atendiste a mano. Aprendí ${j.nuevas} cosa(s): ${j.activas} ya activas y ${j.porAprobar} por aprobar (tocan precios/pagos/envíos).`
+        ? `📚 Leí ${j.chats} chat(s) que atendiste a mano. ${j.metodo ? `Actualicé tu MÉTODO DE VENTA (${j.metodo} pasos). ` : ''}Aprendí ${j.nuevas} cosa(s): ${j.activas} ya activas y ${j.porAprobar} por aprobar (tocan precios/pagos/envíos).`
         : (j.motivo || 'No encontré respuestas tuyas hoy.'));
-      await cargar();
+      await Promise.all([cargar(), cargarMetodo()]);
     } catch (e: any) { setAviso(`❌ ${e.message}`); }
     finally { setAprendiendo(false); }
   }
@@ -146,6 +157,44 @@ export default function SupervisorPanel({ onAbrirChat }: { onAbrirChat?: (id: st
             </div>
           </div>
         </section>
+
+        {/* El MÉTODO DE VENTA aprendido (flujo completo) */}
+        {metodo?.metodo && (
+          <section className="bg-white rounded-2xl border border-[#E8E8E8] p-4 mb-5">
+            <div className="flex items-start gap-3 flex-wrap">
+              <div className="flex-1 min-w-[240px]">
+                <h2 className="text-sm font-bold">🧭 Tu método de venta (lo que el bot replica)</h2>
+                <p className="text-[11px] text-[#6B6B6B] mt-0.5">{metodo.metodo.resumen}</p>
+                <p className="text-[11px] mt-1 font-semibold" style={{ color: metodo.activo ? '#15803D' : '#9A9A9A' }}>
+                  {metodo.activo ? '● El bot lo está usando' : '○ Desactivado'} · aprendido de {metodo.chats} chat(s){metodo.actualizado ? ` · actualizado ${new Date(metodo.actualizado).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setVerMetodo(v => !v)} className="px-3 py-2 rounded-lg text-xs font-semibold border border-[#E8E8E8] hover:bg-[#F5F5F5]">{verMetodo ? 'Ocultar' : 'Ver los pasos'}</button>
+                <button onClick={alternarMetodo} className={`px-3 py-2 rounded-lg text-xs font-semibold ${metodo.activo ? 'border border-[#DC2626]/40 text-[#DC2626]' : 'bg-[#15803D] text-white'}`}>{metodo.activo ? 'Desactivar' : 'Activar'}</button>
+              </div>
+            </div>
+            {verMetodo && (
+              <div className="mt-3 space-y-2 text-xs">
+                {(metodo.metodo.pasos ?? []).map((p: any, i: number) => (
+                  <div key={i} className="rounded-xl border border-[#EFEFEF] p-3">
+                    <p className="font-bold text-[#0D0D0D]">Paso {i + 1} · {p.nombre}</p>
+                    <p className="text-[#6B6B6B]">🎯 {p.objetivo}</p>
+                    {(p.como ?? []).map((c: string, k: number) => <p key={k} className="text-[#00847A]">💬 “{c}”</p>)}
+                    {p.avanzar_cuando && <p className="text-[#9A9A9A]">➡️ Avanza cuando: {p.avanzar_cuando}</p>}
+                  </div>
+                ))}
+                {(metodo.metodo.objeciones ?? []).length > 0 && (
+                  <div className="rounded-xl border border-[#EFEFEF] p-3">
+                    <p className="font-bold mb-1">Cómo respondes las dudas</p>
+                    {metodo.metodo.objeciones.map((o: any, k: number) => <p key={k}><b>“{o.objecion}”</b> → {o.respuesta}</p>)}
+                  </div>
+                )}
+                {metodo.metodo.ejemplo && <pre className="rounded-xl bg-[#FAFAFA] border border-[#EFEFEF] p-3 whitespace-pre-wrap font-sans">{metodo.metodo.ejemplo}</pre>}
+              </div>
+            )}
+          </section>
+        )}
 
         {aviso && <div className="mb-4 rounded-xl border border-[#E8E8E8] bg-white px-4 py-3 text-xs text-[#0D0D0D]">{aviso}</div>}
 

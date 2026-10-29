@@ -15,6 +15,7 @@ import { bloqueDeMemoria } from '@/lib/memoria';
 import { manejarCuestionarioOficina, CUESTIONARIO_OFICINA } from '@/lib/cuestionario-oficina';
 import { etiquetarOficinaSinAbono } from '@/lib/etiqueta-oficina';
 import { soloBienvenidaActivo } from '@/lib/ajustes-bot';
+import { bloqueMetodoAsesor } from '@/lib/aprender-asesor';
 import { registrarFAQCandidata } from '@/lib/faq';
 
 const ADMIN_VENTAS_HUMANO = '573143534918';
@@ -1691,7 +1692,8 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
         .filter((m: any) => m.content),
     );
 
-    const [catalogo, memoria] = await Promise.all([catalogoDeVenta(supabase), bloqueDeMemoria()]);
+    const [catalogo, memoriaBase, metodoAsesor] = await Promise.all([catalogoDeVenta(supabase), bloqueDeMemoria(), bloqueMetodoAsesor()]);
+    const memoria = `${memoriaBase}${metodoAsesor}`;
 
     // ── ¿De qué anuncio llegó? ───────────────────────────────────────────────
     // Meta pega el anuncio (referral) al PRIMER mensaje del lote, no al último.
