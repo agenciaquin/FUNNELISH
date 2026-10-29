@@ -55,6 +55,32 @@ Inactivos: el catálogo público ya no los trae. No salen tampoco los nombres de
 - Sin llave o con llave mala: **401** «No autorizado.», con `no-store`, antes de leer nada.
 - Rotación: se genera una nueva, se cambia en los dos proyectos de Vercel y se vuelve a publicar.
 
+### La llave en la práctica (estado al 28-oct)
+
+**Qué es:** una contraseña entre dos sistemas. El reporte solo le entrega la lista de catálogos a
+quien la presenta; así nadie de fuera se lleva los catálogos. Tiene que ser **la misma** en los dos lados.
+
+| Lado | Dónde va | Estado |
+| --- | --- | --- |
+| Reporte de ventas | Vercel del reporte (`reporte-de-ventas-bwey`, cuenta fuera del equipo agencia-quin) → Settings → Environment Variables → `QUINCHAT_API_KEY` | Configurada (la API responde 401 sin llave) |
+| QuinChat (producción) | Vercel `quinchat-agencia-quin` → `QUINCHAT_API_KEY`, entorno Production, **Sensitive** | **Falta** |
+| QuinChat (local) | `quinchat/.env.local` → `QUINCHAT_API_KEY=…` (no viaja: está en `.gitignore`) | **Falta** |
+
+**Sin ella:** en local la puerta muestra solo 5 catálogos de muestra; en producción responde
+503 «Falta la llave de la API de catálogos.». No rompe nada: el bot sigue como hoy.
+
+**Cómo ponerla:**
+1. Quien administra el Vercel del reporte copia el valor de `QUINCHAT_API_KEY`. Como es Sensitive,
+   Vercel no la vuelve a mostrar: si nadie la tiene guardada, se genera una nueva
+   (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`), se pone en el
+   reporte y se vuelve a publicar el reporte.
+2. Se pega el **mismo** valor en Vercel `quinchat-agencia-quin` (Production, Sensitive) y se vuelve
+   a publicar QuinChat. Para probar en local, también en `quinchat/.env.local` y se reinicia el servidor.
+3. Comprobar: el botón «🔗 Klixmant» ya no dice «MUESTRA» y salen los ~239 catálogos.
+
+**Cuidados:** no mandarla por WhatsApp ni por correo; pegarla directo en Vercel. Nunca con
+`NEXT_PUBLIC_` delante (se vería en el navegador). Si se filtra, se cambia en los dos lados (rotación).
+
 - **Rutas fijas, sin números inventables.** No hay `/{id}`: cualquiera podría pedir `/1`, `/2`…
   y cada número nuevo despertaría la función. En su lugar, dos rutas fijas (§4) que el bot baja
   enteras una vez por hora.
