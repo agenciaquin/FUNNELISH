@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import KlixmantPreview from './KlixmantPreview';
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 interface ColorVariant {
@@ -318,6 +319,7 @@ export default function CatalogosPanel() {
   // Modales
   const [modalCat,   setModalCat]   = useState<null | 'new' | Catalogo>(null);
   const [modalColor, setModalColor] = useState<null | { catalogoId: string; item: ColorVariant }>(null);
+  const [verKlixmant, setVerKlixmant] = useState(false);
 
   // Formulario inline para agregar color
   const [inlineAdd,      setInlineAdd]      = useState<string | null>(null); // catalogoId
@@ -573,6 +575,13 @@ export default function CatalogosPanel() {
             className="flex items-center gap-2 px-4 py-2.5 border border-[#DC2626]/40 text-[#DC2626] text-sm font-semibold rounded-xl hover:bg-[#DC2626]/10 transition-all disabled:opacity-50"
           >
             🔎 {revisando ? 'Revisando…' : 'Revisar fotos'}
+          </button>
+          <button
+            onClick={() => setVerKlixmant(true)}
+            title="Ver los catálogos de Klixmant y probar cuál reconocería el bot"
+            className="flex items-center gap-2 px-4 py-2.5 border border-[#1A1A1A]/30 text-[#1A1A1A] text-sm font-semibold rounded-xl hover:bg-[#1A1A1A]/5 transition-all"
+          >
+            🔗 Klixmant
           </button>
           <button
             onClick={() => setModalCat('new')}
@@ -887,6 +896,8 @@ export default function CatalogosPanel() {
           onClose={() => setModalColor(null)}
         />
       )}
+
+      {verKlixmant && <KlixmantPreview onClose={() => setVerKlixmant(false)} />}
 
       {/* Input de archivo para inline */}
       {/* (el ref inlineFileRef se renderiza dentro del mapa, aquí solo se declara) */}

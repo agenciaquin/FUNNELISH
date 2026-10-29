@@ -251,3 +251,34 @@ No los crea este contrato, pero el paso «Vincular» pasa por esas rutas.
   borrar, subir fotos). Arreglo: lista cerrada de las rutas `/api/` que la tienda usa de verdad y
   sesión dentro de cada ruta del panel. La dueña confirma en Vercel qué dominios tiene el proyecto.
 - **M4 (medio).** Las rutas del bot devuelven `error.message` de la base (ej. `app/api/catalogos/route.ts`). Frase fija.
+
+## 11. Fotos y consumo (verificado el 28-oct contra el catálogo público de Klixmant)
+
+Se bajó `klixmsoft-production.up.railway.app/api/catalogo/publico` (5,9 MB: 351 catálogos, 239 sin
+los personalizados, 1.934 fotos) y se revisaron **todas** las fotos `card`.
+
+**Fotos**
+- **58 fotos son un cartel rojo «COLOR NO DISPONIBLE»**, no una prenda (18 catálogos antiguos: Nacional
+  Rey de Copas, América Línea, Real Madrid Línea, Citroën, Scania, Peterbilt…). Son el mismo archivo
+  (md5 `e40710538a…` en `card`), pero **su variante trae un color real** (Blanco, Verde oscuro, Azul
+  rey…). Si no se filtra, el bot ofrece ese color y manda el cartel. Regla: el reporte las descarta en
+  `/api/v1/catalogos` (es su fuente, se arregla una vez para todos) y ese color no se ofrece.
+- No hay fotos con franja azul ni con el nombre del catálogo encima. La etiqueta blanca con el nombre
+  es del propio bot («Marcar fotos», `lib/watermark.ts`): las fotos de Klixmant no pasan por ahí.
+- Tamaños: `thumb`, `card` **400×400 (~9 KB)** y `main` **1080–1200 px (~100 KB)**. A WhatsApp va
+  `main`; `card` se ve pobre en el teléfono. La API del contrato hoy solo da `card` → falta `main`.
+- **Son `.webp`.** WhatsApp solo acepta JPG/PNG como foto: antes de subirla, `sharp` la pasa a JPG.
+  `jimp` no lee webp.
+
+**Consumo** (lo que crece es cuántas veces se lee algo, no lo guardado)
+1. A la IA no va la lista entera: `lib/klixmant-identificar.ts` elige los candidatos en código y solo
+   esos entran al prompt. Sin candidatos, solo la lista de categorías activas.
+2. Al reporte se le llama una vez al día y con el botón; nunca durante un chat.
+3. No se copian fotos: se guarda el enlace.
+4. En el chat se leen solo `id, nombre, categoria` de las categorías activas, con 10 min en memoria.
+5. La copia diaria no escribe si `generado` no cambió.
+6. Cada foto se sube a WhatsApp una vez y se guarda `enlace → media_id` (~30 días según Meta); las
+   siguientes veces se reutiliza sin descargar.
+7. Tope de fotos por respuesta (p. ej. 4) y «¿te muestro más colores?».
+
+**Reconocer:** «nacional» da **8 catálogos**. El bot no adivina: muestra las portadas y pregunta cuál.
