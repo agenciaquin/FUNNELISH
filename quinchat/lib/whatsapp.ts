@@ -312,7 +312,15 @@ async function subirImagenDesdeUrl(imageUrl: string): Promise<string | null> {
       }
       let ct = (resp.headers.get('content-type') || 'image/jpeg').split(';')[0];
       if (!/^image\//i.test(ct)) ct = 'image/jpeg';
-      const buf = Buffer.from(await resp.arrayBuffer());
+      let buf: Buffer = Buffer.from(await resp.arrayBuffer());
+      // WhatsApp no acepta webp como foto (las de Klixmant lo son) y jimp no lo lee: sharp lo pasa a JPG.
+      if (ct === 'image/webp') {
+        try {
+          const sharp = (await import('sharp')).default;
+          buf = await sharp(buf).jpeg({ quality: 85 }).toBuffer();
+          ct = 'image/jpeg';
+        } catch (e) { console.error('[WhatsApp] webp → jpg falló:', e); }
+      }
       if (buf.length > WA_IMAGE_LIMIT) return await comprimirYSubirImagen(imageUrl);
       const ext = (ct.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
       const id = await uploadWhatsAppMedia(buf, ct, `foto.${ext}`);

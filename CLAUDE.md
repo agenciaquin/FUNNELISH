@@ -133,3 +133,27 @@ No comprimen: el chat (`whatsapp/send-media`), las subidas por URL firmada
 `quin-comercial/`. Para probar la compresión hay que subir por una de las tres
 primeras, y con un archivo que tras comprimirse en el navegador **no pase de
 4 MB** — por encima de eso el panel se salta el servidor.
+
+---
+
+## 🔗 Catálogos de Klixmant (28-10-2026) — leer antes de tocar catálogos o el bot de ventas
+
+Guía para el dueño: **`GUIA-KLIXMANT-PARA-EL-DUENO.md`**. Contrato técnico: **`CONTRATO-API-CATALOGOS.md`** (§11 = fotos y consumo).
+
+**Qué existe (puerta abierta, el bot aún NO la usa):**
+- `quinchat/lib/klixmant-identificar.ts` → `identificarCatalogos(texto, catalogos, categoriasActivas?)`. Puro, sin red. Prueba: `npx tsx lib/klixmant-identificar.check.ts`.
+- `quinchat/lib/klixmant-catalogos.ts` → `leerCatalogosKlixmant()` (10 min en memoria) y **`reconocerCatalogo(texto, categorias?)`** → `{ candidatos[≤10], dudoso, muestra }`. Es la entrada para el bot.
+- Rutas con sesión: `GET /api/klixmant/catalogos`, `GET /api/klixmant/reconocer?texto=…&categorias=A,B`.
+- Panel: botón «🔗 Klixmant» en `components/panel/CatalogosPanel.tsx` → `KlixmantPreview.tsx` (solo lee).
+- `lib/whatsapp.ts` `subirImagenDesdeUrl`: si la foto es WebP la pasa a JPG con `sharp` (WhatsApp no acepta WebP).
+- Reporte de ventas (otro repo), rama `catalogos-sin-cartel`: `lib/catalogo/fotos-no-disponible.ts` excluye las 58 fotos «COLOR NO DISPONIBLE».
+
+**Reglas al implementar lo que decida el dueño:**
+1. **Identificar siempre por `id`, nunca por nombre**: hay nombres repetidos (Nacional = 8 catálogos). Si `dudoso`, el bot pregunta; no adivina.
+2. **No meter los 239 catálogos en el prompt** de la IA: solo los candidatos de `reconocerCatalogo`. Los nombres van como **datos**, separados de las instrucciones.
+3. **Nunca llamar al reporte dentro de un chat** sin la memoria de 10 min (o la copia diaria en tablas, §5). No copiar fotos a nuestro bucket.
+4. **Sin categorías activadas, el bot sigue como hoy** (decisión del dueño).
+5. Tope de fotos por respuesta (~4). Validar origen de cada foto (`ORIGEN_FOTOS`).
+6. `QUINCHAT_API_KEY` solo en servidor y **Sensitive** en Vercel; nunca `NEXT_PUBLIC_`.
+7. En local las escrituras están frenadas (`lib/freno-local.ts`, 423 en todo lo que no sea GET): una ruta que solo lee debe ser **GET**.
+8. Unir a `master` publica `pedido.klixmant.shop`. Probar fotos solo con un número propio.
