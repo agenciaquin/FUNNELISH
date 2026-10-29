@@ -31,6 +31,36 @@ export default function SupervisorPanel({ onAbrirChat }: { onAbrirChat?: (id: st
   const [revisando, setRevisando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const [abierta, setAbierta] = useState<string | null>(null);
+  const [modo, setModo] = useState<{ activo: boolean; hasta: string | null } | null>(null);
+  const [aprendiendo, setAprendiendo] = useState(false);
+
+  const cargarModo = useCallback(async () => {
+    try { const r = await fetch('/api/supervisor/modo', { cache: 'no-store' }); if (r.ok) setModo(await r.json()); } catch { /* ignorar */ }
+  }, []);
+  useEffect(() => { cargarModo(); }, [cargarModo]);
+
+  async function cambiarModo(activo: boolean) {
+    if (!activo && !confirm('¿Terminar el modo "solo bienvenida"? El bot vuelve a responder toda la conversación en los chats que apagó este modo.')) return;
+    const r = await fetch('/api/supervisor/modo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activo }) });
+    const j = await r.json();
+    setAviso(activo ? '✅ Modo "solo bienvenida" activo hasta las 11:59 pm: el bot solo responde el primer mensaje y tú atiendes el resto.'
+                    : `✅ Modo terminado. El bot volvió a prenderse en ${j.reactivados ?? 0} chat(s).`);
+    await cargarModo();
+  }
+
+  async function aprenderDeMi() {
+    setAprendiendo(true); setAviso(null);
+    try {
+      const r = await fetch('/api/supervisor/aprender', { method: 'POST' });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'Error');
+      setAviso(j.chats
+        ? `📚 Leí ${j.chats} chat(s) que atendiste a mano. Aprendí ${j.nuevas} cosa(s): ${j.activas} ya activas y ${j.porAprobar} por aprobar (tocan precios/pagos/envíos).`
+        : (j.motivo || 'No encontré respuestas tuyas hoy.'));
+      await cargar();
+    } catch (e: any) { setAviso(`❌ ${e.message}`); }
+    finally { setAprendiendo(false); }
+  }
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -92,6 +122,30 @@ export default function SupervisorPanel({ onAbrirChat }: { onAbrirChat?: (id: st
             {revisando ? 'Revisando chats…' : '🔍 Revisar ahora'}
           </button>
         </div>
+
+        {/* Modo temporal: el bot solo da la bienvenida y el dueño atiende para enseñarle */}
+        <section className={`rounded-2xl border p-4 mb-5 ${modo?.activo ? 'bg-[#FFFBEB] border-[#F59E0B]/50' : 'bg-white border-[#E8E8E8]'}`}>
+          <div className="flex items-start gap-3 flex-wrap">
+            <div className="flex-1 min-w-[240px]">
+              <h2 className="text-sm font-bold">🎓 Enséñale al bot cómo vendes tú</h2>
+              <p className="text-[11px] text-[#6B6B6B] mt-0.5 leading-relaxed">
+                Con el modo <b>“solo bienvenida”</b> el bot del Chat WhatsApp solo responde el primer mensaje (catálogo) y se apaga en ese chat; tú atiendes el resto.
+                Al final del día dale <b>“Aprender de mis respuestas de hoy”</b>: guarda tu estilo, tus respuestas a las preguntas y cómo cierras.
+              </p>
+              <p className="text-[11px] mt-1 font-semibold" style={{ color: modo?.activo ? '#B45309' : '#6B6B6B' }}>
+                {modo?.activo ? `● Modo activo hasta ${modo.hasta ? new Date(modo.hasta).toLocaleString('es-CO', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }) : 'hoy'}` : '○ Modo apagado: el bot responde toda la conversación'}
+              </p>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {modo?.activo
+                ? <button onClick={() => cambiarModo(false)} className="px-3 py-2 rounded-lg text-xs font-semibold border border-[#E8E8E8] bg-white hover:bg-[#F5F5F5]">⏹ Terminar modo y prender el bot</button>
+                : <button onClick={() => cambiarModo(true)} className="px-3 py-2 rounded-lg text-xs font-semibold border border-[#F59E0B] text-[#B45309] bg-white hover:bg-[#FFFBEB]">▶ Activar “solo bienvenida” hoy</button>}
+              <button onClick={aprenderDeMi} disabled={aprendiendo} className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#00A89D] text-white hover:bg-[#00847A] disabled:opacity-50">
+                {aprendiendo ? 'Leyendo tus chats…' : '📚 Aprender de mis respuestas de hoy'}
+              </button>
+            </div>
+          </div>
+        </section>
 
         {aviso && <div className="mb-4 rounded-xl border border-[#E8E8E8] bg-white px-4 py-3 text-xs text-[#0D0D0D]">{aviso}</div>}
 

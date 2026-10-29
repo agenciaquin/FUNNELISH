@@ -25,8 +25,8 @@ export async function GET(req: NextRequest) {
       .select('conversation_id, resultado, puntaje, etapas, errores, aciertos, perfil, resumen, leccion_id, creado_at')
       .gte('creado_at', desde).order('creado_at', { ascending: false }).limit(1000),
     supabase.from('memoria_bot')
-      .select('id, regla, categoria, estado, ejemplo, conversacion_id, creada_at, aprobada_at, riesgo, auto')
-      .eq('origen', 'supervisor').neq('estado', 'descartada')
+      .select('id, regla, categoria, estado, ejemplo, conversacion_id, creada_at, aprobada_at, riesgo, auto, origen')
+      .in('origen', ['supervisor', 'asesor']).neq('estado', 'descartada')
       .order('creada_at', { ascending: false }).limit(200),
   ]);
 
@@ -115,7 +115,7 @@ export async function PATCH(req: NextRequest) {
   const cambios = accion === 'aprobar'
     ? { estado: 'aprobada', aprobada_at: new Date().toISOString() }
     : { estado: 'descartada' };   // descartada = el supervisor no la vuelve a proponer
-  const { error } = await supabase.from('memoria_bot').update(cambios).eq('id', id).eq('origen', 'supervisor');
+  const { error } = await supabase.from('memoria_bot').update(cambios).eq('id', id).in('origen', ['supervisor', 'asesor']);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

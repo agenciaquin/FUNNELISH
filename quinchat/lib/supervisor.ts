@@ -60,15 +60,15 @@ const MAX_AUTO_ACTIVAS = 30;          // tope de reglas que el supervisor activa
 const MAX_POR_CORRIDA = 6;            // chats auditados por corrida (tiempo y costo)
 
 // Si la regla toca dinero, políticas o promesas → siempre la revisa el dueño.
-const TEMA_SENSIBLE = /\$|\d{2,}\.?\d{3}|precio|descuent|rebaja|promo|gratis|regal|cobr|pag[oa]|abono|anticip|tarjeta|cr[eé]dito|addi|sistecr|env[ií]o|entrega|d[ií]as|horas|garant|cambio|devoluc|reembols|pol[ií]tica|transportadora|interrapid|oficina|mayor|stock|agotad|[uú]ltimas? unidad/i;
+export const TEMA_SENSIBLE = /\$|\d{2,}\.?\d{3}|precio|descuent|rebaja|promo|gratis|regal|cobr|pag[oa]|abono|anticip|tarjeta|cr[eé]dito|addi|sistecr|env[ií]o|entrega|d[ií]as|horas|garant|cambio|devoluc|reembols|pol[ií]tica|transportadora|interrapid|oficina|mayor|stock|agotad|[uú]ltimas? unidad/i;
 
 const ESTADOS_GANADOS = /VENTA REALIZADA|PEDIDO PROGRAMADO/i;
 
-const normal = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+export const normal = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   .replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 
 /** Parecido entre dos reglas (0..1) por palabras compartidas: evita duplicados con otras palabras. */
-function parecido(a: string, b: string): number {
+export function parecido(a: string, b: string): number {
   const A = new Set(normal(a).split(' ').filter(w => w.length > 3));
   const B = new Set(normal(b).split(' ').filter(w => w.length > 3));
   if (!A.size || !B.size) return 0;
@@ -87,7 +87,7 @@ interface Auditoria {
   leccion: { regla: string; riesgo: 'bajo' | 'alto'; porque?: string } | null;
 }
 
-function extraerJSON(crudo: string): any {
+export function extraerJSON(crudo: string): any {
   const limpio = crudo.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
   const ini = limpio.indexOf('{');
   const fin = limpio.lastIndexOf('}');

@@ -14,6 +14,7 @@ import { prendasDeVenta } from '@/lib/prendas';
 import { bloqueDeMemoria } from '@/lib/memoria';
 import { manejarCuestionarioOficina, CUESTIONARIO_OFICINA } from '@/lib/cuestionario-oficina';
 import { etiquetarOficinaSinAbono } from '@/lib/etiqueta-oficina';
+import { soloBienvenidaActivo } from '@/lib/ajustes-bot';
 import { registrarFAQCandidata } from '@/lib/faq';
 
 const ADMIN_VENTAS_HUMANO = '573143534918';
@@ -1421,7 +1422,7 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
 
   // Upsert de la conversación, marcada como línea de VENTAS
   const { data: conv } = await supabase.from('conversations')
-    .select('bot_enabled, unread_count, interaccion_bot').eq('id', from).maybeSingle();
+    .select('bot_enabled, unread_count, interaccion_bot, bot_off_modo, label').eq('id', from).maybeSingle();
   const ultimoTexto = (() => {
     const ult = mensajes[mensajes.length - 1];
     return ult?.text?.body ?? (ult?.type === 'image' ? '🖼️ Foto' : '📎 Archivo');
@@ -1609,7 +1610,14 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
     }
 
     // Si el bot está apagado en este chat, no responde (lo atiende un humano)
-    const botOn = conv ? (conv.bot_enabled ?? true) : true;
+    let botOn = conv ? (conv.bot_enabled ?? true) : true;
+    // El modo temporal "solo bienvenida" ya terminó y este chat lo había apagado ese
+    // modo (no un humano): se vuelve a prender, salvo que ya sea venta o esté con humano.
+    if (!botOn && (conv as any)?.bot_off_modo && !(await soloBienvenidaActivo())
+        && !/VENTA REALIZADA|HUMANO|PEDIDO CANCELADO|OFICINA REVISAR HUMANO|VENDEDOR/i.test(String((conv as any)?.label ?? ''))) {
+      await supabase.from('conversations').update({ bot_enabled: true, bot_off_modo: null }).eq('id', from);
+      botOn = true;
+    }
     if (!botOn) return;
 
     // 🎙️ Solo llegó un audio que no se entendió (ruido / silencio): se le pide que
@@ -1645,6 +1653,18 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
 
     // ── Oficina sin abono: cuestionario de contraentrega → revisión humana ───
     if (await manejarCuestionarioOficina(supabase, from, texto, t => responder(supabase, from, t))) return;
+
+    // ── MODO TEMPORAL "solo bienvenida": el bot responde SOLO el primer mensaje
+    //    (catálogo) y se apaga en ese chat; el asesor sigue a mano y el Supervisor
+    //    aprende de cómo responde. Si el chat ya tenía respuestas, no contesta. ──
+    if (await soloBienvenidaActivo()) {
+      const { count: yaRespondido } = await supabase.from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('conversation_id', from).in('role', ['assistant', 'agent']);
+      await supabase.from('conversations').update({ bot_enabled: false, bot_off_modo: new Date().toISOString() }).eq('id', from);
+      if ((yaRespondido ?? 0) > 0) return;   // ya no es el primer mensaje → lo atiende el asesor
+      // primer mensaje → sigue y responde la bienvenida (el bot ya quedó apagado para lo que siga)
+    }
 
     // Historial para darle contexto al modelo. Se usan 40 mensajes (no 18) porque
     // el cliente suele dar sus datos (nombre, teléfono, ciudad) AL PRINCIPIO del chat
