@@ -5,6 +5,13 @@ import {
   canalDePedido, fuenteDePedido, CANAL_LABEL, FUENTE_LABEL,
   type Canal, type Fuente,
 } from '@/lib/clasificacion-pedidos';
+import { prendasDeVenta } from '@/lib/prendas';
+
+const numValor = (v: unknown) => Number(String(v ?? '').replace(/[^\d]/g, '')) || 0;
+/** Prendas de un pedido (un pedido puede traer 1, 2, 3… prendas). */
+const prendasDe = (p: any) => prendasDeVenta({
+  cantidadBot: Number(p.cantidad) || null, producto: p.producto, talla: p.talla, valor: numValor(p.valor),
+});
 
 /**
  * Pedidos para el panel + desgloses por canal, fuente y día.
@@ -55,7 +62,7 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = createServerSupabaseClient();
-  const COLS_BASE = 'id, referencia, nombre, telefono, producto, talla, valor, direccion, ciudad, departamento, correo, confirmado, estado, abono, abono_recibido, utm_source, utm_campaign, referrer, created_at';
+  const COLS_BASE = 'id, referencia, nombre, telefono, producto, talla, valor, cantidad, direccion, ciudad, departamento, correo, confirmado, estado, abono, abono_recibido, utm_source, utm_campaign, referrer, created_at';
 
   // Trae TODO el período (sin filtrar por prefijo en SQL): la clasificación se hace
   // en JS con la función central. Se reintenta sin columnas nuevas si no existen.
@@ -84,7 +91,7 @@ export async function GET(req: NextRequest) {
     new Promise<Map<string, string>>(r => setTimeout(() => r(new Map()), 1500)),
   ]);
   const pPrevio = Promise.resolve(supabase.from('clientes_funnelish')
-    .select('referencia, confirmado, estado, valor, created_at')
+    .select('referencia, confirmado, estado, valor, cantidad, producto, talla, created_at')
     .gte('created_at', desdePrevio).lt('created_at', hastaPrevio ?? desde)
     .limit(2000));
 
@@ -92,7 +99,9 @@ export async function GET(req: NextRequest) {
   for (const p of todos) {
     p.canal  = canalDePedido(p.referencia);
     p.fuente = fuenteDePedido(p.utm_source, p.utm_campaign, p.referrer);
+    p.prendas = prendasDe(p);
   }
+  const sumaPrendas = (g: any[]) => g.reduce((s, p) => s + (p.prendas || 1), 0);
 
   const esCancelado = (p: any) => String(p.estado ?? '').toLowerCase() === 'cancelado';
   const esDuplicado = (p: any) => String(p.estado ?? '').toLowerCase() === 'duplicado';
@@ -109,6 +118,7 @@ export async function GET(req: NextRequest) {
     return {
       canal: cv, label: CANAL_LABEL[cv],
       total: g.length, confirmados: conf,
+      prendas: sumaPrendas(g), prendasConf: sumaPrendas(g.filter(p => p.confirmado)),
       pendientes: g.filter(esPendiente).length,
       cancelados: g.filter(esCancelado).length,
       valor: g.filter(p => p.confirmado).reduce((s, p) => s + (Number(String(p.valor ?? '').replace(/[^\d]/g, '')) || 0), 0),
@@ -124,6 +134,7 @@ export async function GET(req: NextRequest) {
     return {
       fuente: fv, label: FUENTE_LABEL[fv],
       total: g.length, confirmados: conf,
+      prendas: sumaPrendas(g), prendasConf: sumaPrendas(g.filter(p => p.confirmado)),
       pendientes: g.filter(esPendiente).length,
       cancelados: g.filter(esCancelado).length,
       valor: g.filter(p => p.confirmado).reduce((s, p) => s + (Number(String(p.valor ?? '').replace(/[^\d]/g, '')) || 0), 0),
@@ -249,19 +260,41 @@ export async function GET(req: NextRequest) {
   if (fuenteFiltro) universoVista = universoVista.filter(p => p.fuente === fuenteFiltro);
 
   const diaCol = (iso: string) => new Date(new Date(iso).getTime() - 5 * 3600000).toISOString().slice(0, 10);
-  const mapaDia = new Map<string, { total: number; conf: number; pend: number; canc: number; valor: number }>();
-  for (const p of universoVista) {
-    const d = diaCol(p.created_at);
-    const g = mapaDia.get(d) ?? { total: 0, conf: 0, pend: 0, canc: 0, valor: 0 };
-    g.total++;
-    if (p.confirmado) { g.conf++; g.valor += Number(String(p.valor ?? '').replace(/[^\d]/g, '')) || 0; }
+  type Celda = { total: number; conf: number; pend: number; canc: number; valor: number; prendas: number; prendasConf: number };
+  const vacia = (): Celda => ({ total: 0, conf: 0, pend: 0, canc: 0, valor: 0, prendas: 0, prendasConf: 0 });
+  const sumar = (g: Celda, p: any) => {
+    g.total++; g.prendas += p.prendas || 1;
+    if (p.confirmado) { g.conf++; g.prendasConf += p.prendas || 1; g.valor += numValor(p.valor); }
     else if (esCancelado(p)) g.canc++;
     else if (!esDuplicado(p)) g.pend++;
+  };
+  // Todos los días del rango (también los que no tuvieron pedidos, para que la gráfica no salte días)
+  const mapaDia = new Map<string, Celda>();
+  const primerDia = diaCol(desde);
+  const ultimoDia = diaCol(hasta ?? new Date(ahora).toISOString());
+  for (let d = primerDia, i = 0; d <= ultimoDia && i < 400; i++) {
+    mapaDia.set(d, vacia());
+    const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + 1); d = x.toISOString().slice(0, 10);
+  }
+  for (const p of universoVista) {
+    const d = diaCol(p.created_at);
+    const g = mapaDia.get(d) ?? vacia();
+    sumar(g, p);
     mapaDia.set(d, g);
   }
   const porDia = [...mapaDia.entries()]
     .sort((a, b) => b[0].localeCompare(a[0]))
     .map(([dia, g]) => ({ dia, ...g }));
+  // Un solo día (Hoy / Ayer) → detalle por HORA (hora de Colombia)
+  let porHora: ({ hora: number } & Celda)[] | null = null;
+  if (primerDia === ultimoDia) {
+    const horas = Array.from({ length: 24 }, (_, h) => ({ hora: h, ...vacia() }));
+    for (const p of universoVista) {
+      const h = new Date(new Date(p.created_at).getTime() - 5 * 3600000).getUTCHours();
+      sumar(horas[h], p);
+    }
+    porHora = horas;
+  }
 
   // ── Resumen principal (del conjunto filtrado por canal/fuente/estado) ───────
   const filtradoResumen = universoVista.filter(p =>
@@ -274,6 +307,8 @@ export async function GET(req: NextRequest) {
   const resumen = {
     total: totalR,
     confirmados: confR,
+    prendas: sumaPrendas(filtradoResumen),
+    prendasConf: sumaPrendas(filtradoResumen.filter(p => p.confirmado)),
     pendientes: filtradoResumen.filter(esPendiente).length,
     cancelados: filtradoResumen.filter(esCancelado).length,
     vendido: filtradoResumen.filter(p => p.confirmado)
@@ -296,6 +331,9 @@ export async function GET(req: NextRequest) {
       confirmados: pct(resumen.confirmados, pConf),
       cancelados: pct(resumen.cancelados, prevSet.filter(p => String(p.estado).toLowerCase() === 'cancelado').length),
       vendido: pct(resumen.vendido, prevSet.filter(p => p.confirmado).reduce((s, p) => s + (Number(String(p.valor ?? '').replace(/[^\d]/g, '')) || 0), 0)),
+      prendas: pct(resumen.prendas, prevSet.reduce((s, p: any) => s + prendasDe(p), 0)),
+      pendientes: pct(resumen.pendientes, prevSet.filter(p => !p.confirmado && !['cancelado', 'duplicado'].includes(String(p.estado).toLowerCase())).length),
+      tasa: (() => { const t = prevSet.length ? Math.round((pConf / prevSet.length) * 100) : 0; return resumen.tasa - t; })(),
     };
   } catch { /* sin comparación, el panel igual funciona */ }
 
@@ -305,5 +343,5 @@ export async function GET(req: NextRequest) {
     confirmados: todos.filter(p => p.canal === 'promociones' && p.confirmado).length,
   };
 
-  return NextResponse.json({ pedidos, resumen, porCanal, porFuente, porDia, comparacion, promociones });
+  return NextResponse.json({ pedidos, resumen, porCanal, porFuente, porDia, porHora, comparacion, promociones });
 }

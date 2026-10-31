@@ -16,13 +16,15 @@ interface Pedido {
   foto?: string | null;
   embudo_slug?: string | null;
   embudo_nombre?: string | null;
+  prendas?: number;
   created_at: string;
 }
 
 type Canal = 'todas' | 'embudos' | 'funnelish' | 'whatsapp' | 'promociones';
-interface DesgloseCanal { canal: string; label: string; total: number; confirmados: number; pendientes: number; cancelados: number; valor: number; conversion: number; }
-interface DesgloseFuente { fuente: string; label: string; total: number; confirmados: number; pendientes: number; cancelados: number; valor: number; conversion: number; }
-interface DiaFila { dia: string; total: number; conf: number; pend: number; canc: number; valor: number; }
+interface DesgloseCanal { canal: string; label: string; total: number; confirmados: number; prendas?: number; prendasConf?: number; pendientes: number; cancelados: number; valor: number; conversion: number; }
+interface DesgloseFuente { fuente: string; label: string; total: number; confirmados: number; prendas?: number; prendasConf?: number; pendientes: number; cancelados: number; valor: number; conversion: number; }
+interface DiaFila { dia: string; total: number; conf: number; pend: number; canc: number; valor: number; prendas?: number; prendasConf?: number; }
+interface HoraFila { hora: number; total: number; conf: number; pend: number; canc: number; valor: number; prendas: number; prendasConf: number; }
 
 const CANAL_CHIP: Record<string, string> = {
   embudos: 'bg-[#e6f7f5] text-[#0b8a86]', funnelish: 'bg-[#eef4ff] text-[#2f80ed]',
@@ -46,6 +48,99 @@ function LogoTikTok() {
       <path fill="#111" d="M16.6 5.82c-.9-.6-1.5-1.5-1.72-2.57a4.2 4.2 0 0 1-.07-.75h-2.9v11.6c0 1.37-1.1 2.48-2.47 2.48a2.48 2.48 0 0 1-2.48-2.48c0-1.37 1.1-2.48 2.48-2.48.26 0 .52.04.76.12V9.4a5.4 5.4 0 0 0-.76-.05 5.37 5.37 0 1 0 5.37 5.37V9.01a7.03 7.03 0 0 0 4.12 1.32V7.44c-.9 0-1.74-.27-2.45-.73" />
     </svg>
   );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Gráficas en SVG puro (sin librerías: carga instantánea y sin dependencias)
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Mini gráfica de tendencia para las tarjetas. */
+function Sparkline({ valores, color }: { valores: number[]; color: string }) {
+  if (valores.length < 2 || valores.every(v => v === 0)) return <div className="w-24 h-9" />;
+  const W = 96, H = 34, max = Math.max(...valores, 1), min = Math.min(...valores, 0);
+  const pts = valores.map((v, i) => [ (i / (valores.length - 1)) * W, H - 3 - ((v - min) / (max - min || 1)) * (H - 6) ]);
+  const linea = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const id = `sp${color.replace('#', '')}`;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-24 h-9 shrink-0" aria-hidden>
+      <defs><linearGradient id={id} x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity=".25" /><stop offset="100%" stopColor={color} stopOpacity="0" /></linearGradient></defs>
+      <path d={`${linea} L${W},${H} L0,${H} Z`} fill={`url(#${id})`} />
+      <path d={linea} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** Barras agrupadas: por cada punto, dos barras (pedidos y prendas) con su número encima. */
+function BarrasDobles({ datos, alto = 230 }: { datos: { etiqueta: string; a: number; b: number; resaltar?: boolean; titulo?: string }[]; alto?: number }) {
+  const [hover, setHover] = useState<number | null>(null);
+  if (!datos.length) return <p className="text-xs text-[#9A9A9A] py-16 text-center">Sin datos en el período.</p>;
+  const max = Math.max(...datos.map(d => Math.max(d.a, d.b)), 1);
+  const paso = max <= 10 ? 2 : max <= 25 ? 5 : max <= 60 ? 10 : max <= 150 ? 25 : Math.ceil(max / 5 / 10) * 10;
+  const tope = Math.ceil(max / paso) * paso;
+  const marcas = Array.from({ length: tope / paso + 1 }, (_, i) => i * paso);
+  const colW = Math.max(30, 680 / datos.length);
+  const W = Math.max(680, datos.length * colW), H = alto, top = 22, bottom = 26, left = 30;
+  const altoUtil = H - top - bottom;
+  const y = (v: number) => top + altoUtil - (v / tope) * altoUtil;
+  const bw = Math.min(18, colW * 0.3);
+  return (
+    <div className="overflow-x-auto">
+      <svg viewBox={`0 0 ${W + left} ${H}`} className="w-full min-w-[560px]" style={{ height: H }} role="img">
+        {marcas.map(m => (
+          <g key={m}>
+            <line x1={left} x2={W + left} y1={y(m)} y2={y(m)} stroke="#EEF0F0" strokeDasharray={m ? '3 4' : undefined} />
+            <text x={left - 6} y={y(m) + 3} fontSize="10" fill="#9A9A9A" textAnchor="end">{m}</text>
+          </g>
+        ))}
+        {datos.map((d, i) => {
+          const cx = left + i * colW + colW / 2;
+          const ha = (d.a / tope) * altoUtil, hb = (d.b / tope) * altoUtil;
+          return (
+            <g key={i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} style={{ cursor: 'default' }}>
+              <title>{d.titulo ?? `${d.etiqueta}: ${d.a} pedidos · ${d.b} prendas`}</title>
+              {(d.resaltar || hover === i) && <rect x={cx - colW / 2 + 2} y={top - 14} width={colW - 4} height={altoUtil + 14} rx="6" fill={d.resaltar ? '#00A89D' : '#0D0D0D'} opacity=".05" />}
+              <rect x={cx - bw - 1} y={y(d.a)} width={bw} height={Math.max(ha, d.a ? 2 : 0)} rx="3" fill="#0B6E4F" className="qp-barra" />
+              <rect x={cx + 1} y={y(d.b)} width={bw} height={Math.max(hb, d.b ? 2 : 0)} rx="3" fill="#3CC7BC" className="qp-barra" />
+              {d.a > 0 && <text x={cx - bw / 2 - 1} y={y(d.a) - 4} fontSize="10" fontWeight="700" fill="#0B6E4F" textAnchor="middle">{d.a}</text>}
+              {d.b > 0 && <text x={cx + bw / 2 + 1} y={y(d.b) - 4} fontSize="10" fontWeight="700" fill="#0E9C92" textAnchor="middle">{d.b}</text>}
+              <text x={cx} y={H - 8} fontSize="10" fill={d.resaltar ? '#00847A' : '#6B6B6B'} fontWeight={d.resaltar ? 700 : 400} textAnchor="middle">{d.etiqueta}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+/** Dona de estados. */
+function Dona({ partes, centro, sub }: { partes: { valor: number; color: string }[]; centro: string; sub: string }) {
+  const total = partes.reduce((s, p) => s + p.valor, 0);
+  const R = 52, C = 2 * Math.PI * R;
+  let acum = 0;
+  return (
+    <svg viewBox="0 0 140 140" className="w-36 h-36 shrink-0" role="img">
+      <circle cx="70" cy="70" r={R} fill="none" stroke="#F0F0F0" strokeWidth="18" />
+      {total > 0 && partes.map((p, i) => {
+        const largo = (p.valor / total) * C;
+        const el = <circle key={i} cx="70" cy="70" r={R} fill="none" stroke={p.color} strokeWidth="18"
+          strokeDasharray={`${largo} ${C - largo}`} strokeDashoffset={-acum} transform="rotate(-90 70 70)" />;
+        acum += largo;
+        return el;
+      })}
+      <text x="70" y="68" textAnchor="middle" fontSize="24" fontWeight="800" fill="#0D0D0D">{centro}</text>
+      <text x="70" y="86" textAnchor="middle" fontSize="10" fill="#6B6B6B">{sub}</text>
+    </svg>
+  );
+}
+
+const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+/** "PAREJA MOTO PULSAR - NEGRO" + "L HOMBRE" → "L · Negro" */
+function tallaColor(p: Pedido): string {
+  const color = String(p.producto ?? '').split(' - ').slice(1).join(' - ').trim();
+  const talla = String(p.talla ?? '').trim();
+  const t = [talla || 'sin talla', color ? color.charAt(0) + color.slice(1).toLowerCase() : ''].filter(Boolean);
+  return t.join(' / ');
 }
 
 /** Cuántos pedidos se pintan de entrada y en cada "Ver más". */
@@ -89,7 +184,9 @@ function rangoPreset(clave: string): { desde: string; hasta: string } | null {
   switch (clave) {
     case 'hoy':        return { desde: hoy, hasta: hoy };
     case 'ayer':       return { desde: sumarDias(hoy, -1), hasta: sumarDias(hoy, -1) };
+    case '7':          return { desde: sumarDias(hoy, -6), hasta: hoy };
     case '15':         return { desde: sumarDias(hoy, -14), hasta: hoy };
+    case '30':         return { desde: sumarDias(hoy, -29), hasta: hoy };
     case 'mes':        return { desde: `${y}-${String(m).padStart(2, '0')}-01`, hasta: hoy };
     case 'mesprev': {
       const pm = m === 1 ? 12 : m - 1; const py = m === 1 ? y - 1 : y;
@@ -117,18 +214,22 @@ interface Props {
 
 export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
-  const [resumen, setResumen] = useState({ total: 0, confirmados: 0, pendientes: 0, cancelados: 0, vendido: 0, tasa: 0 });
+  const [resumen, setResumen] = useState<{ total: number; confirmados: number; pendientes: number; cancelados: number; vendido: number; tasa: number; prendas?: number; prendasConf?: number }>({ total: 0, confirmados: 0, pendientes: 0, cancelados: 0, vendido: 0, tasa: 0, prendas: 0, prendasConf: 0 });
   const [porCanal, setPorCanal]   = useState<DesgloseCanal[]>([]);
   const [porFuente, setPorFuente] = useState<DesgloseFuente[]>([]);
   const [porDiaApi, setPorDiaApi] = useState<DiaFila[]>([]);
+  const [porHora, setPorHora] = useState<HoraFila[] | null>(null);
+  // La gráfica principal puede mirar un rango distinto al filtro (por defecto 15 días)
+  const [rangoGrafica, setRangoGrafica] = useState<'filtro' | '7' | '15' | '30'>('filtro');
+  const [diasGrafica, setDiasGrafica] = useState<DiaFila[]>([]);
   const [comparacion, setComparacion] = useState<Record<string, number> | null>(null);
   const [promoInfo, setPromoInfo] = useState<{ total: number; confirmados: number }>({ total: 0, confirmados: 0 });
   const [cargando, setCargando] = useState(true);
   const [canal, setCanal]       = useState<Canal>('todas');
   const [fuente, setFuente]     = useState('');
-  const [dias, setDias]         = useState(7);
-  const [rango, setRango]       = useState<{ desde: string; hasta: string } | null>(null);
-  const [preset, setPreset]     = useState<string>('7');   // etiqueta del rango activo
+  const [dias, setDias]         = useState(1);
+  const [rango, setRango]       = useState<{ desde: string; hasta: string } | null>(() => rangoPreset('hoy'));
+  const [preset, setPreset]     = useState<string>('hoy');   // etiqueta del rango activo
   const [verRango, setVerRango] = useState(false);          // abre inputs de rango personalizado
   const [busca, setBusca]       = useState('');
   const [verCarritos, setVerCarritos] = useState(false);
@@ -237,6 +338,7 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
       setPorCanal(data.porCanal ?? []);
       setPorFuente(data.porFuente ?? []);
       setPorDiaApi(data.porDia ?? []);
+      setPorHora(data.porHora ?? null);
       setComparacion(data.comparacion ?? null);
       setPromoInfo(data.promociones ?? { total: 0, confirmados: 0 });
     } catch { /* si falla un refresco, se deja lo que había */ }
@@ -245,13 +347,24 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
 
   useEffect(() => { setVisibles(PASO_LISTA); cargar(false); }, [cargar]);
 
+  // Datos de la gráfica principal cuando mira un rango propio (7/15/30 días)
+  const [tickGrafica, setTickGrafica] = useState(0);
+  useEffect(() => {
+    if (rangoGrafica === 'filtro') return;
+    let vivo = true;
+    const r = rangoPreset(rangoGrafica)!;
+    fetch(`/api/pedidos/lista?canal=${canal}&desde=${r.desde}&hasta=${r.hasta}${fuente ? `&fuente=${fuente}` : ''}`, { cache: 'no-store' })
+      .then(res => res.json()).then(d => { if (vivo) setDiasGrafica(d.porDia ?? []); }).catch(() => {});
+    return () => { vivo = false; };
+  }, [rangoGrafica, canal, fuente, tickGrafica]);
+
   // Refresco automático cada 60 s, silencioso, solo con la pantalla visible y
   // sin interrumpir si estás revisando un pedido o tienes pedidos seleccionados.
   const ocupadoRef = useRef(false);
   ocupadoRef.current = !!detalle || seleccion.size > 0 || !!confirmar;
   useEffect(() => {
     const t = setInterval(() => {
-      if (document.visibilityState === 'visible' && !ocupadoRef.current) cargar(true);
+      if (document.visibilityState === 'visible' && !ocupadoRef.current) { cargar(true); setTickGrafica(t => t + 1); }
     }, 60000);
     return () => clearInterval(t);
   }, [cargar]);
@@ -283,131 +396,267 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   // Carritos abandonados en pantalla completa (con "← Volver")
   if (verCarritos) return <CarritosAbandonados onClose={() => setVerCarritos(false)} onAbrirChat={onAbrirChat} />;
 
+  // ── Series para las gráficas ───────────────────────────────────────────────
+  const diasAsc = [...porDia].reverse();                      // del más viejo al más nuevo
+  const serieKpi = porHora ?? diasAsc;                         // un solo día → por hora
+  const spark = (f: (d: any) => number) => serieKpi.map(f);
+  const datosGrafica = (rangoGrafica === 'filtro'
+    ? (porHora
+        ? porHora.filter((h, i) => h.total > 0 || i >= 6).map(h => ({ etiqueta: `${h.hora}h`, a: h.total, b: h.prendas, titulo: `${h.hora}:00 — ${h.total} pedidos · ${h.prendas} prendas · ${h.conf} confirmados` }))
+        : diasAsc.map(d => ({ etiqueta: diaBonito(d.dia), a: d.total, b: d.prendas ?? 0, resaltar: diaBonito(d.dia) === 'Hoy', titulo: `${diaBonito(d.dia)} — ${d.total} pedidos · ${d.prendas ?? 0} prendas · ${d.conf} confirmados` })))
+    : [...diasGrafica].reverse().map(d => ({ etiqueta: diaBonito(d.dia), a: d.total, b: d.prendas ?? 0, resaltar: diaBonito(d.dia) === 'Hoy', titulo: `${diaBonito(d.dia)} — ${d.total} pedidos · ${d.prendas ?? 0} prendas · ${d.conf} confirmados` })));
+  const etiquetaRango = preset === 'hoy' ? 'Hoy' : preset === 'ayer' ? 'Ayer' : preset === 'mes' ? 'Este mes' : preset === 'mesprev' ? 'Mes anterior'
+    : preset === 'custom' ? 'Personalizado' : `Últimos ${preset} días`;
+  const canalesGraf = (['funnelish', 'embudos', 'whatsapp'] as const).map(c => porCanal.find(x => x.canal === c)
+    ?? { canal: c, label: c === 'embudos' ? 'Embudos QuinChat' : c === 'funnelish' ? 'Funnelish' : 'WhatsApp (bot)', total: 0, prendas: 0, confirmados: 0, valor: 0, conversion: 0 } as any);
+  const maxCanal = Math.max(1, ...canalesGraf.map(c => Math.max(c.total, c.prendas ?? 0)));
+  const ICONO_CANAL: Record<string, string> = { funnelish: '📄', embudos: '🚀', whatsapp: '💬' };
+
+  function exportarCSV() {
+    const filas = [['Fecha', 'Estado', 'Cliente', 'Teléfono', 'Producto', 'Talla/Color', 'Canal', 'Campaña', 'Prendas', 'Valor', 'Ciudad']];
+    for (const p of filtrados) filas.push([
+      new Date(p.created_at).toLocaleString('es-CO'), estadoDe(p).texto, p.nombre ?? '', p.telefono ?? '', p.producto ?? '',
+      tallaColor(p), p.canal ?? '', p.campana_nombre || p.utm_campaign || 'Directo', String(p.prendas ?? 1), String(aNumero(p.valor)), p.ciudad ?? '',
+    ]);
+    const csv = filas.map(f => f.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = `pedidos-${preset}-${hoyBogota()}.csv`;
+    a.click();
+  }
+
+  const tarjeta = 'bg-white rounded-2xl border border-[#EDEFEF] shadow-[0_1px_3px_rgba(16,24,40,.04)]';
+
   return (
-    <div className="flex-1 min-w-0 overflow-y-auto bg-[#FAF9F6]">
+    <div className="flex-1 min-w-0 overflow-y-auto bg-[#F6F8F8]">
+      <style>{`@keyframes qp-sube{from{transform:scaleY(0)}to{transform:scaleY(1)}} .qp-barra{transform-box:fill-box;transform-origin:bottom;animation:qp-sube .5s ease-out both} @media (prefers-reduced-motion: reduce){.qp-barra{animation:none}}`}</style>
       <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6">
 
+        {/* Encabezado */}
         <header className="mb-5 pl-10 md:pl-0 flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-[#0D0D0D]">Pedidos y estadísticas</h1>
-            <p className="text-xs text-[#6B6B6B] mt-1">
-              Analiza tus ventas, confirmaciones y resultados por canal.
-            </p>
+            <h1 className="text-2xl md:text-[28px] font-extrabold text-[#0D0D0D] tracking-tight">Pedidos y estadísticas</h1>
+            <p className="text-xs text-[#6B6B6B] mt-1">Analiza tus ventas, confirmaciones y resultados por canal.</p>
           </div>
-          <button
-            onClick={() => setVerCarritos(true)}
-            title="Clientes que empezaron a comprar y no terminaron"
-            className="px-4 py-2.5 rounded-xl border border-[#F59E0B]/50 text-[#B45309] text-sm font-semibold hover:bg-[#F59E0B]/10"
-          >🛒 Carritos abandonados</button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-stretch rounded-2xl bg-gradient-to-r from-[#00847A] to-[#00A89D] text-white shadow-md overflow-hidden">
+              <div className="px-4 py-2">
+                <p className="text-lg font-extrabold leading-tight">{pesos(resumenVista.vendido)}</p>
+                <p className="text-[10px] text-white/80">Vendido · {etiquetaRango}</p>
+              </div>
+              <div className="w-px bg-white/25 my-2" />
+              <div className="px-4 py-2">
+                <p className="text-lg font-extrabold leading-tight">{resumenVista.prendasConf ?? 0}</p>
+                <p className="text-[10px] text-white/80">Prendas vendidas</p>
+              </div>
+            </div>
+            <button onClick={() => cargar(false)} title="Actualizar" className={`w-10 h-10 rounded-xl bg-white border border-[#E8E8E8] text-[#00A89D] hover:bg-[#00A89D]/10 ${actualizando ? 'animate-spin' : ''}`}>⟳</button>
+            <button onClick={exportarCSV} className="h-10 px-4 rounded-xl bg-[#0D1B2A] text-white text-sm font-semibold hover:opacity-90">⬇ Exportar</button>
+            <button onClick={() => setVerCarritos(true)} title="Clientes que empezaron a comprar y no terminaron"
+              className="h-10 px-4 rounded-xl border border-[#F59E0B]/50 bg-white text-[#B45309] text-sm font-semibold hover:bg-[#F59E0B]/10">🛒 Carritos</button>
+          </div>
         </header>
 
         {/* Filtros */}
-        <div className="flex items-center gap-2 mb-3 flex-wrap">
-          <span className="text-[11px] font-bold text-[#6B6B6B] mr-0.5">Canal:</span>
-          <button onClick={() => setCanal('todas')}       className={chip(canal === 'todas')}>Todas</button>
-          <button onClick={() => setCanal('funnelish')}   className={chip(canal === 'funnelish')}>📄 Funnelish</button>
-          <button onClick={() => setCanal('embudos')}     className={chip(canal === 'embudos')}>🚀 Embudos QuinChat</button>
-          <button onClick={() => setCanal('whatsapp')}    className={chip(canal === 'whatsapp')}>💬 WhatsApp</button>
-          <button onClick={() => setCanal('promociones')} className={chip(canal === 'promociones')}>🎟️ Promociones</button>
+        <div className={`${tarjeta} px-4 py-3 mb-5 space-y-2.5`}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-bold text-[#6B6B6B] w-28 shrink-0">Canal:</span>
+            <button onClick={() => setCanal('todas')}       className={chip(canal === 'todas')}>Todas</button>
+            <button onClick={() => setCanal('funnelish')}   className={chip(canal === 'funnelish')}>📄 Funnelish</button>
+            <button onClick={() => setCanal('embudos')}     className={chip(canal === 'embudos')}>🚀 Embudos QuinChat</button>
+            <button onClick={() => setCanal('whatsapp')}    className={chip(canal === 'whatsapp')}>💬 WhatsApp (bot)</button>
+            <button onClick={() => setCanal('promociones')} className={chip(canal === 'promociones')}>🎟️ Promociones</button>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-bold text-[#6B6B6B] w-28 shrink-0">Rango de fechas:</span>
+            {([
+              ['hoy', 'Hoy'], ['ayer', 'Ayer'], ['7', '7 días'], ['15', '15 días'],
+              ['30', '30 días'], ['mes', 'Este mes'], ['mesprev', 'Mes anterior'],
+            ] as [string, string][]).map(([clave, txt]) => (
+              <button key={clave}
+                onClick={() => { setPreset(clave); setVerRango(false); setRango(rangoPreset(clave)); }}
+                className={chip(preset === clave && !verRango)}>{txt}</button>
+            ))}
+            <button onClick={() => { setVerRango(v => !v); setPreset('custom'); }} className={chip(verRango)}>📆 Personalizado</button>
+            {verRango && (
+              <span className="flex items-center gap-1.5">
+                <input type="date" value={rango?.desde ?? hoyBogota()}
+                  onChange={e => setRango(r => ({ desde: e.target.value, hasta: r?.hasta ?? hoyBogota() }))}
+                  className="px-2 py-1 rounded-lg border border-[#E8E8E8] text-xs" />
+                <span className="text-[11px] text-[#9A9A9A]">a</span>
+                <input type="date" value={rango?.hasta ?? hoyBogota()}
+                  onChange={e => setRango(r => ({ desde: r?.desde ?? hoyBogota(), hasta: e.target.value }))}
+                  className="px-2 py-1 rounded-lg border border-[#E8E8E8] text-xs" />
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-bold text-[#6B6B6B] w-28 shrink-0">Fuente:</span>
+            <select value={fuente} onChange={e => setFuente(e.target.value)}
+              className="px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-xs bg-white focus:outline-none focus:border-[#00A89D]">
+              <option value="">Todas</option>
+              <option value="tiktok">TikTok Ads</option>
+              <option value="meta">Meta Ads</option>
+              <option value="organico">Orgánico</option>
+              <option value="directo">Directo</option>
+              <option value="sin_identificar">Sin identificar</option>
+            </select>
+            {(fuente || canal !== 'todas') && (
+              <button onClick={() => { setCanal('todas'); setFuente(''); }}
+                className="px-3 py-1.5 rounded-lg text-xs border border-[#E8E8E8] text-[#6B6B6B] hover:bg-[#F5F5F5]">✕ Limpiar filtros</button>
+            )}
+            <input value={busca} onChange={e => { setBusca(e.target.value); setVisibles(PASO_LISTA); }}
+              placeholder="🔎 Buscar cliente, teléfono, producto…"
+              className="ml-auto px-3 py-2 rounded-lg border border-[#E8E8E8] text-xs w-full sm:w-72 focus:outline-none focus:border-[#00A89D]" />
+          </div>
         </div>
 
-        {/* Selector de fechas */}
-        <div className="flex items-center gap-2 mb-3 flex-wrap">
-          <span className="text-[11px] font-bold text-[#6B6B6B] mr-0.5">📅 Fechas:</span>
-          {([
-            ['hoy', 'Hoy'], ['ayer', 'Ayer'], ['7', '7 días'], ['15', '15 días'],
-            ['30', '30 días'], ['mes', 'Este mes'], ['mesprev', 'Mes anterior'],
-          ] as [string, string][]).map(([clave, txt]) => (
-            <button
-              key={clave}
-              onClick={() => {
-                setPreset(clave); setVerRango(false);
-                if (clave === '7' || clave === '15' || clave === '30') { setRango(null); setDias(Number(clave)); }
-                else setRango(rangoPreset(clave));
-              }}
-              className={chip(preset === clave && !verRango)}
-            >{txt}</button>
-          ))}
-          <button onClick={() => { setVerRango(v => !v); setPreset('custom'); }} className={chip(verRango)}>📆 Personalizado</button>
-          {verRango && (
-            <span className="flex items-center gap-1.5">
-              <input type="date" value={rango?.desde ?? hoyBogota()}
-                onChange={e => setRango(r => ({ desde: e.target.value, hasta: r?.hasta ?? hoyBogota() }))}
-                className="px-2 py-1 rounded-lg border border-[#E8E8E8] text-xs" />
-              <span className="text-[11px] text-[#9A9A9A]">a</span>
-              <input type="date" value={rango?.hasta ?? hoyBogota()}
-                onChange={e => setRango(r => ({ desde: r?.desde ?? hoyBogota(), hasta: e.target.value }))}
-                className="px-2 py-1 rounded-lg border border-[#E8E8E8] text-xs" />
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 mb-4 flex-wrap">
-          <span className="text-[11px] font-bold text-[#6B6B6B] mr-0.5">Fuente:</span>
-          <select
-            value={fuente}
-            onChange={e => setFuente(e.target.value)}
-            className="px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-xs bg-white focus:outline-none focus:border-[#00A89D]"
-          >
-            <option value="">Todas</option>
-            <option value="tiktok">⬛ TikTok Ads</option>
-            <option value="meta">🔵 Meta Ads</option>
-            <option value="organico">🌱 Orgánico</option>
-            <option value="directo">➡️ Directo</option>
-            <option value="sin_identificar">❔ Sin identificar</option>
-          </select>
-          {(fuente || canal !== 'todas') && (
-            <button onClick={() => { setCanal('todas'); setFuente(''); }}
-              className="px-3 py-1.5 rounded-lg text-xs border border-[#E8E8E8] text-[#6B6B6B] hover:bg-[#F5F5F5]">✕ Limpiar filtros</button>
-          )}
-          <input
-            value={busca}
-            onChange={e => { setBusca(e.target.value); setVisibles(PASO_LISTA); }}
-            placeholder="Buscar nombre, teléfono…"
-            className="ml-auto px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-xs w-48 focus:outline-none focus:border-[#00A89D]"
-          />
-          <button onClick={() => cargar(false)} title="Actualizar" className={`w-8 h-8 rounded-lg text-[#00A89D] hover:bg-[#00A89D]/10 ${actualizando ? 'animate-spin' : ''}`}>⟳</button>
-        </div>
-
-        {/* Resumen — 6 indicadores con variación vs período anterior */}
-        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-5">
+        {/* KPIs */}
+        <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-3 mb-5">
           {[
-            { t: 'Pedidos recibidos', v: String(resumenVista.total),       c: '#2f80ed', i: '📥', d: comparacion?.total },
-            { t: 'Confirmados',       v: String(resumenVista.confirmados), c: '#15803D', i: '✅', d: comparacion?.confirmados },
-            { t: 'Por confirmar',     v: String(resumenVista.pendientes),  c: '#EA580C', i: '⏳', d: null },
-            { t: 'Cancelados',        v: String(resumenVista.cancelados),  c: '#DC2626', i: '✖️', d: comparacion?.cancelados, inv: true },
-            { t: 'Valor vendido',     v: pesos(resumenVista.vendido),      c: '#00847A', i: '💰', d: comparacion?.vendido },
-            { t: 'Tasa confirmación', v: `${resumenVista.tasa}%`,          c: '#2f80ed', i: '🎯', d: null },
+            { t: 'Pedidos recibidos',  v: String(resumenVista.total),       c: '#2F80ED', i: '🛒', d: comparacion?.total, extra: `${resumenVista.prendas ?? 0} prendas`, serie: spark(d => d.total) },
+            { t: 'Pedidos confirmados', v: String(resumenVista.confirmados), c: '#15803D', i: '✅', d: comparacion?.confirmados, extra: `${resumenVista.prendasConf ?? 0} prendas`, serie: spark(d => d.conf) },
+            { t: 'Por confirmar',      v: String(resumenVista.pendientes),  c: '#EA580C', i: '⏳', d: comparacion?.pendientes, inv: true, extra: '', serie: spark(d => d.pend) },
+            { t: 'Cancelados',         v: String(resumenVista.cancelados),  c: '#DC2626', i: '✖️', d: comparacion?.cancelados, inv: true, extra: '', serie: spark(d => d.canc) },
+            { t: 'Valor vendido',      v: pesos(resumenVista.vendido),      c: '#0B6E4F', i: '💰', d: comparacion?.vendido, extra: '', serie: spark(d => d.valor) },
           ].map(k => {
             const d = k.d as number | null | undefined;
             const bueno = d == null ? false : k.inv ? d <= 0 : d >= 0;
             return (
-              <div key={k.t} className="bg-white rounded-2xl border border-[#E8E8E8] p-4 shadow-sm">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <span className="text-sm">{k.i}</span>
-                  <span className="text-[11px] text-[#6B6B6B]">{k.t}</span>
+              <div key={k.t} className={`${tarjeta} p-4`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-8 h-8 rounded-xl flex items-center justify-center text-base" style={{ background: `${k.c}14` }}>{k.i}</span>
+                  <span className="text-[12px] text-[#4B5563] font-medium leading-tight">{k.t}</span>
                 </div>
-                <div className="text-lg font-bold" style={{ color: k.c }}>{k.v}</div>
+                <div className="flex items-end justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-2xl font-extrabold leading-none" style={{ color: k.c }}>{k.v}</div>
+                    {k.extra && <div className="text-[11px] font-semibold text-[#0E9C92] mt-1">👕 {k.extra}</div>}
+                  </div>
+                  <Sparkline valores={k.serie} color={k.c} />
+                </div>
                 {d != null && (
-                  <div className={`text-[10.5px] font-bold mt-0.5 ${bueno ? 'text-[#15803D]' : 'text-[#DC2626]'}`}>
+                  <div className={`text-[10.5px] font-bold mt-2 ${bueno ? 'text-[#15803D]' : 'text-[#DC2626]'}`}>
                     {d >= 0 ? '▲' : '▼'} {Math.abs(d)}% <span className="text-[#9A9A9A] font-normal">vs. período previo</span>
                   </div>
                 )}
               </div>
             );
           })}
+          {/* Tasa de confirmación con barra */}
+          <div className={`${tarjeta} p-4`}>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-8 h-8 rounded-xl flex items-center justify-center text-base bg-[#2F80ED]/10">🎯</span>
+              <span className="text-[12px] text-[#4B5563] font-medium">Tasa de confirmación</span>
+            </div>
+            <div className="text-2xl font-extrabold leading-none text-[#2F80ED]">{resumenVista.tasa}%</div>
+            <div className="text-[11px] text-[#2F80ED] mt-1">{resumenVista.confirmados} de {resumenVista.total} pedidos</div>
+            <div className="h-2 rounded-full bg-[#EEF2F7] mt-2 overflow-hidden"><div className="h-full rounded-full bg-[#2F80ED]" style={{ width: `${resumenVista.tasa}%` }} /></div>
+          </div>
         </div>
 
-        {/* Desgloses: por canal + por fuente publicitaria */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-5">
-          {/* Por canal */}
-          <div className="bg-white rounded-2xl border border-[#E8E8E8] shadow-sm p-4">
-            <h2 className="text-sm font-bold text-[#0D0D0D] mb-1">🏷️ Pedidos por canal de venta</h2>
+        {/* Gráfica principal + ventas por canal */}
+        <div className="grid grid-cols-1 xl:grid-cols-10 gap-4 mb-5">
+          <section className={`${tarjeta} p-4 xl:col-span-7`}>
+            <div className="flex items-start justify-between gap-2 flex-wrap mb-2">
+              <div>
+                <h2 className="text-[15px] font-extrabold text-[#0D0D0D]">📊 Ventas y prendas por {rangoGrafica === 'filtro' && porHora ? 'hora' : 'día'}</h2>
+                <p className="text-[11px] text-[#6B6B6B]">{rangoGrafica === 'filtro' ? `Período: ${etiquetaRango}` : `Comparativo de los últimos ${rangoGrafica} días`}</p>
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="flex items-center gap-1.5 text-[11px] text-[#4B5563]"><span className="w-2.5 h-2.5 rounded-full bg-[#0B6E4F]" /> Ventas (pedidos)</span>
+                <span className="flex items-center gap-1.5 text-[11px] text-[#4B5563]"><span className="w-2.5 h-2.5 rounded-full bg-[#3CC7BC]" /> Prendas</span>
+                <select value={rangoGrafica} onChange={e => setRangoGrafica(e.target.value as any)}
+                  className="px-2.5 py-1.5 rounded-lg border border-[#E8E8E8] text-xs bg-white">
+                  <option value="7">Últimos 7 días</option>
+                  <option value="15">Últimos 15 días</option>
+                  <option value="30">Últimos 30 días</option>
+                  <option value="filtro">Igual al filtro ({etiquetaRango})</option>
+                </select>
+              </div>
+            </div>
+            <BarrasDobles datos={datosGrafica} />
+          </section>
+
+          <section className={`${tarjeta} p-4 xl:col-span-3`}>
+            <h2 className="text-[15px] font-extrabold text-[#0D0D0D]">🧭 Ventas por canal</h2>
+            <p className="text-[11px] text-[#6B6B6B] mb-3">Pedidos y prendas · {etiquetaRango}</p>
+            <div className="flex items-end justify-around gap-2 h-44 border-b border-[#EEF0F0] pb-1">
+              {canalesGraf.map(c => (
+                <div key={c.canal} className="flex items-end gap-1.5 h-full" title={`${c.label}: ${c.total} pedidos · ${c.prendas ?? 0} prendas`}>
+                  {[{ v: c.total, col: '#0B6E4F' }, { v: c.prendas ?? 0, col: '#3CC7BC' }].map((b, k) => (
+                    <div key={k} className="flex flex-col items-center justify-end h-full">
+                      <span className="text-[11px] font-bold mb-0.5" style={{ color: b.col }}>{b.v}</span>
+                      <div className="w-6 rounded-t-md qp-barra" style={{ height: `${(b.v / maxCanal) * 82}%`, minHeight: b.v ? 3 : 0, background: b.col }} />
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-3 gap-2 mt-3">
+              {canalesGraf.map(c => (
+                <button key={c.canal} onClick={() => setCanal(c.canal as Canal)} className="text-left rounded-xl p-2 hover:bg-[#F6F8F8]">
+                  <span className="text-base">{ICONO_CANAL[c.canal]}</span>
+                  <p className="text-[11px] font-bold text-[#0D0D0D] leading-tight">{c.label}</p>
+                  <p className="text-[10.5px] text-[#6B6B6B]">{c.total} pedidos</p>
+                  <p className="text-[10.5px] text-[#0E9C92] font-semibold">{c.prendas ?? 0} prendas</p>
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        {/* Fuente publicitaria · Canal · Estado */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 mb-5">
+          <section className={`${tarjeta} p-4`}>
+            <h2 className="text-[15px] font-extrabold text-[#0D0D0D]">📣 Rendimiento por fuente publicitaria</h2>
+            <p className="text-[11px] text-[#6B6B6B] mb-3">Atribución real por UTM del pedido.</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px]">
+                <thead><tr className="text-[10px] uppercase text-[#9A9A9A] border-b border-[#EEE]">
+                  <th className="text-left py-1.5 font-semibold">Fuente</th>
+                  <th className="text-right font-semibold">Pedidos</th>
+                  <th className="text-right font-semibold">Prendas</th>
+                  <th className="text-right font-semibold">Conf.</th>
+                  <th className="text-left font-semibold pl-3">% Conf.</th>
+                  <th className="text-right font-semibold">Valor</th>
+                </tr></thead>
+                <tbody>
+                  {porFuente.map(f => (
+                    <tr key={f.fuente} className="border-b border-[#F4F4F4] cursor-pointer hover:bg-[#FAFAFA]" onClick={() => setFuente(f.fuente)}>
+                      <td className="py-2.5 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1.5">
+                          {f.fuente === 'tiktok' ? <LogoTikTok /> : f.fuente === 'meta' ? <LogoFacebook /> : <span>{FUENTE_ICO[f.fuente] ?? ''}</span>}
+                          {f.label}
+                        </span>
+                      </td>
+                      <td className="text-right">{f.total}</td>
+                      <td className="text-right text-[#0E9C92] font-semibold">{f.prendas ?? 0}</td>
+                      <td className="text-right text-[#15803D] font-semibold">{f.confirmados}</td>
+                      <td className="pl-3">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-9 text-right font-semibold" style={{ color: f.conversion >= 75 ? '#15803D' : f.conversion >= 55 ? '#B45309' : '#DC2626' }}>{f.conversion}%</span>
+                          <span className="w-14 h-1.5 rounded-full bg-[#F0F0F0] overflow-hidden"><span className="block h-full rounded-full" style={{ width: `${f.conversion}%`, background: f.conversion >= 75 ? '#15803D' : f.conversion >= 55 ? '#F59E0B' : '#DC2626' }} /></span>
+                        </span>
+                      </td>
+                      <td className="text-right whitespace-nowrap">{pesos(f.valor)}</td>
+                    </tr>
+                  ))}
+                  {porFuente.length === 0 && <tr><td colSpan={6} className="py-4 text-center text-[#9A9A9A]">Sin datos en el período.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className={`${tarjeta} p-4`}>
+            <h2 className="text-[15px] font-extrabold text-[#0D0D0D]">🏷️ Pedidos por canal de venta</h2>
             <p className="text-[11px] text-[#6B6B6B] mb-3">Origen del pedido (sin incluir Promociones).</p>
             <div className="overflow-x-auto">
               <table className="w-full text-[12px]">
                 <thead><tr className="text-[10px] uppercase text-[#9A9A9A] border-b border-[#EEE]">
                   <th className="text-left py-1.5 font-semibold">Canal</th>
-                  <th className="text-right font-semibold">Total</th>
+                  <th className="text-right font-semibold">Pedidos</th>
+                  <th className="text-right font-semibold">Prendas</th>
                   <th className="text-right font-semibold">Conf.</th>
                   <th className="text-right font-semibold">% Conf.</th>
                   <th className="text-right font-semibold">Valor</th>
@@ -415,15 +664,16 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
                 <tbody>
                   {porCanal.map(c => (
                     <tr key={c.canal} className="border-b border-[#F4F4F4] cursor-pointer hover:bg-[#FAFAFA]"
-                        onClick={() => setCanal((c.canal === 'embudos' ? 'embudos' : c.canal === 'sin_identificar' ? 'todas' : c.canal) as Canal)}>
-                      <td className="py-2"><span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${CANAL_CHIP[c.canal] ?? ''}`}>{c.label}</span></td>
+                        onClick={() => setCanal((c.canal === 'sin_identificar' ? 'todas' : c.canal) as Canal)}>
+                      <td className="py-2.5"><span className={`text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${CANAL_CHIP[c.canal] ?? ''}`}>{c.label}</span></td>
                       <td className="text-right">{c.total}</td>
+                      <td className="text-right text-[#0E9C92] font-semibold">{c.prendas ?? 0}</td>
                       <td className="text-right text-[#15803D] font-semibold">{c.confirmados}</td>
                       <td className="text-right">{c.conversion}%</td>
-                      <td className="text-right">{pesos(c.valor)}</td>
+                      <td className="text-right whitespace-nowrap">{pesos(c.valor)}</td>
                     </tr>
                   ))}
-                  {porCanal.length === 0 && <tr><td colSpan={5} className="py-4 text-center text-[#9A9A9A]">Sin datos en el período.</td></tr>}
+                  {porCanal.length === 0 && <tr><td colSpan={6} className="py-4 text-center text-[#9A9A9A]">Sin datos en el período.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -432,81 +682,34 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
                 🎟️ Promociones: {promoInfo.total} pedidos ({promoInfo.confirmados} confirmados) — <b>aparte</b>, no suman en estas estadísticas.
               </p>
             )}
-          </div>
+          </section>
 
-          {/* Por fuente publicitaria */}
-          <div className="bg-white rounded-2xl border border-[#E8E8E8] shadow-sm p-4">
-            <h2 className="text-sm font-bold text-[#0D0D0D] mb-1">📣 Rendimiento por fuente publicitaria</h2>
-            <p className="text-[11px] text-[#6B6B6B] mb-3">Atribución real por UTM del pedido.</p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[12px]">
-                <thead><tr className="text-[10px] uppercase text-[#9A9A9A] border-b border-[#EEE]">
-                  <th className="text-left py-1.5 font-semibold">Fuente</th>
-                  <th className="text-right font-semibold">Total</th>
-                  <th className="text-right font-semibold">Conf.</th>
-                  <th className="text-right font-semibold">% Conf.</th>
-                  <th className="text-right font-semibold">Valor</th>
-                </tr></thead>
-                <tbody>
-                  {porFuente.map(f => (
-                    <tr key={f.fuente} className="border-b border-[#F4F4F4] cursor-pointer hover:bg-[#FAFAFA]"
-                        onClick={() => setFuente(f.fuente)}>
-                      <td className="py-2">{FUENTE_ICO[f.fuente] ?? ''} {f.label}</td>
-                      <td className="text-right">{f.total}</td>
-                      <td className="text-right text-[#15803D] font-semibold">{f.confirmados}</td>
-                      <td className="text-right">{f.conversion}%</td>
-                      <td className="text-right">{pesos(f.valor)}</td>
-                    </tr>
-                  ))}
-                  {porFuente.length === 0 && <tr><td colSpan={5} className="py-4 text-center text-[#9A9A9A]">Sin datos en el período.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        {/* Confirmadas por día (apiladas: confirmados / pendientes / cancelados) */}
-        {porDia.length > 0 && (
-          <div className="bg-white rounded-2xl border border-[#E8E8E8] shadow-sm p-4 mb-5">
-            <div className="flex items-center justify-between mb-3 flex-wrap gap-1">
-              <h2 className="text-sm font-bold text-[#0D0D0D]">📊 Confirmadas por día</h2>
-              <span className="text-[11px] text-[#6B6B6B]">
-                <span className="text-[#15803D] font-semibold">✅ confirmados</span> · <span className="text-[#EA580C] font-semibold">⏳ pendientes</span> · <span className="text-[#DC2626] font-semibold">✖️ cancelados</span>
-              </span>
-            </div>
-            <div className="space-y-2">
-              {(verTodosDias ? porDia : porDia.slice(0, 7)).map(g => {
-                const pc = g.total ? Math.round((g.conf / g.total) * 100) : 0;
-                const pp = g.total ? Math.round((g.pend / g.total) * 100) : 0;
-                const px = g.total ? Math.round((g.canc / g.total) * 100) : 0;
-                return (
-                  <div key={g.dia}>
-                    <div className="flex items-center justify-between text-[11px] mb-1 gap-2">
-                      <span className="font-bold text-[#0D0D0D] w-14 shrink-0">{diaBonito(g.dia)}</span>
-                      <span className="flex-1 text-right">
-                        <span className="text-[#15803D] font-semibold">✅ {g.conf}</span>
-                        <span className="mx-1 text-[#C9C9C9]">·</span>
-                        <span className="text-[#EA580C] font-semibold">⏳ {g.pend}</span>
-                        {g.canc > 0 && <><span className="mx-1 text-[#C9C9C9]">·</span><span className="text-[#DC2626] font-semibold">✖️ {g.canc}</span></>}
-                        <span className="ml-1.5 text-[#9A9A9A]">· {g.total} total · {pc}% conf.</span>
-                      </span>
-                    </div>
-                    <div className="h-2 rounded-full bg-[#F0F0F0] overflow-hidden flex">
-                      <div className="h-full bg-[#15803D]" style={{ width: `${pc}%` }} />
-                      <div className="h-full bg-[#EA580C]" style={{ width: `${pp}%` }} />
-                      <div className="h-full bg-[#DC2626]" style={{ width: `${px}%` }} />
-                    </div>
+          <section className={`${tarjeta} p-4 lg:col-span-2 2xl:col-span-1`}>
+            <h2 className="text-[15px] font-extrabold text-[#0D0D0D]">🍩 Estado de los pedidos</h2>
+            <p className="text-[11px] text-[#6B6B6B] mb-3">{etiquetaRango}</p>
+            <div className="flex items-center gap-5 flex-wrap">
+              <Dona centro={String(resumenVista.total)} sub="Pedidos" partes={[
+                { valor: resumenVista.confirmados, color: '#15803D' },
+                { valor: resumenVista.pendientes, color: '#F59E0B' },
+                { valor: resumenVista.cancelados, color: '#DC2626' },
+              ]} />
+              <div className="flex-1 min-w-[160px] space-y-2.5 text-[12px]">
+                {[
+                  ['Confirmados', resumenVista.confirmados, '#15803D'],
+                  ['Por confirmar', resumenVista.pendientes, '#F59E0B'],
+                  ['Cancelados', resumenVista.cancelados, '#DC2626'],
+                ].map(([t, v, c]) => (
+                  <div key={t as string} className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: c as string }} />
+                    <span className="flex-1 text-[#4B5563]">{t}</span>
+                    <b className="w-8 text-right">{v as number}</b>
+                    <span className="w-10 text-right text-[#9A9A9A]">{resumenVista.total ? Math.round(((v as number) / resumenVista.total) * 100) : 0}%</span>
                   </div>
-                );
-              })}
+                ))}
+              </div>
             </div>
-            {porDia.length > 7 && (
-              <button onClick={() => setVerTodosDias(v => !v)} className="mt-3 text-[11px] font-semibold text-[#00847A] hover:underline">
-                {verTodosDias ? '▲ Ver solo los últimos 7 días' : `▼ Ver los ${porDia.length} días`}
-              </button>
-            )}
-          </div>
-        )}
+          </section>
+        </div>
 
         {/* Barra de selección */}
         {seleccion.size > 0 && (
@@ -535,6 +738,12 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
         )}
 
         {/* Lista */}
+        <div className="flex items-end justify-between gap-2 mb-2 flex-wrap">
+          <div>
+            <h2 className="text-[15px] font-extrabold text-[#0D0D0D]">🧾 Últimos pedidos</h2>
+            <p className="text-[11px] text-[#6B6B6B]">{filtrados.length} pedidos · {filtrados.reduce((a, p) => a + (p.prendas ?? 1), 0)} prendas · {etiquetaRango}</p>
+          </div>
+        </div>
         <div className="bg-white rounded-2xl border border-[#E8E8E8] shadow-sm overflow-visible">
           {cargando ? (
             <div className="divide-y divide-[#F0F0F0]">
@@ -566,15 +775,17 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
                     className="w-4 h-4 accent-[#00A89D] cursor-pointer align-middle"
                   />
                 </span>
-                <span className="w-24 shrink-0">Fecha</span>
-                <span className="w-32 shrink-0">Estado</span>
+                <span className="w-24 shrink-0">Fecha / hora</span>
+                <span className="w-28 shrink-0">Estado</span>
                 <span className="w-10 shrink-0" />
                 <span className="flex-1 min-w-0">Cliente</span>
                 <span className="flex-1 min-w-0">Producto</span>
-                <span className="w-40 shrink-0">Embudo</span>
-                <span className="w-40 shrink-0">Campaña</span>
+                <span className="hidden lg:block w-28 shrink-0">Talla / color</span>
+                <span className="w-36 shrink-0">Canal</span>
+                <span className="hidden xl:block w-36 shrink-0">Campaña</span>
+                <span className="w-14 text-center shrink-0">Prendas</span>
                 <span className="w-24 text-right shrink-0">Valor</span>
-                <span className="w-8 shrink-0" />
+                <span className="w-16 text-center shrink-0">Acciones</span>
               </div>
 
               <div className="divide-y divide-[#F4F4F4]">
@@ -608,7 +819,7 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
                         {cuando(p.created_at)}
                       </span>
 
-                      <span className="hidden md:block w-32 shrink-0">
+                      <span className="hidden md:block w-28 shrink-0">
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full inline-block"
                               style={{ color: est.color, background: est.fondo }}>{est.texto}</span>
                       </span>
@@ -654,28 +865,30 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
                       </span>
 
                       <span className="hidden md:block flex-1 min-w-0">
-                        <span className="block text-[12px] text-[#0D0D0D] truncate">{p.producto}</span>
-                        <span className="block text-[11px] text-[#9A9A9A] truncate">
-                          {p.talla || 'sin talla'}
-                          {p.abono > 0 && ` · abono ${p.abono_recibido ? '✅' : '⏳'}`}
-                        </span>
-                        {p.canal && (
-                          <span className={`inline-block mt-0.5 text-[9.5px] font-bold px-1.5 py-0.5 rounded-full ${CANAL_CHIP[p.canal] ?? ''}`}>
-                            {p.canal === 'embudos' ? 'Embudos QuinChat' : p.canal === 'funnelish' ? 'Funnelish' : p.canal === 'whatsapp' ? 'WhatsApp' : p.canal === 'promociones' ? 'Promociones' : 'Sin identificar'}
-                          </span>
+                        <span className="block text-[12px] text-[#0D0D0D] truncate">{String(p.producto ?? '').split(' - ')[0]}</span>
+                        <span className="lg:hidden block text-[11px] text-[#9A9A9A] truncate">{tallaColor(p)}</span>
+                        {p.abono > 0 && (
+                          <span className="block text-[10.5px] text-[#9A9A9A]">abono {p.abono_recibido ? '✅' : '⏳'}</span>
                         )}
                       </span>
 
-                      {/* Embudo del que vino: nombre + ver (vista previa) + editar */}
-                      <span className="hidden md:flex w-40 shrink-0 min-w-0 items-center gap-1">
-                        {p.embudo_slug ? (
-                          <>
+                      <span className="hidden lg:block w-28 shrink-0 text-[11.5px] text-[#4B5563] truncate" title={tallaColor(p)}>
+                        {tallaColor(p)}
+                      </span>
+
+                      {/* Canal + embudo del que vino (ver / editar) */}
+                      <span className="hidden md:flex w-36 shrink-0 min-w-0 flex-col items-start gap-1">
+                        <span className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${CANAL_CHIP[p.canal ?? ''] ?? 'bg-[#F2F2F2] text-[#6B6B6B]'}`}>
+                          {p.canal === 'embudos' ? 'Embudos QuinChat' : p.canal === 'funnelish' ? 'Funnelish' : p.canal === 'whatsapp' ? 'WhatsApp (bot)' : p.canal === 'promociones' ? 'Promociones' : 'Sin identificar'}
+                        </span>
+                        {p.embudo_slug && (
+                        <span className="flex items-center gap-1 max-w-full min-w-0">
                             <a
                               href={`https://pedido.klixmant.shop/${p.embudo_slug}`}
                               target="_blank" rel="noopener noreferrer"
                               onClick={e => e.stopPropagation()}
                               title={`Ver en vista previa: ${p.embudo_nombre || p.embudo_slug}`}
-                              className="inline-flex items-center gap-1 text-[11px] font-bold text-[#00847A] bg-[#00A89D]/10 rounded-lg px-2 py-1 hover:bg-[#00A89D]/20 min-w-0 truncate"
+                              className="inline-flex items-center gap-1 text-[10.5px] font-bold text-[#00847A] bg-[#00A89D]/10 rounded-lg px-1.5 py-0.5 hover:bg-[#00A89D]/20 min-w-0 truncate"
                             >🚀 <span className="truncate">{p.embudo_nombre || p.embudo_slug}</span> ↗</a>
                             {onEditarEmbudo && (
                               <button
@@ -684,14 +897,12 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
                                 className="shrink-0 text-[11px] rounded-lg px-1.5 py-1 border border-[#E8E8E8] hover:bg-[#F5F5F5]"
                               >✏️</button>
                             )}
-                          </>
-                        ) : (
-                          <span className="text-[11px] text-[#C9C9C9]">—</span>
+                        </span>
                         )}
                       </span>
 
-                      <span className="hidden md:flex w-40 shrink-0 flex-col gap-0.5">
-                        <span className="flex items-center gap-1.5">
+                      <span className="hidden xl:flex w-36 shrink-0 flex-col gap-0.5 min-w-0">
+                        <span className="flex items-center gap-1.5 min-w-0">
                           {p.plataforma === 'facebook' && <LogoFacebook />}
                           {p.plataforma === 'tiktok' && <LogoTikTok />}
                           {p.utm_campaign ? (
@@ -705,8 +916,27 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
                         </span>
                       </span>
 
+                      <span className="hidden md:block w-14 text-center shrink-0">
+                        <span className="inline-block min-w-[28px] px-1.5 py-0.5 rounded-full bg-[#3CC7BC]/15 text-[#0E7C74] text-[12px] font-extrabold">{p.prendas ?? 1}</span>
+                      </span>
+
                       <span className="w-24 text-right shrink-0 text-sm font-bold text-[#0D0D0D]">
                         {pesos(total)}
+                        <span className="md:hidden block text-[10px] font-semibold text-[#0E7C74]">{p.prendas ?? 1} {(p.prendas ?? 1) === 1 ? 'prenda' : 'prendas'}</span>
+                      </span>
+
+                      {/* WhatsApp: abre el chat dentro de QuinChat */}
+                      <span className="hidden md:flex w-8 shrink-0 justify-center" onClick={e => e.stopPropagation()}>
+                        {String(p.telefono ?? '').replace(/\D/g, '').length >= 10 && (
+                          <button
+                            onClick={() => {
+                              const t = String(p.telefono ?? '').replace(/\D/g, '').slice(-10);
+                              if (onAbrirChat) onAbrirChat(`57${t}`); else window.open(`https://wa.me/57${t}`, '_blank');
+                            }}
+                            title="Abrir el chat del cliente"
+                            className="w-7 h-7 rounded-lg bg-[#25D366]/12 text-[#128C4B] hover:bg-[#25D366]/25 text-sm"
+                          >💬</button>
+                        )}
                       </span>
 
                       {/* Menú de la fila */}
