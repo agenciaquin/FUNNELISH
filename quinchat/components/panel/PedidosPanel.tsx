@@ -71,21 +71,31 @@ function Sparkline({ valores, color }: { valores: number[]; color: string }) {
 }
 
 /** Barras agrupadas: por cada punto, dos barras (pedidos y prendas) con su número encima. */
-function BarrasDobles({ datos, alto = 230 }: { datos: { etiqueta: string; a: number; b: number; resaltar?: boolean; titulo?: string }[]; alto?: number }) {
+function BarrasDobles({ datos, alto = 165 }: { datos: { etiqueta: string; a: number; b: number; resaltar?: boolean; titulo?: string }[]; alto?: number }) {
   const [hover, setHover] = useState<number | null>(null);
-  if (!datos.length) return <p className="text-xs text-[#9A9A9A] py-16 text-center">Sin datos en el período.</p>;
+  // Ancho real de la tarjeta: el dibujo ocupa todo el ancho sin estirarse ni dejar márgenes vacíos
+  const caja = useRef<HTMLDivElement>(null);
+  const [ancho, setAncho] = useState(700);
+  useEffect(() => {
+    const el = caja.current; if (!el) return;
+    const ro = new ResizeObserver(([e]) => setAncho(Math.max(320, Math.round(e.contentRect.width))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  if (!datos.length) return <div ref={caja}><p className="text-xs text-[#9A9A9A] py-10 text-center">Sin datos en el período.</p></div>;
   const max = Math.max(...datos.map(d => Math.max(d.a, d.b)), 1);
   const paso = max <= 10 ? 2 : max <= 25 ? 5 : max <= 60 ? 10 : max <= 150 ? 25 : Math.ceil(max / 5 / 10) * 10;
   const tope = Math.ceil(max / paso) * paso;
   const marcas = Array.from({ length: tope / paso + 1 }, (_, i) => i * paso);
-  const colW = Math.max(30, 680 / datos.length);
-  const W = Math.max(680, datos.length * colW), H = alto, top = 22, bottom = 26, left = 30;
+  const left = 28;
+  const colW = Math.max(26, (ancho - left) / datos.length);
+  const W = datos.length * colW, H = alto, top = 18, bottom = 22;
   const altoUtil = H - top - bottom;
   const y = (v: number) => top + altoUtil - (v / tope) * altoUtil;
-  const bw = Math.min(18, colW * 0.3);
+  const bw = Math.min(16, colW * 0.3);
   return (
-    <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${W + left} ${H}`} className="w-full min-w-[560px]" style={{ height: H }} role="img">
+    <div ref={caja} className="overflow-x-auto">
+      <svg viewBox={`0 0 ${W + left} ${H}`} width={W + left} height={H} className="block" role="img">
         {marcas.map(m => (
           <g key={m}>
             <line x1={left} x2={W + left} y1={y(m)} y2={y(m)} stroke="#EEF0F0" strokeDasharray={m ? '3 4' : undefined} />
@@ -581,7 +591,7 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
           <section className={`${tarjeta} p-4 xl:col-span-3`}>
             <h2 className="text-[15px] font-extrabold text-[#0D0D0D]">🧭 Ventas por canal</h2>
             <p className="text-[11px] text-[#6B6B6B] mb-3">Pedidos y prendas · {etiquetaRango}</p>
-            <div className="flex items-end justify-around gap-2 h-44 border-b border-[#EEF0F0] pb-1">
+            <div className="flex items-end justify-around gap-2 h-28 border-b border-[#EEF0F0] pb-1">
               {canalesGraf.map(c => (
                 <div key={c.canal} className="flex items-end gap-1.5 h-full" title={`${c.label}: ${c.total} pedidos · ${c.prendas ?? 0} prendas`}>
                   {[{ v: c.total, col: '#0B6E4F' }, { v: c.prendas ?? 0, col: '#3CC7BC' }].map((b, k) => (
