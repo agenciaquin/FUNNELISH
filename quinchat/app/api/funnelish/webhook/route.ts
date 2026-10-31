@@ -372,7 +372,31 @@ export async function POST(req: NextRequest) {
   if (!tel10) tel10 = normalizePhone(body.phone); // respaldo: lo que haya en phone
   const waPhone    = `57${tel10}`;
 
-  const direccion    = String(body.address          ?? body.shipping_address ?? '—').trim();
+  // BARRIO: Funnelish puede mandarlo como address2 o como campo propio ("barrio",
+  // "neighborhood"…, a veces dentro de custom_fields). Antes solo se leía `address`
+  // y el barrio se perdía. Se pega a la dirección igual que en los embudos QuinChat.
+  const barrioFunnelish = (() => {
+    const candidatos: unknown[] = [
+      body.address2, body.address_2, body.shipping_address2, body.shipping_address_2,
+      body.barrio, body.neighborhood, body.neighbourhood, body.district,
+      body?.shipping?.address2, body?.customer?.address2,
+    ];
+    for (const grupo of [body, body?.custom_fields, body?.customFields, body?.fields, body?.extra_fields]) {
+      if (grupo && typeof grupo === 'object' && !Array.isArray(grupo)) {
+        for (const [k, v] of Object.entries(grupo)) if (/barrio|neighbo/i.test(k)) candidatos.push(v);
+      }
+      if (Array.isArray(grupo)) {
+        for (const f of grupo) if (f && /barrio|neighbo/i.test(String((f as any).name ?? (f as any).label ?? ''))) candidatos.push((f as any).value);
+      }
+    }
+    const v = candidatos.map(x => String(x ?? '').trim()).find(x => x && x !== '—' && x.toLowerCase() !== 'null');
+    return v ?? '';
+  })();
+  console.log('[Funnelish] campos de dirección recibidos:', Object.keys(body ?? {}).filter(k => /addr|barrio|neigh|city|state|custom|field/i.test(k)).join(', '));
+  const direccionBase = String(body.address          ?? body.shipping_address ?? '—').trim();
+  const direccion = barrioFunnelish && !direccionBase.toLowerCase().includes(barrioFunnelish.toLowerCase())
+    ? `${direccionBase}, ${barrioFunnelish}`
+    : direccionBase;
   const ciudad       = String(body.city             ?? body.shipping_city    ?? '—').trim();
   const departamento = String(body.state            ?? body.shipping_state   ?? '—').trim();
   const correo       = String(body.optin_email      ?? 'Gerenciaquin7@gmail.com').trim() || 'Gerenciaquin7@gmail.com';

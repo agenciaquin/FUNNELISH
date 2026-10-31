@@ -48,6 +48,9 @@ function LogoTikTok() {
   );
 }
 
+/** Cuántos pedidos se pintan de entrada y en cada "Ver más". */
+const PASO_LISTA = 60;
+
 const pesos = (n: number) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
 const aNumero = (v: string) => Number(String(v ?? '').replace(/[^\d]/g, '')) || 0;
 
@@ -189,7 +192,7 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
       setConfirmar(null);
       setMenu(null);
       setDetalle(null);
-      await cargar();
+      await cargar(false);
     } finally { setTrabajando(false); }
   }
 
@@ -207,13 +210,28 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
     } finally { setCargandoDet(false); }
   }
 
-  const cargar = useCallback(async () => {
-    setCargando(true);
+  // Carga de datos.
+  //  · Al entrar o al cambiar un filtro → muestra el esqueleto (carga "visible").
+  //  · El refresco automático es SILENCIOSO: no borra la lista ni mueve el scroll,
+  //    y si los datos no cambiaron no se vuelve a pintar nada.
+  const [actualizando, setActualizando] = useState(false);
+  // La lista se pinta por partes (rápido aunque haya cientos de pedidos)
+  const [visibles, setVisibles] = useState(PASO_LISTA);
+  const [verTodosDias, setVerTodosDias] = useState(false);
+  const ultimaRespuesta = useRef<string>('');
+  const pidiendo = useRef(false);
+  const cargar = useCallback(async (silencioso = false) => {
+    if (pidiendo.current && silencioso) return;      // no encimar refrescos
+    pidiendo.current = true;
+    if (silencioso) setActualizando(true); else setCargando(true);
     try {
       const rangoQs = rango ? `desde=${rango.desde}&hasta=${rango.hasta}` : `dias=${dias}`;
       const qs = `canal=${canal}&${rangoQs}${fuente ? `&fuente=${fuente}` : ''}`;
       const res  = await fetch(`/api/pedidos/lista?${qs}`, { cache: 'no-store' });
-      const data = await res.json();
+      const texto = await res.text();
+      if (silencioso && texto === ultimaRespuesta.current) return;   // nada nuevo: no repintar
+      ultimaRespuesta.current = texto;
+      const data = JSON.parse(texto);
       setPedidos(data.pedidos ?? []);
       setResumen(data.resumen ?? { total: 0, confirmados: 0, pendientes: 0, cancelados: 0, vendido: 0, tasa: 0 });
       setPorCanal(data.porCanal ?? []);
@@ -221,16 +239,24 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
       setPorDiaApi(data.porDia ?? []);
       setComparacion(data.comparacion ?? null);
       setPromoInfo(data.promociones ?? { total: 0, confirmados: 0 });
-    } finally { setCargando(false); }
+    } catch { /* si falla un refresco, se deja lo que había */ }
+    finally { pidiendo.current = false; setCargando(false); setActualizando(false); }
   }, [canal, dias, fuente, rango]);
 
-  useEffect(() => { cargar(); }, [cargar]);
+  useEffect(() => { setVisibles(PASO_LISTA); cargar(false); }, [cargar]);
 
-  // Se refresca solo mientras tengas la pantalla abierta
+  // Refresco automático cada 60 s, silencioso, solo con la pantalla visible y
+  // sin interrumpir si estás revisando un pedido o tienes pedidos seleccionados.
+  const ocupadoRef = useRef(false);
+  ocupadoRef.current = !!detalle || seleccion.size > 0 || !!confirmar;
   useEffect(() => {
-    const t = setInterval(() => { if (document.visibilityState === 'visible') cargar(); }, 20000);
+    const t = setInterval(() => {
+      if (document.visibilityState === 'visible' && !ocupadoRef.current) cargar(true);
+    }, 60000);
     return () => clearInterval(t);
   }, [cargar]);
+
+
 
   // La API ya devuelve el subconjunto correcto según el canal (incl. Funnelish).
   const base = pedidos;
@@ -335,11 +361,11 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
           )}
           <input
             value={busca}
-            onChange={e => setBusca(e.target.value)}
+            onChange={e => { setBusca(e.target.value); setVisibles(PASO_LISTA); }}
             placeholder="Buscar nombre, teléfono…"
             className="ml-auto px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-xs w-48 focus:outline-none focus:border-[#00A89D]"
           />
-          <button onClick={cargar} title="Actualizar" className="w-8 h-8 rounded-lg text-[#00A89D] hover:bg-[#00A89D]/10">⟳</button>
+          <button onClick={() => cargar(false)} title="Actualizar" className={`w-8 h-8 rounded-lg text-[#00A89D] hover:bg-[#00A89D]/10 ${actualizando ? 'animate-spin' : ''}`}>⟳</button>
         </div>
 
         {/* Resumen — 6 indicadores con variación vs período anterior */}
@@ -448,8 +474,8 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
                 <span className="text-[#15803D] font-semibold">✅ confirmados</span> · <span className="text-[#EA580C] font-semibold">⏳ pendientes</span> · <span className="text-[#DC2626] font-semibold">✖️ cancelados</span>
               </span>
             </div>
-            <div className="space-y-2.5">
-              {porDia.map(g => {
+            <div className="space-y-2">
+              {(verTodosDias ? porDia : porDia.slice(0, 7)).map(g => {
                 const pc = g.total ? Math.round((g.conf / g.total) * 100) : 0;
                 const pp = g.total ? Math.round((g.pend / g.total) * 100) : 0;
                 const px = g.total ? Math.round((g.canc / g.total) * 100) : 0;
@@ -465,7 +491,7 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
                         <span className="ml-1.5 text-[#9A9A9A]">· {g.total} total · {pc}% conf.</span>
                       </span>
                     </div>
-                    <div className="h-2.5 rounded-full bg-[#F0F0F0] overflow-hidden flex">
+                    <div className="h-2 rounded-full bg-[#F0F0F0] overflow-hidden flex">
                       <div className="h-full bg-[#15803D]" style={{ width: `${pc}%` }} />
                       <div className="h-full bg-[#EA580C]" style={{ width: `${pp}%` }} />
                       <div className="h-full bg-[#DC2626]" style={{ width: `${px}%` }} />
@@ -474,6 +500,11 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
                 );
               })}
             </div>
+            {porDia.length > 7 && (
+              <button onClick={() => setVerTodosDias(v => !v)} className="mt-3 text-[11px] font-semibold text-[#00847A] hover:underline">
+                {verTodosDias ? '▲ Ver solo los últimos 7 días' : `▼ Ver los ${porDia.length} días`}
+              </button>
+            )}
           </div>
         )}
 
@@ -547,7 +578,7 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
               </div>
 
               <div className="divide-y divide-[#F4F4F4]">
-                {filtrados.map((p, indice) => {
+                {filtrados.slice(0, visibles).map((p, indice) => {
                   const est   = estadoDe(p);
                   const total = aNumero(p.valor);
                   const marcado = seleccion.has(p.id);
@@ -691,7 +722,7 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
                             <span className="fixed inset-0 z-10" onClick={() => setMenu(null)} />
                             {/* En las últimas filas el menú se abre hacia arriba para que no quede tapado */}
                             <span className={`absolute right-0 z-20 w-44 bg-white rounded-xl border border-[#E8E8E8] shadow-xl overflow-hidden block ${
-                              indice >= filtrados.length - 2 ? 'bottom-8' : 'top-8'
+                              indice >= Math.min(visibles, filtrados.length) - 2 ? 'bottom-8' : 'top-8'
                             }`}>
                               <button
                                 onClick={() => { setMenu(null); abrirDetalle(p); }}
@@ -720,6 +751,12 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
                   );
                 })}
               </div>
+              {filtrados.length > visibles && (
+                <button
+                  onClick={() => setVisibles(v => v + PASO_LISTA)}
+                  className="w-full py-3 text-xs font-semibold text-[#00847A] hover:bg-[#00A89D]/5 border-t border-[#F0F0F0]"
+                >▼ Ver más pedidos ({filtrados.length - visibles} restantes)</button>
+              )}
             </>
           )}
         </div>

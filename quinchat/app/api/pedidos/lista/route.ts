@@ -74,6 +74,20 @@ export async function GET(req: NextRequest) {
 
   let todos = (data ?? []) as any[];
 
+  // Consultas que no dependen de la lista: se lanzan YA, en paralelo.
+  //  · nombres de campaña de Meta: con tope de 1,5 s (si Meta está lento, la lista
+  //    sale igual con los IDs y el nombre aparece en el siguiente refresco).
+  // (Promise.resolve dispara la consulta YA: los builders de Supabase son perezosos)
+  const pFunnels = Promise.resolve(supabase.from('funnels').select('slug, nombre, producto, variantes').limit(500));
+  const pNombres = Promise.race([
+    nombresDeAnuncioMeta().catch(() => new Map<string, string>()),
+    new Promise<Map<string, string>>(r => setTimeout(() => r(new Map()), 1500)),
+  ]);
+  const pPrevio = Promise.resolve(supabase.from('clientes_funnelish')
+    .select('referencia, confirmado, estado, valor, created_at')
+    .gte('created_at', desdePrevio).lt('created_at', hastaPrevio ?? desde)
+    .limit(2000));
+
   // Clasificar cada pedido (canal + fuente) una sola vez.
   for (const p of todos) {
     p.canal  = canalDePedido(p.referencia);
@@ -136,16 +150,16 @@ export async function GET(req: NextRequest) {
     p.foto = propia.startsWith('http') ? propia : null;
   }
   try {
-    const faltan = (pedidos as any[]).some(p => !p.foto);
-    const convIds = !faltan ? [] : [...new Set(pedidos
+    const convIds = [...new Set((pedidos as any[]).filter(p => !p.foto)
       .map(p => `57${String(p.telefono ?? '').replace(/\D/g, '').slice(-10)}`)
-      .filter(id => id.length === 12))];
+      .filter(id => id.length === 12))].slice(0, 150);
     if (convIds.length > 0) {
       const { data: imgs } = await supabase
-        .from('messages').select('conversation_id, content, created_at')
+        .from('messages').select('conversation_id, content')
         .in('conversation_id', convIds)
         .eq('type', 'image').eq('role', 'assistant')
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: true })
+        .limit(1500);
       const primeraFoto = new Map<string, string>();
       for (const m of imgs ?? []) {
         const c = String((m as any).content ?? '');
@@ -163,8 +177,7 @@ export async function GET(req: NextRequest) {
 
   // ── De qué EMBUDO vino cada venta (cruzando por slug/referrer/nombre) ────────
   try {
-    const { data: funnels } = await supabase
-      .from('funnels').select('slug, nombre, producto, variantes').limit(500);
+    const { data: funnels } = await pFunnels;
     const mapa = (funnels ?? []).map((f: any) => {
       let variantes: any[] = [];
       try { variantes = Array.isArray(f.variantes) ? f.variantes : JSON.parse(f.variantes ?? '[]'); } catch { /* */ }
@@ -208,7 +221,7 @@ export async function GET(req: NextRequest) {
 
   // ── Nombre de campaña (Meta) + plataforma por pedido ────────────────────────
   try {
-    const mapaNombres = await nombresDeAnuncioMeta();
+    const mapaNombres = await pNombres;
     for (const p of pedidos as any[]) {
       // Red de seguridad: si el pedido no trae utm_campaign/source sueltos pero el
       // referrer los contiene (checkout classic de Funnelish), los rescatamos para
@@ -271,11 +284,7 @@ export async function GET(req: NextRequest) {
   // ── Comparación con el período ANTERIOR equivalente (para los % de variación) ─
   let comparacion: any = null;
   try {
-    const { data: prev } = await supabase
-      .from('clientes_funnelish')
-      .select('referencia, confirmado, estado, valor, created_at')
-      .gte('created_at', desdePrevio).lt('created_at', hastaPrevio ?? desde)
-      .limit(2000);
+    const { data: prev } = await pPrevio;
     let prevSet = (prev ?? []).map((p: any) => ({ ...p, canal: canalDePedido(p.referencia) }));
     if (canal === 'todas')            prevSet = prevSet.filter(p => p.canal !== 'promociones');
     else if (canal === 'promociones') prevSet = prevSet.filter(p => p.canal === 'promociones');
