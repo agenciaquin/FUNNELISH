@@ -380,7 +380,15 @@ export async function POST(req: NextRequest) {
       body.address2, body.address_2, body.shipping_address2, body.shipping_address_2,
       body.barrio, body.neighborhood, body.neighbourhood, body.district,
       body?.shipping?.address2, body?.customer?.address2,
+      // En el checkout de Funnelish el barrio es un CAMPO PERSONALIZADO llamado "custom"
+      // (verificado en classic.klixmant.shop/checkout-yamaha: placeholder "Barrio*").
+      typeof body.custom === 'string' ? body.custom : undefined,
     ];
+    if (body?.custom && typeof body.custom === 'object' && !Array.isArray(body.custom)) {
+      const vals = Object.entries(body.custom);
+      const conNombre = vals.find(([k]) => /barrio|neighbo/i.test(k));
+      candidatos.push(conNombre ? conNombre[1] : (vals.length === 1 ? vals[0][1] : undefined));
+    }
     for (const grupo of [body, body?.custom_fields, body?.customFields, body?.fields, body?.extra_fields]) {
       if (grupo && typeof grupo === 'object' && !Array.isArray(grupo)) {
         for (const [k, v] of Object.entries(grupo)) if (/barrio|neighbo/i.test(k)) candidatos.push(v);
