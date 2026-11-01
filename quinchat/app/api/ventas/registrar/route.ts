@@ -75,6 +75,69 @@ async function extraerDatosDelChat(supabase: any, from: string): Promise<any> {
   }
 }
 
+/**
+ * Pedido que YA existe (funnel): lee lo que el cliente escribió en el chat DESPUÉS
+ * de hacer el pedido (barrio, apto, corrección de dirección, talla…) y devuelve
+ * solo lo que agregó o corrigió. Sirve para cuando el asesor responde a mano con
+ * el bot apagado y luego marca "VENTA REALIZADA".
+ */
+async function correccionesDelChat(supabase: any, from: string, pedido: any): Promise<Record<string, string>> {
+  try {
+    const hace7d = Date.now() - 7 * 86400_000;
+    const desde  = new Date(Math.max(new Date(pedido.created_at ?? 0).getTime() || 0, hace7d)).toISOString();
+    const { data: msgs } = await supabase
+      .from('messages').select('content, role, type, created_at')
+      .eq('conversation_id', from).eq('type', 'text')
+      .gte('created_at', desde)
+      .order('created_at', { ascending: false }).limit(30);
+    const orden = (msgs ?? []).reverse()
+      .filter((m: any) => typeof m.content === 'string' && m.content.trim() && !m.content.startsWith('http'));
+    const delCliente = orden.filter((m: any) => m.role === 'user').map((m: any) => m.content.trim());
+    // Si el cliente solo confirmó ("confirmo", "sí", "ok", "gracias"), no hay nada que leer
+    const soloConfirma = (t: string) =>
+      /^(\s*(confirmo|confirmado|s[ií]|si señor|ok|okey|listo|dale|gracias|muchas gracias|perfecto|correcto|datos correctos|todo bien|est[aá] bien)[\s.!,👍🙏😊❤️]*)+$/i.test(t);
+    if (!delCliente.length || delCliente.every(soloConfirma)) return {};
+
+    const texto = orden
+      .map((m: any) => `${m.role === 'user' ? 'CLIENTE' : m.role === 'agent' ? 'ASESOR' : 'BOT'}: ${m.content.trim().slice(0, 600)}`)
+      .join('\n').slice(-5000);
+    const datosPedido =
+      `Nombre: ${pedido.nombre ?? ''}\nDirección: ${pedido.direccion ?? ''}\nCiudad: ${pedido.ciudad ?? ''}\n` +
+      `Departamento: ${pedido.departamento ?? ''}\nCorreo: ${pedido.correo ?? ''}\nTalla: ${pedido.talla ?? ''}`;
+    const sistema =
+      `Eres un asistente de despacho de una tienda colombiana. Tienes los DATOS DEL PEDIDO y el chat posterior.\n` +
+      `Devuelve SOLO un JSON con lo que el CLIENTE agregó o corrigió en el chat:\n` +
+      `{"barrio":"","complemento":"","direccion":"","ciudad":"","departamento":"","nombre":"","correo":"","talla":"","cedula":"","nota":""}\n` +
+      `- barrio: el barrio que escribió el cliente (sin la palabra "barrio").\n` +
+      `- complemento: apto, torre, casa, conjunto, interior o punto de referencia que agregó.\n` +
+      `- direccion: SOLO si el cliente dio una dirección completa distinta a la del pedido.\n` +
+      `- talla: SOLO si pidió cambiar la talla.\n` +
+      `- nota: otra indicación útil para el despacho (horario, quién recibe), corta.\n` +
+      `Si un dato ya está igual en el pedido o no aparece, déjalo en "". No inventes. Responde solo el JSON.`;
+    const resp = await chat({
+      messages: [{ role: 'user', content: `DATOS DEL PEDIDO:\n${datosPedido}\n\nCHAT DESPUÉS DEL PEDIDO:\n${texto}` }],
+      tenantId: 'klixmant',
+      systemPrompt: sistema,
+      maxTokens: 400,
+    });
+    const crudo = resp.message.trim();
+    const ini = crudo.indexOf('{'); const fin = crudo.lastIndexOf('}');
+    if (ini < 0 || fin <= ini) return {};
+    const j = JSON.parse(crudo.slice(ini, fin + 1));
+    const limpio: Record<string, string> = {};
+    for (const [k, v] of Object.entries(j ?? {})) {
+      const t = String(v ?? '').trim();
+      if (t) limpio[k] = t.slice(0, 200);
+    }
+    return limpio;
+  } catch (e: any) {
+    console.error('[Ventas] correcciones del chat fallaron:', e?.message);
+    return {};
+  }
+}
+
+const sinTildes = (t: string) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
 export async function POST(req: NextRequest) {
   try {
     const { conversationId, producto: prodOverride, talla: tallaOverride, valor: valorOverride } = await req.json();
@@ -106,7 +169,7 @@ export async function POST(req: NextRequest) {
     // Pedido más reciente no cancelado de este cliente (viene del funnel o de una venta previa)
     const { data: pedido } = await supabase
       .from('clientes_funnelish')
-      .select('id, nombre, producto, talla, direccion, ciudad, departamento, correo, valor, telefono, confirmado, abono, abono_recibido')
+      .select('id, nombre, producto, talla, direccion, ciudad, departamento, correo, valor, telefono, confirmado, abono, abono_recibido, created_at')
       .eq('telefono', tel10)
       .not('estado', 'in', '("cancelado","duplicado")')
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
@@ -175,6 +238,30 @@ export async function POST(req: NextRequest) {
     if (typeof tallaOverride === 'string' && tallaOverride.trim()) pedido.talla = tallaOverride.trim();
     if (typeof valorOverride === 'string' && valorOverride.trim()) pedido.valor = valorOverride.trim();
 
+    // Lo que el cliente escribió en el chat después del pedido (barrio, apto, correcciones)
+    const corr = await correccionesDelChat(supabase, from, pedido);
+    const cambios: string[] = [];
+    const dirAntes = String(pedido.direccion ?? '').trim();
+    let direccion = corr.direccion || dirAntes;
+    if (corr.direccion && corr.direccion !== dirAntes) cambios.push('dirección');
+    if (corr.complemento && !sinTildes(direccion).includes(sinTildes(corr.complemento))) {
+      direccion = `${direccion}, ${corr.complemento}`; cambios.push('complemento');
+    }
+    if (corr.barrio) {
+      const barrio = corr.barrio.replace(/^barrio\s+/i, '').trim();
+      if (barrio && !sinTildes(direccion).includes(sinTildes(barrio))) {
+        direccion = `${direccion}, Barrio ${barrio}`; cambios.push('barrio');
+      }
+    }
+    pedido.direccion = direccion;
+    for (const k of ['ciudad', 'departamento', 'nombre', 'correo'] as const) {
+      if (corr[k] && sinTildes(corr[k]) !== sinTildes(pedido[k] ?? '')) { pedido[k] = corr[k]; cambios.push(k); }
+    }
+    if (corr.talla && !(typeof tallaOverride === 'string' && tallaOverride.trim()) && sinTildes(corr.talla) !== sinTildes(pedido.talla ?? '')) {
+      pedido.talla = corr.talla; cambios.push('talla');
+    }
+    if (cambios.length) console.log('[Ventas] datos tomados del chat', pedido.id, cambios.join(','), '· antes:', dirAntes);
+
     await supabase.from('clientes_funnelish').update({
       confirmado: true,
       confirmado_at: new Date().toISOString(),
@@ -182,6 +269,10 @@ export async function POST(req: NextRequest) {
       producto: pedido.producto,
       talla: pedido.talla,
       valor: pedido.valor,
+      ...(cambios.length ? {
+        direccion: pedido.direccion, ciudad: pedido.ciudad, departamento: pedido.departamento,
+        nombre: pedido.nombre, correo: pedido.correo,
+      } : {}),
     }).eq('id', pedido.id);
 
     // Los pedidos que se recogen en OFICINA siempre llevan abono de $5.000. Si el
@@ -208,9 +299,12 @@ export async function POST(req: NextRequest) {
       `Ciudad: ${pedido.ciudad ?? '—'}\n` +
       `Departamento: ${pedido.departamento ?? '—'}\n` +
       `Correo: ${pedido.correo ?? '—'}\n` +
+      (corr.cedula ? `Cédula: ${corr.cedula}\n` : '') +
       `${lineaTalla(pedido.talla)}\n` +
       `Producto: ${pedido.producto ?? '—'}\n` +
-      cobro;
+      cobro +
+      (corr.nota ? `\n📝 Nota del cliente: ${corr.nota}` : '') +
+      (cambios.length ? `\n_✏️ Actualizado con el chat: ${cambios.join(', ')}_` : '');
 
     const urls = await fotosDelChat(supabase, from);
     for (const s of DESTINOS) {
