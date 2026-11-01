@@ -18,7 +18,12 @@ export const GENEROS: Record<number, string> = { 1: 'Hombre', 2: 'Dama', 3: 'Uni
 /** "Talla M" → "M", "Niño 4" → "Niño 4". */
 export const limpiarTalla = (t: unknown) => String(t ?? '').replace(/^talla\s+/i, '').trim();
 
-const esPersonalizado = (nombre: string) => /^personalizado\b/i.test(nombre.trim());
+/**
+ * Solo se excluyen los catálogos "PERSONALIZADO ###" (con número, incluso mal escritos:
+ * PERSONALZIADO 464, PRSONALIZADO 409). La bandera `personalizado` de Klixmsoft NO se usa:
+ * marca diseños reales que sí se venden (Royal Enfield, Benelli, Colombia…).
+ */
+export const esPersonalizado = (nombre: string) => /^p\w*s\w*n\w*l\w*do\s*#?\s*\d+\s*$/i.test(nombre.trim());
 
 function huellaDe(o: unknown): string {
   const s = JSON.stringify(o);
@@ -66,7 +71,7 @@ export async function sincronizarCatalogo(origen: 'cron' | 'boton'): Promise<Res
     const idCat = Number(c?.id);
     const nombreCat = String(c?.nombre_catalogo ?? '').trim();
     if (!idCat || !nombreCat) continue;
-    const personalizado = c?.personalizado === true || esPersonalizado(nombreCat);
+    const personalizado = esPersonalizado(nombreCat);
     for (const it of c?.catalogo_productos_items ?? []) {
       const idItem = Number(it?.id);
       if (!idItem) continue;
