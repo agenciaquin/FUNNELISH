@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { exigirSesion } from '@/lib/ventas-vendedores/auth';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { PESTANAS, ESTADOS_CONTABLES, type Pestana } from '@/lib/ventas-vendedores/estados';
 import { sinTildes } from '@/lib/ventas-vendedores/catalogo';
@@ -7,6 +8,8 @@ export const dynamic = 'force-dynamic';
 
 /** Lista de la Cola de Preventas del módulo Ventas Vendedores (filtros + contadores + indicadores). */
 export async function GET(req: NextRequest) {
+  const auth = await exigirSesion();
+  if (auth.error) return auth.error;
   const sp = req.nextUrl.searchParams;
   const pestana = (sp.get('pestana') || 'todas') as Pestana;
   const q = sinTildes(sp.get('q') || '');

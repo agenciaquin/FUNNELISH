@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { exigirSesion } from '@/lib/ventas-vendedores/auth';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { createServerSupabaseClient } from '@/lib/supabase';
@@ -9,6 +10,8 @@ export const dynamic = 'force-dynamic';
 
 /** Detalle de una preventa: venta + prendas + historial + fotos del vendedor. */
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await exigirSesion();
+  if (auth.error) return auth.error;
   const { id } = await params;
   const supabase = createServerSupabaseClient();
   const [v, it, ev] = await Promise.all([
@@ -32,6 +35,8 @@ const CAMPOS = ['cliente_nombre', 'cliente_celular', 'cliente_identificacion', '
 
 /** Corrección autorizada desde el panel (solo si aún no está en Effi). Deja motivo y usuario. */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await exigirSesion();
+  if (auth.error) return auth.error;
   const session = await getServerSession(authOptions);
   const quien = session?.user?.name || session?.user?.email || 'panel';
   const { id } = await params;

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { exigirSesion } from '@/lib/ventas-vendedores/auth';
 import { sincronizarCatalogo, ultimaSync } from '@/lib/ventas-vendedores/catalogo';
 import { createServerSupabaseClient } from '@/lib/supabase';
 
@@ -7,6 +8,8 @@ export const maxDuration = 120;
 
 /** Estado de la copia del catálogo. */
 export async function GET() {
+  const auth = await exigirSesion();
+  if (auth.error) return auth.error;
   const supabase = createServerSupabaseClient();
   const [s, prod, vars] = await Promise.all([
     ultimaSync(),
@@ -18,6 +21,8 @@ export async function GET() {
 
 /** Botón «Actualizar catálogo». */
 export async function POST() {
+  const auth = await exigirSesion();
+  if (auth.error) return auth.error;
   const r = await sincronizarCatalogo('boton');
   return NextResponse.json(r, { status: r.ok ? 200 : 502 });
 }

@@ -120,6 +120,7 @@ export interface Candidato {
 
 // Copia del catálogo en memoria (≈1.800 productos): se recarga cada 10 min.
 let cacheCat: { filas: any[]; leido: number } | null = null;
+let intentoAuto = false;
 async function catalogoActivo(): Promise<any[]> {
   if (cacheCat && Date.now() - cacheCat.leido < 600_000) return cacheCat.filas;
   const supabase = createServerSupabaseClient();
@@ -130,6 +131,13 @@ async function catalogoActivo(): Promise<any[]> {
       .eq('activo', true).eq('personalizado', false).range(desde, desde + 999);
     filas.push(...(data ?? []));
     if (!data || data.length < 1000) break;
+  }
+  // Copia vacía (nunca se sincronizó): se llena una vez aquí mismo
+  if (!filas.length && !intentoAuto) {
+    intentoAuto = true;
+    const { sincronizarCatalogo } = await import('./catalogo');
+    const r = await sincronizarCatalogo('cron');
+    if (r.ok) return catalogoActivo();
   }
   cacheCat = { filas, leido: Date.now() };
   return filas;
