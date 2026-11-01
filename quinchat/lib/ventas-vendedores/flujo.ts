@@ -92,6 +92,18 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
     } catch { /* ignorar */ }
   };
 
+  // Saludo suelto sin venta abierta: no se abre venta; se le dice que mande la venta directo
+  const esSaludo = /^\s*(hola|holi|buenas|buenos dias|buenos días|buenas tardes|buenas noches|hey|ey|quino|hola quino|buen dia|buen día)[\s.!,👋🙌😊]*$/i.test(textoLote);
+  if (!abierta && !hayFoto && esSaludo) {
+    try {
+      await supabase.from('messages').insert(entrantes.map(e => ({
+        id: `vv-${e.id}`, conversation_id: from, content: e.texto || `[${e.tipo}]`, role: 'user', type: 'text', whatsapp_id: e.id, created_at: ahoraISO(),
+      })));
+    } catch { /* duplicado de Meta */ }
+    await responder(`👋 ¡Hola${vend ? ` ${vend.nombre.split(' ')[0]}` : ''}! Estoy listo. Mándame la venta *directo* (foto de la prenda + datos del cliente) y la organizo de una. No hace falta saludar 😉`);
+    return true;
+  }
+
   // ── 1) Guardar los mensajes (deduplicando reenvíos de Meta) y las fotos ────────
   const nuevos: { texto: string; foto: string | null; fotoB64: { base64: string; mimeType: string } | null; descPromesa: Promise<string> | null }[] = [];
   for (const e of entrantes) {
@@ -202,7 +214,7 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
   if (venta.estado === 'esperando_confirmacion' && soloConfirma) {
     await supabase.from('vv_ventas').update({ estado: 'confirmada', confirmado_at: ahoraISO(), actualizado_at: ahoraISO() }).eq('id', venta.id);
     await supabase.from('vv_eventos').insert({ venta_id: venta.id, tipo: 'confirmada', quien: 'vendedor', detalle: { texto: textoNuevo } });
-    await responder(`✅ *Venta ${venta.codigo} registrada.*\nQueda en la cola de preventas para revisión y subida a Effi. Te aviso si falta algo. ¡Gracias${vend ? `, ${vend.nombre.split(' ')[0]}` : ''}! 🙌`);
+    await responder(`✅ *Venta ${venta.codigo} registrada.*\nQueda en la cola de preventas para revisión y subida a Effi. ¡Gracias${vend ? `, ${vend.nombre.split(' ')[0]}` : ''}! 🙌\n\n📲 *Listo para la siguiente:* mándame la foto con los datos del cliente y la organizo de una, sin saludar.`);
     return true;
   }
 
@@ -241,10 +253,12 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
     await supabase.from('vv_eventos').insert(descNuevas.map(d => ({ venta_id: venta.id, tipo: 'foto', quien: 'whatsapp', detalle: d })));
   }
   const evFotos = [...(evPrevios ?? []), ...descNuevas.map(d => ({ detalle: d }))];
-  if (!v) {
-    await responder('⚠️ No alcancé a organizar la venta. Mándame de nuevo los datos del cliente y la prenda, por favor.');
+  const sinDatos = !v || (!v.cliente_nombre && !v.cliente_celular && !v.direccion && !v.prendas.length);
+  if (sinDatos) {
+    await responder('📋 Mándame la venta con la *foto de la prenda* y los *datos del cliente* (nombre, celular, dirección, ciudad, talla y valor) y la organizo de una.');
     return true;
   }
+  if (!v) return true;
 
   const campos: any = { actualizado_at: ahoraISO() };
   for (const k of ['cliente_nombre', 'cliente_celular', 'cliente_identificacion', 'cliente_correo', 'departamento', 'municipio', 'direccion', 'barrio', 'complemento', 'referencia_dir', 'tipo_pago', 'observaciones'] as const) {
