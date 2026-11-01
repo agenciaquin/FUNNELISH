@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { PildoraEstado, pesos, fechaCorta, type VentaVV, type ItemVV } from './comun';
 import { ETIQUETA_ESTADO } from '@/lib/ventas-vendedores/estados';
 
@@ -176,6 +176,7 @@ export default function DetalleVenta({ id, onCerrar, onCambio, onChat }: {
                           {it.estado !== 'ok' && <p className="text-[11.5px] font-bold text-[#B25E00] mt-0.5">⚠️ {it.estado === 'ambiguo' ? 'Producto por elegir' : it.estado === 'sin_variante' ? 'Variante no encontrada' : it.estado === 'sin_identificar' ? 'No está en el catálogo' : it.estado}</p>}
                         </div>
                       </div>
+                      {it.id_variante ? <CodigosEffi it={it} /> : null}
                       <div className="grid grid-cols-4 gap-2 mt-3">
                         {editable && colores.length ? (
                           <label className="text-[11px] text-[#5E5E5A]">Color
@@ -284,6 +285,56 @@ export default function DetalleVenta({ id, onCerrar, onCambio, onChat }: {
           <img src={verFoto} alt="" className="max-w-full max-h-full rounded-xl" />
         </div>
       )}
+    </div>
+  );
+}
+
+/** Tarjeta de códigos para Effi (igual a la de Klixmsoft): talla/color, ID de variante, SKU y referencia, con copiar. */
+function CodigosEffi({ it }: { it: ItemVV }) {
+  const [copiado, setCopiado] = useState<string | null>(null);
+  const copiar = async (txt: string, clave: string) => {
+    try { await navigator.clipboard.writeText(txt); setCopiado(clave); setTimeout(() => setCopiado(null), 1400); } catch { /* sin portapapeles */ }
+  };
+  const ref = String(it.referencia ?? '').replace(/\s+/g, '');
+  const talla = String(it.talla ?? '');
+  const tituloTalla = /^niñ/i.test(talla) ? talla : `Talla ${talla}`;
+  const filas: [string, string, string][] = [
+    ['ID variante', `#${it.id_variante}`, String(it.id_variante)],
+    ['SKU', it.sku || '—', it.sku || ''],
+    ['Código referencia', ref || '—', ref],
+    ['Referencia', it.referencia || '—', it.referencia || ''],
+    ['Producto · Catálogo', `${it.id_item ?? '—'} · ${it.id_catalogo ?? '—'}`, ''],
+  ];
+  return (
+    <div className="mt-3 rounded-2xl overflow-hidden border border-[#E7E6E1]">
+      <div className="bg-gradient-to-b from-[#1E293B] to-[#334155] text-white text-center py-2">
+        <p className="text-[14px] font-extrabold leading-tight">{tituloTalla}</p>
+        <p className="text-[10px] font-bold tracking-wide uppercase opacity-80">{it.color || '—'} · Códigos para Effi</p>
+      </div>
+      <div className="p-3 text-center">
+        <p className="text-[11px] font-bold text-[#8B8B86]">ID</p>
+        <p className="text-[30px] font-extrabold leading-none text-[#334155]">#{it.id_variante}</p>
+        <p className="text-[11px] font-bold text-[#8B8B86] mt-2">SKU</p>
+        <span className="inline-block text-[11px] font-bold px-2 py-0.5 rounded-md bg-[#FEF3C7] text-[#92400E] font-mono">{it.sku || '—'}</span>
+        <div className="flex gap-2 justify-center flex-wrap mt-3">
+          <button onClick={() => copiar(String(it.id_variante), 'id')} className="h-9 px-3 rounded-xl bg-[#141414] text-white text-[12.5px] font-bold">
+            {copiado === 'id' ? '✓ Copiado' : `⧉ Copiar #${it.id_variante}`}
+          </button>
+          {it.sku && (
+            <button onClick={() => copiar(it.sku!, 'sku')} className="h-9 px-3 rounded-xl bg-[#F59E0B] text-white text-[11.5px] font-bold">
+              {copiado === 'sku' ? '✓ Copiado' : `⧉ ${it.sku}`}
+            </button>
+          )}
+          {ref && (
+            <button onClick={() => copiar(ref, 'ref')} className="h-9 px-3 rounded-xl border border-[#E7E6E1] text-[12px] font-bold">
+              {copiado === 'ref' ? '✓ Copiado' : `⧉ Ref. ${ref}`}
+            </button>
+          )}
+        </div>
+        <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-left text-[11.5px]">
+          {filas.map(([l, v]) => (<Fragment key={l}><dt className="text-[#8B8B86]">{l}</dt><dd className="font-mono text-[#141414] truncate">{v}</dd></Fragment>))}
+        </dl>
+      </div>
     </div>
   );
 }
