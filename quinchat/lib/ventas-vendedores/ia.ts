@@ -39,6 +39,8 @@ const SISTEMA_INTERPRETAR =
   `- cliente_identificacion: SOLO si el vendedor escribió una cédula/NIT aparte; nunca copies el celular.\n` +
   `- departamento: si el municipio es una ciudad colombiana inequívoca puedes poner su departamento; si hay duda, "".\n` +
   `- complemento: apto, torre, casa, interior, conjunto. referencia_dir: indicaciones para llegar.\n` +
+  `- barrio: si la dirección o la ciudad traen el barrio (p. ej. "Diagonal 6 6-33 conjunto X torre 16 apto 402, Briceño" → barrio "Briceño"; "Cll 15 sur #14-43, Restrepo" → "Restrepo"), sácalo a barrio. Un mensaje corto que solo dice un nombre de lugar (p. ej. "briceño") es el BARRIO, nunca el nombre del cliente.\n` +
+  `- Los mensajes reenviados con fichas ("VENTA CONFIRMADA", "Nombre:", "Talla:", "Producto:", "Valor:") son datos de la venta: úsalos igual.\n` +
   `- prendas: una por cada producto distinto. descripcion = cómo lo nombró el vendedor (marca, equipo, diseño, tipo de prenda). ` +
   `talla tal cual (S, M, L, XL, 2XL, 4, 6…). genero: "Hombre", "Dama" o "Niño" si lo dijo, si no "". cantidad por defecto 1.\n` +
   `- total: el valor total que dijo el vendedor, en pesos, solo número (220000). precio: valor unitario si lo dijo.\n` +

@@ -153,6 +153,7 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
     const { data: creada, error } = await supabase.from('vv_ventas').insert({
       codigo: codigoNuevo(), vendedor_tel: from, vendedor_nombre: vend?.nombre ?? (esPrueba ? 'Prueba' : null),
       estado: 'recibida', conversacion_id: from, es_prueba: esPrueba,
+      creado_at: inicioLote, // así los mensajes que abrieron la venta quedan DENTRO de ella
     }).select('*').single();
     if (error) {
       console.error('[VV] no se pudo crear la venta:', error.message);
