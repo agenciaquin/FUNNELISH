@@ -124,6 +124,15 @@ Antes se publicaba a mano y por eso llegó a ir 21 commits por detrás.
 Marcha atrás: Vercel guarda 20 despliegues de producción; se vuelve a cualquiera
 desde el panel sin reconstruir.
 
+### 6 · Módulo «Ventas Vendedores» es una PRUEBA con interruptor
+
+Todo junto y aislado: `quinchat/lib/ventas-vendedores/`, `quinchat/app/api/ventas-vendedores/`,
+`quinchat/app/api/cron/vv-catalogo/`, `quinchat/components/panel/ventas-vendedores/` y tablas `vv_*`.
+Único punto de entrada en el webhook: el bloque «MÓDULO VENTAS VENDEDORES» antes de `esVendedor`.
+**Apagar:** `ajustes_bot` clave `ventas_vendedores` → `activo: false` (o botón Apagar en ⚙️ Ajustes del panel).
+Cuando el dueño diga «apaga esta parte», se apaga y se deja apagado; no tocar nada más de QuinChat.
+Decisión del dueño (01-nov-2026): QuinChat sube a Effi directo. Hoy en **simulación**: falta la doc/credenciales de la API de Effi.
+
 ### 5 · No todas las subidas comprimen
 
 Comprimen: `funnels/imagen`, `plantillas-wa/imagen`, `catalogos/upload-imagen`.

@@ -680,6 +680,24 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ── MÓDULO VENTAS VENDEDORES (prueba) ──────────────────────────────────────
+  // Aislado en lib/ventas-vendedores y con interruptor (ajustes_bot.ventas_vendedores).
+  // Apagado → ni se carga. Solo atiende números habilitados; si el mensaje no es
+  // una venta (p. ej. el reporte "5"), devuelve false y sigue el flujo de siempre.
+  {
+    const remite = value.messages[0]?.from as string | undefined;
+    if (remite) {
+      try {
+        const { moduloAtiende } = await import('@/lib/ventas-vendedores/config');
+        const m = await moduloAtiende(remite);
+        if (m.si) {
+          const { atenderModuloVV } = await import('@/lib/ventas-vendedores/flujo');
+          if (await atenderModuloVV(supabase, value, remite, m.esPrueba)) return NextResponse.json({ status: 'ok' });
+        }
+      } catch (e) { console.error('[VV] módulo ventas vendedores:', e); }
+    }
+  }
+
   // ── ¿Es un VENDEDOR del equipo? ─────────────────────────────────────────────
   // Estos números NO son clientes: el bot es su SUPERVISOR. No se les vende; se
   // registra cuántas ventas reportan y se responde motivándolos.
