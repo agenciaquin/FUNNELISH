@@ -30,7 +30,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ venta: v.data, items: it.data ?? [], eventos: ev.data ?? [], opciones });
 }
 
-const CAMPOS = ['cliente_nombre', 'cliente_celular', 'cliente_identificacion', 'departamento', 'municipio', 'direccion', 'barrio',
+const CAMPOS = ['cliente_nombre', 'cliente_celular', 'cliente_identificacion', 'cliente_correo', 'departamento', 'municipio', 'direccion', 'barrio',
   'complemento', 'referencia_dir', 'transportadora', 'tipo_pago', 'total', 'abono', 'observaciones'] as const;
 
 /** Corrección autorizada desde el panel (solo si aún no está en Effi). Deja motivo y usuario. */

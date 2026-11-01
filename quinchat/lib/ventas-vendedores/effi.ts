@@ -37,6 +37,7 @@ export function armarSolicitud(venta: any, items: any[]) {
     idempotencia: venta.codigo,
     cliente: {
       nombre: venta.cliente_nombre, celular: venta.cliente_celular, identificacion: venta.cliente_identificacion || null,
+      correo: venta.cliente_correo || 'gerencia@klixmant.com',
       departamento: venta.departamento, municipio: venta.municipio, direccion: venta.direccion,
       barrio: venta.barrio || null, complemento: venta.complemento || null, referencia: venta.referencia_dir || null,
     },

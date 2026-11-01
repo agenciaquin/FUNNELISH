@@ -10,7 +10,7 @@ export interface ItemVV {
 }
 export interface VentaVV {
   id: string; codigo: string; vendedor_tel: string; vendedor_nombre: string | null; estado: string;
-  cliente_nombre: string | null; cliente_celular: string | null; cliente_identificacion: string | null;
+  cliente_nombre: string | null; cliente_celular: string | null; cliente_identificacion: string | null; cliente_correo: string | null;
   departamento: string | null; municipio: string | null; direccion: string | null; barrio: string | null;
   complemento: string | null; referencia_dir: string | null; transportadora: string | null; tipo_pago: string | null;
   total: number | null; abono: number | null; observaciones: string | null; faltantes: string[]; motivo_revision: string | null;

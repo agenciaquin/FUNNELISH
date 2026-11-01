@@ -2,6 +2,7 @@ import { sendTextMessage, sendImageByUrl, descargarWhatsAppMedia } from '@/lib/w
 import { vendedorDe } from '@/lib/vendedores';
 import { transcribirAudio } from '@/lib/transcribir';
 import { sinTildes } from './catalogo';
+import { enviarBotones } from './wa';
 import { ESTADOS_ABIERTOS, type EstadoVV } from './estados';
 import {
   interpretarVenta, describirFoto, buscarCandidatos, elegirConFoto, resolverVariante,
@@ -18,6 +19,8 @@ import {
 
 const money = (n: number | null | undefined) => (n ? `$${Number(n).toLocaleString('es-CO')}` : '—');
 const dormir = (ms: number) => new Promise(r => setTimeout(r, ms));
+/** Correo que se usa cuando el vendedor no manda uno (igual que en Klixmsoft). */
+export const CORREO_DEFECTO = 'gerencia@klixmant.com';
 const NUMS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'];
 
 function codigoNuevo(): string {
@@ -188,6 +191,13 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
     return true;
   }
 
+  // "No" a la confirmación: se pide la corrección y la venta sigue abierta
+  if (venta.estado === 'esperando_confirmacion' && /^\s*(no|nop|incorrecto|esta mal|está mal)[\s.!]*$/i.test(textoNuevo)) {
+    await supabase.from('vv_eventos').insert({ venta_id: venta.id, tipo: 'rechazo_resumen', quien: 'vendedor', detalle: { texto: textoNuevo } });
+    await responder('✏️ Listo. Escríbeme *solo el dato que hay que corregir* (por ejemplo: "talla XL" o "dirección Calle 2 # 3-51") y te mando el resumen de nuevo.');
+    return true;
+  }
+
   // Respuesta con número a una lista de opciones
   if (venta.estado === 'ambigua' && /^\s*[1-6]\s*$/.test(textoNuevo)) {
     const { data: amb } = await supabase.from('vv_items').select('*').eq('venta_id', venta.id).eq('estado', 'ambiguo').order('id').limit(1).maybeSingle();
@@ -216,7 +226,7 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
   }
 
   const campos: any = { actualizado_at: ahoraISO() };
-  for (const k of ['cliente_nombre', 'cliente_celular', 'cliente_identificacion', 'departamento', 'municipio', 'direccion', 'barrio', 'complemento', 'referencia_dir', 'tipo_pago', 'observaciones'] as const) {
+  for (const k of ['cliente_nombre', 'cliente_celular', 'cliente_identificacion', 'cliente_correo', 'departamento', 'municipio', 'direccion', 'barrio', 'complemento', 'referencia_dir', 'tipo_pago', 'observaciones'] as const) {
     if (v[k]) campos[k] = v[k];
   }
   if (v.total) campos.total = v.total;
@@ -346,22 +356,44 @@ async function evaluarYResponder(
   }
 
   await supabase.from('vv_ventas').update({ estado: 'esperando_confirmacion' as EstadoVV, faltantes: [], actualizado_at: new Date().toISOString() }).eq('id', ventaId);
-  const lineasProd = its.map((it: any) =>
-    `*${it.catalogo}*\nRef: ${it.referencia ?? '—'} · ${it.genero || 'Hombre'}\nTalla: ${it.talla} · Color: ${it.color}\nCantidad: ${it.cantidad}${it.precio ? ` · ${money(it.precio)} c/u` : ''}\nSKU: ${it.sku ?? '—'} · Variante: ${it.id_variante}`,
-  ).join('\n\n');
+  const refCorta = (r: string | null) => String(r ?? '').replace(/\s+/g, '') || '—';
+  const total = Number(venta.total) || 0;
+  const abono = Number(venta.abono) || 0;
+  const pago = venta.tipo_pago === 'contraentrega' || !venta.tipo_pago
+    ? (abono ? `Contraentrega con abono de ${money(abono)} (cobrar ${money(total - abono)})` : `Contraentrega total (${money(total)})`)
+    : `${venta.tipo_pago} (${money(total)})`;
   const resumen =
-    `✅ *VENTA ORGANIZADA* (${venta.codigo})\n\n` +
-    `*CLIENTE*\nNombre: ${venta.cliente_nombre}\nCelular: ${venta.cliente_celular}\n` +
-    (venta.cliente_identificacion ? `Identificación: ${venta.cliente_identificacion}\n` : '') +
-    `Ciudad: ${venta.municipio} (${venta.departamento})\nBarrio: ${venta.barrio}\nDirección: ${venta.direccion}` +
-    (venta.complemento ? `, ${venta.complemento}` : '') + (venta.referencia_dir ? `\nIndicaciones: ${venta.referencia_dir}` : '') +
-    `\n\n*PRENDAS*\n${lineasProd}\n\n*TOTAL: ${money(venta.total)}* — ${venta.tipo_pago === 'contraentrega' ? 'pago contra entrega' : venta.tipo_pago}` +
-    (venta.abono ? `\nAbono: ${money(venta.abono)}` : '') +
-    `\n\n¿Todo correcto? Responde *CONFIRMO*.\nSi algo está mal, escríbeme la corrección. Para anularla: *CANCELAR*.`;
-  const foto = its.find((i: any) => i.foto_oficial)?.foto_oficial;
-  if (foto && resumen.length <= 1000) await enviarFoto(foto, resumen);
-  else {
-    if (foto) await enviarFoto(foto, its[0]?.catalogo ?? '');
-    await responder(resumen);
+    `✅ Aquí tienes el resumen completo de la venta *${venta.codigo}*.\n\n` +
+    `_Datos del cliente:_\n` +
+    `• Nombre: ${venta.cliente_nombre}\n` +
+    `• Celular: ${venta.cliente_celular}\n` +
+    `• WhatsApp: ${venta.cliente_whatsapp === false ? 'No' : 'Sí'}\n` +
+    `• Cédula: ${venta.cliente_identificacion || '(No registra - se identifica con celular)'}\n` +
+    `• Correo: ${venta.cliente_correo || CORREO_DEFECTO}\n` +
+    `• Departamento: ${String(venta.departamento ?? '').toUpperCase()}\n` +
+    `• Municipio: ${venta.municipio}\n` +
+    `• Localidad: ${venta.barrio || ''}\n` +
+    `• Dirección: ${venta.direccion}\n` +
+    `• Complemento: ${venta.complemento || ''}\n` +
+    `• Referencia: ${venta.referencia_dir || (venta.barrio ? `Barrio ${venta.barrio}` : '')}\n\n` +
+    `_Datos de producto:_\n` +
+    its.map((it: any) =>
+      `• Catálogo: ${it.catalogo} | Referencia: ${refCorta(it.referencia)} | Género: ${it.genero || 'Hombre'} | Talla: ${it.talla} | Color: ${it.color} | ` +
+      `Cantidad: ${it.cantidad} | Valor unitario: ${money(it.precio)} | ID variante: ${it.id_variante}`).join('\n') +
+    `\n\n_Forma de pago:_\n• ${pago}`;
+  await responder(resumen);
+  const wamid = await enviarBotones(venta.vendedor_tel, '¿Confirmas que los datos de la venta son correctos?', [
+    { id: `vv-si-${venta.id}`, titulo: 'Sí' }, { id: `vv-no-${venta.id}`, titulo: 'No' },
+  ]);
+  try {
+    await supabase.from('messages').insert({
+      id: `vvq-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, conversation_id: venta.vendedor_tel,
+      content: '¿Confirmas que los datos de la venta son correctos? [Sí] [No]', role: 'assistant', type: 'text',
+      whatsapp_id: wamid, created_at: new Date().toISOString(),
+    });
+  } catch { /* ignorar */ }
+  for (const it of its) {
+    const foto = it.foto_oficial;
+    if (foto) await enviarFoto(foto, `${it.catalogo} · ${it.color} · Talla ${it.talla}${it.cantidad > 1 ? ` · x${it.cantidad}` : ''}`);
   }
 }

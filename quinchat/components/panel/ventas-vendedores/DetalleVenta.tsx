@@ -137,6 +137,7 @@ export default function DetalleVenta({ id, onCerrar, onCambio, onChat }: {
                 <Campo full l="Nombre del cliente" v={v.cliente_nombre} k="cliente_nombre" editable={editable} onCambio={(k, x) => setCampos(c => ({ ...c, [k]: x }))} />
                 <Campo l="Celular" v={v.cliente_celular} k="cliente_celular" editable={editable} mono onCambio={(k, x) => setCampos(c => ({ ...c, [k]: x }))} />
                 <Campo l="Identificación" v={v.cliente_identificacion} k="cliente_identificacion" editable={editable} mono onCambio={(k, x) => setCampos(c => ({ ...c, [k]: x }))} />
+                <Campo full l="Correo (vacío = gerencia@klixmant.com)" v={v.cliente_correo} k="cliente_correo" editable={editable} onCambio={(k, x) => setCampos(c => ({ ...c, [k]: x }))} />
               </div>
 
               {SECCION('📍', 'Dirección')}

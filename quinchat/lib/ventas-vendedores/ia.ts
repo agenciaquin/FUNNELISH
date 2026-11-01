@@ -18,7 +18,7 @@ function extraerJSON(t: string): any {
 
 export interface PrendaTexto { descripcion: string; color: string; talla: string; genero: string; cantidad: number; precio: number | null }
 export interface VentaTexto {
-  cliente_nombre: string; cliente_celular: string; cliente_identificacion: string;
+  cliente_nombre: string; cliente_celular: string; cliente_identificacion: string; cliente_correo: string;
   departamento: string; municipio: string; direccion: string; barrio: string;
   complemento: string; referencia_dir: string; tipo_pago: string;
   total: number | null; abono: number | null; observaciones: string;
@@ -29,7 +29,7 @@ const SISTEMA_INTERPRETAR =
   `Eres el asistente que organiza ventas de una tienda colombiana de buzos y chaquetas (Klixmant). ` +
   `Un VENDEDOR te manda por WhatsApp los datos de una venta, desordenados y en varios mensajes, a veces con correcciones. ` +
   `Devuelve SOLO un JSON con esta forma:\n` +
-  `{"cliente_nombre":"","cliente_celular":"","cliente_identificacion":"","departamento":"","municipio":"","direccion":"","barrio":"",` +
+  `{"cliente_nombre":"","cliente_celular":"","cliente_identificacion":"","cliente_correo":"","departamento":"","municipio":"","direccion":"","barrio":"",` +
   `"complemento":"","referencia_dir":"","tipo_pago":"","total":null,"abono":null,"observaciones":"",` +
   `"prendas":[{"descripcion":"","color":"","talla":"","genero":"","cantidad":1,"precio":null}]}\n` +
   `REGLAS:\n` +
@@ -59,6 +59,7 @@ export async function interpretarVenta(textos: string[], descripcionFotos: strin
       cliente_nombre: s(j.cliente_nombre),
       cliente_celular: s(j.cliente_celular).replace(/\D/g, '').slice(-10),
       cliente_identificacion: s(j.cliente_identificacion).replace(/[^\dA-Za-z-]/g, ''),
+      cliente_correo: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s(j.cliente_correo)) ? s(j.cliente_correo).toLowerCase() : '',
       departamento: s(j.departamento), municipio: s(j.municipio), direccion: s(j.direccion), barrio: s(j.barrio),
       complemento: s(j.complemento), referencia_dir: s(j.referencia_dir),
       tipo_pago: s(j.tipo_pago) || 'contraentrega',
