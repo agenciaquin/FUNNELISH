@@ -22,7 +22,10 @@ export default function AjustesVV({ onCerrar }: { onCerrar: () => void }) {
   const guardar = async (parcial: Record<string, unknown>) => {
     const r = await fetch('/api/ventas-vendedores/ajustes', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(parcial) });
     const j = await r.json();
-    setA(j.ajustes); setMsg('Guardado.');
+    setA(j.ajustes);
+    const lista = (j.ajustes?.numeros_prueba ?? []).map((n: string) => n.replace(/^57/, ''));
+    setNums(lista.join(', '));
+    setMsg(`Guardado ✓ · Módulo ${j.ajustes?.activo ? 'ENCENDIDO' : 'apagado'} · Números de prueba: ${lista.length ? lista.join(', ') : 'ninguno'}`);
   };
   const actualizarCatalogo = async () => {
     setSync('corriendo'); setMsg('');
@@ -60,6 +63,11 @@ export default function AjustesVV({ onCerrar }: { onCerrar: () => void }) {
                 <input value={nums} onChange={e => setNums(e.target.value)} placeholder="3001234567, 3109876543" className="flex-1 h-10 px-3 rounded-xl border border-[#E7E6E1] font-mono" />
                 <button onClick={() => guardar({ numeros_prueba: nums.split(/[,\s]+/).map(n => n.replace(/\D/g, '')).filter(n => n.length >= 10).map(n => `57${n.slice(-10)}`) })} className="h-10 px-3 rounded-xl bg-[#141414] text-white font-bold">Guardar</button>
               </div>
+              {a.numeros_prueba.length > 0 && (
+                <div className="flex gap-1.5 flex-wrap mt-2">
+                  {a.numeros_prueba.map(n => <span key={n} className="text-[11.5px] font-mono font-semibold px-2 py-0.5 rounded-full bg-[#E0F3E8] text-[#14804A]">✓ {n.replace(/^57/, '')}</span>)}
+                </div>
+              )}
             </label>
 
             <label className="flex items-start gap-2 cursor-pointer">
