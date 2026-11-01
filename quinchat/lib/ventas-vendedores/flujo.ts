@@ -105,6 +105,7 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
   }
 
   // ── 1) Guardar los mensajes (deduplicando reenvíos de Meta) y las fotos ────────
+  const inicioLote = new Date(Date.now() - 1000).toISOString(); // los mensajes de este lote se guardan ANTES de crear la venta
   const nuevos: { texto: string; foto: string | null; fotoB64: { base64: string; mimeType: string } | null; descPromesa: Promise<string> | null }[] = [];
   for (const e of entrantes) {
     let foto: string | null = null;
@@ -241,7 +242,7 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
   // ── 5) Interpretar TODO lo que el vendedor ha escrito en esta venta ────────────
   const { data: msgs } = await supabase.from('messages').select('content, type, created_at')
     .eq('conversation_id', from).eq('role', 'user').like('id', 'vv-%').eq('type', 'text')
-    .gte('created_at', venta.creado_at).order('created_at', { ascending: true }).limit(60);
+    .gte('created_at', venta.creado_at < inicioLote ? venta.creado_at : inicioLote).order('created_at', { ascending: true }).limit(60);
   const textos = (msgs ?? []).map((m: any) => String(m.content ?? '')).filter((t: string) => t && !t.startsWith('[') && !/^\s*[1-6]\s*$/.test(t));
   const { data: evPrevios } = await supabase.from('vv_eventos').select('detalle').eq('venta_id', venta.id).eq('tipo', 'foto').order('creado_at');
   // Interpretar el texto y describir las fotos nuevas AL MISMO TIEMPO (ahorra varios segundos)
