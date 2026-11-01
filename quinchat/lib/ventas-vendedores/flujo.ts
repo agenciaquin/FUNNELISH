@@ -60,8 +60,10 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
     .order('creado_at', { ascending: false }).limit(1).maybeSingle();
 
   const esNumeroSuelto = /^\s*\d{1,2}\s*$/.test(textoLote);
-  if (!abierta && !esPrueba && !hayFoto && !pareceVenta(textoLote)) return false; // reporte del check-in → flujo de siempre
-  if (esNumeroSuelto && !hayFoto && !esPrueba && (!abierta || abierta.estado !== 'ambigua')) return false; // "5" = reporte de ventas
+  // Un vendedor del equipo (aunque esté como número de prueba) sigue reportando su número de ventas.
+  const soloPrueba = esPrueba && !vendedorDe(from);
+  if (!abierta && !soloPrueba && !hayFoto && !pareceVenta(textoLote)) return false; // reporte del check-in → flujo de siempre
+  if (esNumeroSuelto && !hayFoto && !soloPrueba && (!abierta || abierta.estado !== 'ambigua')) return false; // "5" = reporte de ventas
 
   const vend = vendedorDe(from);
   const ahoraISO = () => new Date().toISOString();
