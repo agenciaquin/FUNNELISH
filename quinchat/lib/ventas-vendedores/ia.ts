@@ -118,7 +118,7 @@ const generoId = (g: string) => {
 
 export interface Candidato {
   id_item: number; id_catalogo: number; catalogo: string; nombre: string | null; referencia: string | null;
-  tipo: string | null; genero_id: number | null; foto_card: string | null; foto_main: string | null;
+  tipo: string | null; genero_id: number | null; foto_card: string | null; foto_main: string | null; foto_thumb?: string | null;
   colores: string[]; tallas: string[]; puntaje: number;
 }
 
@@ -131,7 +131,7 @@ async function catalogoActivo(): Promise<any[]> {
   const filas: any[] = [];
   for (let desde = 0; desde < 10000; desde += 1000) {
     const { data } = await supabase.from('vv_cat_productos')
-      .select('id_item, id_catalogo, catalogo, nombre, referencia, tipo, genero_id, foto_card, foto_main, colores, tallas, busqueda')
+      .select('id_item, id_catalogo, catalogo, nombre, referencia, tipo, genero_id, foto_card, foto_main, foto_thumb, colores, tallas, busqueda')
       .eq('activo', true).eq('personalizado', false).range(desde, desde + 999);
     filas.push(...(data ?? []));
     if (!data || data.length < 1000) break;
@@ -218,7 +218,7 @@ export async function buscarCandidatos(texto: string, color: string, genero: str
 
 async function bajarComoBase64(url: string): Promise<{ base64: string; mimeType: string } | null> {
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    const r = await fetch(url, { signal: AbortSignal.timeout(6_000) });
     if (!r.ok) return null;
     const buf = Buffer.from(await r.arrayBuffer());
     if (buf.length > 4_500_000) return null;
@@ -230,7 +230,7 @@ async function bajarComoBase64(url: string): Promise<{ base64: string; mimeType:
 export async function elegirConFoto(
   fotoVendedor: { base64: string; mimeType: string }, candidatos: Candidato[], textoVendedor: string,
 ): Promise<{ indice: number; confianza: number; motivo: string } | null> {
-  const fotos = await Promise.all(candidatos.map(c => bajarComoBase64(c.foto_card || c.foto_main || '')));
+  const fotos = await Promise.all(candidatos.map(c => bajarComoBase64(c.foto_thumb || c.foto_card || c.foto_main || '')));
   const validos = candidatos.map((c, i) => ({ c, f: fotos[i], n: i + 1 })).filter(x => x.f);
   if (!validos.length) return null;
   const lista = validos.map(x => `${x.n}. ${x.c.catalogo} — ${x.c.nombre ?? ''} (${(x.c.colores ?? []).join('/')})`).join('\n');

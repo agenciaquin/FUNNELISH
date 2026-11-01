@@ -1,4 +1,4 @@
-import { sendTextMessage, sendImageByUrl, descargarWhatsAppMedia } from '@/lib/whatsapp';
+import { sendTextMessage, sendImageByUrl, descargarWhatsAppMedia, mostrarEscribiendo } from '@/lib/whatsapp';
 import { vendedorDe } from '@/lib/vendedores';
 import { transcribirAudio } from '@/lib/transcribir';
 import { sinTildes } from './catalogo';
@@ -70,6 +70,8 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
 
   const vend = vendedorDe(from);
   const ahoraISO = () => new Date().toISOString();
+  // Visto + "escribiendo…" al instante, para que el vendedor sepa que ya se está procesando
+  mostrarEscribiendo(entrantes[entrantes.length - 1].id).catch(() => {});
 
   const responder = async (texto: string) => {
     const wamid = await sendTextMessage(from, texto);
@@ -91,10 +93,11 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
   };
 
   // ── 1) Guardar los mensajes (deduplicando reenvíos de Meta) y las fotos ────────
-  const nuevos: { texto: string; foto: string | null; fotoB64: { base64: string; mimeType: string } | null }[] = [];
+  const nuevos: { texto: string; foto: string | null; fotoB64: { base64: string; mimeType: string } | null; descPromesa: Promise<string> | null }[] = [];
   for (const e of entrantes) {
     let foto: string | null = null;
     let fotoB64: { base64: string; mimeType: string } | null = null;
+    let descPromesa: Promise<string> | null = null;
     let texto = e.texto;
     if (e.mediaId && (e.tipo === 'image' || e.tipo === 'audio' || e.tipo === 'voice')) {
       try {
@@ -103,9 +106,10 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
           const mime = (media.mimeType || 'image/jpeg').split(';')[0];
           const ext = (mime.split('/')[1] ?? 'jpg').replace('jpeg', 'jpg');
           const ruta = `ventas-vendedores/${from}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
+          fotoB64 = { base64: media.buffer.toString('base64'), mimeType: mime };
+          descPromesa = describirFoto(fotoB64.base64, mime);           // arranca ya, en paralelo
           const { error } = await supabase.storage.from('chat-media').upload(ruta, media.buffer, { contentType: mime, upsert: false });
           if (!error) foto = supabase.storage.from('chat-media').getPublicUrl(ruta)?.data?.publicUrl ?? null;
-          fotoB64 = { base64: media.buffer.toString('base64'), mimeType: mime };
         } else if (media) {
           texto = [(await transcribirAudio(media.buffer, media.mimeType)) ?? '', texto].filter(Boolean).join(' ');
         }
@@ -120,7 +124,7 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
     if (foto && texto) {
       try { await supabase.from('messages').insert({ id: `vv-${e.id}-cap`, conversation_id: from, content: texto, role: 'user', type: 'text', whatsapp_id: e.id, created_at: ahoraISO() }); } catch { /* */ }
     }
-    nuevos.push({ texto, foto, fotoB64 });
+    nuevos.push({ texto, foto, fotoB64, descPromesa });
   }
   if (!nuevos.length) return true;
 
@@ -152,29 +156,40 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
     return true;
   }
 
-  // Fotos y su descripción (para buscar el producto)
-  for (const n of nuevos.filter(x => x.foto && x.fotoB64)) {
-    const desc = await describirFoto(n.fotoB64!.base64, n.fotoB64!.mimeType);
-    await supabase.from('vv_eventos').insert({ venta_id: venta.id, tipo: 'foto', quien: 'whatsapp', detalle: { url: n.foto, descripcion: desc } });
-  }
   const fotosNuevas = nuevos.map(n => n.foto).filter(Boolean) as string[];
   if (fotosNuevas.length) {
     venta.fotos_vendedor = [...(venta.fotos_vendedor ?? []), ...fotosNuevas];
     await supabase.from('vv_ventas').update({ fotos_vendedor: venta.fotos_vendedor, actualizado_at: ahoraISO() }).eq('id', venta.id);
   }
+  const textoNuevo = nuevos.map(n => n.texto).filter(Boolean).join('\n').trim();
 
-  // ── 3) Esperar unos segundos por si el vendedor sigue mandando mensajes ────────
-  const marca = Date.now();
-  await dormir(7000);
-  const { data: ultimo } = await supabase.from('messages').select('created_at, id')
-    .eq('conversation_id', from).eq('role', 'user').like('id', 'vv-%')
-    .order('created_at', { ascending: false }).limit(1).maybeSingle();
-  if (ultimo && new Date(ultimo.created_at).getTime() > marca) return true; // otra llamada más nueva responde
+  // ── 3) ¿Esperar un poco? Solo si el mensaje parece "a medias". Si llega otro
+  //       mensaje mientras tanto, responde la llamada más nueva y esta se calla.
+  const esOrden = /^\s*(cancelar|cancela|anular|anula|confirmo|confirmar|confirmado|si|sí|ok|okey|listo|correcto|todo bien|dale|no|nop|[1-6])[\s.!👍✅]*$/i.test(textoNuevo);
+  // Solo una foto SIN texto se considera "a medias" (casi siempre llegan los datos detrás). Lo demás responde de una.
+  const aMedias = !esOrden && fotosNuevas.length > 0 && !textoNuevo;
+  const miUltimo = Date.now();
+  const hayMasNuevo = async () => {
+    const { data: ultimo } = await supabase.from('messages').select('created_at')
+      .eq('conversation_id', from).eq('role', 'user').like('id', 'vv-%')
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    return !!ultimo && new Date(ultimo.created_at).getTime() > miUltimo + 300;
+  };
+  if (aMedias) {
+    await dormir(2500);
+    if (await hayMasNuevo()) {
+      // Se guarda la descripción de la foto para la llamada que sí responde
+      for (const n of nuevos.filter(x => x.descPromesa)) {
+        const desc = await n.descPromesa!;
+        await supabase.from('vv_eventos').insert({ venta_id: venta.id, tipo: 'foto', quien: 'whatsapp', detalle: { url: n.foto, descripcion: desc } });
+      }
+      return true;
+    }
+  }
 
   // Releer la venta (otra llamada pudo cambiarla)
   const { data: fresca } = await supabase.from('vv_ventas').select('*').eq('id', venta.id).single();
   venta = fresca ?? venta;
-  const textoNuevo = nuevos.map(n => n.texto).filter(Boolean).join('\n').trim();
 
   // ── 4) Comandos ────────────────────────────────────────────────────────────
   if (/^\s*(cancelar|cancela|anular|anula)\b/i.test(textoNuevo)) {
@@ -216,10 +231,16 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
     .eq('conversation_id', from).eq('role', 'user').like('id', 'vv-%').eq('type', 'text')
     .gte('created_at', venta.creado_at).order('created_at', { ascending: true }).limit(60);
   const textos = (msgs ?? []).map((m: any) => String(m.content ?? '')).filter((t: string) => t && !t.startsWith('[') && !/^\s*[1-6]\s*$/.test(t));
-  const { data: evFotos } = await supabase.from('vv_eventos').select('detalle').eq('venta_id', venta.id).eq('tipo', 'foto').order('creado_at');
-  const descFotos = (evFotos ?? []).map((e: any) => String(e.detalle?.descripcion ?? '')).filter(Boolean);
-
-  const v = await interpretarVenta(textos, descFotos);
+  const { data: evPrevios } = await supabase.from('vv_eventos').select('detalle').eq('venta_id', venta.id).eq('tipo', 'foto').order('creado_at');
+  // Interpretar el texto y describir las fotos nuevas AL MISMO TIEMPO (ahorra varios segundos)
+  const [v, descNuevas] = await Promise.all([
+    interpretarVenta(textos, (evPrevios ?? []).map((e: any) => String(e.detalle?.descripcion ?? '')).filter(Boolean)),
+    Promise.all(nuevos.filter(x => x.descPromesa).map(async n => ({ url: n.foto, descripcion: await n.descPromesa! }))),
+  ]);
+  if (descNuevas.length) {
+    await supabase.from('vv_eventos').insert(descNuevas.map(d => ({ venta_id: venta.id, tipo: 'foto', quien: 'whatsapp', detalle: d })));
+  }
+  const evFotos = [...(evPrevios ?? []), ...descNuevas.map(d => ({ detalle: d }))];
   if (!v) {
     await responder('⚠️ No alcancé a organizar la venta. Mándame de nuevo los datos del cliente y la prenda, por favor.');
     return true;
@@ -260,6 +281,7 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
   const sobran = previos.slice(v.prendas.length).map((x: any) => x.id);
   if (sobran.length) await supabase.from('vv_items').delete().in('id', sobran);
 
+  if (!esOrden && await hayMasNuevo()) return true; // llegó otro mensaje: responde esa llamada con todo junto
   await evaluarYResponder(supabase, venta.id, responder, enviarFoto);
   return true;
 }
@@ -274,11 +296,15 @@ async function reconocer(supabase: any, item: any, sol: Pick<PrendaTexto, 'descr
   let elegido: Candidato | null = null;
   let confianza = 0;
   let motivo = '';
-  if (fotoUrl) {
+  const claro = cands.length === 1 || cands[0].puntaje >= cands[1].puntaje + 12;
+  if (claro && cands[0].puntaje >= 30) {
+    // Ganador evidente (p. ej. el título de la foto coincide con el catálogo): no hace falta comparar fotos
+    elegido = cands[0]; confianza = 0.85; motivo = 'coincidencia clara por nombre y color';
+  } else if (fotoUrl) {
     const { bajarComoBase64 } = await import('./ia');
     const f = await bajarComoBase64(fotoUrl);
     if (f) {
-      const r = await elegirConFoto(f, cands, `${sol.descripcion} ${sol.color} ${sol.talla}`);
+      const r = await elegirConFoto(f, cands.slice(0, 4), `${sol.descripcion} ${sol.color} ${sol.talla}`);
       if (r && r.indice >= 0 && r.confianza >= 0.75) { elegido = cands[r.indice]; confianza = r.confianza; motivo = r.motivo; }
     }
   } else if (cands.length === 1 || cands[0].puntaje >= cands[1].puntaje + 6) {
