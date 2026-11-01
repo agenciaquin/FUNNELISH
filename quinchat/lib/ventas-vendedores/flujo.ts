@@ -135,6 +135,7 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
       estado: 'recibida', conversacion_id: from, es_prueba: esPrueba,
     }).select('*').single();
     if (error) {
+      console.error('[VV] no se pudo crear la venta:', error.message);
       // Otra llamada del webhook la acaba de crear: se usa esa
       const { data: otra } = await supabase.from('vv_ventas').select('*').eq('vendedor_tel', from).in('estado', ESTADOS_ABIERTOS).limit(1).maybeSingle();
       venta = otra;
@@ -143,7 +144,10 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
       await supabase.from('vv_eventos').insert({ venta_id: venta.id, tipo: 'creada', quien: 'whatsapp', detalle: { vendedor: from } });
     }
   }
-  if (!venta) return true;
+  if (!venta) {
+    await responder('⚠️ Recibí tu mensaje pero no pude abrir la venta en el sistema. Ya quedó el aviso para revisarlo.');
+    return true;
+  }
 
   // Fotos y su descripción (para buscar el producto)
   for (const n of nuevos.filter(x => x.foto && x.fotoB64)) {
