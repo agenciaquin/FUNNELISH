@@ -81,8 +81,11 @@ export async function describirFoto(base64: string, mimeType: string): Promise<s
     const r = await chat({
       tenantId: 'klixmant',
       systemPrompt:
-        'Describe la prenda de la foto para buscarla en un catálogo. Responde UNA línea con: tipo de prenda (buzo, chaqueta, cuello alto, camiseta, polo), ' +
-        'marcas/equipos/escuderías/logos y TEXTOS visibles, color principal y colores secundarios. Sin frases extra.',
+        'Describe la prenda de la foto para buscarla en un catálogo de buzos. Responde UNA línea así:\n' +
+        'TITULO: <texto impreso en la imagen como encabezado o nombre del producto, p. ej. "CUELLO ALTO MERCEDES"; vacío si no hay> | ' +
+        'TIPO: <cuello alto | buzo con capota | chaqueta | camiseta | polo> | MARCAS: <marcas, equipos, escuderías y textos de la prenda> | COLOR: <color principal>\n' +
+        'Cómo distinguir el TIPO: "cuello alto" = cremallera completa al frente y cuello levantado, SIN capucha ni bolsillo canguro; ' +
+        '"buzo con capota" = capucha y bolsillo canguro, sin cremallera completa. Fíjate bien en el cuello y la cremallera. Sin frases extra.',
       messages: [{ role: 'user', content: 'Describe esta prenda.' }],
       imagenes: [{ base64, mimeType }],
       maxTokens: 120,
@@ -175,6 +178,8 @@ export async function buscarCandidatos(texto: string, color: string, genero: str
   const col = normalizarColor(color);
   const tipoV = tipoDe(texto);
   const gen = generoId(genero) ?? 1; // regla: si no dice género → Hombre
+  // Título impreso en la foto del vendedor ("CUELLO ALTO MERCEDES"): si coincide con un catálogo, manda
+  const titulo = sinTildes((/titulo:\s*([^|\n]*)/i.exec(texto)?.[1] ?? '').replace(/["“”]/g, '')).trim();
   const lista = (await catalogoActivo()).map((p: any) => {
     const b = String(p.busqueda ?? '');
     const aciertos = tk.filter(t => b.includes(t)).length;
@@ -184,12 +189,18 @@ export async function buscarCandidatos(texto: string, color: string, genero: str
     if (col && cols.some((c: string) => c.includes(col) || col.includes(c))) puntaje += 8;
     else if (!col && cols.some((c: string) => todo.includes(c))) puntaje += 5;
     const tipoC = tipoDe(`${p.catalogo} ${p.tipo ?? ''}`);
-    if (tipoV && tipoC) puntaje += tipoV === tipoC ? 8 : -6;
+    // El tipo pesa poco: si la descripción se equivoca, el diseño correcto igual queda entre las opciones y la foto decide
+    if (tipoV && tipoC) puntaje += tipoV === tipoC ? 4 : -2;
     for (const m of MODIFICADORES) {
       const enV = todo.includes(m), enC = sinTildes(p.catalogo).includes(m);
       if (enV && enC) puntaje += 4; else if (enV !== enC && enV) puntaje -= 2;
     }
     if (p.genero_id === gen) puntaje += 3;
+    if (titulo.length >= 4) {
+      const cat = sinTildes(p.catalogo);
+      if (cat === titulo) puntaje += 20;
+      else if (cat.includes(titulo) || titulo.includes(cat)) puntaje += 8;
+    }
     return { ...p, puntaje } as Candidato;
   }).filter(Boolean) as Candidato[];
   lista.sort((a, b) => b.puntaje - a.puntaje);
@@ -229,6 +240,10 @@ export async function elegirConFoto(
       systemPrompt:
         'Comparas la foto que mandó un vendedor (la PRIMERA imagen) con fotos oficiales de un catálogo (las siguientes, en el orden de la lista). ' +
         'Elige la que sea EXACTAMENTE el mismo diseño (mismos logos, textos, ubicación y colores). Un logo parecido NO basta. ' +
+        'MUY IMPORTANTE, revisa el TIPO de prenda antes que los logos: cuello alto (cremallera completa, cuello levantado, sin capucha) ' +
+        'NO es lo mismo que buzo con capota (capucha y bolsillo canguro). Dos opciones con los mismos logos pero distinto tipo son productos distintos. ' +
+        'Si la foto del vendedor trae un título impreso (p. ej. "CUELLO ALTO MERCEDES"), úsalo: la opción correcta debe llamarse igual o casi igual. ' +
+        'Si dudas entre dos, da confianza menor a 0.7. ' +
         'Responde SOLO JSON: {"eleccion": número de la lista o 0 si ninguna coincide, "confianza": 0 a 1, "motivo": "corto"}.',
       messages: [{ role: 'user', content: `Texto del vendedor: ${textoVendedor || '(sin texto)'}\nCatálogo (en orden, después de la foto del vendedor):\n${lista}` }],
       imagenes: [fotoVendedor, ...validos.map(x => x.f!)],
