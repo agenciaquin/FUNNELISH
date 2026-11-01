@@ -10,7 +10,7 @@ interface LiveResumen { id: string; slug: string; titulo: string; estado: Estado
 interface VentaMini { id: number; foto: string | null; producto: string; valor: number; estado: 'pendiente' | 'confirmado' | 'cancelado'; fecha: string; }
 interface Color { id?: string; nombre: string; hex: string; foto_url: string; }
 interface Producto { id: string; nombre: string; descripcion: string | null; ficha_tela: string | null; ficha_cuidados: string | null; precio: number; precio_antes: number | null; promo_etiqueta: string | null; promo_unidades: number | null; promo_precio: number | null; tallas: string[]; colores: Color[]; }
-interface EventoTL { tipo: 'producto' | 'pregunta_frecuente' | 'comentario'; inicio_seg: number; fin_seg: number; producto_id?: string | null; pregunta?: string; respuesta?: string; autor?: string; texto?: string; }
+interface EventoTL { tipo: 'producto' | 'pregunta_frecuente' | 'comentario' | 'catalogo'; inicio_seg: number; fin_seg: number; producto_id?: string | null; pregunta?: string; respuesta?: string; autor?: string; texto?: string; productos_ids?: string[]; pos_x?: number; pos_y?: number; titulo?: string; }
 interface LiveFull { id: string; slug: string; titulo: string; estado: EstadoLive; video_url: string | null; poster_url: string | null; whatsapp: string | null; etiqueta_grabada: string | null; duracion_seg: number | null; tienda_nombre: string | null; tienda_logo: string | null; modo: string; comentarios: string[] | null; embudo_slug: string | null; pixel_meta: string | null; pixel_meta_token: string | null; pixel_tiktok: string | null; mostrar_whatsapp: boolean | null; }
 
 const TALLAS = ['S', 'M', 'L', 'XL'];
@@ -399,7 +399,7 @@ function EditorLive({ id, onVolver, onAviso }: { id: string; onVolver: () => voi
       const j = await api(`/api/live-admin/lives/${id}`);
       setLive(j.live);
       setProductos((j.productos ?? []).map((p: any) => ({ ...p, colores: p.colores ?? [], tallas: p.tallas ?? TALLAS })));
-      setTimeline((j.timeline ?? []).map((e: any) => ({ tipo: e.tipo, inicio_seg: Number(e.inicio_seg), fin_seg: Number(e.fin_seg), producto_id: e.producto_id, pregunta: e.pregunta ?? '', respuesta: e.respuesta ?? '', autor: e.autor ?? 'Cliente DEMO', texto: e.texto ?? '' })));
+      setTimeline((j.timeline ?? []).map((e: any) => ({ tipo: e.tipo, inicio_seg: Number(e.inicio_seg), fin_seg: Number(e.fin_seg), producto_id: e.producto_id, pregunta: e.pregunta ?? '', respuesta: e.respuesta ?? '', autor: e.autor ?? 'Cliente DEMO', texto: e.texto ?? '', productos_ids: Array.isArray(e.productos_ids) ? e.productos_ids.map(String) : [], pos_x: e.pos_x != null ? Number(e.pos_x) : 4, pos_y: e.pos_y != null ? Number(e.pos_y) : 45, titulo: e.titulo ?? '' })));
     } catch (e: any) { setAviso('No se pudo cargar: ' + e.message); }
     setCargando(false);
     // onAviso es estable (useCallback en el padre); no lo ponemos como dependencia
@@ -759,7 +759,7 @@ function TimelineEditor({ timeline, setTimeline, productos, campo }: {
       {[...timeline].map((e, i) => (
         <div key={i} className="border border-brand-border rounded-xl p-2 mb-2">
           <div className="flex items-center gap-2 mb-2">
-            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${e.tipo === 'comentario' ? 'bg-pink-100 text-pink-700' : 'bg-neutral-100 text-neutral-600'}`}>{e.tipo === 'pregunta_frecuente' ? 'Pregunta frecuente' : e.tipo === 'comentario' ? 'Pregunta / comentario' : 'Producto'}</span>
+            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${e.tipo === 'comentario' ? 'bg-pink-100 text-pink-700' : 'bg-neutral-100 text-neutral-600'}`}>{e.tipo === 'pregunta_frecuente' ? 'Pregunta frecuente' : e.tipo === 'comentario' ? 'Pregunta / comentario' : e.tipo === 'catalogo' ? 'Catálogo flotante' : 'Producto'}</span>
             <label className="text-xs">Del seg <input type="number" className="w-16 rounded border border-brand-border px-1.5 py-0.5 text-sm" value={e.inicio_seg} onChange={ev => set(i, { inicio_seg: Number(ev.target.value) })} /></label>
             <label className="text-xs">al <input type="number" className="w-16 rounded border border-brand-border px-1.5 py-0.5 text-sm" value={e.fin_seg} onChange={ev => set(i, { fin_seg: Number(ev.target.value) })} /></label>
             <button onClick={() => del(i)} className="ml-auto text-xs text-red-600">✕</button>
@@ -769,6 +769,9 @@ function TimelineEditor({ timeline, setTimeline, productos, campo }: {
               <option value="">— elige producto —</option>
               {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
             </select>
+          )}
+          {e.tipo === 'catalogo' && (
+            <p className="text-[12px] text-brand-gray-mid">🗂️ {(e.productos_ids ?? []).length} producto(s){e.titulo ? ` · “${e.titulo}”` : ''}. Para elegir productos y moverlo en la pantalla usa la vista de línea de tiempo.</p>
           )}
           {e.tipo === 'pregunta_frecuente' && (
             <div className="space-y-1">

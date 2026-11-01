@@ -98,13 +98,17 @@ export async function timelineDeLive(slug: string): Promise<LineaDeTiempo | null
   if (!live) return null;
   const { data: evs } = await supabase
     .from('live_timeline_eventos')
-    .select('inicio_seg, fin_seg, tipo, producto_id, pregunta, respuesta, autor, texto')
+    .select('inicio_seg, fin_seg, tipo, producto_id, pregunta, respuesta, autor, texto, productos_ids, pos_x, pos_y, titulo')
     .eq('live_id', live.id)
     .order('inicio_seg');
 
   const eventos: EventoLinea[] = (evs ?? []).map((e: any) => {
     const base = { inicio: Number(e.inicio_seg) || 0, fin: Number(e.fin_seg) || 0 };
     if (e.tipo === 'producto') return { ...base, tipo: 'producto', contenido: { productoId: String(e.producto_id ?? '') } };
+    if (e.tipo === 'catalogo') return { ...base, tipo: 'catalogo', contenido: {
+      productoIds: (Array.isArray(e.productos_ids) ? e.productos_ids : []).map(String),
+      x: Number(e.pos_x ?? 4), y: Number(e.pos_y ?? 45), titulo: e.titulo ? String(e.titulo) : undefined,
+    } };
     if (e.tipo === 'pregunta_frecuente') return { ...base, tipo: 'pregunta_frecuente', contenido: { pregunta: String(e.pregunta ?? ''), respuesta: String(e.respuesta ?? '') } };
     return { ...base, tipo: 'comentario', contenido: { autor: String(e.autor ?? 'Cliente DEMO'), texto: String(e.texto ?? ''), demo: true } };
   });

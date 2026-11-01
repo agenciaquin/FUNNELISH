@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { EventoComentario, EventoLinea, EventoPregunta, EventoProducto, LineaDeTiempo } from './tipos';
+import type { EventoCatalogo, EventoComentario, EventoLinea, EventoPregunta, EventoProducto, LineaDeTiempo } from './tipos';
 
 export interface EstadoLinea {
   cargada: boolean;
@@ -9,6 +9,8 @@ export interface EstadoLinea {
   producto: EventoProducto | null;
   /** Preguntas frecuentes y comentarios visibles ahora, del más viejo al más nuevo. */
   mensajes: Array<EventoPregunta | EventoComentario>;
+  /** Catálogos flotantes visibles ahora (posición y productos propios). */
+  catalogos: EventoCatalogo[];
 }
 
 const MAX_MENSAJES = 4;
@@ -35,13 +37,14 @@ export function useTimeline(url: string, tiempo: number): EstadoLinea {
   const t = Math.floor(tiempo * 2) / 2;
 
   return useMemo<EstadoLinea>(() => {
-    if (!linea) return { cargada: false, producto: null, mensajes: [] };
+    if (!linea) return { cargada: false, producto: null, mensajes: [], catalogos: [] };
     const act = linea.eventos.filter(e => activo(e, t));
     const producto = (act.find(e => e.tipo === 'producto') as EventoProducto | undefined) ?? null;
     const mensajes = act
-      .filter((e): e is EventoPregunta | EventoComentario => e.tipo !== 'producto')
+      .filter((e): e is EventoPregunta | EventoComentario => e.tipo === 'pregunta_frecuente' || e.tipo === 'comentario')
       .sort((a, b) => a.inicio - b.inicio)
       .slice(-MAX_MENSAJES);
-    return { cargada: true, producto, mensajes };
+    const catalogos = act.filter((e): e is EventoCatalogo => e.tipo === 'catalogo');
+    return { cargada: true, producto, mensajes, catalogos };
   }, [linea, t]);
 }

@@ -10,10 +10,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * Trabaja sobre el MISMO estado `timeline` del editor (se guarda con "Guardar todo").
  */
 
-type Tipo = 'producto' | 'pregunta_frecuente' | 'comentario';
+type Tipo = 'producto' | 'pregunta_frecuente' | 'comentario' | 'catalogo';
 export interface EventoVis {
   tipo: Tipo; inicio_seg: number; fin_seg: number; producto_id?: string | null;
   pregunta?: string; respuesta?: string; autor?: string; texto?: string;
+  /** Catálogo flotante: productos, posición (% de pantalla) y título. */
+  productos_ids?: string[]; pos_x?: number; pos_y?: number; titulo?: string;
 }
 interface Prod { id: string; nombre: string; colores?: { foto_url: string }[] }
 
@@ -28,6 +30,7 @@ const PISTAS: { tipo: Tipo; nombre: string; color: string; borde: string }[] = [
   { tipo: 'producto', nombre: '🛍️ Productos', color: 'bg-[#00A89D]', borde: 'border-[#007A72]' },
   { tipo: 'comentario', nombre: '💬 Preguntas', color: 'bg-[#ff3366]', borde: 'border-[#c81e4b]' },
   { tipo: 'pregunta_frecuente', nombre: '✓ Frecuentes', color: 'bg-violet-500', borde: 'border-violet-700' },
+  { tipo: 'catalogo', nombre: '🗂️ Catálogos', color: 'bg-amber-500', borde: 'border-amber-700' },
 ];
 
 export default function LineaTiempoVisual({ videoUrl, duracionInicial, timeline, setTimeline, productos }: {
@@ -37,6 +40,7 @@ export default function LineaTiempoVisual({ videoUrl, duracionInicial, timeline,
   const videoRef = useRef<HTMLVideoElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const contenidoRef = useRef<HTMLDivElement>(null);
+  const monitorRef = useRef<HTMLDivElement>(null);
   const [t, setT] = useState(0);
   const [durVideo, setDurVideo] = useState<number>(duracionInicial || 0);
   const [play, setPlay] = useState(false);
@@ -132,6 +136,8 @@ export default function LineaTiempoVisual({ videoUrl, duracionInicial, timeline,
     const ini = snap(t);
     const ev: EventoVis = tipo === 'producto'
       ? { tipo, inicio_seg: ini, fin_seg: Math.min(durTotal, ini + 30), producto_id: productos[0]?.id ?? null }
+      : tipo === 'catalogo'
+      ? { tipo, inicio_seg: ini, fin_seg: Math.min(durTotal, ini + 20), productos_ids: productos.slice(0, 3).map(p => p.id), pos_x: 4, pos_y: 40, titulo: '' }
       : { tipo, inicio_seg: ini, fin_seg: Math.min(durTotal, ini + 15), pregunta: '', respuesta: '' };
     if (ev.fin_seg <= ev.inicio_seg) ev.fin_seg = ev.inicio_seg + 5;
     const lista = [...timeline, ev];
@@ -148,19 +154,41 @@ export default function LineaTiempoVisual({ videoUrl, duracionInicial, timeline,
 
   const etiqueta = (e: EventoVis) => e.tipo === 'producto'
     ? (productos.find(p => p.id === e.producto_id)?.nombre ?? 'Elige producto')
+    : e.tipo === 'catalogo' ? (e.titulo || `Catálogo (${(e.productos_ids ?? []).length})`)
     : e.tipo === 'comentario' ? `${e.autor ? e.autor + ': ' : ''}${e.texto || 'Pregunta sin texto'}`
     : (e.pregunta || 'Pregunta frecuente');
 
   // Lo que se ve en el live en el segundo actual (mini vista previa)
   const prodAhora = timeline.find(e => e.tipo === 'producto' && e.inicio_seg <= t && t < e.fin_seg);
-  const pregAhora = timeline.filter(e => e.tipo !== 'producto' && e.inicio_seg <= t && t < e.inicio_seg + 6).slice(-2);
+  const pregAhora = timeline.filter(e => (e.tipo === 'comentario' || e.tipo === 'pregunta_frecuente') && e.inicio_seg <= t && t < e.inicio_seg + 6).slice(-2);
+  const catAhora = timeline.map((e, idx) => ({ e, idx })).filter(({ e }) => e.tipo === 'catalogo' && e.inicio_seg <= t && t < e.fin_seg);
+
+  // Arrastrar el catálogo dentro del monitor → guarda la posición en % (misma regla que el live)
+  const arrastrarCatalogo = (ev: React.PointerEvent<HTMLDivElement>, idx: number) => {
+    ev.preventDefault(); ev.stopPropagation();
+    setSel(idx);
+    const mon = monitorRef.current?.getBoundingClientRect();
+    const caja = ev.currentTarget.getBoundingClientRect();
+    if (!mon) return;
+    const offX = ev.clientX - caja.left, offY = ev.clientY - caja.top;
+    const libreX = Math.max(1, mon.width - caja.width), libreY = Math.max(1, mon.height - caja.height);
+    const base = timeline.map(x => ({ ...x }));
+    const mover = (pe: PointerEvent) => {
+      const izq = Math.max(0, Math.min(libreX, pe.clientX - mon.left - offX));
+      const arr = Math.max(0, Math.min(libreY, pe.clientY - mon.top - offY));
+      const pos_x = Math.round((izq / libreX) * 100), pos_y = Math.round((arr / libreY) * 100);
+      setTimeline(base.map((x, i) => (i === idx ? { ...x, pos_x, pos_y } : x)));
+    };
+    const soltar = () => { window.removeEventListener('pointermove', mover); window.removeEventListener('pointerup', soltar); };
+    window.addEventListener('pointermove', mover); window.addEventListener('pointerup', soltar);
+  };
   const evSel = sel !== null ? timeline[sel] : null;
 
   return (
     <div className="rounded-2xl bg-[#1e1e1e] text-neutral-200 p-3 select-none">
       <div className="flex flex-col md:flex-row gap-3">
         {/* Monitor de programa */}
-        <div className="relative mx-auto md:mx-0 w-[180px] h-[320px] shrink-0 rounded-xl overflow-hidden bg-black border border-neutral-700">
+        <div ref={monitorRef} className="relative mx-auto md:mx-0 w-[180px] h-[320px] shrink-0 rounded-xl overflow-hidden bg-black border border-neutral-700">
           {videoUrl
             ? <video ref={videoRef} src={videoUrl} className="w-full h-full object-cover" playsInline preload="metadata"
                 onLoadedMetadata={e => { const d = e.currentTarget.duration; if (isFinite(d) && d > 0) setDurVideo(d); }}
@@ -175,6 +203,27 @@ export default function LineaTiempoVisual({ videoUrl, duracionInicial, timeline,
             ))}
             {prodAhora && <div className="text-[9px] font-bold rounded-lg px-1.5 py-1 bg-white text-black truncate">🛍️ {etiqueta(prodAhora)}</div>}
           </div>
+          {/* Catálogos flotantes del momento: se arrastran para ubicarlos */}
+          {catAhora.map(({ e, idx }) => {
+            const x = Math.max(0, Math.min(100, e.pos_x ?? 4)), y = Math.max(0, Math.min(100, e.pos_y ?? 40));
+            const prods = (e.productos_ids ?? []).map(id => productos.find(p => p.id === id)).filter(Boolean) as Prod[];
+            return (
+              <div key={idx} onPointerDown={ev => arrastrarCatalogo(ev, idx)} title="Arrástralo para ubicarlo"
+                className={`absolute z-10 cursor-move touch-none rounded-lg bg-black/65 border p-[3px] max-w-[94%] ${sel === idx ? 'border-amber-400 ring-1 ring-amber-400' : 'border-white/30'}`}
+                style={{ left: `${x}%`, top: `${y}%`, transform: `translate(-${x}%, -${y}%)` }}>
+                {e.titulo && <p className="text-[7px] font-extrabold uppercase text-[#ffd33d] px-0.5 pb-0.5 truncate">🛍️ {e.titulo}</p>}
+                <div className="flex gap-[3px]">
+                  {(prods.length ? prods : [{ id: 'x', nombre: 'Sin productos' } as Prod]).slice(0, 4).map(p => (
+                    <div key={p.id} className="w-[38px] rounded bg-white overflow-hidden">
+                      <div className="h-[30px] bg-white">{p.colores?.[0]?.foto_url && /* eslint-disable-next-line @next/next/no-img-element */ <img src={p.colores[0].foto_url} alt="" className="w-full h-full object-contain" draggable={false} />}</div>
+                      <div className="text-[5.5px] leading-tight text-black font-bold px-0.5 truncate">{p.nombre}</div>
+                      <div className="m-[2px] rounded-sm bg-black text-white text-[5px] font-extrabold text-center py-[1px]">COMPRAR</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         {/* Controles + acciones */}
@@ -190,6 +239,7 @@ export default function LineaTiempoVisual({ videoUrl, duracionInicial, timeline,
             <button onClick={abrirPregunta} className="px-3 py-2 rounded-xl bg-[#ff3366] hover:opacity-90 text-white text-sm font-bold">💬 + Pregunta aquí ({fmt(t)})</button>
             <button onClick={() => agregar('producto')} className="px-3 py-2 rounded-xl bg-[#00A89D] hover:opacity-90 text-white text-xs font-semibold">🛍️ + Producto aquí</button>
             <button onClick={() => agregar('pregunta_frecuente')} className="px-3 py-2 rounded-xl bg-violet-600 hover:opacity-90 text-white text-xs font-semibold">✓ + Pregunta frecuente aquí</button>
+            <button onClick={() => agregar('catalogo')} disabled={!productos.length} className="px-3 py-2 rounded-xl bg-amber-500 hover:opacity-90 text-black text-xs font-bold disabled:opacity-40">🗂️ + Catálogo aquí</button>
           </div>
 
           {nueva && (
@@ -210,7 +260,7 @@ export default function LineaTiempoVisual({ videoUrl, duracionInicial, timeline,
           {evSel && !nueva && (
             <div className="rounded-xl bg-neutral-800 border border-neutral-600 p-2.5 space-y-2 text-sm">
               <div className="flex items-center gap-2 flex-wrap text-xs">
-                <b className="text-white">{evSel.tipo === 'producto' ? 'Producto' : evSel.tipo === 'comentario' ? 'Pregunta' : 'Pregunta frecuente'}</b>
+                <b className="text-white">{evSel.tipo === 'producto' ? 'Producto' : evSel.tipo === 'comentario' ? 'Pregunta' : evSel.tipo === 'catalogo' ? 'Catálogo flotante' : 'Pregunta frecuente'}</b>
                 <span className="text-neutral-400">del</span>
                 <input type="number" step="0.5" className="w-16 rounded bg-neutral-900 border border-neutral-700 px-1 py-0.5 text-white" value={evSel.inicio_seg} onChange={e => editarSel({ inicio_seg: Math.max(0, Number(e.target.value)) })} />
                 <span className="text-neutral-400">al</span>
@@ -224,6 +274,39 @@ export default function LineaTiempoVisual({ videoUrl, duracionInicial, timeline,
                   <option value="">— elige producto —</option>
                   {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                 </select>
+              )}
+              {evSel.tipo === 'catalogo' && (
+                <div className="space-y-2">
+                  <input className="w-full rounded-lg bg-neutral-900 border border-neutral-700 px-2 py-1.5 text-white" placeholder="Título (opcional), ej. Más vendidos" maxLength={40}
+                    value={evSel.titulo ?? ''} onChange={e => editarSel({ titulo: e.target.value })} />
+                  <div>
+                    <p className="text-[11px] text-neutral-400 mb-1">Productos del catálogo (toca para agregar o quitar, máx. 8):</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {productos.map(p => {
+                        const on = (evSel.productos_ids ?? []).includes(p.id);
+                        return (
+                          <button key={p.id} type="button"
+                            onClick={() => {
+                              const act = evSel.productos_ids ?? [];
+                              editarSel({ productos_ids: on ? act.filter(x => x !== p.id) : [...act, p.id].slice(0, 8) });
+                            }}
+                            className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] border ${on ? 'bg-amber-500 border-amber-400 text-black font-bold' : 'bg-neutral-900 border-neutral-700 text-neutral-300'}`}>
+                            {p.colores?.[0]?.foto_url && /* eslint-disable-next-line @next/next/no-img-element */ <img src={p.colores[0].foto_url} alt="" className="w-5 h-5 rounded object-cover" />}
+                            {on ? '✓ ' : ''}{p.nombre}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                    <span className="text-neutral-400">Posición:</span>
+                    {([['↖', 2, 12], ['↗', 98, 12], ['⬅ Centro', 2, 50], ['Centro ➡', 98, 50], ['↙', 2, 72], ['↘', 98, 72]] as [string, number, number][]).map(([l, x, y]) => (
+                      <button key={l} type="button" onClick={() => editarSel({ pos_x: x, pos_y: y })} className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600">{l}</button>
+                    ))}
+                    <span className="text-neutral-500">· x {Math.round(evSel.pos_x ?? 4)}% · y {Math.round(evSel.pos_y ?? 40)}%</span>
+                  </div>
+                  <p className="text-[11px] text-amber-300/90">Tip: con el video en este tramo, arrastra el catálogo en la pantallita de la izquierda para ponerlo donde quieras.</p>
+                </div>
               )}
               {evSel.tipo === 'comentario' && (
                 <div className="flex gap-2">

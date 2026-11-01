@@ -5,7 +5,9 @@ import { haySesion } from '@/lib/live/admin-guard';
 export const dynamic = 'force-dynamic';
 
 const num = (v: any) => Number(v) || 0;
-const TIPOS = new Set(['producto', 'pregunta_frecuente', 'comentario']);
+const TIPOS = new Set(['producto', 'pregunta_frecuente', 'comentario', 'catalogo']);
+const pct = (v: any, def: number) => { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : def; };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * PUT: reemplaza de una vez los PRODUCTOS vinculados y la LÍNEA DE TIEMPO del live.
@@ -45,6 +47,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         autor: e.tipo === 'comentario' ? (e.autor ?? 'Cliente DEMO') : null,
         texto: e.tipo === 'comentario' ? (e.texto ?? '') : null,
         es_demo: e.tipo === 'comentario' ? (e.es_demo !== false) : false,
+        productos_ids: e.tipo === 'catalogo' ? (Array.isArray(e.productos_ids) ? e.productos_ids.map(String).filter((x: string) => UUID.test(x)).slice(0, 8) : []) : [],
+        pos_x: e.tipo === 'catalogo' ? pct(e.pos_x, 4) : null,
+        pos_y: e.tipo === 'catalogo' ? pct(e.pos_y, 45) : null,
+        titulo: e.tipo === 'catalogo' ? (String(e.titulo ?? '').trim().slice(0, 40) || null) : null,
         orden: i,
       }));
     if (filas.length) {

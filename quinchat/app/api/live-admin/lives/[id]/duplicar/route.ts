@@ -84,6 +84,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
         ...ev,
         live_id: nuevoId,
         producto_id: ev.producto_id ? (mapa.get(String(ev.producto_id)) ?? null) : null,
+        productos_ids: Array.isArray(ev.productos_ids) ? ev.productos_ids.map((x: any) => mapa.get(String(x))).filter(Boolean) : [],
       }));
       const { error: et } = await supabase.from('live_timeline_eventos').insert(copia);
       if (et) throw new Error(et.message);

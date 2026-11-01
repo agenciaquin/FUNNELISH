@@ -12,6 +12,7 @@ import { MAX_PREGUNTAS_IA, esPregunta, responderPregunta } from '@/lib/live/asis
 import { mensajeWhatsApp, urlWhatsApp } from './WhatsAppButton';
 import VideoBackground, { type VideoHandle } from './VideoBackground';
 import LiveOverlay from './LiveOverlay';
+import CatalogoFlotante from './CatalogoFlotante';
 import BuySheet from './BuySheet';
 import type { ComentarioPropio } from './CommentsFeed';
 import { ESTILOS_LIVE } from './estilos';
@@ -43,7 +44,7 @@ export default function LiveShell({ live, funnel }: { live: LiveConfig; funnel?:
     temporizadorAviso.current = setTimeout(() => setAviso(null), 2500);
   }, []);
 
-  const { producto: evProducto, mensajes } = useTimeline(live.timelineUrl, tiempo);
+  const { producto: evProducto, mensajes, catalogos } = useTimeline(live.timelineUrl, tiempo);
   const producto = evProducto ? live.productos.find(p => p.id === evProducto.contenido.productoId) ?? null : null;
 
   // ── CHAT: los comentarios ya NO se borran. Se acumulan (máx. MAX_FEED en pantalla; los
@@ -266,6 +267,16 @@ export default function LiveShell({ live, funnel }: { live: LiveConfig; funnel?:
           onComentar={comentar}
           onCompartir={compartir}
         />
+        {/* Catálogos flotantes de la línea de tiempo (aparte del checkout principal) */}
+        {catalogos.map((c, i) => (
+          <CatalogoFlotante
+            key={`${c.inicio}-${i}`}
+            evento={c}
+            productos={c.contenido.productoIds.map(id => live.productos.find(p => p.id === id)).filter((p): p is NonNullable<typeof p> => !!p)}
+            onVer={p => { track('product_click', { productoId: p.id, nombre: p.nombre, precio: p.precio, origen: 'catalogo' }); setSheet(p); }}
+            onComprar={p => { track('buy_here_open', { productoId: p.id, nombre: p.nombre, precio: p.precio, origen: 'catalogo' }); setSheet(p); }}
+          />
+        ))}
         {aviso && <div role="status" className="live-pop absolute left-1/2 -translate-x-1/2 top-24 z-40 max-w-[88%] text-center rounded-2xl bg-black/80 px-4 py-2 text-[13px] font-semibold">{aviso}</div>}
         {pidiendoNombre !== null && (
           <div className="absolute inset-0 z-40 bg-black/50 flex items-end justify-center p-4" onClick={() => confirmarNombre(null)}>

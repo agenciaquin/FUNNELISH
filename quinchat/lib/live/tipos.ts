@@ -60,7 +60,18 @@ export interface EventoComentario extends EventoBase {
   /** Los comentarios de la maqueta son datos de ejemplo, siempre marcados DEMO. */
   contenido: { autor: string; texto: string; demo: true };
 }
-export type EventoLinea = EventoProducto | EventoPregunta | EventoComentario;
+/** Catálogo flotante: tarjetas con botón COMPRAR en la posición y el tiempo que se elijan (aparte del checkout principal). */
+export interface EventoCatalogo extends EventoBase {
+  tipo: 'catalogo';
+  contenido: {
+    productoIds: string[];
+    /** Posición en pantalla, en % del ancho y del alto (esquina superior izquierda del catálogo). */
+    x: number;
+    y: number;
+    titulo?: string;
+  };
+}
+export type EventoLinea = EventoProducto | EventoPregunta | EventoComentario | EventoCatalogo;
 
 export interface LineaDeTiempo {
   version: 1;
