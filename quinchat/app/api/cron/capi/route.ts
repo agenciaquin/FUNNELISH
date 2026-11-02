@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
   let enviados = 0, sinClid = 0, fallaron = 0;
   for (const c of convs ?? []) {
     const label = String((c as any).label ?? '').toUpperCase();
-    if (!label.includes('VENTA REALIZADA')) continue; // solo ventas cerradas
+    if (!label.includes('VENTA REALIZADA') && !label.includes('POR CORREGIR')) continue; // solo ventas cerradas
 
     // ctwa_clid del anuncio
     let ctwaClid = '';

@@ -17,6 +17,8 @@ interface Pedido {
   embudo_slug?: string | null;
   embudo_nombre?: string | null;
   prendas?: number;
+  /** Chat con etiqueta VENTA PROCESADA POR CORREGIR. */
+  por_corregir?: boolean;
   created_at: string;
 }
 
@@ -209,6 +211,7 @@ function rangoPreset(clave: string): { desde: string; hasta: string } | null {
 
 function estadoDe(p: Pedido): { texto: string; color: string; fondo: string } {
   const e = String(p.estado ?? '').toLowerCase();
+  if (p.confirmado && p.por_corregir) return { texto: '✏️ Por corregir', color: '#166534', fondo: 'rgba(52,229,73,0.18)' };
   if (p.confirmado)         return { texto: 'Confirmado', color: '#15803D', fondo: 'rgba(21,128,61,0.10)' };
   if (e === 'cancelado')    return { texto: 'Cancelado',  color: '#DC2626', fondo: 'rgba(220,38,38,0.10)' };
   if (e === 'duplicado')    return { texto: 'Duplicado',  color: '#9A9A9A', fondo: 'rgba(154,154,154,0.10)' };
@@ -224,7 +227,7 @@ interface Props {
 
 export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
-  const [resumen, setResumen] = useState<{ total: number; confirmados: number; pendientes: number; cancelados: number; vendido: number; tasa: number; prendas?: number; prendasConf?: number }>({ total: 0, confirmados: 0, pendientes: 0, cancelados: 0, vendido: 0, tasa: 0, prendas: 0, prendasConf: 0 });
+  const [resumen, setResumen] = useState<{ total: number; confirmados: number; pendientes: number; cancelados: number; vendido: number; tasa: number; prendas?: number; prendasConf?: number; porCorregir?: number }>({ total: 0, confirmados: 0, pendientes: 0, cancelados: 0, vendido: 0, tasa: 0, prendas: 0, prendasConf: 0 });
   const [porCanal, setPorCanal]   = useState<DesgloseCanal[]>([]);
   const [porFuente, setPorFuente] = useState<DesgloseFuente[]>([]);
   const [porDiaApi, setPorDiaApi] = useState<DiaFila[]>([]);
@@ -525,7 +528,7 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
         <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-3 mb-5">
           {[
             { t: 'Pedidos recibidos',  v: String(resumenVista.total),       c: '#2F80ED', i: '🛒', d: comparacion?.total, extra: `${resumenVista.prendas ?? 0} prendas`, serie: spark(d => d.total) },
-            { t: 'Pedidos confirmados', v: String(resumenVista.confirmados), c: '#15803D', i: '✅', d: comparacion?.confirmados, extra: `${resumenVista.prendasConf ?? 0} prendas`, serie: spark(d => d.conf) },
+            { t: 'Pedidos confirmados', v: String(resumenVista.confirmados), c: '#15803D', i: '✅', d: comparacion?.confirmados, extra: `${resumenVista.prendasConf ?? 0} prendas${resumenVista.porCorregir ? ` · ✏️ ${resumenVista.porCorregir} por corregir` : ''}`, serie: spark(d => d.conf) },
             { t: 'Por confirmar',      v: String(resumenVista.pendientes),  c: '#EA580C', i: '⏳', d: comparacion?.pendientes, inv: true, extra: '', serie: spark(d => d.pend) },
             { t: 'Cancelados',         v: String(resumenVista.cancelados),  c: '#DC2626', i: '✖️', d: comparacion?.cancelados, inv: true, extra: '', serie: spark(d => d.canc) },
             { t: 'Valor vendido',      v: pesos(resumenVista.vendido),      c: '#0B6E4F', i: '💰', d: comparacion?.vendido, extra: '', serie: spark(d => d.valor) },
@@ -699,13 +702,15 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
             <p className="text-[11px] text-[#6B6B6B] mb-3">{etiquetaRango}</p>
             <div className="flex items-center gap-5 flex-wrap">
               <Dona centro={String(resumenVista.total)} sub="Pedidos" partes={[
-                { valor: resumenVista.confirmados, color: '#15803D' },
+                { valor: resumenVista.confirmados - (resumenVista.porCorregir ?? 0), color: '#15803D' },
+                { valor: resumenVista.porCorregir ?? 0, color: '#34E549' },
                 { valor: resumenVista.pendientes, color: '#F59E0B' },
                 { valor: resumenVista.cancelados, color: '#DC2626' },
               ]} />
               <div className="flex-1 min-w-[160px] space-y-2.5 text-[12px]">
                 {[
-                  ['Confirmados', resumenVista.confirmados, '#15803D'],
+                  ['Confirmados', resumenVista.confirmados - (resumenVista.porCorregir ?? 0), '#15803D'],
+                  ['✏️ Venta por corregir', resumenVista.porCorregir ?? 0, '#34E549'],
                   ['Por confirmar', resumenVista.pendientes, '#F59E0B'],
                   ['Cancelados', resumenVista.cancelados, '#DC2626'],
                 ].map(([t, v, c]) => (

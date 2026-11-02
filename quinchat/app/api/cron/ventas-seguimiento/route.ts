@@ -46,7 +46,7 @@ const ES_FORMULARIO = /datos de env|datos para el env|nombre completo|celular:|d
 // Señal de que el cliente NO está interesado → no se le vuelve a escribir.
 const NO_INTERESADO = /no me interesa|no gracias|ya no (lo )?quiero|no lo quiero|no deseo|no quiero nada|ya compr|dejal[oa] as[ií]|no voy a comprar|no estoy interesad|no me escrib|no molest/i;
 // Etiquetas donde no se interviene.
-const SKIP_LABEL = /VENTA REALIZADA|CANCELAD|ANULAD|NO INTERES|NO ENVIAR RECORDATORIO|VENDEDOR|HUMANO|PEDIDO PROGRAMADO|ABONO POR VERIFICAR/;
+const SKIP_LABEL = /VENTA REALIZADA|POR CORREGIR|CANCELAD|ANULAD|NO INTERES|NO ENVIAR RECORDATORIO|VENDEDOR|HUMANO|PEDIDO PROGRAMADO|ABONO POR VERIFICAR/;
 // La lista numerada que manda el bot con el catálogo ("Respóndeme solo con el número").
 const ES_LISTA_NUMERADA = /qu[eé] color te gust[oó]\?\s*\n+\s*1️⃣|resp[oó]ndeme solo con el \*?n[uú]mero/i;
 

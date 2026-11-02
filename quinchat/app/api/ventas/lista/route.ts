@@ -52,12 +52,14 @@ export async function GET(req: NextRequest) {
   // El usuario cambia estados por la etiqueta del chat. Si una venta que estaba
   // como VENTA REALIZADA se pasó a otro estado (cancelada, pendiente, programada,
   // abono por verificar), YA NO cuenta como venta: se saca del reporte.
+  const labelPorConv = new Map<string, string>();
   if (convIds.length) {
     try {
-      const { data: convs } = await supabase
-        .from('conversations').select('id, label').in('id', convIds);
-      const labelPorConv = new Map<string, string>();
-      for (const c of convs ?? []) labelPorConv.set(String((c as any).id), String((c as any).label ?? '').toUpperCase());
+      for (let i = 0; i < convIds.length; i += 500) {
+        const { data: convs } = await supabase
+          .from('conversations').select('id, label').in('id', convIds.slice(i, i + 500));
+        for (const c of convs ?? []) labelPorConv.set(String((c as any).id), String((c as any).label ?? '').toUpperCase());
+      }
       lista = lista.filter((v: any) => {
         const lab = labelPorConv.get(`57${String(v.telefono ?? '').replace(/^57/, '')}`);
         if (lab == null) return true; // sin conversación → se mantiene
@@ -113,14 +115,17 @@ export async function GET(req: NextRequest) {
       abonoRecibido: v.abono_recibido === true,
       cobrar: abono && valorNum ? pesos(valorNum - abono) : null,
       contactado: !!v.contacto_at,
+      // El asesor la marcó "VENTA PROCESADA POR CORREGIR" (dirección, talla… mal): sigue siendo venta
+      porCorregir: /POR CORREGIR/.test(labelPorConv.get(conv) ?? ''),
     };
   });
 
   const totalVentas = ventasSalida.length;
   const totalIngresos = ventasSalida.reduce((s: number, v: any) => s + v.valorNum, 0);
+  const porCorregir = ventasSalida.filter((v: any) => v.porCorregir).length;
 
   return NextResponse.json({
     ventas: ventasSalida,
-    resumen: { total: totalVentas, ingresos: totalIngresos },
+    resumen: { total: totalVentas, ingresos: totalIngresos, porCorregir },
   });
 }

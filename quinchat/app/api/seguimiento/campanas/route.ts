@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
     if (!mapa.has(id)) mapa.set(id, { mensajes: 0, ventas: 0, prendas: 0, entregadas: 0, devueltas: 0, enCamino: 0, flete: 0 });
     const g = mapa.get(id)!;
     g.mensajes++;
-    const esVenta = String((c as any).label ?? '').toUpperCase().includes('VENTA REALIZADA');
+    const esVenta = /VENTA REALIZADA|POR CORREGIR/.test(String((c as any).label ?? '').toUpperCase());
     if (esVenta) {
       g.ventas++;
       // Cruce con Effi por el teléfono (el id de la conversación es 57 + teléfono)

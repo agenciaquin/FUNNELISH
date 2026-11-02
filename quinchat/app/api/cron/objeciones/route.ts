@@ -18,7 +18,7 @@ export const maxDuration = 60;
 
 // Estados de la conversación que SÍ son venta (no son "perdidos").
 // "ANULADO EN EFFI" NO cuenta como ganada: la transportadora anuló el pedido.
-const ESTADOS_GANADOS = ['VENTA REALIZADA', 'PEDIDO PROGRAMADO'];
+const ESTADOS_GANADOS = ['VENTA REALIZADA', 'POR CORREGIR', 'PEDIDO PROGRAMADO'];
 
 async function autorizado(req: NextRequest): Promise<boolean> {
   const secret = process.env.CRON_SECRET;

@@ -52,7 +52,7 @@ const join = (a: string[]) => [...new Set(a.map(s => s.trim()).filter(Boolean))]
 /** ¿Este chat tiene un pedido a oficina esperando el abono? */
 export function esperaAbonoOficina(label: string | null | undefined, textosBot: string[]): boolean {
   const L = String(label ?? '').toUpperCase();
-  if (/OFICINA CON ABONO|VENTA REALIZADA|ABONO POR VERIFICAR|OFICINA REVISAR HUMANO|PEDIDO CANCELADO/.test(L)) return false;
+  if (/OFICINA CON ABONO|VENTA REALIZADA|POR CORREGIR|ABONO POR VERIFICAR|OFICINA REVISAR HUMANO|PEDIDO CANCELADO/.test(L)) return false;
   if (/OFICINA SIN ABONO|PENDIENTE DE ABONO/.test(L)) return true;
   // Línea de ventas (la IA no siempre etiqueta): el bot habló del abono para oficina.
   return textosBot.some(t => /abono/i.test(t) && /oficina|interrapid/i.test(t));

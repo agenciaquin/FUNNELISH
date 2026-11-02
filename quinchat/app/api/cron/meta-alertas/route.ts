@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
   for (const c of convs ?? []) {
     const id = String((c as any).anuncio_id ?? '').trim();
     if (!id) continue;
-    if (String((c as any).label ?? '').toUpperCase().includes('VENTA REALIZADA')) {
+    if (/VENTA REALIZADA|POR CORREGIR/.test(String((c as any).label ?? '').toUpperCase())) {
       ventasPorAd.set(id, (ventasPorAd.get(id) ?? 0) + 1);
     }
   }

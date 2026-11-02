@@ -25,8 +25,13 @@ interface Venta {
   abonoRecibido: boolean;
   cobrar: string | null;
   contactado: boolean;
+  /** Etiqueta del chat: VENTA PROCESADA POR CORREGIR (sigue siendo venta). */
+  porCorregir?: boolean;
 }
-interface Resumen { total: number; ingresos: number; }
+interface Resumen { total: number; ingresos: number; porCorregir?: number; }
+
+/** Filtros del cruce: estado en Effi + subdivisión de "sin subir" según la etiqueta. */
+type FiltroEffi = 'todos' | EstadoEffi | 'sin_subir_ok' | 'sin_subir_corr' | 'corregir';
 
 const pesos = (n: number | null | undefined) =>
   n == null ? '—' : '$' + Math.round(n).toLocaleString('es-CO');
@@ -64,7 +69,7 @@ export default function VentasPanel({ onAbrirChat, soloOrigen }: { onAbrirChat?:
   // ── Cruce con Effi ──────────────────────────────────────────────────────────
   const [effi, setEffi]           = useState<Map<string, EstadoEffi>>(new Map());
   const [motivos, setMotivos]     = useState<Map<string, string>>(new Map()); // motivo de anulación por teléfono
-  const [filtroEffi, setFiltroEffi] = useState<'todos' | EstadoEffi>('todos');
+  const [filtroEffi, setFiltroEffi] = useState<FiltroEffi>('todos');
   const [avisoExcel, setAvisoExcel] = useState<string | null>(null);
   const [nombreArchivo, setNombreArchivo] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -216,10 +221,20 @@ export default function VentasPanel({ onAbrirChat, soloOrigen }: { onAbrirChat?:
     subida:    ventas.filter(v => effiDe(v) === 'subida').length,
     sin_subir: ventas.filter(v => effiDe(v) === 'sin_subir').length,
     anulada:   ventas.filter(v => effiDe(v) === 'anulada').length,
+    sin_subir_ok:   ventas.filter(v => effiDe(v) === 'sin_subir' && !v.porCorregir).length,
+    sin_subir_corr: ventas.filter(v => effiDe(v) === 'sin_subir' && v.porCorregir).length,
+    corregir:       ventas.filter(v => v.porCorregir).length,
+  };
+  const pasaFiltro = (v: Venta): boolean => {
+    if (filtroEffi === 'todos') return true;
+    if (filtroEffi === 'sin_subir_ok')   return effiDe(v) === 'sin_subir' && !v.porCorregir;
+    if (filtroEffi === 'sin_subir_corr') return effiDe(v) === 'sin_subir' && !!v.porCorregir;
+    if (filtroEffi === 'corregir')       return !!v.porCorregir;
+    return effiDe(v) === filtroEffi;
   };
 
   const filtradas = ventas.filter(v => {
-    if (filtroEffi !== 'todos' && effiDe(v) !== filtroEffi) return false;
+    if (!pasaFiltro(v)) return false;
     if (!busca.trim()) return true;
     const t = busca.toLowerCase();
     return [v.nombre, v.telefono, v.producto, v.ciudad].some(x => String(x).toLowerCase().includes(t));
@@ -300,7 +315,8 @@ export default function VentasPanel({ onAbrirChat, soloOrigen }: { onAbrirChat?:
                 Tienes {contEffi.sin_subir} venta{contEffi.sin_subir === 1 ? '' : 's'} sin subir a Effi
               </p>
               <p className="text-[11px] text-[#9A5B2E]">
-                Tócalo para ver solo las pendientes y súbelas — que no se te quede ninguna. 🚚
+                🟠 {contEffi.sin_subir_ok} venta realizada · ✏️ {contEffi.sin_subir_corr} por corregir —
+                tócalo para ver solo las pendientes y súbelas, que no se te quede ninguna. 🚚
               </p>
             </div>
           </button>
@@ -327,12 +343,14 @@ export default function VentasPanel({ onAbrirChat, soloOrigen }: { onAbrirChat?:
           {avisoExcel && <p className="text-[12px] mt-2 text-[#6B6B6B]">{avisoExcel}</p>}
 
           {/* Contadores con filtro */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 mt-3">
             {([
-              ['todos',     'Todas',     ventas.length,        '#0D0D0D'],
-              ['subida',    'En Effi',   contEffi.subida,      '#15803D'],
-              ['sin_subir', 'Sin subir', contEffi.sin_subir,   '#C2410C'],
-              ['anulada',   'Anuladas',  contEffi.anulada,     '#CA8A04'],
+              ['todos',          'Todas',                          ventas.length,           '#0D0D0D'],
+              ['subida',         'En Effi',                        contEffi.subida,         '#15803D'],
+              ['sin_subir_ok',   'Sin subir · Venta realizada',    contEffi.sin_subir_ok,   '#C2410C'],
+              ['sin_subir_corr', 'Sin subir · Por corregir',       contEffi.sin_subir_corr, '#16A34A'],
+              ['corregir',       '✏️ Por corregir (todas)',        contEffi.corregir,       '#16A34A'],
+              ['anulada',        'Anuladas',                       contEffi.anulada,        '#CA8A04'],
             ] as const).map(([k, t, n, c]) => (
               <button
                 key={k}
@@ -385,6 +403,9 @@ export default function VentasPanel({ onAbrirChat, soloOrigen }: { onAbrirChat?:
                         className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                         style={{ color: est.color, background: est.fondo, border: `1px solid ${est.borde}` }}
                       >{est.texto}</span>
+                      {v.porCorregir && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-[#166534] bg-[#DCFCE7] border border-[#86EFAC]" title="Etiqueta del chat: VENTA PROCESADA POR CORREGIR">✏️ Por corregir</span>
+                      )}
                       <button
                         onClick={e => { e.stopPropagation(); if (confirm('¿Enviar esta venta a la papelera? Quedará 30 días y puedes restaurarla.')) moverPapelera(v.id, 'enviar'); }}
                         title="Enviar a papelera"

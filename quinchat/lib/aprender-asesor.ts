@@ -64,7 +64,7 @@ export async function aprenderDelAsesor(opts: { desde?: Date } = {}) {
       .gte('created_at', new Date(desde.getTime() - 24 * 3_600_000).toISOString())
       .order('created_at', { ascending: true }).limit(80);
     if (!(msgs ?? []).some((m: any) => m.role === 'agent')) continue;
-    const vendida = /VENTA REALIZADA|PEDIDO PROGRAMADO/i.test(String(c.label ?? ''));
+    const vendida = /VENTA REALIZADA|POR CORREGIR|PEDIDO PROGRAMADO/i.test(String(c.label ?? ''));
     bloques.push(`--- CHAT (${vendida ? 'VENDIDO ✅' : 'sin venta aún'}) ---\n${transcripcion(msgs ?? [])}`);
   }
   if (!bloques.length) return { chats: 0, nuevas: 0, activas: 0, porAprobar: 0, metodo: 0, motivo: 'No hay chats de ventas con respuestas manuales.' };

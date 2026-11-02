@@ -296,6 +296,22 @@ export async function GET(req: NextRequest) {
     porHora = horas;
   }
 
+  // ── VENTA PROCESADA POR CORREGIR (etiqueta del chat que pone el asesor) ─────
+  // Sigue siendo una venta confirmada; solo se marca para verla aparte.
+  try {
+    const telConf = [...new Set(universoVista.filter(p => p.confirmado)
+      .map(p => `57${String(p.telefono ?? '').replace(/\D/g, '').slice(-10)}`).filter(id => id.length === 12))];
+    const corregir = new Set<string>();
+    for (let i = 0; i < telConf.length; i += 500) {
+      const { data: cs } = await supabase.from('conversations').select('id')
+        .in('id', telConf.slice(i, i + 500)).ilike('label', '%POR CORREGIR%');
+      for (const c of cs ?? []) corregir.add(String((c as any).id));
+    }
+    for (const p of universoVista as any[]) {
+      if (p.confirmado && corregir.has(`57${String(p.telefono ?? '').replace(/\D/g, '').slice(-10)}`)) p.por_corregir = true;
+    }
+  } catch { /* si falla, nadie queda marcado */ }
+
   // ── Resumen principal (del conjunto filtrado por canal/fuente/estado) ───────
   const filtradoResumen = universoVista.filter(p =>
     estadoFiltro === 'confirmado' ? p.confirmado
@@ -314,6 +330,7 @@ export async function GET(req: NextRequest) {
     vendido: filtradoResumen.filter(p => p.confirmado)
       .reduce((s, p) => s + (Number(String(p.valor ?? '').replace(/[^\d]/g, '')) || 0), 0),
     tasa: totalR ? Math.round((confR / totalR) * 100) : 0,
+    porCorregir: filtradoResumen.filter((p: any) => p.confirmado && p.por_corregir).length,
   };
 
   // ── Comparación con el período ANTERIOR equivalente (para los % de variación) ─

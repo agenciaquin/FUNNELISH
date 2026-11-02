@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
     if (horas < 5 || horas > 23.5) continue; // aún dentro de las 5 h, o ventana ya cerrada
 
     // Ya abonó, ya está en revisión o ya se vendió → no se manda.
-    if (/OFICINA CON ABONO|ABONO POR VERIFICAR|OFICINA REVISAR HUMANO|VENTA REALIZADA|PEDIDO CANCELADO/i.test(String((c as any).label ?? ''))) continue;
+    if (/OFICINA CON ABONO|ABONO POR VERIFICAR|OFICINA REVISAR HUMANO|VENTA REALIZADA|POR CORREGIR|PEDIDO CANCELADO/i.test(String((c as any).label ?? ''))) continue;
     const tel10 = from.replace(/^57/, '').slice(-10);
     const { data: abonado } = await supabase.from('clientes_funnelish')
       .select('id').eq('telefono', tel10).eq('abono_recibido', true)

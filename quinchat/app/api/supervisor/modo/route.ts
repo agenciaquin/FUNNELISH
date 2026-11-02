@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   const supabase = createServerSupabaseClient();
   const { data: apagados } = await supabase.from('conversations').select('id, label').not('bot_off_modo', 'is', null);
   const reactivar = (apagados ?? [])
-    .filter((c: any) => !/VENTA REALIZADA|HUMANO|PEDIDO CANCELADO|OFICINA REVISAR HUMANO|VENDEDOR/i.test(String(c.label ?? '')))
+    .filter((c: any) => !/VENTA REALIZADA|POR CORREGIR|HUMANO|PEDIDO CANCELADO|OFICINA REVISAR HUMANO|VENDEDOR/i.test(String(c.label ?? '')))
     .map((c: any) => c.id);
   if (reactivar.length) await supabase.from('conversations').update({ bot_enabled: true }).in('id', reactivar);
   await supabase.from('conversations').update({ bot_off_modo: null }).not('bot_off_modo', 'is', null);
