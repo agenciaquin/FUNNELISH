@@ -73,6 +73,9 @@ export default function VentasPanel({ onAbrirChat, soloOrigen }: { onAbrirChat?:
   const [avisoExcel, setAvisoExcel] = useState<string | null>(null);
   const [nombreArchivo, setNombreArchivo] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Sincronización automática con la API de Effi (solo lectura)
+  const [syncEffi, setSyncEffi] = useState<{ configurado: boolean; ultima: any } | null>(null);
+  const [sincronizando, setSincronizando] = useState(false);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -140,6 +143,22 @@ export default function VentasPanel({ onAbrirChat, soloOrigen }: { onAbrirChat?:
 
   useEffect(() => { cargar(); }, [cargar]);
   useEffect(() => { cargarEffi(); }, [cargarEffi]);
+  useEffect(() => {
+    fetch('/api/seguimiento/effi/sync', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(j => j && setSyncEffi(j)).catch(() => {});
+  }, []);
+  async function sincronizarEffi() {
+    setSincronizando(true); setAvisoExcel(null);
+    try {
+      const r = await fetch('/api/seguimiento/effi/sync', { method: 'POST' });
+      const j = await r.json().catch(() => ({}));
+      setAvisoExcel(j.ok
+        ? `✅ Sincronizado con Effi: ${j.guias} guías (${j.telefonos} clientes) del ${j.desde} al ${j.hasta}.`
+        : `⚠️ No se pudo sincronizar: ${j.error ?? 'error'}`);
+      await cargarEffi();
+      const e = await fetch('/api/seguimiento/effi/sync', { cache: 'no-store' }).then(x => x.json()).catch(() => null);
+      if (e) setSyncEffi(e);
+    } finally { setSincronizando(false); }
+  }
 
   const effiDe = (v: Venta): EstadoEffi => effi.get(tel10(v.telefono)) ?? 'sin_subir';
   const motivoDe = (v: Venta): string => motivos.get(tel10(v.telefono)) ?? '';
@@ -338,9 +357,21 @@ export default function VentasPanel({ onAbrirChat, soloOrigen }: { onAbrirChat?:
               onClick={() => fileRef.current?.click()}
               className="px-4 py-2 rounded-xl bg-[#00A89D] text-white text-sm font-semibold hover:bg-[#008F85]"
             >⬆️ Subir archivo de Effi</button>
+            {syncEffi?.configurado && (
+              <button
+                onClick={sincronizarEffi} disabled={sincronizando}
+                className="px-4 py-2 rounded-xl border-2 border-[#00A89D] text-[#00847A] text-sm font-semibold hover:bg-[#00A89D]/10 disabled:opacity-60"
+              >{sincronizando ? '⏳ Sincronizando…' : '🔄 Sincronizar con Effi'}</button>
+            )}
             <input ref={fileRef} type="file" accept=".xls,.xlsx,.csv,.htm,.html" className="hidden" onChange={subirExcel} />
           </div>
           {avisoExcel && <p className="text-[12px] mt-2 text-[#6B6B6B]">{avisoExcel}</p>}
+          {syncEffi?.ultima && (
+            <p className={`text-[11px] mt-1 ${syncEffi.ultima.ok === false ? 'text-[#B91C1C]' : 'text-[#6B6B6B]'}`}>
+              🔗 Effi API · última sincronización: {fechaLegible(syncEffi.ultima.inicio)}
+              {syncEffi.ultima.ok === false ? ` — falló: ${syncEffi.ultima.error ?? ''}` : syncEffi.ultima.ok ? ` — ${syncEffi.ultima.guias} guías` : ' — en curso…'}
+            </p>
+          )}
 
           {/* Contadores con filtro */}
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 mt-3">
