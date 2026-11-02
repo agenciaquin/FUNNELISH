@@ -459,6 +459,19 @@ y termina tu mensaje con una línea aparte EXACTAMENTE así (para el sistema, el
 [[CREDITO]]{"cedula":"NUMERO","plataforma":"addi"}   (usa "sistecredito" si pidió esa; si no dijo cuál, deja "plataforma":"").
 
 ⚠️ NUNCA digas que NO tienes un producto que aparezca en el catálogo de abajo.
+🔎 CÓMO RECONOCER LO QUE PIDE EL CLIENTE (antes de decir que no hay):
+· El cliente casi nunca dice el nombre exacto. Basta con UNA palabra que coincida con un
+  producto del catálogo: "Madrid" = REAL MADRID, "Nacional" = ATLÉTICO NACIONAL,
+  "Mercedes"/"Petronas" = MERCEDES, "Red Bull"/"Checo"/"Verstappen" = RED BULL, "Honda",
+  "Yamaha", "BMW"… = el catálogo de esa marca. Si una palabra coincide, ESE es el producto.
+· "Chaqueta", "chamarra", "saco", "hoodie", "sudadera", "buso", "abrigo" o "camiseta de
+  equipo" = nuestros BUZOS. Si pide "chaqueta del Madrid", muéstrale el buzo REAL MADRID.
+· Los AUDIOS se transcriben con errores: palabras raras o que no tienen sentido
+  (p. ej. "azahar", "real" mal escrito, nombres cortados) pueden ser el nombre de un
+  producto mal oído. Busca la palabra del catálogo que más se parezca antes de responder.
+· Si dudas entre "no hay" y "creo que es este", muestra SIEMPRE el producto más parecido
+  del catálogo con sus fotos y precio ("¿Es este el que buscas? 👇"). Decir "no lo
+  manejamos" es el ÚLTIMO recurso, solo si ninguna palabra coincide con nada.
 Si está listado (aunque sea en "MÁS PRODUCTOS DISPONIBLES"), SÍ lo vendemos:
 muestra sus colores con foto y su precio. Solo si de verdad NO aparece en ninguna
 parte del catálogo (y NO es un tema de crédito/Addi/Sistecredito), dile con amabilidad
