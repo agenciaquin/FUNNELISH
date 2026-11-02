@@ -14,6 +14,7 @@ import { entrarLinea, tipoDeLinea } from '@/lib/whatsapp-contexto';
 import { atenderVenta } from '@/lib/quinchat/ventas';
 import { esVendedor, vendedorDe, extraerVentas, nombreChat, generoDe, DIAS_NOMINA, LIMITE_INCENTIVO_SEG } from '@/lib/vendedores';
 import { etiquetarOficinaSinAbono, marcarOficinaAbonada, quitarEtiquetaOficina } from '@/lib/etiqueta-oficina';
+import { enviarEvidenciaEmpaque } from '@/lib/evidencia-empaque';
 import { manejarCuestionarioOficina } from '@/lib/cuestionario-oficina';
 import { ADMINS_VENTAS } from '@/lib/quinchat/registro-venta';
 import { lineaTalla } from '@/lib/formato-pedido';
@@ -1210,6 +1211,7 @@ export async function POST(req: NextRequest) {
       await saveAndSend(supabase, from, MSG_ABONO_CUENTA, 'text', wamid);
       await agregarTagConv(supabase, from, 'PENDIENTE DE ABONO');
       await etiquetarOficinaSinAbono(supabase, from);
+      await enviarEvidenciaEmpaque(supabase, from); // 📦 cómo va empacado (una sola vez)
       continue;
     }
 
@@ -1243,6 +1245,7 @@ export async function POST(req: NextRequest) {
         const expWamid = await sendTextMessage(from, exp);
         await saveAndSend(supabase, from, exp, 'text', expWamid);
       }
+      if (isOficina) await enviarEvidenciaEmpaque(supabase, from); // 📦 solo oficina, una sola vez
       continue;
     }
 
@@ -1592,6 +1595,7 @@ export async function POST(req: NextRequest) {
             `Cuando lo hagas, envíame el *comprobante* por aquí 📷 y lo dejo listo 🚚`;
           const w = await sendTextMessage(from, msgAbono);
           await saveAndSend(supabase, from, msgAbono, 'text', w);
+          await enviarEvidenciaEmpaque(supabase, from); // 📦 cómo va empacado (una sola vez)
           continue;
         }
 

@@ -14,6 +14,7 @@ import { prendasDeVenta } from '@/lib/prendas';
 import { bloqueDeMemoria } from '@/lib/memoria';
 import { manejarCuestionarioOficina, CUESTIONARIO_OFICINA } from '@/lib/cuestionario-oficina';
 import { etiquetarOficinaSinAbono } from '@/lib/etiqueta-oficina';
+import { enviarEvidenciaEmpaque } from '@/lib/evidencia-empaque';
 import { soloBienvenidaActivo } from '@/lib/ajustes-bot';
 import { bloqueMetodoAsesor } from '@/lib/aprender-asesor';
 import { registrarFAQCandidata } from '@/lib/faq';
@@ -1954,11 +1955,13 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
       && /\b(foto|fotos|imagen|im[aá]genes|modelo|color|colores|dise[ñn]o)\b/i.test(String(texto ?? ''));
     // Si el bot le está pidiendo el ABONO de oficina, se etiqueta "OFICINA SIN ABONO"
     // (así, si no responde en 5 h, le llega el cuestionario de contraentrega).
+    let pideAbonoOficina = false;
     if (/abono/i.test(respuesta) && /oficina|interrapid/i.test(respuesta)) {
       try {
         const { data: cv } = await supabase.from('conversations').select('label').eq('id', from).maybeSingle();
         if (!/OFICINA CON ABONO|OFICINA REVISAR HUMANO|VENTA REALIZADA/i.test(String(cv?.label ?? ''))) {
           await etiquetarOficinaSinAbono(supabase, from);
+          pideAbonoOficina = true;
         }
       } catch { /* no bloquear la respuesta */ }
     }
@@ -2005,6 +2008,8 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
     // En paralelo: así las fotos llegan todas juntas y rápido (no de a una).
     await Promise.all(nuevasFotos.map(url => enviarFoto(supabase, from, url).catch(() => {})));
     if (cta) await responder(supabase, from, cta);
+    // 📦 Si se le acaba de pedir el abono para reclamar en OFICINA: foto de cómo va empacado (una sola vez)
+    if (pideAbonoOficina) await enviarEvidenciaEmpaque(supabase, from);
   }
 }
 
