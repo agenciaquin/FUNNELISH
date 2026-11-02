@@ -492,6 +492,23 @@ export async function POST(req: NextRequest) {
 
   const value = body?.entry?.[0]?.changes?.[0]?.value;
 
+  // ── Clientes con NOMBRE DE USUARIO de WhatsApp (sin número visible) ─────────
+  // Meta puede mandar el mensaje sin "from" (teléfono) y con un identificador del
+  // negocio (BSUID, ej. "CO.4672098223113691") en otro campo. Antes eso quedaba como
+  // "undefined" y TODOS esos clientes se mezclaban en un solo chat. Aquí se completa
+  // el remitente con lo que venga, para que cada cliente tenga su propio chat.
+  if (value?.messages?.length) {
+    const c0 = value.contacts?.[0] ?? {};
+    for (const m of value.messages) {
+      if (!m.from) {
+        const alterno = m.user_id ?? m.from_user_id ?? m.bsuid ?? c0.wa_id ?? c0.user_id ?? c0.bsuid;
+        console.warn('[WhatsApp] mensaje sin "from" — campos:', JSON.stringify({ msg: Object.keys(m), contacto: Object.keys(c0), usado: alterno ?? null }));
+        if (alterno) m.from = String(alterno);
+      }
+    }
+    if (value.messages.some((m: any) => !m.from)) return NextResponse.json({ status: 'ok' }); // sin remitente no se puede atender
+  }
+
   // ── Línea (número) por la que entró el mensaje ─────────────────────────────
   // Fija el número para que TODA respuesta salga por el mismo. 'ventas' o 'funnel'.
   const phoneIdEntrante = value?.metadata?.phone_number_id as string | undefined;

@@ -1,3 +1,4 @@
+import { destinoWA } from './whatsapp';
 /**
  * Plantillas de WhatsApp (Meta Cloud API).
  *
@@ -229,7 +230,7 @@ export async function enviarPlantilla(
 
   const payload: any = {
     messaging_product: 'whatsapp',
-    to,
+    ...destinoWA(to),
     type: 'template',
     template: { name: nombre, language: { code: idioma } },
   };

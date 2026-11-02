@@ -2,6 +2,11 @@ import { phoneIdActual } from './whatsapp-contexto';
 
 const WA_API_URL = 'https://graph.facebook.com/v19.0';
 
+/** Destinatario: teléfono → { to }. Cliente con nombre de usuario (BSUID "CO.xxxx") → { recipient }. */
+export function destinoWA(to: string): { to: string } | { recipient: string } {
+  return /^[A-Z]{2}\.[A-Za-z0-9]+$/.test(String(to ?? '')) ? { recipient: to } : { to };
+}
+
 // ── Número real del bot ───────────────────────────────────────────────────────
 // Se le pregunta a Meta cuál es el número conectado, para que ningún enlace de
 // la página pueda apuntar a un número equivocado escrito a mano.
@@ -126,7 +131,7 @@ export async function sendMediaMessage(
       body: JSON.stringify({
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
-        to,
+        ...destinoWA(to),
         type,
         [type]: mediaObj,
       }),
@@ -194,7 +199,7 @@ export async function sendTextMessage(to: string, text: string, responderA?: str
       body: JSON.stringify({
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
-        to,
+        ...destinoWA(to),
         type: 'text',
         text: { body: text },
         ...(responderA ? { context: { message_id: responderA } } : {}),
@@ -352,7 +357,7 @@ export async function sendImageByUrl(to: string, imageUrl: string, caption?: str
       body: JSON.stringify({
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
-        to,
+        ...destinoWA(to),
         type: 'image',
         image: imageObj,
       }),
@@ -402,7 +407,7 @@ export async function sendAudioByUrl(to: string, audioUrl: string): Promise<stri
       body: JSON.stringify({
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
-        to,
+        ...destinoWA(to),
         type: 'audio',
         audio: { link: audioUrl },
       }),
@@ -427,7 +432,7 @@ export async function sendVideoByUrl(to: string, videoUrl: string, caption?: str
     const res = await fetch(`${WA_API_URL}/${phoneNumberId}/messages`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'video', video: videoObj }),
+      body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', ...destinoWA(to), type: 'video', video: videoObj }),
     });
     if (!res.ok) { console.error('[WhatsApp] sendVideoByUrl failed:', await res.text()); return null; }
     const data = await res.json();
@@ -479,7 +484,7 @@ export async function sendConfirmacionTemplate(
 
   const payload = {
     messaging_product: 'whatsapp',
-    to,
+    ...destinoWA(to),
     type: 'template',
     template: {
       name: 'confirmacion_pedido_klixmant',
@@ -552,7 +557,7 @@ export async function sendRecordatorioTemplate(to: string, nombre: string): Prom
   }
   const payload = {
     messaging_product: 'whatsapp',
-    to,
+    ...destinoWA(to),
     type: 'template',
     template: {
       name: 'recordatorio_pedido_klixmant',
@@ -609,7 +614,7 @@ export async function sendPlantillaRemarketing(
 
   const payload = {
     messaging_product: 'whatsapp',
-    to,
+    ...destinoWA(to),
     type: 'template',
     template: { name: templateName, language: { code: lang }, components },
   };
@@ -646,7 +651,7 @@ export async function sendMantenerChatTemplate(to: string): Promise<string | nul
   }
   const payload = {
     messaging_product: 'whatsapp',
-    to,
+    ...destinoWA(to),
     type: 'template',
     template: {
       name: 'recordatorio_lilibeth',
@@ -685,7 +690,7 @@ export async function sendVendedoresTemplate(to: string, nombre: string): Promis
   }
   const payload = {
     messaging_product: 'whatsapp',
-    to,
+    ...destinoWA(to),
     type: 'template',
     template: {
       name: 'vendedores',

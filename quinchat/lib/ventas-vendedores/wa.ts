@@ -1,5 +1,5 @@
 import { phoneIdActual } from '@/lib/whatsapp-contexto';
-import { sendTextMessage } from '@/lib/whatsapp';
+import { sendTextMessage, destinoWA } from '@/lib/whatsapp';
 
 /**
  * Mensaje con botones de respuesta rápida (máx. 3, título ≤ 20 caracteres).
@@ -14,7 +14,7 @@ export async function enviarBotones(to: string, cuerpo: string, botones: { id: s
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'interactive',
+          messaging_product: 'whatsapp', recipient_type: 'individual', ...destinoWA(to), type: 'interactive',
           interactive: {
             type: 'button',
             body: { text: cuerpo.slice(0, 1024) },
