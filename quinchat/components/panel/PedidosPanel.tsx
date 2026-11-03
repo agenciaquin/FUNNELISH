@@ -244,6 +244,20 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   const [rango, setRango]       = useState<{ desde: string; hasta: string } | null>(() => rangoPreset('hoy'));
   const [preset, setPreset]     = useState<string>('hoy');   // etiqueta del rango activo
   const [verRango, setVerRango] = useState(false);          // abre inputs de rango personalizado
+  // Draft del rango personalizado: se ve al instante en los inputs, pero la
+  // consulta real espera ~650 ms a que termines de elegir AMBAS fechas. Antes
+  // cada fecha disparaba su propia consulta pesada (2–3 seguidas), por eso el
+  // filtro personalizado se sentía muy lento.
+  const [rangoInput, setRangoInput] = useState<{ desde: string; hasta: string } | null>(null);
+  const rangoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function editarRango(parcial: { desde?: string; hasta?: string }) {
+    const actual = rangoInput ?? rango ?? { desde: hoyBogota(), hasta: hoyBogota() };
+    const nuevo = { desde: parcial.desde ?? actual.desde, hasta: parcial.hasta ?? actual.hasta };
+    setRangoInput(nuevo);                               // se ve al instante
+    if (rangoTimer.current) clearTimeout(rangoTimer.current);
+    rangoTimer.current = setTimeout(() => setRango(nuevo), 650);  // 1 sola consulta
+  }
+  useEffect(() => () => { if (rangoTimer.current) clearTimeout(rangoTimer.current); }, []);
   const [busca, setBusca]       = useState('');
   const [verCarritos, setVerCarritos] = useState(false);
 
@@ -487,18 +501,18 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
               ['30', '30 días'], ['mes', 'Este mes'], ['mesprev', 'Mes anterior'],
             ] as [string, string][]).map(([clave, txt]) => (
               <button key={clave}
-                onClick={() => { setPreset(clave); setVerRango(false); setRango(rangoPreset(clave)); }}
+                onClick={() => { if (rangoTimer.current) clearTimeout(rangoTimer.current); setRangoInput(null); setPreset(clave); setVerRango(false); setRango(rangoPreset(clave)); }}
                 className={chip(preset === clave && !verRango)}>{txt}</button>
             ))}
             <button onClick={() => { setVerRango(v => !v); setPreset('custom'); }} className={chip(verRango)}>📆 Personalizado</button>
             {verRango && (
               <span className="flex items-center gap-1.5">
-                <input type="date" value={rango?.desde ?? hoyBogota()}
-                  onChange={e => setRango(r => ({ desde: e.target.value, hasta: r?.hasta ?? hoyBogota() }))}
+                <input type="date" value={(rangoInput ?? rango)?.desde ?? hoyBogota()}
+                  onChange={e => editarRango({ desde: e.target.value })}
                   className="px-2 py-1 rounded-lg border border-[#E8E8E8] text-xs" />
                 <span className="text-[11px] text-[#9A9A9A]">a</span>
-                <input type="date" value={rango?.hasta ?? hoyBogota()}
-                  onChange={e => setRango(r => ({ desde: r?.desde ?? hoyBogota(), hasta: e.target.value }))}
+                <input type="date" value={(rangoInput ?? rango)?.hasta ?? hoyBogota()}
+                  onChange={e => editarRango({ hasta: e.target.value })}
                   className="px-2 py-1 rounded-lg border border-[#E8E8E8] text-xs" />
               </span>
             )}
