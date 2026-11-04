@@ -92,6 +92,9 @@ export default function EditorBloqueLateral({
   // Subir VARIAS fotos a la vez para el carrusel de la portada: se agregan a la
   // galería del embudo y quedan seleccionadas en el carrusel (props.fotos).
   const refCarrusel = useRef<HTMLInputElement>(null);
+  // Arrastrar fotos del carrusel para cambiar su orden
+  const [arrastrando, setArrastrando] = useState<number | null>(null);
+  const [sobre, setSobre] = useState<number | null>(null);
   const subirVariasCarrusel = async (files: FileList) => {
     if (!onSubirArchivo) return;
     setSubiendo(true);
@@ -856,22 +859,54 @@ export default function EditorBloqueLateral({
                     onChange={e => { if (e.target.files?.length) subirVariasCarrusel(e.target.files); e.target.value = ''; }} />
                 </div>
               )}
-              {(imagenes && imagenes.length > 0) ? (
+              {(imagenes && imagenes.length > 0) ? (() => {
+                const galeria = imagenes.filter(Boolean);
+                const sel: string[] = (Array.isArray(p.fotos) ? p.fotos : []).filter((u: string) => galeria.includes(u));
+                // Orden en pantalla = orden del carrusel: primero las elegidas (en su orden), luego las demás
+                const lista = sel.length ? [...sel, ...galeria.filter(u => !sel.includes(u))] : galeria;
+                const activaDe = (src: string) => sel.length === 0 || sel.includes(src);
+                const mover = (de: number, a: number) => {
+                  if (de === a || de < 0 || a < 0 || de >= lista.length || a >= lista.length) return;
+                  const nueva = [...lista];
+                  const [x] = nueva.splice(de, 1);
+                  nueva.splice(a, 0, x);
+                  // El carrusel sale en este orden (solo las fotos activas)
+                  setProp('fotos', nueva.filter(activaDe));
+                };
+                let pos = 0;
+                return (
+                <>
+                <p className="text-[10px] text-[#00847A] font-semibold mb-1.5">↔️ Arrastra las fotos para cambiar el orden del carrusel (en celular usa ◀ ▶).</p>
                 <div className="grid grid-cols-4 gap-1.5">
-                  {imagenes.map((src, i) => {
-                    const sel: string[] = Array.isArray(p.fotos) ? p.fotos : [];
-                    const activa = sel.length === 0 || sel.includes(src);
+                  {lista.map((src, i) => {
+                    const activa = activaDe(src);
+                    const numero = activa ? ++pos : 0;
                     return (
-                      <div key={i}
+                      <div key={src}
+                        draggable
+                        onDragStart={e => { setArrastrando(i); e.dataTransfer.effectAllowed = 'move'; }}
+                        onDragOver={e => { e.preventDefault(); if (sobre !== i) setSobre(i); }}
+                        onDragLeave={() => setSobre(s => (s === i ? null : s))}
+                        onDrop={e => { e.preventDefault(); if (arrastrando !== null) mover(arrastrando, i); setArrastrando(null); setSobre(null); }}
+                        onDragEnd={() => { setArrastrando(null); setSobre(null); }}
                         onClick={() => {
-                          const base: string[] = Array.isArray(p.fotos) && p.fotos.length ? p.fotos : (sel.length === 0 ? [...imagenes] : []);
+                          const base: string[] = sel.length ? [...sel] : [...lista];
                           const next = base.includes(src) ? base.filter(x => x !== src) : [...base, src];
                           setProp('fotos', next.length ? next : undefined);
                         }}
-                        className={`relative rounded-lg overflow-hidden border-2 cursor-pointer ${activa ? 'border-[#00A89D]' : 'border-[#E0E0E0] opacity-40'}`}>
+                        className={`relative rounded-lg overflow-hidden border-2 cursor-grab active:cursor-grabbing transition-transform ${activa ? 'border-[#00A89D]' : 'border-[#E0E0E0] opacity-40'} ${arrastrando === i ? 'opacity-30 scale-95' : ''} ${sobre === i && arrastrando !== i ? 'ring-2 ring-[#F59E0B] scale-105' : ''}`}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={src} alt="" className="w-full aspect-square object-cover" />
-                        {activa && <span className="absolute top-0.5 right-0.5 text-[10px] bg-[#00A89D] text-white rounded-full w-4 h-4 flex items-center justify-center">✓</span>}
+                        <img src={src} alt="" draggable={false} className="w-full aspect-square object-cover pointer-events-none" />
+                        {activa && <span className="absolute top-0.5 right-0.5 text-[10px] font-bold bg-[#00A89D] text-white rounded-full min-w-4 h-4 px-1 flex items-center justify-center">{numero}</span>}
+                        {/* Mover con botones (celular / precisión) */}
+                        <span className="absolute bottom-0.5 inset-x-0.5 flex justify-between">
+                          <button type="button" title="Mover a la izquierda" disabled={i === 0}
+                            onClick={ev => { ev.stopPropagation(); mover(i, i - 1); }}
+                            className="w-5 h-5 rounded-full bg-black/60 text-white text-[10px] disabled:opacity-0">◀</button>
+                          <button type="button" title="Mover a la derecha" disabled={i === lista.length - 1}
+                            onClick={ev => { ev.stopPropagation(); mover(i, i + 1); }}
+                            className="w-5 h-5 rounded-full bg-black/60 text-white text-[10px] disabled:opacity-0">▶</button>
+                        </span>
                         {/* X para BORRAR la foto de la galería del embudo */}
                         <button
                           type="button"
@@ -890,7 +925,9 @@ export default function EditorBloqueLateral({
                     );
                   })}
                 </div>
-              ) : (
+                </>
+                );
+              })() : (
                 <p className="text-[11px] text-[#C2410C]">Sube fotos a la galería del embudo (sección de fotos) para poder elegirlas.</p>
               )}
             </div>

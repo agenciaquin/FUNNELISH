@@ -85,7 +85,8 @@ export async function describirFoto(base64: string, mimeType: string): Promise<s
       systemPrompt:
         'Describe la prenda de la foto para buscarla en un catálogo de buzos. Responde UNA línea así:\n' +
         'TITULO: <texto impreso en la imagen como encabezado o nombre del producto, p. ej. "CUELLO ALTO MERCEDES"; vacío si no hay> | ' +
-        'TIPO: <cuello alto | buzo con capota | chaqueta | camiseta | polo> | MARCAS: <marcas, equipos, escuderías y textos de la prenda> | COLOR: <color principal>\n' +
+        'TIPO: <cuello alto | buzo con capota | chaqueta | camiseta | polo> | MARCAS: <marcas, equipos, escuderías y textos de la prenda> | ' +
+        'COLOR: <si la imagen trae el color escrito en una etiqueta (p. ej. "BUZO COCOA" → Cocoa) usa ESE; si no, el color principal de la prenda>\n' +
         'Cómo distinguir el TIPO: "cuello alto" = cremallera completa al frente y cuello levantado, SIN capucha ni bolsillo canguro; ' +
         '"buzo con capota" = capucha y bolsillo canguro, sin cremallera completa. Fíjate bien en el cuello y la cremallera. Sin frases extra.',
       messages: [{ role: 'user', content: 'Describe esta prenda.' }],
@@ -242,6 +243,7 @@ export async function elegirConFoto(
       systemPrompt:
         'Comparas la foto que mandó un vendedor (la PRIMERA imagen) con fotos oficiales de un catálogo (las siguientes, en el orden de la lista). ' +
         'Elige la que sea EXACTAMENTE el mismo diseño (mismos logos, textos, ubicación y colores). Un logo parecido NO basta. ' +
+        'El producto se decide SOLO por lo que se ve en la foto del vendedor; no te guíes por nombres de producto escritos en el texto. ' +
         'MUY IMPORTANTE, revisa el TIPO de prenda antes que los logos: cuello alto (cremallera completa, cuello levantado, sin capucha) ' +
         'NO es lo mismo que buzo con capota (capucha y bolsillo canguro). Dos opciones con los mismos logos pero distinto tipo son productos distintos. ' +
         'Si la foto del vendedor trae un título impreso (p. ej. "CUELLO ALTO MERCEDES"), úsalo: la opción correcta debe llamarse igual o casi igual. ' +

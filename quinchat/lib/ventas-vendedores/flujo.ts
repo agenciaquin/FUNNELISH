@@ -274,24 +274,36 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
   const { data: itemsPrevios } = await supabase.from('vv_items').select('*').eq('venta_id', venta.id).order('id');
   const previos = itemsPrevios ?? [];
   const fotos: string[] = venta.fotos_vendedor ?? [];
+  // Si mandó foto pero no escribió la prenda, la prenda sale de la foto
+  if (!v.prendas.length && fotos.length) v.prendas = [{ descripcion: '', color: '', talla: '', genero: '', cantidad: 1, precio: null }];
   const totalPrendas = v.prendas.reduce((s, p) => s + p.cantidad, 0) || 1;
+  /** "TITULO: X | TIPO: Y | MARCAS: Z | COLOR: W" → campos. */
+  const campoFoto = (desc: string, campo: string) =>
+    (new RegExp(`${campo}:\\s*([^|\\n]*)`, 'i').exec(desc)?.[1] ?? '').replace(/["“”<>]/g, '').trim();
   for (let i = 0; i < v.prendas.length; i++) {
     const p = v.prendas[i];
-    const sol = { descripcion: p.descripcion, color: p.color, talla: p.talla, genero: p.genero };
+    const fotoUrl = fotos[i] ?? (v.prendas.length === 1 ? fotos[fotos.length - 1] : null) ?? null;
+    const descFoto = fotoUrl ? (evFotos ?? []).find((e: any) => e.detalle?.url === fotoUrl)?.detalle?.descripcion ?? '' : '';
+    // ⚠️ REGLA ÚNICA: si hay FOTO, el producto y el color salen SOLO de la foto (su título y lo que se ve).
+    // El nombre de producto que escribió el vendedor NO se usa para buscar. Del texto solo se toman talla, género, cantidad y precio.
+    const conFoto = !!fotoUrl && !!descFoto;
+    const tituloFoto = conFoto ? campoFoto(descFoto, 'TITULO') : '';
+    const colorFoto = conFoto ? campoFoto(descFoto, 'COLOR') : '';
+    const sol = conFoto
+      ? { descripcion: tituloFoto || campoFoto(descFoto, 'MARCAS') || 'Prenda de la foto', color: colorFoto, talla: p.talla, genero: p.genero }
+      : { descripcion: p.descripcion, color: p.color, talla: p.talla, genero: p.genero };
     const prev = previos[i];
     const precio = p.precio ?? (v.total && v.prendas.length === 1 ? Math.round(v.total / p.cantidad) : (v.total ? Math.round(v.total / totalPrendas) : null));
     if (prev && JSON.stringify(prev.candidatos?.solicitud ?? {}) === JSON.stringify(sol) && prev.estado !== 'sin_identificar') {
       await supabase.from('vv_items').update({ cantidad: p.cantidad, precio }).eq('id', prev.id);
       continue;
     }
-    const fotoUrl = fotos[i] ?? (v.prendas.length === 1 ? fotos[fotos.length - 1] : null) ?? null;
-    const descFoto = fotoUrl ? (evFotos ?? []).find((e: any) => e.detalle?.url === fotoUrl)?.detalle?.descripcion ?? '' : '';
-    const base = { venta_id: venta.id, cantidad: p.cantidad, precio, foto_vendedor: fotoUrl, descripcion: p.descripcion };
+    const base = { venta_id: venta.id, cantidad: p.cantidad, precio, foto_vendedor: fotoUrl, descripcion: sol.descripcion };
     let item = prev;
     if (item) await supabase.from('vv_items').update({ ...base, estado: 'pendiente', candidatos: { solicitud: sol } }).eq('id', item.id);
     else item = (await supabase.from('vv_items').insert({ ...base, estado: 'pendiente', candidatos: { solicitud: sol } }).select('*').single()).data;
     if (!item) continue;
-    await reconocer(supabase, item, sol, `${p.descripcion} ${descFoto}`, fotoUrl);
+    await reconocer(supabase, item, sol, conFoto ? descFoto : p.descripcion, fotoUrl);
   }
   // Prendas que el vendedor quitó
   const sobran = previos.slice(v.prendas.length).map((x: any) => x.id);
@@ -320,7 +332,7 @@ async function reconocer(supabase: any, item: any, sol: Pick<PrendaTexto, 'descr
     const { bajarComoBase64 } = await import('./ia');
     const f = await bajarComoBase64(fotoUrl);
     if (f) {
-      const r = await elegirConFoto(f, cands.slice(0, 4), `${sol.descripcion} ${sol.color} ${sol.talla}`);
+      const r = await elegirConFoto(f, cands.slice(0, 4), `Título impreso en la foto: ${sol.descripcion || '(no tiene)'} · talla ${sol.talla || '—'}`);
       if (r && r.indice >= 0 && r.confianza >= 0.75) { elegido = cands[r.indice]; confianza = r.confianza; motivo = r.motivo; }
     }
   } else if (cands.length === 1 || cands[0].puntaje >= cands[1].puntaje + 6) {
