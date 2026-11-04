@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +12,7 @@ const ESTADOS_VALIDOS = ['entregada', 'en_camino', 'devuelta', 'novedad', 'anula
  *  si hay más guías que eso, sin paginar el cruce dejaba ventas como "sin subir"
  *  aunque sí estuvieran en Effi. */
 export async function GET() {
+  if (!(await getServerSession(authOptions))) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   const supabase = createServerSupabaseClient();
   const todas: any[] = [];
   const PAGE = 1000;
@@ -22,7 +25,22 @@ export async function GET() {
     todas.push(...data);
     if (data.length < PAGE) break;
   }
-  return NextResponse.json({ guias: todas });
+  // Remisiones de venta (subidas a Effi, con o sin guía) de los últimos 45 días.
+  // Si la tabla aún no existe o falla, se devuelve vacío y el panel sigue como antes.
+  const remisiones: any[] = [];
+  try {
+    const desdeR = new Date(Date.now() - 45 * 86400_000).toISOString();
+    for (let d = 0; d < 20000; d += PAGE) {
+      const { data, error } = await supabase
+        .from('effi_remisiones_api').select('telefono, estado, id_transaccion, guia')
+        .gte('fecha_trans', desdeR).not('telefono', 'is', null)
+        .range(d, d + PAGE - 1);
+      if (error || !data?.length) break;
+      remisiones.push(...data.filter((r: any) => !/anulad/i.test(String(r.estado ?? ''))));
+      if (data.length < PAGE) break;
+    }
+  } catch { /* sin remisiones */ }
+  return NextResponse.json({ guias: todas, remisiones });
 }
 
 /**
@@ -31,6 +49,7 @@ export async function GET() {
  * y lo que ya estaba y no vino en este archivo se conserva.
  */
 export async function POST(req: NextRequest) {
+  if (!(await getServerSession(authOptions))) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   const filas = Array.isArray(body?.guias) ? body.guias : [];
   if (!filas.length) return NextResponse.json({ error: 'No llegaron guías.' }, { status: 400 });

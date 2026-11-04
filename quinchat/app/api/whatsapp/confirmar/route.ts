@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recortar } from '@/lib/recortar';
 import { sendTextMessage } from '@/lib/whatsapp';
 import { createServerSupabaseClient } from '@/lib/supabase';
 
@@ -67,7 +68,7 @@ export async function POST(req: NextRequest) {
   await supabase.from('conversations').upsert({
     id:                waPhone,
     contact_name:      tel10,
-    last_message:      mensaje.trim().slice(0, 80) + '…',
+    last_message:      recortar(mensaje.trim(), 80) + '…',
     last_message_time: now,
     unread_count:      0,
     bot_enabled:       true,

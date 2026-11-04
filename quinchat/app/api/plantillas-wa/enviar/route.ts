@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recortar } from '@/lib/recortar';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { enviarPlantilla } from '@/lib/whatsapp-templates';
 
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
       role: 'agent', type: 'text', whatsapp_id: r.wamid ?? null, created_at: ahora,
     });
     await supabase.from('conversations')
-      .update({ last_message: texto.slice(0, 100), last_message_time: ahora })
+      .update({ last_message: recortar(texto, 100), last_message_time: ahora })
       .eq('id', to);
 
     return NextResponse.json({ ok: true, wamid: r.wamid });

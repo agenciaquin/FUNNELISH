@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recortar } from '@/lib/recortar';
 import { unirDireccionBarrio } from '@/lib/direccion-barrio';
 import { sendTextMessage, sendConfirmacionTemplate, sendImageByUrl } from '@/lib/whatsapp';
 import { esOficina, etiquetarOficinaSinAbono } from '@/lib/etiqueta-oficina';
@@ -854,7 +855,7 @@ export async function POST(req: NextRequest) {
     const { error: convErr } = await supabase.from('conversations').upsert({
       id:                waPhone,
       contact_name:      nombre,
-      last_message:      mensajeAlmacenado.slice(0, 100),
+      last_message:      recortar(mensajeAlmacenado, 100),
       last_message_time: now,
       unread_count:      1,
       bot_enabled:       botOn, // 'humano' → bot apagado (lo confirma una persona)

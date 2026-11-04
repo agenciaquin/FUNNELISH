@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 
-type EstadoEffi = 'subida' | 'anulada' | 'sin_subir';
+type EstadoEffi = 'subida' | 'remision' | 'anulada' | 'sin_subir';
 const tel10 = (t: any) => String(t ?? '').replace(/\D/g, '').slice(-10);
 
 interface Venta {
@@ -39,6 +39,7 @@ const pesos = (n: number | null | undefined) =>
 // Colores por estado en Effi: verde=en Effi, naranja=sin subir, amarillo=anulada
 const ESTILO_EFFI: Record<EstadoEffi, { texto: string; color: string; borde: string; fondo: string }> = {
   subida:    { texto: '🟢 En Effi',   color: '#15803D', borde: '#86EFAC', fondo: 'rgba(21,128,61,0.06)' },
+  remision:  { texto: '🔵 Subida · sin guía', color: '#1D4ED8', borde: '#93C5FD', fondo: 'rgba(29,78,216,0.05)' },
   sin_subir: { texto: '🟠 Sin subir', color: '#C2410C', borde: '#FDBA74', fondo: 'rgba(234,88,12,0.06)' },
   anulada:   { texto: '🟡 Anulada',   color: '#B45309', borde: '#FDE68A', fondo: 'rgba(202,138,4,0.10)' },
 };
@@ -69,6 +70,7 @@ export default function VentasPanel({ onAbrirChat, soloOrigen }: { onAbrirChat?:
   // ── Cruce con Effi ──────────────────────────────────────────────────────────
   const [effi, setEffi]           = useState<Map<string, EstadoEffi>>(new Map());
   const [motivos, setMotivos]     = useState<Map<string, string>>(new Map()); // motivo de anulación por teléfono
+  const [remisiones, setRemisiones] = useState<Set<string>>(new Set());   // teléfonos con remisión en Effi (aún sin guía)
   const [filtroEffi, setFiltroEffi] = useState<FiltroEffi>('todos');
   const [avisoExcel, setAvisoExcel] = useState<string | null>(null);
   const [nombreArchivo, setNombreArchivo] = useState<string | null>(null);
@@ -138,6 +140,7 @@ export default function VentasPanel({ onAbrirChat, soloOrigen }: { onAbrirChat?:
       }
       setEffi(m);
       setMotivos(mm);
+      setRemisiones(new Set((data.remisiones ?? []).map((x: any) => tel10(x.telefono)).filter((t: string) => t.length === 10)));
     } catch { /* sin datos de Effi */ }
   }, []);
 
@@ -152,7 +155,7 @@ export default function VentasPanel({ onAbrirChat, soloOrigen }: { onAbrirChat?:
       const r = await fetch('/api/seguimiento/effi/sync', { method: 'POST' });
       const j = await r.json().catch(() => ({}));
       setAvisoExcel(j.ok
-        ? `✅ Sincronizado con Effi: ${j.guias} guías (${j.telefonos} clientes) del ${j.desde} al ${j.hasta}.`
+        ? `✅ Sincronizado con Effi: ${j.guias} guías (${j.telefonos} clientes)${j.remisiones != null ? ` y ${j.remisiones} remisiones` : ''} del ${j.desde} al ${j.hasta}.`
         : `⚠️ No se pudo sincronizar: ${j.error ?? 'error'}`);
       await cargarEffi();
       const e = await fetch('/api/seguimiento/effi/sync', { cache: 'no-store' }).then(x => x.json()).catch(() => null);
@@ -160,7 +163,11 @@ export default function VentasPanel({ onAbrirChat, soloOrigen }: { onAbrirChat?:
     } finally { setSincronizando(false); }
   }
 
-  const effiDe = (v: Venta): EstadoEffi => effi.get(tel10(v.telefono)) ?? 'sin_subir';
+  // Guía (estado real) > remisión subida sin guía > sin subir
+  const effiDe = (v: Venta): EstadoEffi => {
+    const t = tel10(v.telefono);
+    return effi.get(t) ?? (remisiones.has(t) ? 'remision' : 'sin_subir');
+  };
   const motivoDe = (v: Venta): string => motivos.get(tel10(v.telefono)) ?? '';
 
   // Lee el Excel de Effi (el "xls" real es una tabla HTML) y guarda el cruce.
@@ -238,6 +245,7 @@ export default function VentasPanel({ onAbrirChat, soloOrigen }: { onAbrirChat?:
 
   const contEffi = {
     subida:    ventas.filter(v => effiDe(v) === 'subida').length,
+    remision:  ventas.filter(v => effiDe(v) === 'remision').length,
     sin_subir: ventas.filter(v => effiDe(v) === 'sin_subir').length,
     anulada:   ventas.filter(v => effiDe(v) === 'anulada').length,
     sin_subir_ok:   ventas.filter(v => effiDe(v) === 'sin_subir' && !v.porCorregir).length,
@@ -349,7 +357,7 @@ export default function VentasPanel({ onAbrirChat, soloOrigen }: { onAbrirChat?:
               <p className="text-sm font-bold text-[#0D0D0D]">📦 Cruce con Effi</p>
               <p className="text-[11px] text-[#6B6B6B]">
                 Sube el reporte <b>una sola vez</b> y se cruza con todas las ventas (Funnel y WhatsApp).
-                🟢 En Effi · 🟠 sin subir · 🟡 anulada.
+                🟢 En Effi con guía · 🔵 subida sin guía · 🟠 sin subir · 🟡 anulada.
                 {nombreArchivo ? ` · Último: ${nombreArchivo}` : ''}
               </p>
             </div>
@@ -369,15 +377,17 @@ export default function VentasPanel({ onAbrirChat, soloOrigen }: { onAbrirChat?:
           {syncEffi?.ultima && (
             <p className={`text-[11px] mt-1 ${syncEffi.ultima.ok === false ? 'text-[#B91C1C]' : 'text-[#6B6B6B]'}`}>
               🔗 Effi API · última sincronización: {fechaLegible(syncEffi.ultima.inicio)}
-              {syncEffi.ultima.ok === false ? ` — falló: ${syncEffi.ultima.error ?? ''}` : syncEffi.ultima.ok ? ` — ${syncEffi.ultima.guias} guías` : ' — en curso…'}
+              {syncEffi.ultima.ok === false ? ` — falló: ${syncEffi.ultima.error ?? ''}` : syncEffi.ultima.ok ? ` — ${syncEffi.ultima.guias} guías${syncEffi.ultima.remisiones != null ? ` · ${syncEffi.ultima.remisiones} remisiones` : ''}` : ' — en curso…'}
+              {syncEffi.ultima.error_remisiones ? ` · ⚠️ remisiones: ${syncEffi.ultima.error_remisiones}` : ''}
             </p>
           )}
 
           {/* Contadores con filtro */}
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 mt-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2 mt-3">
             {([
               ['todos',          'Todas',                          ventas.length,           '#0D0D0D'],
-              ['subida',         'En Effi',                        contEffi.subida,         '#15803D'],
+              ['subida',         'En Effi (con guía)',             contEffi.subida,         '#15803D'],
+              ['remision',       'Subida · sin guía',              contEffi.remision,       '#1D4ED8'],
               ['sin_subir_ok',   'Sin subir · Venta realizada',    contEffi.sin_subir_ok,   '#C2410C'],
               ['sin_subir_corr', 'Sin subir · Por corregir',       contEffi.sin_subir_corr, '#16A34A'],
               ['corregir',       '✏️ Por corregir (todas)',        contEffi.corregir,       '#16A34A'],

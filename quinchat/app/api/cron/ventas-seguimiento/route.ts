@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recortar } from '@/lib/recortar';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { sendTextMessage } from '@/lib/whatsapp';
 import { conLinea, tipoDeLinea } from '@/lib/whatsapp-contexto';
@@ -139,7 +140,7 @@ export async function GET(_req: NextRequest) {
       whatsapp_id: wamid, created_at: new Date().toISOString(),
     });
     await supabase.from('conversations')
-      .update({ ...cambios, last_message: texto.slice(0, 100), last_message_time: new Date().toISOString(), unread_count: 0 })
+      .update({ ...cambios, last_message: recortar(texto, 100), last_message_time: new Date().toISOString(), unread_count: 0 })
       .eq('id', id);
   };
 

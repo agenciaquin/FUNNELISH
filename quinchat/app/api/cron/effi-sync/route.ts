@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sincronizarGuiasEffi } from '@/lib/effi-api';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 /** Sincroniza las guías de Effi (solo lectura). Cron con ?secret=CRON_SECRET, cada 30–60 min. */
 export async function GET(req: NextRequest) {

@@ -7,6 +7,7 @@ import { createServerSupabaseClient } from '@/lib/supabase';
  * Documentación (Effi → Integraciones → Documentación API), resumida en docs/EFFI-API-NOTAS.md:
  *  · Authorization: Bearer <API key>  (variable EFFI_API_TOKEN en Vercel)
  *  · GET https://effi.com.co/api/guia_transporte?desde=YYYY-MM-DD&hasta=YYYY-MM-DD&pagina=N&por_pagina=100
+ *  · GET https://effi.com.co/api/remision_v?desde=…&hasta=…&pagina=N&por_pagina=100  (remisiones de venta)
  *  · 120 peticiones/min; si se pasa responde 429 con Retry-After.
  */
 const BASE = (process.env.EFFI_API_URL || 'https://effi.com.co/api').replace(/\/+$/, '');
@@ -77,7 +78,10 @@ const PRIORIDAD: EstadoQuin[] = ['en_camino', 'novedad', 'anulada', 'devuelta', 
 export async function sincronizarGuiasEffi(origen: 'cron' | 'boton', dias = 60) {
   const supabase = createServerSupabaseClient();
   const hoy = new Date(Date.now() - 5 * 3600_000);                 // fecha de Colombia
-  const hasta = hoy.toISOString().slice(0, 10);
+  // Effi trata `hasta` como EXCLUSIVO (hasta=hoy no trae las guías de hoy; comprobado
+  // el 04-nov-2026: con hasta=03-nov no llegó ninguna del 3, con hasta=04-nov llegaron 172).
+  // Por eso se pide hasta MAÑANA.
+  const hasta = new Date(hoy.getTime() + 86400_000).toISOString().slice(0, 10);
   const desde = new Date(hoy.getTime() - dias * 86400_000).toISOString().slice(0, 10);
   const { data: reg } = await supabase.from('effi_sync_log').insert({ origen, desde, hasta }).select('id').single();
   const cerrar = async (r: { ok: boolean; guias?: number; telefonos?: number; error?: string }) => {
@@ -144,7 +148,69 @@ export async function sincronizarGuiasEffi(origen: 'cron' | 'boton', dias = 60) 
     }
   } catch (e: any) { return cerrar({ ok: false, guias: filas.length, error: `actualizar cruce: ${e?.message}` }); }
 
-  return cerrar({ ok: true, guias: filas.length, telefonos: telefonos.length });
+  // 3) Remisiones de venta (ventas subidas a Effi que quizá aún no tienen guía).
+  //    Si falla, NO tumba la sincronización de guías: solo queda anotado.
+  const rem = await sincronizarRemisionesEffi(hasta, 20);
+  if (reg?.id) await supabase.from('effi_sync_log').update({ remisiones: rem.n, error_remisiones: rem.error ?? null }).eq('id', reg.id);
+
+  return { ...(await cerrar({ ok: true, guias: filas.length, telefonos: telefonos.length })), remisiones: rem.n, error_remisiones: rem.error ?? null };
+}
+
+/** Todas las remisiones de venta entre dos fechas (GET remision_v, paginando de a 100). */
+export async function listarRemisiones(desde: string, hasta: string, maxPaginas = 40): Promise<any[]> {
+  const todas: any[] = [];
+  for (let pagina = 1; pagina <= maxPaginas; pagina++) {
+    const j = await effiGet('remision_v', { desde, hasta, pagina, por_pagina: 100 });
+    todas.push(...(Array.isArray(j.data) ? j.data : []));
+    const total = Number(j?.paginacion?.total_paginas) || 1;
+    if (pagina >= total) break;
+  }
+  return todas;
+}
+
+/** Fecha de Effi ("2026-09-02 14:14:49", hora Colombia) → ISO con zona. */
+const fechaCol = (v: unknown) => {
+  const t = String(v ?? '').trim();
+  if (!t) return null;
+  return /[zZ]|[+-]\d\d:?\d\d$/.test(t) ? t : `${t.replace(' ', 'T')}-05:00`;
+};
+
+/** ¿La remisión está anulada? (por el texto del estado; `vigente` se guarda pero no se usa
+ *  hasta confirmar con datos reales qué significa en remisiones). */
+export const remisionAnulada = (r: { estado?: string | null }) => /anulad/i.test(String(r?.estado ?? ''));
+
+/**
+ * Copia las remisiones de venta de los últimos `dias` días en effi_remisiones_api.
+ * Solo lectura en Effi. `hasta` ya viene como MAÑANA (Effi lo trata exclusivo).
+ */
+export async function sincronizarRemisionesEffi(hasta: string, dias = 20): Promise<{ n: number; error?: string }> {
+  const supabase = createServerSupabaseClient();
+  const desde = new Date(Date.parse(hasta) - (dias + 1) * 86400_000).toISOString().slice(0, 10);
+  try {
+    const rems = await listarRemisiones(desde, hasta);
+    const filas = rems.filter(r => r?.id_transaccion || r?.id).map(r => ({
+      id_transaccion: String(r.id_transaccion || `${r.prefijo ?? ''}-${r.id}`),
+      id_effi: r.id != null ? String(r.id) : null,
+      telefono: tel10(r.telefono_cliente) || null,
+      nombre: r.nombre_cliente ?? null, cedula: r.id_cliente ?? null,
+      ciudad: r.nombre_ciudad ?? null, departamento: r.nombre_provincia ?? null,
+      direccion: r.direccion_cliente ?? null,
+      estado: r.estado ?? null, est_remision_v: r.est_remision_v ?? null,
+      vigente: r.vigente != null ? String(r.vigente) : null,
+      total: num(r.total),
+      guia: r.guia ?? null, id_guia_transporte: r.id_guia_transporte ?? null,
+      fecha_trans: fechaCol(r.fecha_trans),
+      vendedor: r.nombre_vendedor ?? null, responsable: r.nombre_responsable ?? null,
+      datos: r, actualizado_at: new Date().toISOString(),
+    }));
+    for (let i = 0; i < filas.length; i += 500) {
+      const { error } = await supabase.from('effi_remisiones_api').upsert(filas.slice(i, i + 500), { onConflict: 'id_transaccion' });
+      if (error) throw new Error(error.message);
+    }
+    return { n: filas.length };
+  } catch (e: any) {
+    return { n: 0, error: e?.message ?? String(e) };
+  }
 }
 
 export async function ultimaSyncEffi() {

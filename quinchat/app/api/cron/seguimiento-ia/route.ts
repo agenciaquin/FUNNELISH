@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recortar } from '@/lib/recortar';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { createServerSupabaseClient } from '@/lib/supabase';
@@ -165,7 +166,7 @@ export async function GET(req: NextRequest) {
         });
         await supabase.from('conversations').update({
           seguimiento_at: iso, seguimiento_n: n + 1,
-          last_message: mensaje.slice(0, 100), last_message_time: iso, unread_count: 0,
+          last_message: recortar(mensaje, 100), last_message_time: iso, unread_count: 0,
         }).eq('id', from);
       } catch { /* ignorar */ }
       enviados++;

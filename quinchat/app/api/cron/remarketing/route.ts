@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recortar } from '@/lib/recortar';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { sendRecordatorioTemplate, sendTextMessage } from '@/lib/whatsapp';
 
@@ -29,7 +30,7 @@ async function guardarMensajeBot(supabase: any, waPhone: string, texto: string, 
     conversation_id: waPhone, content: texto, role: 'assistant', type: 'text',
     whatsapp_id: wamid, created_at: now,
   });
-  await supabase.from('conversations').update({ last_message: texto.slice(0, 100), last_message_time: now, unread_count: 0 }).eq('id', waPhone);
+  await supabase.from('conversations').update({ last_message: recortar(texto, 100), last_message_time: now, unread_count: 0 }).eq('id', waPhone);
 }
 
 export async function GET(req: NextRequest) {

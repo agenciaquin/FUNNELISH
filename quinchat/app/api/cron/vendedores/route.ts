@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recortar } from '@/lib/recortar';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { sendTextMessage, sendVendedoresTemplate } from '@/lib/whatsapp';
 import { entrarLinea } from '@/lib/whatsapp-contexto';
@@ -45,7 +46,7 @@ async function guardarMsgVendedor(supabase: any, v: { telefono: string; nombre: 
   try {
     await supabase.from('conversations').upsert({
       id: v.telefono, contact_name: v.nombre,
-      last_message: msg.slice(0, 100), last_message_time: iso,
+      last_message: recortar(msg, 100), last_message_time: iso,
       bot_enabled: true, label: 'VENDEDOR', linea: 'ventas',
     }, { onConflict: 'id' });
     await supabase.from('messages').insert({

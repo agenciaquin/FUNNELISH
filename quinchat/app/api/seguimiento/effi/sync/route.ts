@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { sincronizarGuiasEffi, ultimaSyncEffi, effiConfigurado } from '@/lib/effi-api';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 /** Estado de la última sincronización con Effi. */
 export async function GET() {

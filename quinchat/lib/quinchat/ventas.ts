@@ -5,6 +5,7 @@
 // =====================================================
 
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { recortar } from '@/lib/recortar';
 import { unirDireccionBarrio } from '@/lib/direccion-barrio';
 import { EVIDENCIA_CATALOGO_ID } from '@/lib/sin-evidencia';
 import { sendTextMessage, sendImageByUrl, mostrarEscribiendo, descargarWhatsAppMedia } from '@/lib/whatsapp';
@@ -880,7 +881,7 @@ async function responder(supabase: any, from: string, texto: string) {
   }
 
   await supabase.from('conversations').update({
-    last_message: (lista[lista.length - 1] ?? texto).slice(0, 100),
+    last_message: recortar((lista[lista.length - 1] ?? texto), 100),
     last_message_time: new Date().toISOString(),
     unread_count: 0, // el bot respondió → sin "no leído" (comportamiento WhatsApp)
   }).eq('id', from);
@@ -1456,7 +1457,7 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
   await supabase.from('conversations').upsert({
     id: from,
     contact_name: contactName,
-    last_message: String(ultimoTexto).slice(0, 100),
+    last_message: recortar(String(ultimoTexto), 100),
     last_message_time: ahora,
     unread_count: (conv?.unread_count ?? 0) + mensajes.length,
     linea: 'ventas',
@@ -1655,7 +1656,12 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
     const { data: ultimoDelCliente } = await supabase.from('messages')
       .select('id, created_at').eq('conversation_id', from).eq('role', 'user')
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
-    if (ultimoDelCliente && ultimoDelCliente.id !== `in-${msg.id}`) return;
+    // Ojo: una foto con texto se guarda en DOS filas (`in-<id>` y `in-<id>-cap`, esta
+    // 1 ms después) y un audio transcrito igual (`-txt`). Las tres son el MISMO
+    // mensaje: si se comparaba solo con `in-<id>`, el bot se quedaba callado
+    // siempre que el cliente mandaba una foto con texto (04-nov-2026).
+    const idsDeEste = [`in-${msg.id}`, `in-${msg.id}-cap`, `in-${msg.id}-txt`];
+    if (ultimoDelCliente && !idsDeEste.includes(ultimoDelCliente.id)) return;
 
     // ANTI-DOBLE: si el bot (u otro turno) YA respondió DESPUÉS del último mensaje
     // del cliente, no se responde otra vez (evita respuestas duplicadas cuando el

@@ -1,4 +1,5 @@
 import { sendTextMessage, sendImageByUrl, descargarWhatsAppMedia, mostrarEscribiendo } from '@/lib/whatsapp';
+import { recortar } from '@/lib/recortar';
 import { vendedorDe } from '@/lib/vendedores';
 import { transcribirAudio } from '@/lib/transcribir';
 import { sinTildes } from './catalogo';
@@ -142,7 +143,7 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
   if (!nuevos.length) return true;
 
   try {
-    const upd: any = { id: from, last_message: (textoLote || '📷 Foto').slice(0, 100), last_message_time: ahoraISO() };
+    const upd: any = { id: from, last_message: recortar((textoLote || '📷 Foto'), 100), last_message_time: ahoraISO() };
     if (vend) Object.assign(upd, { contact_name: vend.nombre, label: 'VENDEDOR', linea: 'ventas' });
     await supabase.from('conversations').upsert(upd, { onConflict: 'id' });
   } catch { /* ignorar */ }

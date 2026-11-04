@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recortar } from '@/lib/recortar';
 import { EVIDENCIA_CATALOGO_ID } from '@/lib/sin-evidencia';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { sendTextMessage, sendAudioByUrl, sendImageByUrl, reenviarImagenComoMedia, descargarWhatsAppMedia, mostrarEscribiendo } from '@/lib/whatsapp';
@@ -176,7 +177,7 @@ async function atenderVendedor(supabase: any, value: any, from: string): Promise
   try {
     await supabase.from('conversations').upsert({
       id: from, contact_name: vend.nombre,
-      last_message: (textos.join(' ') || 'reporte').slice(0, 100),
+      last_message: recortar((textos.join(' ') || 'reporte'), 100),
       last_message_time: new Date().toISOString(),
       bot_enabled: true, label: 'VENDEDOR', linea: 'ventas',
     }, { onConflict: 'id' });
@@ -452,7 +453,7 @@ async function saveAndSend(
   // El bot respondió → se limpia el "no leído" (como WhatsApp: el numerito solo
   // sale si el CLIENTE escribió de último; si el bot contestó, desaparece).
   await supabase.from('conversations').update({
-    ...(type === 'text' ? { last_message: content.slice(0, 100) } : {}),
+    ...(type === 'text' ? { last_message: recortar(content, 100) } : {}),
     last_message_time: now,
     unread_count: 0,
   }).eq('id', from);
