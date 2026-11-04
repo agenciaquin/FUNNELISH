@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { unirDireccionBarrio } from '@/lib/direccion-barrio';
 import { POST as procesarPedido } from '@/app/api/funnelish/webhook/route';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { enviarCompraMeta } from '@/lib/capi';
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
 
     // El barrio va pegado a la dirección: así llega completa y el bot no
     // tiene que perseguirla después.
-    const direccionCompleta = `${String(b.direccion).trim()}, ${String(b.barrio).trim()}`;
+    const direccionCompleta = unirDireccionBarrio(b.direccion, b.barrio);
     // La referencia la genera la página, para que el pedido y los eventos de
     // los píxeles compartan el mismo identificador
     const referencia = String(b.referencia ?? '').trim() || `web-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;

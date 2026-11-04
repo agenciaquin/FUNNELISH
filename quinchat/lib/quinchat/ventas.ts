@@ -5,6 +5,7 @@
 // =====================================================
 
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { unirDireccionBarrio } from '@/lib/direccion-barrio';
 import { EVIDENCIA_CATALOGO_ID } from '@/lib/sin-evidencia';
 import { sendTextMessage, sendImageByUrl, mostrarEscribiendo, descargarWhatsAppMedia } from '@/lib/whatsapp';
 import { generarCollagePack } from '@/lib/collage';
@@ -1186,7 +1187,7 @@ async function guardarYPasarPedido(supabase: any, from: string, datos: any): Pro
     if (tel10.length !== 10) tel10 = String(from ?? '').replace(/\D/g, '').replace(/^57/, '').slice(-10);
     const valor = Number(datos.precio ?? 0);
     const producto = `${String(datos.producto ?? '').trim()}${datos.color ? ` - ${String(datos.color).trim()}` : ''}`;
-    const direccion = [datos.direccion, datos.barrio].map((x: any) => String(x ?? '').trim()).filter(Boolean).join(', ');
+    const direccion = unirDireccionBarrio(datos.direccion, datos.barrio);
     const nombre = [datos.nombre, datos.apellidos].map((x: any) => String(x ?? '').trim()).filter(Boolean).join(' ');
 
     // ── Recoge en oficina + abono ────────────────────────────────────────────
@@ -1327,7 +1328,7 @@ async function actualizarYAvisarCambio(supabase: any, from: string, datos: any):
     if (tel10.length !== 10) tel10 = String(from ?? '').replace(/\D/g, '').replace(/^57/, '').slice(-10);
     const valor = Number(datos.precio ?? 0);
     const producto = `${String(datos.producto ?? '').trim()}${datos.color ? ` - ${String(datos.color).trim()}` : ''}`;
-    const direccion = [datos.direccion, datos.barrio].map((x: any) => String(x ?? '').trim()).filter(Boolean).join(', ');
+    const direccion = unirDireccionBarrio(datos.direccion, datos.barrio);
     const nombre = [datos.nombre, datos.apellidos].map((x: any) => String(x ?? '').trim()).filter(Boolean).join(' ');
 
     const { data: previo } = await supabase.from('clientes_funnelish')

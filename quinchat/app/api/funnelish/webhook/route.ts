@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { unirDireccionBarrio } from '@/lib/direccion-barrio';
 import { sendTextMessage, sendConfirmacionTemplate, sendImageByUrl } from '@/lib/whatsapp';
 import { esOficina, etiquetarOficinaSinAbono } from '@/lib/etiqueta-oficina';
 import { getProductImageUrl, FALLBACK_IMAGE } from '@/lib/product-catalog';
@@ -402,9 +403,7 @@ export async function POST(req: NextRequest) {
   })();
   console.log('[Funnelish] campos de dirección recibidos:', Object.keys(body ?? {}).filter(k => /addr|barrio|neigh|city|state|custom|field/i.test(k)).join(', '));
   const direccionBase = String(body.address          ?? body.shipping_address ?? '—').trim();
-  const direccion = barrioFunnelish && !direccionBase.toLowerCase().includes(barrioFunnelish.toLowerCase())
-    ? `${direccionBase}, ${barrioFunnelish}`
-    : direccionBase;
+  const direccion = unirDireccionBarrio(direccionBase, barrioFunnelish);
   const ciudad       = String(body.city             ?? body.shipping_city    ?? '—').trim();
   const departamento = String(body.state            ?? body.shipping_state   ?? '—').trim();
   const correo       = String(body.optin_email      ?? 'Gerenciaquin7@gmail.com').trim() || 'Gerenciaquin7@gmail.com';
