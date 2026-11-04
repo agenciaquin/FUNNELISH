@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { EVIDENCIA_CATALOGO_ID } from '@/lib/sin-evidencia';
 import { createServerSupabaseClient } from '@/lib/supabase';
 
 /**
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest) {
       const tel = String(pedido.telefono ?? '').replace(/\D/g, '').slice(-10);
       const { data: imgs } = await supabase
         .from('messages').select('content')
-        .eq('conversation_id', `57${tel}`).eq('type', 'image').eq('role', 'assistant')
+        .eq('conversation_id', `57${tel}`).eq('type', 'image').not('id', 'like', 'evid-%').not('content', 'ilike', `%${EVIDENCIA_CATALOGO_ID}%`).eq('role', 'assistant')
         .order('created_at', { ascending: false }).limit(4);
 
       imagenes = ([...new Set((imgs ?? []).map((m: any) => m.content))]

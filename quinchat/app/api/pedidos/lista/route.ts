@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { EVIDENCIA_CATALOGO_ID } from '@/lib/sin-evidencia';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { nombresDeAnuncioMeta } from '@/lib/meta-ads';
 import {
@@ -168,7 +169,7 @@ export async function GET(req: NextRequest) {
       const { data: imgs } = await supabase
         .from('messages').select('conversation_id, content')
         .in('conversation_id', convIds)
-        .eq('type', 'image').eq('role', 'assistant')
+        .eq('type', 'image').not('id', 'like', 'evid-%').not('content', 'ilike', `%${EVIDENCIA_CATALOGO_ID}%`).eq('role', 'assistant')
         .order('created_at', { ascending: true })
         .limit(1500);
       const primeraFoto = new Map<string, string>();

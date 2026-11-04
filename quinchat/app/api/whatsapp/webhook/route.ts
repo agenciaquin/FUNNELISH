@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { EVIDENCIA_CATALOGO_ID } from '@/lib/sin-evidencia';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { sendTextMessage, sendAudioByUrl, sendImageByUrl, reenviarImagenComoMedia, descargarWhatsAppMedia, mostrarEscribiendo } from '@/lib/whatsapp';
 import { transcribirAudio } from '@/lib/transcribir';
@@ -105,7 +106,7 @@ async function enviarCorreccionVenta(supabase: any, pedidoId: string, tel10: str
       try {
         const { data: imgs } = await supabase
           .from('messages').select('content')
-          .eq('conversation_id', from).eq('type', 'image')
+          .eq('conversation_id', from).eq('type', 'image').not('id', 'like', 'evid-%').not('content', 'ilike', `%${EVIDENCIA_CATALOGO_ID}%`)
           .order('created_at', { ascending: false }).limit(4);
         urls = ([...new Set((imgs ?? []).map((m: any) => m.content))]
           .filter((u: any) => typeof u === 'string' && u.startsWith('http')) as string[]).slice(0, 1);

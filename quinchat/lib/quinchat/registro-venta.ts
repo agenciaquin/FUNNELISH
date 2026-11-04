@@ -1,4 +1,5 @@
 import { sendTextMessage, sendImageByUrl } from '@/lib/whatsapp';
+import { EVIDENCIA_CATALOGO_ID } from '@/lib/sin-evidencia';
 import { lineaTalla } from '@/lib/formato-pedido';
 
 // Números a los que llega el registro de cada venta (se envía a todos al tiempo).
@@ -47,7 +48,7 @@ export async function mandarFichaVenta(supabase: any, pedido: any, tel10: string
     try {
       const { data: imgs } = await supabase
         .from('messages').select('content, created_at')
-        .eq('conversation_id', from).eq('type', 'image').eq('role', 'assistant')
+        .eq('conversation_id', from).eq('type', 'image').not('id', 'like', 'evid-%').not('content', 'ilike', `%${EVIDENCIA_CATALOGO_ID}%`).eq('role', 'assistant')
         .order('created_at', { ascending: false }).limit(8);
       const lista = (imgs ?? []).filter((m: any) => typeof m.content === 'string' && m.content.startsWith('http'));
       if (lista.length > 0) {

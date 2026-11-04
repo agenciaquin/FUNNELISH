@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { EVIDENCIA_CATALOGO_ID } from '@/lib/sin-evidencia';
 import { createServerSupabaseClient } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
     if (convIds.length) {
       const [{ data: imgs }, { data: convs }] = await Promise.all([
         supabase.from('messages').select('conversation_id, content, created_at')
-          .in('conversation_id', convIds).eq('type', 'image').eq('role', 'assistant')
+          .in('conversation_id', convIds).eq('type', 'image').not('id', 'like', 'evid-%').not('content', 'ilike', `%${EVIDENCIA_CATALOGO_ID}%`).eq('role', 'assistant')
           .order('created_at', { ascending: true }),
         supabase.from('conversations').select('id, label').in('id', convIds),
       ]);

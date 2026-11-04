@@ -5,6 +5,7 @@
 // =====================================================
 
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { EVIDENCIA_CATALOGO_ID } from '@/lib/sin-evidencia';
 import { sendTextMessage, sendImageByUrl, mostrarEscribiendo, descargarWhatsAppMedia } from '@/lib/whatsapp';
 import { generarCollagePack } from '@/lib/collage';
 import { lineaTalla } from '@/lib/formato-pedido';
@@ -1004,7 +1005,7 @@ async function fotosNuevas(supabase: any, from: string, urls: string[]): Promise
     const desde = new Date(Date.now() - 6 * 3_600_000).toISOString(); // 6 horas
     const { data } = await supabase.from('messages')
       .select('content').eq('conversation_id', from)
-      .eq('type', 'image').eq('role', 'assistant')
+      .eq('type', 'image').not('id', 'like', 'evid-%').not('content', 'ilike', `%${EVIDENCIA_CATALOGO_ID}%`).eq('role', 'assistant')
       .gte('created_at', desde);
     const yaEnviadas = new Set((data ?? []).map((m: any) => String(m.content)));
     return urls.filter(u => !yaEnviadas.has(u));
@@ -1209,7 +1210,7 @@ async function guardarYPasarPedido(supabase: any, from: string, datos: any): Pro
       try {
         const { data: imgs } = await supabase.from('messages')
           .select('content').eq('conversation_id', from)
-          .eq('type', 'image').eq('role', 'assistant')
+          .eq('type', 'image').not('id', 'like', 'evid-%').not('content', 'ilike', `%${EVIDENCIA_CATALOGO_ID}%`).eq('role', 'assistant')
           .order('created_at', { ascending: false }).limit(1).maybeSingle();
         if (imgs?.content?.startsWith('http')) foto = imgs.content;
       } catch { /* si no hay foto, se manda solo el texto */ }
@@ -1306,7 +1307,7 @@ export async function mandarFichaVentaWA(supabase: any, pedido: any) {
     try {
       const { data: img } = await supabase.from('messages')
         .select('content').eq('conversation_id', from)
-        .eq('type', 'image').eq('role', 'assistant')
+        .eq('type', 'image').not('id', 'like', 'evid-%').not('content', 'ilike', `%${EVIDENCIA_CATALOGO_ID}%`).eq('role', 'assistant')
         .order('created_at', { ascending: false }).limit(1).maybeSingle();
       if (img?.content?.startsWith('http')) foto = img.content;
     } catch { /* ignorar */ }
@@ -1394,7 +1395,7 @@ async function actualizarYAvisarCambio(supabase: any, from: string, datos: any):
       try {
         const { data: img } = await supabase.from('messages')
           .select('content').eq('conversation_id', from)
-          .eq('type', 'image').eq('role', 'assistant')
+          .eq('type', 'image').not('id', 'like', 'evid-%').not('content', 'ilike', `%${EVIDENCIA_CATALOGO_ID}%`).eq('role', 'assistant')
           .order('created_at', { ascending: false }).limit(1).maybeSingle();
         if (img?.content?.startsWith('http')) foto = img.content;
       } catch { /* sin foto, va solo el texto */ }

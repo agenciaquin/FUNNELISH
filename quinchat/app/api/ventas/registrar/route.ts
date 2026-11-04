@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { EVIDENCIA_CATALOGO_ID } from '@/lib/sin-evidencia';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { sendTextMessage, sendImageByUrl } from '@/lib/whatsapp';
 import { chat } from '@/lib/quinchat/claude';
@@ -28,7 +29,7 @@ async function fotosDelChat(supabase: any, from: string): Promise<string[]> {
   try {
     const { data: imgs } = await supabase
       .from('messages').select('content, created_at')
-      .eq('conversation_id', from).eq('type', 'image')
+      .eq('conversation_id', from).eq('type', 'image').not('id', 'like', 'evid-%').not('content', 'ilike', `%${EVIDENCIA_CATALOGO_ID}%`)
       .in('role', ['assistant', 'agent'])
       .order('created_at', { ascending: false }).limit(8);
     const lista = (imgs ?? []).filter((m: any) => typeof m.content === 'string' && m.content.startsWith('http'));
