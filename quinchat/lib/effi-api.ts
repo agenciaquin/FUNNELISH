@@ -168,11 +168,13 @@ export async function listarRemisiones(desde: string, hasta: string, maxPaginas 
   return todas;
 }
 
-/** Fecha de Effi ("2026-09-02 14:14:49", hora Colombia) → ISO con zona. */
+/** Fecha de Effi ("2026-09-02 14:14:49") → ISO. La API la da en UTC (comprobado el
+ *  04-nov-2026: una remisión con "21:55" ya estaba en la sincronización de las 17:16
+ *  hora Colombia = 22:16 UTC), así que se marca como UTC. */
 const fechaCol = (v: unknown) => {
   const t = String(v ?? '').trim();
   if (!t) return null;
-  return /[zZ]|[+-]\d\d:?\d\d$/.test(t) ? t : `${t.replace(' ', 'T')}-05:00`;
+  return /[zZ]|[+-]\d\d:?\d\d$/.test(t) ? t : `${t.replace(' ', 'T')}Z`;
 };
 
 /** ¿La remisión está anulada? (por el texto del estado; `vigente` se guarda pero no se usa
