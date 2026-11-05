@@ -158,7 +158,7 @@ export async function atenderOrganizador(supabase: any, value: any, from: string
 
 interface PedidoIA {
   es_pedido: boolean;
-  nombre: string; celular: string; direccion: string; barrio: string;
+  nombre: string; cedula: string; celular: string; correo: string; direccion: string; barrio: string;
   ciudad: string; departamento: string; valor: string;
   prendas: { color: string; talla: string; genero: string }[];
 }
@@ -167,12 +167,13 @@ const SISTEMA = [
   'Eres el asistente de una vendedora de ropa (buzos, chaquetas, camisetas). Ella te reenvía EN DESORDEN',
   'las piezas de UN pedido de un cliente: fotos de las prendas y pedazos de texto (nombre, celular, dirección,',
   'ciudad, talla, valor…). Tu trabajo es ORDENARLAS. Responde SOLO un JSON, sin texto alrededor:',
-  '{"es_pedido":true,"nombre":"","celular":"","direccion":"","barrio":"","ciudad":"","departamento":"","valor":"",',
+  '{"es_pedido":true,"nombre":"","cedula":"","celular":"","correo":"","direccion":"","barrio":"","ciudad":"","departamento":"","valor":"",',
   '"prendas":[{"color":"","talla":"","genero":""}]}',
   'Reglas:',
   '- NUNCA inventes un dato. Si no está en las piezas, déjalo "".',
   '- nombre: el nombre del cliente tal cual lo escribió, cambiando los puntos entre palabras por espacios',
   '  ("Rodrigo.usuga" → "Rodrigo usuga"). Frases como "es mi nombre" no son parte del nombre.',
+  '- cedula: solo si la escribió (dígitos). correo: solo si lo escribió.',
   '- celular: SOLO dígitos. Si vino partido en varias piezas seguidas ("Celular 3006636" + "089"), únelas en orden.',
   '  Quita el +57 o 57 inicial. Si no cuadran 10 dígitos, devuelve lo que haya (no completes).',
   '- direccion: calle/carrera/número y apartamento/torre/casa, tal cual. barrio: barrio, urbanización o conjunto.',
@@ -181,7 +182,8 @@ const SISTEMA = [
   '- valor: solo si lo escribió (número, p. ej. "150000"). Si no, "".',
   '- prendas: una por foto/prenda. color: el de la etiqueta de la foto o el que se ve ("Negro", "Verde Oscuro").',
   '  Las fotos pueden traer una etiqueta tipo "L - 73 uds": L es la TALLA (el número de uds es inventario, ignóralo).',
-  '  Si solo hay UNA talla para todo el pedido, úsala en todas las prendas. genero: "HOMBRE" salvo que diga dama/mujer.',
+  '  Si solo hay UNA talla para todo el pedido, úsala en todas las prendas. genero: "HOMBRE" o "DAMA" SOLO si',
+  '  lo dice (hombre/caballero/masculino o dama/mujer/femenino); si no lo dice, "".',
   '- es_pedido: false solo si las piezas claramente no son un pedido (un saludo, una pregunta suelta).',
 ].join('\n');
 
@@ -211,10 +213,10 @@ async function ordenarConIA(lote: Pieza[], fotos: string[]): Promise<PedidoIA | 
     const s = (v: unknown) => String(v ?? '').trim();
     return {
       es_pedido: j.es_pedido !== false,
-      nombre: s(j.nombre), celular: s(j.celular).replace(/\D/g, '').replace(/^57(?=3\d{9}$)/, ''),
+      nombre: s(j.nombre), cedula: s(j.cedula).replace(/\D/g, ''), correo: s(j.correo), celular: s(j.celular).replace(/\D/g, '').replace(/^57(?=3\d{9}$)/, ''),
       direccion: s(j.direccion), barrio: s(j.barrio), ciudad: s(j.ciudad), departamento: s(j.departamento),
       valor: s(j.valor),
-      prendas: Array.isArray(j.prendas) ? j.prendas.map((p: any) => ({ color: s(p?.color), talla: s(p?.talla).toUpperCase(), genero: s(p?.genero).toUpperCase() || 'HOMBRE' })) : [],
+      prendas: Array.isArray(j.prendas) ? j.prendas.map((p: any) => ({ color: s(p?.color), talla: s(p?.talla).toUpperCase(), genero: /dama|mujer|femen/i.test(s(p?.genero)) ? 'Dama' : /hombre|caball|mascul/i.test(s(p?.genero)) ? 'Hombre' : '' })) : [],
     };
   } catch (e) {
     console.error('[Organizador] IA:', e);
@@ -222,35 +224,44 @@ async function ordenarConIA(lote: Pieza[], fotos: string[]): Promise<PedidoIA | 
   }
 }
 
-// ── Ficha (formato que pidió el dueño) ───────────────────────────────────────
+// ── Ficha (formato que pidió el dueño, 05-nov-2026) ──────────────────────────
+// 👉 = obligatorio (si falta, se pide) · ✅ = opcional o informativo.
 
 function armarFicha(p: PedidoIA): { texto: string; faltan: string[] } {
   const faltan: string[] = [];
-  if (!p.nombre) faltan.push('nombre');
-  if (!/^3\d{9}$/.test(p.celular)) faltan.push(p.celular ? `celular completo (llegó ${p.celular.length} dígitos)` : 'celular');
+  const F = '(falta)';
+  if (!p.nombre) faltan.push('nombre completo');
+  const celOk = /^3\d{9}$/.test(p.celular);
+  if (!celOk) faltan.push(p.celular ? `celular completo (llegó con ${p.celular.length} dígitos)` : 'celular');
   if (!p.direccion) faltan.push('dirección');
-  if (!p.ciudad) faltan.push('ciudad');
+  if (!p.barrio) faltan.push('barrio');
+  if (!p.ciudad || !p.departamento) faltan.push(!p.ciudad ? 'ciudad y departamento' : 'departamento');
+
+  const prendas = p.prendas.length ? p.prendas : [{ color: '', talla: '', genero: '' }];
+  if (prendas.some(x => !x.talla)) faltan.push('talla');
+  if (prendas.some(x => !x.genero)) faltan.push('si es Dama u Hombre');
+  const una = new Set(prendas.map(x => `${x.talla}|${x.genero}`)).size === 1;
+  const fmtPrenda = (x: { color: string; talla: string; genero: string }, conColor: boolean) =>
+    `${conColor && x.color ? x.color + ' ' : ''}${x.talla || F} - ${x.genero || F}`;
+  const talla = una ? fmtPrenda(prendas[0], false) : prendas.map(x => fmtPrenda(x, true)).join(' · ');
 
   const n = Number(p.valor.replace(/\D/g, ''));
   const valor = n > 0 ? n.toLocaleString('es-CO') : '';
   if (!valor) faltan.push('valor');
 
-  const conTalla = p.prendas.filter(x => x.talla);
-  if (!conTalla.length) faltan.push('talla');
-  const unica = new Set(p.prendas.map(x => `${x.talla} ${x.genero}`));
-  const talla = !conTalla.length ? ''
-    : unica.size === 1 ? `${p.prendas[0].talla} ${p.prendas[0].genero}`
-    : p.prendas.map(x => `${x.color ? x.color + ' ' : ''}${x.talla || '?'} ${x.genero}`).join(' · ');
-
-  const ciudad = [p.ciudad, p.departamento].filter(Boolean).join('. ');
+  const ciudad = [p.ciudad, p.departamento].filter(Boolean).join(', ');
   const texto = [
-    p.nombre || 'Nombre: (falta)',
-    `Celular ${p.celular || '(falta)'}`,
-    p.direccion || 'Dirección: (falta)',
-    p.barrio,
-    ciudad || 'Ciudad: (falta)',
-    `valor ${valor || '(falta)'}`,
-    `talla ${talla || '(falta)'}`,
-  ].filter(Boolean).join('\n');
+    '📝 Datos de Envío:',
+    '',
+    `👉 Nombre Completo: ${p.nombre || F}`,
+    `✅ Cédula (opcional): ${p.cedula}`,
+    `👉 Celular: ${p.celular || F}`,
+    `✅ Correo electrónico: ${p.correo}`,
+    `👉 Dirección: ${p.direccion || F}`,
+    `✅ Barrio: ${p.barrio || F}`,
+    `👉 Ciudad y Departamento: ${ciudad ? ciudad + (p.departamento ? '' : ' ' + F) : F}`,
+    `✅ Talla: ${talla}`,
+    `💰 Valor: ${valor || F}`,
+  ].map(l => l.trimEnd()).join('\n');
   return { texto, faltan };
 }
