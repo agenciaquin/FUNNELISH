@@ -227,7 +227,7 @@ interface Props {
 
 export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
-  const [resumen, setResumen] = useState<{ total: number; confirmados: number; pendientes: number; cancelados: number; vendido: number; tasa: number; prendas?: number; prendasConf?: number; porCorregir?: number }>({ total: 0, confirmados: 0, pendientes: 0, cancelados: 0, vendido: 0, tasa: 0, prendas: 0, prendasConf: 0 });
+  const [resumen, setResumen] = useState<{ total: number; confirmados: number; pendientes: number; cancelados: number; vendido: number; tasa: number; prendas?: number; prendasConf?: number; porCorregir?: number; camisetas?: { ventas: number; prendas: number; recibidas: number; prendasRecibidas: number } }>({ total: 0, confirmados: 0, pendientes: 0, cancelados: 0, vendido: 0, tasa: 0, prendas: 0, prendasConf: 0 });
   const [porCanal, setPorCanal]   = useState<DesgloseCanal[]>([]);
   const [porFuente, setPorFuente] = useState<DesgloseFuente[]>([]);
   const [porDiaApi, setPorDiaApi] = useState<DiaFila[]>([]);
@@ -477,6 +477,21 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
                 <p className="text-[10px] text-white/80">Prendas vendidas</p>
               </div>
             </div>
+            {/* 👕 Camisetas vendidas (por el nombre del producto). Clic → lista solo camisetas. */}
+            <button
+              onClick={() => { setBusca(b => b.toLowerCase() === 'camiseta' ? '' : 'camiseta'); setVisibles(PASO_LISTA); }}
+              title={`Pedidos de camisetas confirmados en el período. Recibidos: ${resumenVista.camisetas?.recibidas ?? 0} pedidos · ${resumenVista.camisetas?.prendasRecibidas ?? 0} camisetas. Clic para ver solo esos pedidos.`}
+              className={`flex items-stretch rounded-2xl border-2 overflow-hidden text-left transition-colors ${busca.toLowerCase() === 'camiseta' ? 'border-[#00A89D] bg-[#00A89D]/10' : 'border-[#00A89D]/40 bg-white hover:bg-[#00A89D]/5'}`}>
+              <div className="px-3 py-1.5">
+                <p className="text-lg font-extrabold leading-tight text-[#00847A]">👕 {resumenVista.camisetas?.prendas ?? 0}</p>
+                <p className="text-[10px] text-[#6B6B6B]">Camisetas vendidas</p>
+              </div>
+              <div className="w-px bg-[#00A89D]/25 my-2" />
+              <div className="px-3 py-1.5">
+                <p className="text-lg font-extrabold leading-tight text-[#00847A]">{resumenVista.camisetas?.ventas ?? 0}</p>
+                <p className="text-[10px] text-[#6B6B6B]">Ventas</p>
+              </div>
+            </button>
             <button onClick={() => cargar(false)} title="Actualizar" className={`w-10 h-10 rounded-xl bg-white border border-[#E8E8E8] text-[#00A89D] hover:bg-[#00A89D]/10 ${actualizando ? 'animate-spin' : ''}`}>⟳</button>
             <button onClick={exportarCSV} className="h-10 px-4 rounded-xl bg-[#0D1B2A] text-white text-sm font-semibold hover:opacity-90">⬇ Exportar</button>
             <button onClick={() => setVerCarritos(true)} title="Clientes que empezaron a comprar y no terminaron"

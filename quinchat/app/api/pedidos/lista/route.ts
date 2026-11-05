@@ -15,6 +15,30 @@ const prendasDe = (p: any) => prendasDeVenta({
 });
 
 /**
+ * Camisetas de un pedido, guiándose por el NOMBRE del producto del catálogo
+ * ("CAMISETA BMW RACING", "CAMISETA HONDA RACING + CAMISETA BMW RACING"…).
+ *  - Si todas las prendas del nombre son camisetas → cuentan todas las prendas del pedido.
+ *  - Si es un pack mixto (camiseta + buzo/chaqueta…) → solo las partes que dicen CAMISETA.
+ */
+const OTRA_PRENDA = /\b(BUZO|CHAQUETA|SUDADERA|HOODIE|CHOMPA|JOGGER|PANTAL[OÓ]N|GORRA|CHALECO)\b/i;
+function camisetasDe(p: any): number {
+  const prod = String(p.producto ?? '');
+  if (!/CAMISETA/i.test(prod)) return 0;
+  const prendas = Number(p.prendas) || 1;
+  if (!OTRA_PRENDA.test(prod)) return prendas;
+  const partes = prod.split(/\s\+\s|\s\|\s/).filter(x => /CAMISETA/i.test(x)).length;
+  return Math.max(1, Math.min(prendas, partes));
+}
+function resumenCamisetas(lista: any[]) {
+  const con = lista.map(p => ({ p, n: camisetasDe(p) })).filter(x => x.n > 0);
+  const vend = con.filter(x => x.p.confirmado);
+  return {
+    ventas: vend.length, prendas: vend.reduce((s, x) => s + x.n, 0),
+    recibidas: con.length, prendasRecibidas: con.reduce((s, x) => s + x.n, 0),
+  };
+}
+
+/**
  * Pedidos para el panel + desgloses por canal, fuente y día.
  *
  * Toda la clasificación sale de lib/clasificacion-pedidos (fuente única):
@@ -332,6 +356,7 @@ export async function GET(req: NextRequest) {
       .reduce((s, p) => s + (Number(String(p.valor ?? '').replace(/[^\d]/g, '')) || 0), 0),
     tasa: totalR ? Math.round((confR / totalR) * 100) : 0,
     porCorregir: filtradoResumen.filter((p: any) => p.confirmado && p.por_corregir).length,
+    camisetas: resumenCamisetas(filtradoResumen),
   };
 
   // ── Comparación con el período ANTERIOR equivalente (para los % de variación) ─

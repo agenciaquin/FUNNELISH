@@ -180,7 +180,15 @@ function tallaPorPrenda(seleccion: string): string {
 }
 
 // Busca la imagen de un COLOR dentro de una familia (estricto por color, evita repetir otro color).
+// "REFLECTIVA" (chaqueta) = "REFLECTIVO" (así se llama en el catálogo). Sin esto, una
+// "CHAQUETA YAMAHA REFLECTIVA" no se reconocía como reflectiva y ganaba la foto de la
+// CAMISETA "NEGRO YAMAHA RACING" (05-nov-2026, pedido de Ramiro Baena).
+const normCat = (s: string) => String(s ?? '').toUpperCase().replace(/REFLECTIVA(S)?\b/g, 'REFLECTIVO');
+// Palabras que nunca aparecen en los nombres del catálogo de colores: no deben decidir.
+const NO_DECIDEN = ['CHAQUETA', 'CHAQUETAS', 'CAMISETA', 'CAMISETAS', 'COLORES', 'COLOR', 'TALLA', 'TALLAS', 'PRENDA', 'PRENDAS'];
+
 async function buscarImagenColor(supabase: any, color: string, familia: string): Promise<string | null> {
+  familia = normCat(familia);
   const { data } = await supabase
     .from('catalogo_colores').select('color, nombre_producto, url_imagen')
     .not('url_imagen', 'is', null);
@@ -196,7 +204,7 @@ async function buscarImagenColor(supabase: any, color: string, familia: string):
   if (!cands.length) return null;
   // La palabra DISTINTIVA de la familia (PULSAR, HONDA…) es la que manda; las
   // genéricas (BUZO, MOTO…) las comparten todas.
-  const GENERICAS = new Set(['BUZO', 'MOTO', 'REFLECTIVO', 'ESCUDERIA', 'PACK', 'REDBULL']);
+  const GENERICAS = new Set(['BUZO', 'MOTO', 'REFLECTIVO', 'ESCUDERIA', 'PACK', 'REDBULL', ...NO_DECIDEN]);
   const distintivas = famWords.filter((w: string) => !GENERICAS.has(w));
   // ¿El producto pedido es REFLECTIVO? Importa para no confundir "HONDA" con
   // "HONDA REFLECTIVO" (misma marca, foto distinta).
@@ -248,9 +256,11 @@ async function imagenServible(url: string | null | undefined): Promise<boolean> 
 // Busca la URL de imagen de un producto: exacta → por palabras → catálogo estático.
 async function buscarImagenProducto(supabase: any, nombre: string): Promise<string> {
   if (nombre) {
+    const nombreOriginal = nombre;
+    nombre = normCat(nombre);
     const { data: exactMatch } = await supabase
       .from('catalogo_colores').select('url_imagen')
-      .ilike('nombre_producto', nombre).not('url_imagen', 'is', null)
+      .ilike('nombre_producto', nombreOriginal).not('url_imagen', 'is', null)
       .limit(1).maybeSingle();
     if (exactMatch?.url_imagen) return exactMatch.url_imagen as string;
 
@@ -265,7 +275,7 @@ async function buscarImagenProducto(supabase: any, nombre: string): Promise<stri
       const GENERICAS = new Set(['BUZO', 'MOTO', 'REFLECTIVO', 'ESCUDERIA', 'PACK',
         'PAREJA', 'DUO', 'COMBO', 'CUELLO', 'ALTO', 'HOMBRE', 'DAMA', 'MUJER', 'CABALLERO', 'UNISEX',
         'NEGRO', 'ROJO', 'AZUL', 'BLANCO', 'MARFIL', 'AMARILLO', 'BEIGE', 'VERDE',
-        'GRIS', 'OSCURO', 'NAVY', 'COCOA', 'REDBULL']);
+        'GRIS', 'OSCURO', 'NAVY', 'COCOA', 'REDBULL', ...NO_DECIDEN]);
       const distintivas = words.filter((w: string) => !GENERICAS.has(w));
       const wantReflex = /REFLECTIVO/.test(nombre.toUpperCase());
       // El ranking se hace por PALABRAS DISTINTIVAS (marca/familia): así "PAREJA
