@@ -225,7 +225,8 @@ async function ordenarConIA(lote: Pieza[], fotos: string[]): Promise<PedidoIA | 
 }
 
 // ── Ficha (formato que pidió el dueño, 05-nov-2026) ──────────────────────────
-// 👉 = obligatorio (si falta, se pide) · ✅ = opcional o informativo.
+// Un emoji por dato. Obligatorios (si faltan se piden): nombre, celular, dirección, barrio,
+// ciudad y departamento, talla, Dama/Hombre y valor. Opcionales: cédula y correo.
 
 function armarFicha(p: PedidoIA): { texto: string; faltan: string[] } {
   const faltan: string[] = [];
@@ -251,17 +252,17 @@ function armarFicha(p: PedidoIA): { texto: string; faltan: string[] } {
 
   const ciudad = [p.ciudad, p.departamento].filter(Boolean).join(', ');
   const texto = [
-    '📝 Datos de Envío:',
+    '📦 *DATOS DE ENVÍO*',
     '',
-    `👉 Nombre Completo: ${p.nombre || F}`,
-    `✅ Cédula (opcional): ${p.cedula}`,
-    `👉 Celular: ${p.celular || F}`,
-    `✅ Correo electrónico: ${p.correo}`,
-    `👉 Dirección: ${p.direccion || F}`,
-    `✅ Barrio: ${p.barrio || F}`,
-    `👉 Ciudad y Departamento: ${ciudad ? ciudad + (p.departamento ? '' : ' ' + F) : F}`,
-    `✅ Talla: ${talla}`,
-    `💰 Valor: ${valor || F}`,
+    `👤 *NOMBRE COMPLETO:* ${p.nombre || F}`,
+    `🪪 *CÉDULA (OPCIONAL):* ${p.cedula}`,
+    `📱 *CELULAR:* ${p.celular || F}`,
+    `✉️ *CORREO ELECTRÓNICO:* ${p.correo}`,
+    `📍 *DIRECCIÓN:* ${p.direccion || F}`,
+    `🏘️ *BARRIO:* ${p.barrio || F}`,
+    `🌆 *CIUDAD Y DEPARTAMENTO:* ${ciudad ? ciudad + (p.departamento ? '' : ' ' + F) : F}`,
+    `👕 *TALLA:* ${talla}`,
+    `💰 *VALOR:* ${valor || F}`,
   ].map(l => l.trimEnd()).join('\n');
   return { texto, faltan };
 }
