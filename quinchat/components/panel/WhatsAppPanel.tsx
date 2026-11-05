@@ -371,6 +371,9 @@ export default function WhatsAppPanel({ userName }: Props) {
             onRefresh={() => refrescar(true)}
             refreshing={refrescando}
             onSoporte={abrirSoporte}
+            otrasConversaciones={activeSection === 'chat_ventas' ? convsFunnel : convsVentas}
+            otraBandeja={activeSection === 'chat_ventas' ? 'Chat Funnel' : 'Chat WhatsApp'}
+            onAbrirOtro={id => { abrirChatDesde(id); }}
           />
           <ChatArea
             conversation={selectedConversation}

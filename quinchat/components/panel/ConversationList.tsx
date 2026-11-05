@@ -55,9 +55,13 @@ interface Props {
   onRefresh?: () => void;
   refreshing?: boolean;
   onSoporte?: () => void;
+  /** Chats de la OTRA bandeja (Funnel ↔ WhatsApp), para avisar si lo buscado está allá. */
+  otrasConversaciones?: Conversation[];
+  otraBandeja?: string;
+  onAbrirOtro?: (id: string) => void;
 }
 
-export default function ConversationList({ conversations, selectedId, onSelect, onDelete, loading, onMenuClick, onRefresh, refreshing, onSoporte }: Props) {
+export default function ConversationList({ conversations, selectedId, onSelect, onDelete, loading, onMenuClick, onRefresh, refreshing, onSoporte, otrasConversaciones, otraBandeja, onAbrirOtro }: Props) {
   const [search, setSearch]               = useState('');
   // IDs de chats cuyos MENSAJES contienen la palabra buscada (búsqueda por contenido)
   const [idsMensaje, setIdsMensaje]       = useState<Set<string> | null>(null);
@@ -420,6 +424,27 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
                 ? 'Sin resultados con este filtro'
                 : 'Sin resultados'}
             </span>
+            {(() => {
+              // ¿Lo buscado está en la otra bandeja? (ej. buscas en Chat Funnel un chat de Chat WhatsApp)
+              const term = search.trim().toLowerCase();
+              if (!term || !otrasConversaciones?.length || !onAbrirOtro) return null;
+              const dig = term.replace(/\D/g, '').replace(/^57(?=\d{10}$)/, '');
+              const enOtra = otrasConversaciones.filter(c =>
+                c.contact_name.toLowerCase().includes(term) || c.id.includes(term)
+                || (dig.length >= 6 && c.id.includes(dig))).slice(0, 3);
+              if (!enOtra.length) return null;
+              return (
+                <div className="flex flex-col items-center gap-1 mt-1">
+                  <span className="text-[11px] text-[#4B5563]">Está en <b>{otraBandeja ?? 'la otra bandeja'}</b>:</span>
+                  {enOtra.map(c => (
+                    <button key={c.id} onClick={() => onAbrirOtro(c.id)}
+                      className="text-[11px] px-3 py-1 rounded-lg bg-[#00A89D] text-white font-semibold hover:opacity-90">
+                      Abrir {c.contact_name || c.id} →
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
             {(activeFilters > 0 || tabKey !== 'todos') && (
               <button
                 onClick={clearAllFilters}

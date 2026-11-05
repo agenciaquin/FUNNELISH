@@ -1345,7 +1345,13 @@ export async function POST(req: NextRequest) {
         // Si el primer mensaje es corto/genérico ("hola", "?", "ok") → enviar las
         // preguntas y no seguir procesando. Si trae contenido real, se limpian y el
         // flujo normal de abajo ya se encarga de pedir lo que falte.
-        const esGenerico = text.trim().length < 25 && !/\d/.test(text);
+        // OJO: "CONFIRMO DATOS CORRECTOS" (botón de la plantilla), "sí", "correcto"… NO son
+        // genéricos: es el cliente confirmando. Si aquí se le mandaban las preguntas y se
+        // cortaba el flujo, la confirmación se perdía y el pedido quedaba PENDIENTE aunque
+        // el cliente ya hubiera confirmado (05-nov-2026, Oscar Mahecha). Esos siguen abajo
+        // al bloque de CONFIRMO, que revisa la dirección y la pide si hace falta.
+        const pareceConfirmacion = /\bconfirm|\b(s[ií]|correcto|listo|ok|dale|perfecto|todo bien|est[aá] bien)\b|acabo de hacer un pedido/i.test(text);
+        const esGenerico = text.trim().length < 25 && !/\d/.test(text) && !pareceConfirmacion;
         if (Array.isArray(preguntas) && preguntas.length > 0 && esGenerico) {
           for (const p of preguntas) {
             const pw = await sendTextMessage(from, p);
@@ -2941,6 +2947,7 @@ export async function POST(req: NextRequest) {
         : `Todos los datos están completos. Pídele de forma natural y humana que confirme si todo está correcto para procesar su pedido. Evita sonar robótico (NO digas "escribe CONFIRMO"); con cualquier frase afirmativa del cliente basta.`
       }\n` +
       `PROHIBIDO: mencionar otros productos, catálogo, precios de otros artículos.\n` +
+      `PROHIBIDO decir que el pedido "está confirmado", "quedó confirmado" o "será despachado": el pedido AÚN NO está confirmado en el sistema. Si el cliente afirma que todo está bien, pídele que lo confirme con un "sí" o "CONFIRMO".\n` +
       `Si el cliente pregunta por el envío o cuándo llega, responde brevemente y vuelve al tema.\n` +
       `📏 MENSAJES MUY CORTOS: 1 o 2 frases máximo, nunca párrafos largos (abruman al cliente).\n` +
       `⛔ NO REPITAS: lee tus mensajes anteriores. Si YA pediste un dato o YA lo dijiste, NO lo repitas. ` +
