@@ -2,6 +2,7 @@ import { sendTextMessage, sendImageByUrl, descargarWhatsAppMedia, mostrarEscribi
 import { chat } from '@/lib/quinchat/claude';
 import { generarCollagePack } from '@/lib/collage';
 import { recortar } from '@/lib/recortar';
+import { unirDireccionBarrio } from '@/lib/direccion-barrio';
 
 /**
  * ORGANIZADOR DE PEDIDOS (ver config.ts).
@@ -177,6 +178,8 @@ const SISTEMA = [
   '- celular: SOLO dígitos. Si vino partido en varias piezas seguidas ("Celular 3006636" + "089"), únelas en orden.',
   '  Quita el +57 o 57 inicial. Si no cuadran 10 dígitos, devuelve lo que haya (no completes).',
   '- direccion: calle/carrera/número y apartamento/torre/casa, tal cual. barrio: barrio, urbanización o conjunto.',
+  '  Si el pedido va a recoger en OFICINA de Interrapidísimo (aunque lo escriba mal: "interapidicimo",',
+  '  "inter rapidisimo"…), direccion = "Oficina Interrapidísimo" (más el nombre o sede si lo dio) y barrio = "".',
   '- ciudad tal cual. departamento: si no lo escribió pero la ciudad es inequívoca (Medellín → Antioquia,',
   '  Bogotá → Cundinamarca, Cali → Valle del Cauca…), ponlo; si hay duda, "".',
   '- valor: solo si lo escribió (número, p. ej. "150000"). Si no, "".',
@@ -228,14 +231,31 @@ async function ordenarConIA(lote: Pieza[], fotos: string[]): Promise<PedidoIA | 
 // Un emoji por dato. Obligatorios (si faltan se piden): nombre, celular, dirección, barrio,
 // ciudad y departamento, talla, Dama/Hombre y valor. Opcionales: cédula y correo.
 
+// Oficina de Interrapidísimo (con las mil formas de escribirlo). Allí no hay barrio.
+const INTER_RE = /\binte?r+\s*-?\s*r*a+p+i+d+[ií]*[sc]+[ií]*m+o\b|\binter\s*rap+i\w*|\binterrap\w*/i;
+export function esOficinaInter(dir: string): boolean {
+  return INTER_RE.test(dir) || /\b(oficina|reclam[oa]r? en (la )?oficina|recoger en (la )?oficina)\b/i.test(dir);
+}
+function corregirOficina(dir: string): string {
+  let d = dir.replace(INTER_RE, 'Interrapidísimo')
+    .replace(/^.*?\boficina\b(\s+(de|del)\b)?/i, 'Oficina')           // "Reclamo en oficina de…" → "Oficina…"
+    .replace(/^((reclam\w*|recog\w*|para|en|la|el)\s+)+/i, '')
+    .replace(/\s{2,}/g, ' ').trim();
+  if (!/Interrapidísimo/.test(d)) d = `${d} Interrapidísimo`.trim();
+  if (!/^Oficina\b/.test(d)) d = `Oficina ${d.replace(/\bOficina\b\s*/, '')}`.trim();
+  return d;
+}
+
 function armarFicha(p: PedidoIA): { texto: string; faltan: string[] } {
   const faltan: string[] = [];
+  const oficina = !!p.direccion && esOficinaInter(p.direccion);
+  if (oficina) { p = { ...p, direccion: corregirOficina(p.direccion), barrio: '' }; }
   const F = '(falta)';
   if (!p.nombre) faltan.push('nombre completo');
   const celOk = /^3\d{9}$/.test(p.celular);
   if (!celOk) faltan.push(p.celular ? `celular completo (llegó con ${p.celular.length} dígitos)` : 'celular');
   if (!p.direccion) faltan.push('dirección');
-  if (!p.barrio) faltan.push('barrio');
+  if (!p.barrio && !oficina) faltan.push('barrio');   // a oficina no hay barrio
   if (!p.ciudad || !p.departamento) faltan.push(!p.ciudad ? 'ciudad y departamento' : 'departamento');
 
   const prendas = p.prendas.length ? p.prendas : [{ color: '', talla: '', genero: '' }];
@@ -250,19 +270,21 @@ function armarFicha(p: PedidoIA): { texto: string; faltan: string[] } {
   const valor = n > 0 ? n.toLocaleString('es-CO') : '';
   if (!valor) faltan.push('valor');
 
-  const ciudad = [p.ciudad, p.departamento].filter(Boolean).join(', ');
+  // Formato corto (05-nov-2026). El barrio va dentro de DIR ("…, Barrio X"); cédula y
+  // correo solo salen si el vendedor los pasó.
+  const dir = !p.direccion ? F : (oficina || !p.barrio) ? p.direccion : unirDireccionBarrio(p.direccion, p.barrio);
   const texto = [
     '📦 *DATOS DE ENVÍO*',
     '',
-    `👤 *NOMBRE COMPLETO:* ${p.nombre || F}`,
-    `🪪 *CÉDULA (OPCIONAL):* ${p.cedula}`,
-    `📱 *CELULAR:* ${p.celular || F}`,
-    `✉️ *CORREO ELECTRÓNICO:* ${p.correo}`,
-    `📍 *DIRECCIÓN:* ${p.direccion || F}`,
-    `🏘️ *BARRIO:* ${p.barrio || F}`,
-    `🌆 *CIUDAD Y DEPARTAMENTO:* ${ciudad ? ciudad + (p.departamento ? '' : ' ' + F) : F}`,
+    `👤 *NOMBRE:* ${p.nombre || F}`,
+    p.cedula ? `🪪 *C.C (OPCIONAL):* ${p.cedula}` : null,
+    `📱 *CEL:* ${p.celular || F}`,
+    p.correo ? `✉️ *CORREO:* ${p.correo}` : null,
+    `📍 *DIR:* ${dir}`,
+    `🌆 *CIUDAD:* ${p.ciudad || F}`,
+    `🌆 *DEPARTAMENTO:* ${p.departamento || F}`,
     `👕 *TALLA:* ${talla}`,
     `💰 *VALOR:* ${valor || F}`,
-  ].map(l => l.trimEnd()).join('\n');
+  ].filter((l): l is string => l !== null).map(l => l.trimEnd()).join('\n');
   return { texto, faltan };
 }

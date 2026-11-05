@@ -1371,6 +1371,22 @@ export async function POST(req: NextRequest) {
           && !/\bNO\s+CONFIRMO\b/.test(textClean)
           && !/\bC[OÓ]MO\s+CONFIRMO\b/.test(textClean));
 
+    // Mensaje automático de la página de gracias ("Hola, acabo de hacer un pedido de …
+    // ¿Me confirmas si quedó todo bien?"). El cliente cree que ya confirmó, así que se
+    // trata como CONFIRMO: si los datos están completos se cierra la venta y se le dice
+    // que todo está correcto; si falta algo, se le pide solo eso (05-nov-2026).
+    const esMsgPagina = /acabo de hacer un pedido/i.test(text) && /confirmas si qued[oó] todo bien/i.test(text);
+    if (esMsgPagina) {
+      // Solo si de verdad hay un pedido suyo (pendiente o de las últimas 48 h); si no,
+      // no se le dice "tus datos están correctos" sin haber revisado nada.
+      const { data: pedPag } = await supabase.from('clientes_funnelish').select('id')
+        .eq('telefono', from.replace(/^57/, '').slice(-10))
+        .not('estado', 'in', '("cancelado","duplicado")')
+        .gte('created_at', new Date(Date.now() - 48 * 3600_000).toISOString())
+        .limit(1).maybeSingle();
+      if (pedPag) isConfirmo = true;
+    }
+
     // Respuesta afirmativa suelta ("sí", "correcto", "así está bien", "todo bien"…)
     // cuenta como CONFIRMO SOLO si el último mensaje del bot pidió confirmar.
     // Así evitamos que el pedido quede pendiente y el remarketing lo vuelva a pinchar.
@@ -1587,7 +1603,12 @@ export async function POST(req: NextRequest) {
             const otherMissing = missing.filter(f => f !== 'dirección');
             const reaskParts: string[] = [];
             if (dirQ) reaskParts.push(variantesDir[Math.floor(Math.random() * variantesDir.length)]);
-            if (otherMissing.length > 0) reaskParts.push(`Y antes de confirmar también necesito: ${otherMissing.join(', ')}.`);
+            if (otherMissing.length > 0) {
+              const nomF = String(pedido.nombre || '').split(' ')[0] || '';
+              reaskParts.push(dirQ
+                ? `Y también me falta: *${otherMissing.join(', ')}*.`
+                : `${nomF ? nomF + ', tu' : 'Tu'} pedido ya casi está listo 🙌 Para despacharlo solo me falta: *${otherMissing.join(', ')}*. ¿Me lo envías? 🚚`);
+            }
             const reask = reaskParts.join('\n\n');
             const wamid = await sendTextMessage(from, reask);
             await saveAndSend(supabase, from, reask, 'text', wamid);
@@ -1626,7 +1647,10 @@ export async function POST(req: NextRequest) {
         await enviarRegistroVenta(supabase, pedido, tel10, from); // TEMPORAL: registro de ventas
       }
 
-      const confirmReply = '¡Gracias por tu compra, cuando lo envie te estara llegando el número de guía desde nuestro chatbot, cuyo número asociado es 3142576239, para que puedas realizarle seguimiento a tu paquete.';
+      const finalCompra = 'Gracias por tu compra, cuando lo envíe te estará llegando el número de guía desde nuestro chat-bot, cuyo número asociado es 3142576239, para que puedas realizarle seguimiento a tu paquete. 🚚';
+      const confirmReply = esMsgPagina
+        ? `✅ ¡Todos tus datos están correctos! Gracias por tu compra 🙌\n\n${finalCompra}`
+        : finalCompra;
       const wamid = await sendTextMessage(from, confirmReply);
       await saveAndSend(supabase, from, confirmReply, 'text', wamid);
       continue;
