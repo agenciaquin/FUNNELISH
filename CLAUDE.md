@@ -133,6 +133,14 @@ Todo junto y aislado: `quinchat/lib/ventas-vendedores/`, `quinchat/app/api/venta
 Cuando el dueño diga «apaga esta parte», se apaga y se deja apagado; no tocar nada más de QuinChat.
 Decisión del dueño (01-nov-2026): QuinChat sube a Effi directo. Hoy en **simulación**: falta la doc/credenciales de la API de Effi.
 
+### 7 · Organizador de pedidos (Yamile León) — aislado con interruptor
+
+`quinchat/lib/organizador-pedidos/` + un bloque «ORGANIZADOR DE PEDIDOS» en el webhook, antes de VV.
+El vendedor reenvía fotos y pedazos de texto en desorden; tras 15 s sin piezas el bot devuelve un collage
+con la ficha ordenada (nombre, celular, dirección, barrio, ciudad, valor, talla) y avisa lo que falta. No inventa.
+Sus reportes numéricos al supervisor ("0", "1") siguen yendo a `atenderVendedor`.
+**Apagar:** `ajustes_bot` clave `organizador_pedidos` → `activo: false`. Números en `numeros`.
+
 ### 5 · No todas las subidas comprimen
 
 Comprimen: `funnels/imagen`, `plantillas-wa/imagen`, `catalogos/upload-imagen`.

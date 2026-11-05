@@ -700,6 +700,23 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ── ORGANIZADOR DE PEDIDOS ─────────────────────────────────────────────────
+  // Aislado en lib/organizador-pedidos, interruptor ajustes_bot.organizador_pedidos.
+  // Solo números habilitados (hoy Yamile León). Si no es una pieza de pedido (p. ej.
+  // su reporte "1" al supervisor), devuelve false y sigue el flujo de siempre.
+  {
+    const remite = value.messages[0]?.from as string | undefined;
+    if (remite) {
+      try {
+        const { organizadorAtiende } = await import('@/lib/organizador-pedidos/config');
+        if (await organizadorAtiende(remite)) {
+          const { atenderOrganizador } = await import('@/lib/organizador-pedidos/flujo');
+          if (await atenderOrganizador(supabase, value, remite)) return NextResponse.json({ status: 'ok' });
+        }
+      } catch (e) { console.error('[Organizador] módulo organizador de pedidos:', e); }
+    }
+  }
+
   // ── MÓDULO VENTAS VENDEDORES (prueba) ──────────────────────────────────────
   // Aislado en lib/ventas-vendedores y con interruptor (ajustes_bot.ventas_vendedores).
   // Apagado → ni se carga. Solo atiende números habilitados; si el mensaje no es
