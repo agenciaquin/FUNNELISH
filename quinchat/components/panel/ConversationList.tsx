@@ -161,9 +161,13 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
   const filtered = conversations.filter(c => {
     if (esConvVendedor(c) && !verVendedores) return false;
     const term = search.trim().toLowerCase();
+    // Teléfono escrito con espacios, guiones o +57 ("313 6761806", "+57 313-676-1806"):
+    // se compara solo con los dígitos.
+    const digitos = term.replace(/\D/g, '').replace(/^57(?=\d{10}$)/, '');
     const matchSearch = !term
       || c.contact_name.toLowerCase().includes(term)
       || c.id.includes(term)
+      || (digitos.length >= 6 && c.id.includes(digitos))
       || (c.last_message ?? '').toLowerCase().includes(term)
       || (idsMensaje?.has(c.id) ?? false);   // coincide con el CONTENIDO de sus mensajes
     const matchTab    = activeTab.test(c);

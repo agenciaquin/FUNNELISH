@@ -403,10 +403,13 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   const resumenVista = resumen;
 
   const filtrados = base.filter(p => {
-    const q = busca.toLowerCase();
+    const q = busca.trim().toLowerCase();
+    // Teléfono con espacios o +57 ("313 6761806") → se compara solo por dígitos.
+    const dig = q.replace(/\D/g, '').replace(/^57(?=\d{10}$)/, '');
     return !q
       || (p.nombre ?? '').toLowerCase().includes(q)
       || (p.telefono ?? '').includes(q)
+      || (dig.length >= 6 && String(p.telefono ?? '').replace(/\D/g, '').includes(dig))
       || (p.producto ?? '').toLowerCase().includes(q);
   });
 
@@ -797,7 +800,11 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
             </div>
           ) : filtrados.length === 0 ? (
             <p className="text-sm text-[#6B6B6B] py-12 text-center px-6">
-              {canal === 'embudos'
+              {busca.trim()
+                ? <>No encontré «{busca.trim()}» en este período ({etiquetaRango}).{' '}
+                    <button onClick={() => { setPreset('30'); setVerRango(false); setRango(rangoPreset('30')); }}
+                      className="text-[#00847A] font-semibold underline">Buscar en los últimos 30 días</button></>
+                : canal === 'embudos'
                 ? 'Todavía no hay ventas desde tus embudos de QuinChat en este período.'
                 : canal === 'funnelish'
                 ? 'Todavía no hay ventas desde Funnelish en este período.'
