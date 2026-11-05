@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { recortar } from '@/lib/recortar';
+import { limpiarTono, TONO_FORMAL } from '@/lib/quinchat/tono';
 import { EVIDENCIA_CATALOGO_ID } from '@/lib/sin-evidencia';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { sendTextMessage, sendAudioByUrl, sendImageByUrl, reenviarImagenComoMedia, descargarWhatsAppMedia, mostrarEscribiendo } from '@/lib/whatsapp';
@@ -2053,6 +2054,7 @@ export async function POST(req: NextRequest) {
           .eq('conversation_id', from).order('created_at', { ascending: false }).limit(14);
 
         const sysConf =
+          TONO_FORMAL +
           `Eres Josué de Klixmant. El cliente ya confirmó su pedido: *${confirmedPedido.producto}* — Valor: *${confirmedPedido.valor}*.\n` +
           `El pedido está confirmado y será despachado en las próximas 24 horas.\n` +
           (confirmedPedido.abono_recibido
@@ -2085,6 +2087,7 @@ export async function POST(req: NextRequest) {
 
         try {
           const resp = await chat({ messages: histMsgs, tenantId: 'klixmant', systemPrompt: sysConf });
+          resp.message = limpiarTono(resp.message); // sin risas ni "hermano"
 
           // ── ¿La IA confirmó un cambio del pedido? → actualizar la base y avisar
           let visible = resp.message;
@@ -2148,6 +2151,7 @@ export async function POST(req: NextRequest) {
         .eq('conversation_id', from).order('created_at', { ascending: false }).limit(14);
 
       const sysNoPedido =
+        TONO_FORMAL +
         `Eres Josué de Klixmant. Atiendes clientes por WhatsApp.\n` +
         `Este cliente no tiene un pedido activo en este momento.\n` +
         `Responde de forma amable y natural, continuando el hilo de la conversación según el historial.\n` +
@@ -2170,6 +2174,7 @@ export async function POST(req: NextRequest) {
 
       try {
         const resp = await chat({ messages: histNoPedidoMsgs, tenantId: 'klixmant', systemPrompt: sysNoPedido });
+        resp.message = limpiarTono(resp.message); // sin risas ni "hermano"
         const wamid = await sendTextMessage(from, resp.message);
         if (wamid) await saveAndSend(supabase, from, resp.message, 'text', wamid);
       } catch { /* ignorar */ }
@@ -2923,6 +2928,7 @@ export async function POST(req: NextRequest) {
     } catch { /* si falla, no se listan */ }
 
     const sysPrompt =
+      TONO_FORMAL +
       `Eres Josué de Klixmant. Hablas con un cliente que ya tiene un pedido activo.\n` +
       `Pedido: *${pendingPedido.producto}* — Valor: *${pendingPedido.valor}*\n` +
       `💰 VALOR FIJO: el valor a pagar de este pedido es EXACTAMENTE *${pendingPedido.valor}*. NUNCA lo cambies, ni lo subas ni lo bajes, ni inventes precios de promo (nada de "2 prendas $219.900" u otros montos). Si el cliente pregunta el precio o dice que decía otro valor, responde SIEMPRE con *${pendingPedido.valor}* — ese es el precio real de su pedido.\n` +
@@ -2965,6 +2971,7 @@ export async function POST(req: NextRequest) {
     let botReply: string;
     try {
       const resp = await chat({ messages: chatHistory, tenantId: 'klixmant', systemPrompt: sysPrompt });
+      resp.message = limpiarTono(resp.message); // sin risas ni "hermano"
       botReply = resp.message;
     } catch { continue; }
 

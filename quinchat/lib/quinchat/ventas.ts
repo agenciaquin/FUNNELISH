@@ -6,6 +6,7 @@
 
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { recortar } from '@/lib/recortar';
+import { limpiarTono } from '@/lib/quinchat/tono';
 import { unirDireccionBarrio } from '@/lib/direccion-barrio';
 import { EVIDENCIA_CATALOGO_ID } from '@/lib/sin-evidencia';
 import { sendTextMessage, sendImageByUrl, mostrarEscribiendo, descargarWhatsAppMedia } from '@/lib/whatsapp';
@@ -246,9 +247,11 @@ Cada mensaje tuyo termina en UNA acción clara para el cliente.
 responde al contenido. NUNCA digas "no puedo escuchar el audio" ni "solo leo texto":
 tú SÍ entiendes las notas de voz.
 
-TONO: amable, cercano y profesional — como una asesora de una marca seria que de
-verdad quiere ayudar. Cálido pero NEUTRO: ni frío ni demasiado coloquial.
-· Sé amable y con buena energía, tutea al cliente y hazlo sentir bien atendido.
+TONO: MUY FORMAL, respetuoso y profesional — como el servicio al cliente de una marca
+seria que de verdad quiere ayudar. Amable, pero nunca coloquial ni bromista.
+· Sé cordial y atento, tutea al cliente con respeto y hazlo sentir bien atendido.
+· CERO humor: nada de risas ("jaja", "jeje", "ja"), chistes ni emojis de risa, aunque
+  el cliente bromee. Ante una queja o duda, responde con seriedad y claridad.
 · PROHIBIDO sonar informal/callejero. NO uses jergas ni apelativos como: "hermano",
   "hermana", "parce", "parcero", "pana", "bro", "mijo", "mija", "papi", "mami",
   "crack", "llave", "mi rey", "mi amor", "corazón", "men". Tampoco muletillas como
@@ -258,7 +261,7 @@ verdad quiere ayudar. Cálido pero NEUTRO: ni frío ni demasiado coloquial.
   linda compra!", "¡Eres el mejor!") ni en muchos signos de admiración seguidos.
 · Habla como una persona real, agradable y profesional, no como un vendedor
   sobreactuado ni como un amigo del barrio.
-· 1 emoji por mensaje (máximo 2 si de verdad suma), no en cada frase.
+· Máximo 1 emoji por mensaje y solo si aporta (✅ 📦 🚚); muchos mensajes van sin emoji.
 
 CÓMO LLAMA LA GENTE A NUESTROS PRODUCTOS (sinónimos — MUY IMPORTANTE):
 · El cliente puede llamar al mismo producto de muchas formas: "chaqueta", "chaqueta
@@ -1844,9 +1847,8 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
       .replace(/\[\[?[A-Z]{0,6}\s*$/i, '')
       // 🚫 Risas ("Jaja", "Jajaja", "Jeje", "😄") al inicio: la marca es seria. El prompt
       // ya lo prohíbe, pero el modelo a veces lo cuela (05-nov-2026, "¿no motosea?" → "Jaja").
-      .replace(/^[\s¡!]*(?:j[aeiou]){2,}[jaeiou]*[\s,.!]*(?:[😄😂🤣😅😆]\s*)*/i, '')
-      .replace(/^(¡?\s*)([a-záéíóúñ])/i, (_m, a, b) => a + b.toUpperCase())
       .trim();
+    respuesta = limpiarTono(respuesta);
 
     // ¿El cliente cambió algo de un pedido ya tomado?
     const mCambio = respuesta.match(/\[\[ACTUALIZAR\]\]\s*(\{[\s\S]*?\})/);
