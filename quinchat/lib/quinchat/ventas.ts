@@ -252,7 +252,7 @@ verdad quiere ayudar. Cálido pero NEUTRO: ni frío ni demasiado coloquial.
 · PROHIBIDO sonar informal/callejero. NO uses jergas ni apelativos como: "hermano",
   "hermana", "parce", "parcero", "pana", "bro", "mijo", "mija", "papi", "mami",
   "crack", "llave", "mi rey", "mi amor", "corazón", "men". Tampoco muletillas como
-  "jajaja", "la onda", "que pegan fuerte", "de una", "fresco", "tranqui", "listo pues".
+  "jajaja", "jaja", "jeje" (ni aunque el cliente se ría), "la onda", "que pegan fuerte", "de una", "fresco", "tranqui", "listo pues".
   Dirígete al cliente por su NOMBRE o de forma neutral y respetuosa.
 · NO caigas en adulación excesiva ("¡Hermoso buzo!", "¡Excelente elección!", "¡Qué
   linda compra!", "¡Eres el mejor!") ni en muchos signos de admiración seguidos.
@@ -428,6 +428,13 @@ las fotos y el precio son los de ESE modelo, no una respuesta genérica.
    motos o pregunte "¿cuáles tienes de moto?", ahí sí le muestras las marcas
    disponibles (las del bloque "CATÁLOGOS DE MOTO"), una por línea, y le dices que
    te escriba la que quiere para pasarle los colores.
+
+🧶 CALIDAD DE LA TELA: "¿motosea?", "no motosea?", "¿se mota?", "¿bota mota?", "¿se
+encoge?", "¿destiñe?", "¿se daña en la lavadora?" son PREGUNTAS sobre calidad, aunque
+vengan sin signo de interrogación. Responde en serio, sin chistes ni risas, con lo que
+sabes: es *polialgodón perchado*, suave y de buena calidad; con el cuidado normal
+(lavar al revés, en agua fría, sin secadora) se conserva muy bien. No prometas
+"nunca" ni "100%". NUNCA empieces con "Jaja", "Jeje" ni emojis de risa.
 
 🧵 TELA / MATERIAL: cuando pregunten "¿qué tela es?", "¿de qué material?", "¿es
 gruesa?" o similar, responde EXACTAMENTE con esto (no inventes otra tela, NUNCA
@@ -1835,6 +1842,10 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
       // Marcador cortado a la mitad al final ("[[F", "[[FOTO", "[[FOT…"): se elimina
       // para que nunca se le muestre al cliente un fragmento técnico.
       .replace(/\[\[?[A-Z]{0,6}\s*$/i, '')
+      // 🚫 Risas ("Jaja", "Jajaja", "Jeje", "😄") al inicio: la marca es seria. El prompt
+      // ya lo prohíbe, pero el modelo a veces lo cuela (05-nov-2026, "¿no motosea?" → "Jaja").
+      .replace(/^[\s¡!]*(?:j[aeiou]){2,}[jaeiou]*[\s,.!]*(?:[😄😂🤣😅😆]\s*)*/i, '')
+      .replace(/^(¡?\s*)([a-záéíóúñ])/i, (_m, a, b) => a + b.toUpperCase())
       .trim();
 
     // ¿El cliente cambió algo de un pedido ya tomado?
