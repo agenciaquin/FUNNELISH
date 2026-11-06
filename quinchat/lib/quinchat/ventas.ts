@@ -6,7 +6,7 @@
 
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { recortar } from '@/lib/recortar';
-import { limpiarTono } from '@/lib/quinchat/tono';
+import { limpiarTono, esRelleno } from '@/lib/quinchat/tono';
 import { unirDireccionBarrio } from '@/lib/direccion-barrio';
 import { EVIDENCIA_CATALOGO_ID } from '@/lib/sin-evidencia';
 import { sendTextMessage, sendImageByUrl, mostrarEscribiendo, descargarWhatsAppMedia } from '@/lib/whatsapp';
@@ -431,6 +431,18 @@ las fotos y el precio son los de ESE modelo, no una respuesta genérica.
    motos o pregunte "¿cuáles tienes de moto?", ahí sí le muestras las marcas
    disponibles (las del bloque "CATÁLOGOS DE MOTO"), una por línea, y le dices que
    te escriba la que quiere para pasarle los colores.
+
+❓ LA PREGUNTA DEL CLIENTE VA PRIMERO: si el cliente hace una pregunta concreta (precio,
+tela, si es impermeable, capota, reflectivo, envío, tiempos…), RESPONDE ESA PREGUNTA
+PRIMERO, en 1–2 líneas, y solo después —si aplica— muestras modelos o colores. NUNCA
+reemplaces su pregunta por el catálogo de otro modelo. Si pregunta "¿cuánto vale?" o
+"precio", el mensaje empieza con los precios (1, 2 y 3 unidades), nunca con un menú de colores.
+
+🔍 DATOS QUE NO TIENES CONFIRMADOS — no los afirmes ni los niegues: si es impermeable o
+deja pasar el agua, modelos sin capota o sin reflectivo, garantías, fechas exactas de
+entrega y recogida en la oficina de Bucaramanga. Responde: "Esa información te la confirma
+un asesor en un momento 🙏" y termina tu mensaje con la etiqueta [[CONSULTAR]] (el sistema
+la quita y le avisa al equipo; el bot sigue atendiendo).
 
 🧶 CALIDAD DE LA TELA: "¿motosea?", "no motosea?", "¿se mota?", "¿bota mota?", "¿se
 encoge?", "¿destiñe?", "¿se daña en la lavadora?" son PREGUNTAS sobre calidad, aunque
@@ -924,6 +936,18 @@ function esTranscripcionBasura(t: string): boolean {
   return /^(gracias|muchas gracias|musica|aplausos|risas|silencio|hola hola|ok|mmm+|eh+|ah+)$/.test(s);
 }
 
+/** Pregunta sin dato confirmado: nota en el chat + etiqueta POR REVISAR LILIBETH (no apaga el bot). */
+async function anotarConsulta(supabase: any, from: string, pregunta: string): Promise<void> {
+  try {
+    const { data: conv } = await supabase.from('conversations').select('notas, label').eq('id', from).maybeSingle();
+    const fecha = new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 16).replace('T', ' ');
+    const notas = [String(conv?.notas ?? '').trim(), `[${fecha}] ❓ Pregunta sin dato confirmado: "${pregunta}"`].filter(Boolean).join('\n');
+    const labels = String(conv?.label ?? '').split('|').map((x: string) => x.trim()).filter(Boolean);
+    if (!labels.some((l: string) => l.toUpperCase() === 'POR REVISAR LILIBETH')) labels.push('POR REVISAR LILIBETH');
+    await supabase.from('conversations').update({ notas, label: [...new Set(labels)].join(' | ') }).eq('id', from);
+  } catch (e) { console.error('[Ventas] anotarConsulta:', e); }
+}
+
 /** 1 → "1️⃣" … 10 → "🔟" (más de 10 → "11."). */
 function numEmoji(n: number): string {
   const E = ['0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
@@ -946,19 +970,37 @@ async function coloresDeFotos(supabase: any, urls: string[]): Promise<Map<string
     const { data } = await supabase.from('catalogo_colores')
       .select('color, nombre_producto, url_imagen').in('url_imagen', urls);
     const filas = (data ?? []).filter((r: any) => r.url_imagen && String(r.color ?? '').trim());
-    // Si dos fotos tienen el mismo color (ej. fotos de 2 modelos), se usa el nombre
+    // El mismo diseño puede estar en DOS catálogos con nombres distintos ("BEIGE REDBULL"
+    // y "ESCUDERIA RED BULL" color "BEIGE RED BULL"): eso salía como "3️⃣ Beige … 5️⃣ Beige".
+    // Se compara por COLOR BASE + FAMILIA normalizada; el repetido se marca DUPLICADO y no se envía.
+    const PALABRAS_COLOR = /\b(NEGRO|NEGRA|ROJO|ROJA|AZUL|OSCURO|REY|CLARO|BLANCO|BLANCA|MARFIL|BEIGE|GRIS|VERDE|AMARILLO|COCOA|NAVY|MILITAR|VINOTINTO|NARANJA|MORADO|ROSADO|CAFE|CAFÉ|PLATA|DORADO|MANZANA|CELESTE|TURQUESA|OLIVA|MOSTAZA)\b/g;
+    const baseColor = (c: string) => (String(c).toUpperCase().match(PALABRAS_COLOR) ?? []).join(' ') || String(c).trim().toUpperCase();
+    const familia = (r: any) => String(r.nombre_producto ?? '').toUpperCase()
+      .replace(PALABRAS_COLOR, ' ').replace(/\b(ESCUDERIA|ESCUDERÍA|BUZO|MOTO|REFLECTIVO|CHAQUETA)\b/g, ' ')
+      .replace(/[^A-Z0-9]/g, '');
+    const vistos = new Set<string>();
+    const unicas: any[] = [];
+    for (const r of filas) {
+      const url = String(r.url_imagen);
+      if (mapa.has(url)) continue;
+      const clave = `${familia(r)}|${baseColor(r.color)}`;
+      if (vistos.has(clave)) { mapa.set(url, DUPLICADO); continue; }
+      vistos.add(clave);
+      unicas.push(r);
+    }
+    // Si dos fotos (de modelos DISTINTOS) tienen el mismo color, se usa el nombre
     // completo del producto para que el número no sea ambiguo.
     const conteo = new Map<string, number>();
-    for (const r of filas) { const c = String(r.color).trim().toUpperCase(); conteo.set(c, (conteo.get(c) ?? 0) + 1); }
-    for (const r of filas) {
-      if (mapa.has(String(r.url_imagen))) continue;
-      const col = String(r.color).trim().toUpperCase();
+    for (const r of unicas) { const c = baseColor(r.color); conteo.set(c, (conteo.get(c) ?? 0) + 1); }
+    for (const r of unicas) {
+      const col = baseColor(r.color);
       const etiqueta = (conteo.get(col) ?? 0) > 1 && r.nombre_producto ? String(r.nombre_producto).trim().toUpperCase() : col;
       mapa.set(String(r.url_imagen), etiqueta);
     }
   } catch { /* sin colores → se envía el catálogo como siempre */ }
   return mapa;
 }
+const DUPLICADO = '__DUPLICADO__';
 
 /**
  * Saca las fotos que pidió el modelo ([[FOTO]]url) y devuelve el texto limpio.
@@ -1849,6 +1891,14 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
       // ya lo prohíbe, pero el modelo a veces lo cuela (05-nov-2026, "¿no motosea?" → "Jaja").
       .trim();
     respuesta = limpiarTono(respuesta);
+    // ❓ Dato no confirmado (impermeable, sin capota, garantía…): se avisa al equipo sin apagar el bot.
+    if (respuesta.includes('[[CONSULTAR]]')) {
+      respuesta = respuesta.replace(/\[\[CONSULTAR\]\]/g, '').trim();
+      await anotarConsulta(supabase, from, String(texto ?? '').slice(0, 200));
+    }
+    // Solo un emoji ("👍", "👋") o un marcador cortado → no se envía (salía como burbuja
+    // "BOT IA" casi vacía y repetía la despedida ante un "ok" del cliente).
+    if (esRelleno(respuesta)) { console.log('[Ventas] respuesta de solo relleno — no se envía'); return; }
 
     // ¿El cliente cambió algo de un pedido ya tomado?
     const mCambio = respuesta.match(/\[\[ACTUALIZAR\]\]\s*(\{[\s\S]*?\})/);
@@ -2013,9 +2063,10 @@ export async function atenderVenta(supabase: any, value: any, contactName: strin
     // número y color en el pie ("1️⃣ ROJO"), y el cierre pide responder con el número.
     // Elegir "2" es mucho más fácil que escribir "modelo y color" (ahí se iba el 59 %).
     const colores = esGancho && nuevasFotos.length >= 2 ? await coloresDeFotos(supabase, nuevasFotos) : null;
-    if (colores && colores.size >= 2) {
-      const conColor = nuevasFotos.filter(u => colores.has(u));
-      const sinColor = nuevasFotos.filter(u => !colores.has(u));
+    const validos = colores ? [...colores.values()].filter(v => v !== DUPLICADO).length : 0;
+    if (colores && validos >= 2) {
+      const conColor = nuevasFotos.filter(u => colores.has(u) && colores.get(u) !== DUPLICADO);
+      const sinColor = nuevasFotos.filter(u => !colores.has(u));   // los DUPLICADOS no se envían
       // En paralelo (rápido); el número del pie mantiene el orden claro aunque lleguen desordenadas.
       await Promise.all([
         ...conColor.map((url, i) => enviarFoto(supabase, from, url, `${numEmoji(i + 1)} ${colores.get(url)}`).catch(() => {})),

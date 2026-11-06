@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { recortar } from '@/lib/recortar';
-import { limpiarTono, TONO_FORMAL } from '@/lib/quinchat/tono';
+import { limpiarTono, TONO_FORMAL, esRelleno } from '@/lib/quinchat/tono';
 import { EVIDENCIA_CATALOGO_ID } from '@/lib/sin-evidencia';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { sendTextMessage, sendAudioByUrl, sendImageByUrl, reenviarImagenComoMedia, descargarWhatsAppMedia, mostrarEscribiendo } from '@/lib/whatsapp';
@@ -356,6 +356,17 @@ async function setEstadoConv(supabase: any, from: string, estado: string) {
   await supabase.from('conversations').update({ label: joinLabels([estado, ...tags]), ...extra }).eq('id', from);
 }
 // Agrega un TAG (HUMANO, PENDIENTE DE ABONO) sin quitar nada. Devuelve true si era nuevo.
+/** Deja una nota en el chat (campo notas) y lo marca POR REVISAR LILIBETH. No toca el pedido. */
+async function anotarParaAsesor(supabase: any, from: string, nota: string): Promise<void> {
+  try {
+    const { data: conv } = await supabase.from('conversations').select('notas').eq('id', from).maybeSingle();
+    const fecha = new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 16).replace('T', ' ');
+    const notas = [String(conv?.notas ?? '').trim(), `[${fecha}] ${nota}`].filter(Boolean).join('\n');
+    await supabase.from('conversations').update({ notas }).eq('id', from);
+    await agregarTagConv(supabase, from, 'POR REVISAR LILIBETH');
+  } catch (e) { console.error('[Webhook] anotarParaAsesor:', e); }
+}
+
 async function agregarTagConv(supabase: any, from: string, tag: string): Promise<boolean> {
   const { data: conv } = await supabase.from('conversations').select('label').eq('id', from).maybeSingle();
   const actuales = parseLabels(conv?.label);
@@ -2072,7 +2083,9 @@ export async function POST(req: NextRequest) {
           `Si el cliente pregunta cuándo llega o el número de guía: dile que recibirá el número de guía por este chat una vez despachado.\n` +
           `Si el cliente quiere cambiar de color: pregúntale "¿A qué color quieres cambiarlo?" — NO digas que no puedes hacerlo.\n` +
           `⚠️ MUY IMPORTANTE — CUANDO CONFIRMES UN CAMBIO del pedido (color, talla, dirección, ciudad o correo), además de responderle al cliente, termina tu mensaje con una línea aparte EXACTAMENTE así (es para el sistema, el cliente NO la ve):\n` +
-          `[[ACTUALIZAR]]{"producto":"NOMBRE DEL PRODUCTO CON EL COLOR NUEVO","talla":"","direccion":"","ciudad":"","departamento":"","correo":""}\n` +
+          `[[ACTUALIZAR]]{"producto":"NOMBRE DEL PRODUCTO CON EL COLOR NUEVO","talla":"","direccion":"","ciudad":"","departamento":"","correo":"","celular":""}\n` +
+          `Si el cliente da OTRO celular para la entrega o la guía, ponlo en "celular" (10 dígitos). Ese cambio lo revisa un asesor: dile "Listo, dejo anotado el celular X para la entrega; un asesor lo agrega a tu guía", NUNCA "ya lo actualicé".\n` +
+          `NUNCA digas "actualicé", "ya cambié" o "quedó modificado" si no pusiste la línea [[ACTUALIZAR]] con ese cambio.\n` +
           `Incluye SOLO los campos que cambiaron (los demás déjalos en ""). Si cambió el color, en "producto" pon el nombre del producto con el color nuevo (ej: "ESCUDERIA RED BULL - ROJO"). Sin esa línea, el cambio NO queda registrado y despachan el pedido equivocado.\n` +
           `📍 DIRECCIÓN POR PARTES — OBLIGATORIO: si el cliente completa o corrige su dirección (aunque sea por pedazos: torre, apartamento, casa, barrio, conjunto, ciudadela…), ARMA la dirección COMPLETA juntando lo que ya tenía + lo nuevo, y ponla en "direccion" del [[ACTUALIZAR]]. Si en tu mensaje le muestras al cliente la dirección final (ej. "Recibirás tu pedido en: ..."), esa MISMA dirección completa DEBE ir en [[ACTUALIZAR]] "direccion". NUNCA le muestres una dirección corregida sin guardarla con [[ACTUALIZAR]].\n` +
           `Si el cliente pide la foto de su producto: responde "En un momento te la enviamos 📸" — NUNCA digas que no puedes enviar fotos.\n` +
@@ -2094,9 +2107,11 @@ export async function POST(req: NextRequest) {
         try {
           const resp = await chat({ messages: histMsgs, tenantId: 'klixmant', systemPrompt: sysConf });
           resp.message = limpiarTono(resp.message); // sin risas ni "hermano"
+          if (esRelleno(resp.message)) continue;     // "👍", "👋" sueltos → no se envía nada
 
           // ── ¿La IA confirmó un cambio del pedido? → actualizar la base y avisar
           let visible = resp.message;
+          let cambioAplicado = false;
           const mAct = resp.message.match(/\[\[ACTUALIZAR\]\]\s*(\{[\s\S]*?\})/);
           if (mAct && confirmedPedido.id) {
             visible = resp.message.replace(/\[\[ACTUALIZAR\]\][\s\S]*$/, '').trim();
@@ -2133,7 +2148,15 @@ export async function POST(req: NextRequest) {
                   if (foto && foto !== FALLBACK_IMAGE) upd.foto_producto = foto;
                 } catch { /* si no se encuentra foto, se deja la que tenía */ }
               }
+              // Celular nuevo para la entrega: NO se cambia `telefono` (es la llave que une
+              // el pedido con este chat); se deja en las notas del chat y lo agrega un asesor.
+              const celNuevo = String(cambios.celular ?? '').replace(/\D/g, '').replace(/^57(?=3\d{9}$)/, '');
+              if (/^3\d{9}$/.test(celNuevo) && celNuevo !== tel10) {
+                await anotarParaAsesor(supabase, from, `📱 Celular nuevo para la entrega/guía: ${celNuevo} (pedido #${confirmedPedido.id})`);
+                cambioAplicado = true;
+              }
               if (Object.keys(upd).length) {
+                cambioAplicado = true;
                 await supabase.from('clientes_funnelish').update(upd).eq('id', confirmedPedido.id);
                 // Solo avisa CORRECCIÓN si la ficha ya se envió (fuera del período de gracia).
                 const { data: pf } = await supabase.from('clientes_funnelish')
@@ -2143,6 +2166,15 @@ export async function POST(req: NextRequest) {
                 }
               }
             } catch { /* si el JSON viene mal, igual se responde al cliente */ }
+          }
+
+          // 🛡️ La IA dijo "actualicé / cambié" pero NO quedó ningún cambio guardado (caso
+          // Augusto, 05-nov-2026): no se le confirma algo falso al cliente. Se le dice que
+          // un asesor lo revisa y se marca el chat para Lilibeth.
+          const afirmaCambio = /\b(he actualizado|actualic[eé]|qued[oó] actualizad|ya (lo |la )?cambi[eé]|he cambiado|cambi[eé] (tu|el|la)|modifiqu[eé]|he modificado|qued[oó] modificad|ya qued[oó] registrad)/i.test(visible || resp.message);
+          if (afirmaCambio && !cambioAplicado) {
+            await anotarParaAsesor(supabase, from, `✏️ El cliente pidió un cambio que el bot no pudo registrar solo: "${text.slice(0, 200)}"`);
+            visible = 'Tomo nota del cambio que me indicas 🙏 Un asesor lo verifica en tu pedido y te confirma por aquí.';
           }
 
           const wamid = await sendTextMessage(from, visible || resp.message);
@@ -2181,6 +2213,7 @@ export async function POST(req: NextRequest) {
       try {
         const resp = await chat({ messages: histNoPedidoMsgs, tenantId: 'klixmant', systemPrompt: sysNoPedido });
         resp.message = limpiarTono(resp.message); // sin risas ni "hermano"
+        if (esRelleno(resp.message)) continue;
         const wamid = await sendTextMessage(from, resp.message);
         if (wamid) await saveAndSend(supabase, from, resp.message, 'text', wamid);
       } catch { /* ignorar */ }
@@ -2979,6 +3012,7 @@ export async function POST(req: NextRequest) {
     try {
       const resp = await chat({ messages: chatHistory, tenantId: 'klixmant', systemPrompt: sysPrompt });
       resp.message = limpiarTono(resp.message); // sin risas ni "hermano"
+      if (esRelleno(resp.message)) continue;      // "👍" suelto ante un "ok" → no se envía
       botReply = resp.message;
     } catch { continue; }
 

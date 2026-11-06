@@ -24,3 +24,18 @@ export const TONO_FORMAL =
   '"mi amor"…), muletillas ("de una", "listo pues", "fresco") y exclamaciones exageradas. Máximo 1 emoji por ' +
   'mensaje y solo si aporta (✅ 📦 🚚). Ante una queja o frustración (por ejemplo, por el abono), responde con ' +
   'empatía y seriedad, explicando con claridad; nunca con humor. Frases completas, claras y con buena ortografía.\n\n';
+
+/**
+ * ¿La respuesta de la IA es solo relleno? (vacía, solo emojis/puntuación como "👍" o
+ * "👋😊", o un marcador cortado "[[F"). Esos salían en el chat como burbujas "BOT IA"
+ * casi vacías y, ante un "ok"/👍 del cliente, repetían la despedida. No se envían.
+ */
+export function esRelleno(texto: string | null | undefined): boolean {
+  const t = String(texto ?? '').replace(/\[\[[A-Z]*\]\]/g, '').trim();
+  if (!t) return true;
+  if (/^\[\[?[A-Z]{0,8}$/i.test(t)) return true;
+  const sinEmojis = t
+    .replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}\u{1F1E6}-\u{1F1FF}⃣‍️]/gu, '')
+    .replace(/[\s.,;:!¡?¿*_~\-—–()]/g, '');
+  return sinEmojis.length === 0;
+}
