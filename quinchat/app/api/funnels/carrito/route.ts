@@ -113,7 +113,27 @@ export async function GET(req: NextRequest) {
     totalTabla = count ?? 0;
   } catch { permiso = false; }
 
-  return NextResponse.json({ carritos: abiertos, total: abiertos.length, totalTabla, permiso });
+  // UN carrito por cliente (teléfono): si dejó 2–3 carritos (varios embudos o intentos),
+  // se muestra solo el MÁS COMPLETO (más datos escritos; empate → el más reciente).
+  const completitud = (c: any) => {
+    const d = (c.datos && typeof c.datos === 'object') ? c.datos : {};
+    const llenos = Object.entries(d).filter(([k, v]) => k !== 'imagenes' && typeof v === 'string' && v.trim()).length;
+    return llenos + (c.producto ? 1 : 0) + (c.talla ? 1 : 0) + (c.nombre ? 1 : 0);
+  };
+  const porTel = new Map<string, { c: any; n: number }>();
+  for (const c of abiertos as any[]) {
+    const t = String(c.telefono);
+    const prev = porTel.get(t);
+    if (!prev) { porTel.set(t, { c, n: 1 }); continue; }
+    prev.n++;
+    const mejor = completitud(c) > completitud(prev.c)
+      || (completitud(c) === completitud(prev.c) && String(c.created_at) > String(prev.c.created_at));
+    if (mejor) prev.c = c;
+  }
+  const unicos = [...porTel.values()].map(({ c, n }) => ({ ...c, otrosCarritos: n - 1 }))
+    .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)));
+
+  return NextResponse.json({ carritos: unicos, total: unicos.length, totalTabla, permiso });
 }
 
 // PATCH: marca un carrito como recuperado/reabre, o guarda una nota del asesor.

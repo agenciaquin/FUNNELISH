@@ -15,6 +15,7 @@ interface Carrito {
   datos: Record<string, any> | null;
   nota: string | null;
   created_at: string;
+  otrosCarritos?: number;   // carritos extra del mismo teléfono (se muestra solo el más completo)
 }
 
 // Etiquetas bonitas para los campos que el cliente llenó.
@@ -53,7 +54,8 @@ export default function CarritosAbandonados({ onClose, onAbrirChat }: { onClose:
   const [confirmarBorrarSel, setConfirmarBorrarSel] = useState(false);
   const [diag, setDiag] = useState<{ totalTabla: number; permiso: boolean } | null>(null);
   // Plantilla de carrito: estado de envío por carrito + bloqueos ("chat abierto / ya compró")
-  const [envios, setEnvios] = useState<Record<string, { enviada_at: string | null; error: string | null }>>({});
+  const [envios, setEnvios] = useState<Record<string, { enviada_at: string | null; error: string | null; auto?: string | null }>>({});
+  const [auto, setAuto] = useState<{ activo: boolean; minutos: number } | null>(null);
   const [bloqueados, setBloqueados] = useState<Record<string, string>>({});
   const [enviandoTpl, setEnviandoTpl] = useState<string | null>(null);
 
@@ -77,6 +79,18 @@ export default function CarritosAbandonados({ onClose, onAbrirChat }: { onClose:
     fetch(`/api/funnels/carrito/plantilla?ids=${carritos.map(c => encodeURIComponent(c.id)).join(',')}`, { cache: 'no-store' })
       .then(r => r.ok ? r.json() : null).then(d => d?.estados && setEnvios(d.estados)).catch(() => {});
   }, [carritos]);
+
+  useEffect(() => {
+    fetch('/api/funnels/carrito/auto', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(d => d && setAuto(d)).catch(() => {});
+  }, []);
+  async function alternarAuto() {
+    if (!auto) return;
+    const r = await fetch('/api/funnels/carrito/auto', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activo: !auto.activo }),
+    });
+    const d = await r.json().catch(() => null);
+    if (d?.ok) setAuto({ activo: d.activo, minutos: d.minutos });
+  }
 
   async function enviarPlantillaCarrito(c: Carrito) {
     setEnviandoTpl(c.id);
@@ -205,6 +219,19 @@ export default function CarritosAbandonados({ onClose, onAbrirChat }: { onClose:
             <p className="text-[11px] text-[#6B6B6B] mt-0.5">
               Clientes que escribieron su nombre y WhatsApp pero no completaron la compra. ¡Escríbeles para recuperar la venta!
             </p>
+            {auto && (
+              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                <button onClick={alternarAuto}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${auto.activo ? 'bg-[#15803D] text-white border-[#15803D]' : 'bg-white text-[#6B6B6B] border-[#E8E8E8] hover:bg-[#F5F5F5]'}`}>
+                  🤖 Envío automático: {auto.activo ? 'ENCENDIDO' : 'APAGADO'}
+                </button>
+                <span className="text-[10px] text-[#6B6B6B]">
+                  {auto.activo
+                    ? `Manda la plantilla sola a los ${auto.minutos} min sin actividad, solo a quien no tiene chat ni compró.`
+                    : 'Apagado: la plantilla solo sale con el botón 📩 de cada carrito.'}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Filtro + resumen */}
@@ -304,6 +331,10 @@ export default function CarritosAbandonados({ onClose, onAbrirChat }: { onClose:
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold text-[#0D0D0D] truncate">{c.nombre || 'Sin nombre'}</span>
                             <span className="text-[10px] text-[#9A9A9A] shrink-0">· {cuandoFue(c.created_at)}</span>
+                            {!!c.otrosCarritos && (
+                              <span title="Este cliente dejó varios carritos: se muestra el más completo y solo recibe UNA plantilla"
+                                className="text-[10px] font-semibold text-[#6B6B6B] bg-[#F1F1F1] rounded-full px-1.5 py-0.5 shrink-0">+{c.otrosCarritos} carrito{c.otrosCarritos > 1 ? 's' : ''}</span>
+                            )}
                           </div>
                           <div className="text-[12px] text-[#6B6B6B] truncate">
                             {c.producto || '—'}{c.talla ? ` · ${c.talla}` : ''} · {pesos(c.valor)}
@@ -330,14 +361,25 @@ export default function CarritosAbandonados({ onClose, onAbrirChat }: { onClose:
                           {!verRecuperados && (() => {
                             const env = envios[c.id];
                             const bloq = bloqueados[c.id];
+                            if (env?.auto === 'compro') return (
+                              <span title="El envío automático se canceló: este cliente ya hizo un pedido"
+                                className="px-2.5 py-1.5 rounded-lg bg-[#F1F1F1] text-[#6B6B6B] text-[11px] font-semibold">🚫 Cancelado · compró</span>
+                            );
+                            if (env?.enviada_at && chat?.ultimo && new Date(chat.ultimo) > new Date(env.enviada_at)) return (
+                              <span className="px-2.5 py-1.5 rounded-lg bg-[#DBEAFE] text-[#1D4ED8] text-[11px] font-semibold">💬 Cliente respondió</span>
+                            );
+                            if (!env?.enviada_at && !chat && !bloq && auto?.activo && Date.now() - new Date(c.created_at).getTime() < (auto.minutos || 10) * 60_000) return (
+                              <span title="El envío automático lo manda cuando pasen los minutos sin actividad"
+                                className="px-2.5 py-1.5 rounded-lg bg-[#FEF3C7] text-[#B45309] text-[11px] font-semibold">⏳ Esperando {auto.minutos} min</span>
+                            );
                             if (env?.enviada_at) return (
                               <span title={`Plantilla enviada ${cuandoFue(env.enviada_at)}`}
-                                className="px-2.5 py-1.5 rounded-lg bg-[#DCFCE7] text-[#15803D] text-[11px] font-semibold">✅ Plantilla enviada</span>
+                                className="px-2.5 py-1.5 rounded-lg bg-[#DCFCE7] text-[#15803D] text-[11px] font-semibold">✅ Plantilla enviada{env.auto === 'enviado' ? ' (auto)' : ''}</span>
                             );
                             if (chat || bloq) return (
                               <span title={bloq === 'ya compró' ? 'Este cliente ya hizo un pedido: no se le envía la plantilla' : 'Ya tiene chat en QuinChat: no se le envía la plantilla'}
                                 className="px-2.5 py-1.5 rounded-lg bg-[#F1F1F1] text-[#6B6B6B] text-[11px] font-semibold">
-                                💬 Chat abierto{bloq === 'ya compró' ? ' · ya compró' : ''}
+                                {bloq === 'ya enviada a este número' ? '✅ Ya se le envió' : <>💬 Chat abierto{bloq === 'ya compró' ? ' · ya compró' : ''}</>}
                               </span>
                             );
                             return (
