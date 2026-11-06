@@ -181,7 +181,8 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
     const matchLabel =
       labelFilter === null ? true :
       labelFilter === ''   ? !c.label :
-      (!!c.label && c.label.includes(labelFilter));
+      // Coincidencia EXACTA por etiqueta (antes «BONO» atrapaba «PENDIENTE DE ABONO»)
+      (!!c.label && c.label.split('|').some(l => l.trim().toUpperCase() === labelFilter.trim().toUpperCase()));
     const matchUnread = !soloNoLeidos || (c.unread_count ?? 0) > 0;
     const matchBot    = !soloBotOff   || c.bot_enabled === false;
     return matchSearch && matchTab && matchLabel && matchUnread && matchBot;
