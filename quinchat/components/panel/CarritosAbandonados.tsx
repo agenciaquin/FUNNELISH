@@ -52,6 +52,10 @@ export default function CarritosAbandonados({ onClose, onAbrirChat }: { onClose:
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [confirmarBorrarSel, setConfirmarBorrarSel] = useState(false);
   const [diag, setDiag] = useState<{ totalTabla: number; permiso: boolean } | null>(null);
+  // Plantilla de carrito: estado de envío por carrito + bloqueos ("chat abierto / ya compró")
+  const [envios, setEnvios] = useState<Record<string, { enviada_at: string | null; error: string | null }>>({});
+  const [bloqueados, setBloqueados] = useState<Record<string, string>>({});
+  const [enviandoTpl, setEnviandoTpl] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -66,6 +70,32 @@ export default function CarritosAbandonados({ onClose, onAbrirChat }: { onClose:
   }, [verRecuperados]);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  // Estado de la plantilla de carrito de cada uno (enviada / error)
+  useEffect(() => {
+    if (!carritos.length) { setEnvios({}); return; }
+    fetch(`/api/funnels/carrito/plantilla?ids=${carritos.map(c => encodeURIComponent(c.id)).join(',')}`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null).then(d => d?.estados && setEnvios(d.estados)).catch(() => {});
+  }, [carritos]);
+
+  async function enviarPlantillaCarrito(c: Carrito) {
+    setEnviandoTpl(c.id);
+    try {
+      const r = await fetch('/api/funnels/carrito/plantilla', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: c.id }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        setEnvios(e => ({ ...e, [c.id]: { enviada_at: new Date().toISOString(), error: null } }));
+        // Ya tiene chat: se recarga el indicador de chats
+        setCarritos(cs => [...cs]);
+      } else if (d?.bloqueado) {
+        setBloqueados(b => ({ ...b, [c.id]: String(d.error ?? 'chat abierto') }));
+      } else {
+        setEnvios(e => ({ ...e, [c.id]: { enviada_at: null, error: String(d?.error ?? 'No se pudo enviar') } }));
+      }
+    } finally { setEnviandoTpl(null); }
+  }
 
   // ¿El cliente ya tiene chat en QuinChat y escribió? (para saber a quién falta escribirle)
   useEffect(() => {
@@ -296,6 +326,28 @@ export default function CarritosAbandonados({ onClose, onAbrirChat }: { onClose:
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
+                          {/* 📩 Plantilla de carrito: SOLO si no tiene chat ni compró */}
+                          {!verRecuperados && (() => {
+                            const env = envios[c.id];
+                            const bloq = bloqueados[c.id];
+                            if (env?.enviada_at) return (
+                              <span title={`Plantilla enviada ${cuandoFue(env.enviada_at)}`}
+                                className="px-2.5 py-1.5 rounded-lg bg-[#DCFCE7] text-[#15803D] text-[11px] font-semibold">✅ Plantilla enviada</span>
+                            );
+                            if (chat || bloq) return (
+                              <span title={bloq === 'ya compró' ? 'Este cliente ya hizo un pedido: no se le envía la plantilla' : 'Ya tiene chat en QuinChat: no se le envía la plantilla'}
+                                className="px-2.5 py-1.5 rounded-lg bg-[#F1F1F1] text-[#6B6B6B] text-[11px] font-semibold">
+                                💬 Chat abierto{bloq === 'ya compró' ? ' · ya compró' : ''}
+                              </span>
+                            );
+                            return (
+                              <button onClick={() => enviarPlantillaCarrito(c)} disabled={enviandoTpl === c.id}
+                                title={env?.error ? `Falló: ${env.error}. Toca para reintentar.` : 'Enviar la plantilla aprobada de carrito abandonado (una sola vez)'}
+                                className={`px-3 py-1.5 rounded-lg text-white text-xs font-semibold disabled:opacity-60 ${env?.error ? 'bg-[#DC2626] hover:opacity-90' : 'bg-[#2F80ED] hover:opacity-90'}`}>
+                                {enviandoTpl === c.id ? 'Enviando…' : env?.error ? '⚠️ Reintentar' : '📩 Enviar plantilla'}
+                              </button>
+                            );
+                          })()}
                           {chat && onAbrirChat ? (
                             // Abre el chat DENTRO de QuinChat (Chat Funnel o Ventas, según su bandeja)
                             <button onClick={() => onAbrirChat(chat.id)}
