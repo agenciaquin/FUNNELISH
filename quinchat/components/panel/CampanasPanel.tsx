@@ -8,11 +8,11 @@ interface Fila {
   campana: string; plataforma: string; estado: 'activa' | 'apagada' | ''; gasto: number;
   pedidos: number; confirmados: number; cancelados: number; pendientes: number;
   ingresos: number; tasaCierre: number; costoPorPedido: number;
-  costoPorVenta: number; ganancia: number;
+  costoPorVenta: number; prendas?: number; costoPorPrenda?: number; ganancia: number;
 }
 interface Resumen {
   gasto: number; pedidos: number; confirmados: number;
-  ingresos: number; costoPorVenta: number; tasaCierre: number;
+  ingresos: number; costoPorVenta: number; prendas?: number; costoPorPrenda?: number; tasaCierre: number;
 }
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
@@ -274,12 +274,13 @@ export default function CampanasPanel() {
 
         {/* Resumen */}
         {resumen && (
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+          <div className="grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-3 mb-5">
             {[
               { t: 'Invertido',          v: pesos(resumen.gasto),        c: '#DC2626', i: '💸' },
               { t: 'Pedidos',            v: String(resumen.pedidos),     c: '#8B5CF6', i: '🛒' },
               { t: 'Ventas confirmadas', v: String(resumen.confirmados), c: '#15803D', i: '✅' },
               { t: 'Costo real / venta', v: resumen.confirmados ? pesos(resumen.costoPorVenta) : '—', c: '#EA580C', i: '🎯' },
+              { t: 'Costo por prenda',   v: resumen.prendas ? `${pesos(resumen.costoPorPrenda ?? 0)} · ${resumen.prendas} prendas` : '—', c: '#0E9C92', i: '👕' },
               { t: 'Vendido',            v: pesos(resumen.ingresos),     c: '#00847A', i: '💰' },
             ].map(k => {
               // La tarjeta del costo real se pinta según el objetivo
@@ -343,6 +344,7 @@ export default function CampanasPanel() {
                     <th className="text-right px-3 py-2.5 font-semibold">Conf.</th>
                     <th className="text-right px-3 py-2.5 font-semibold">Cierre</th>
                     <th className="text-right px-3 py-2.5 font-semibold">Costo/venta</th>
+                    <th className="text-right px-3 py-2.5 font-semibold" title="Gasto ÷ prendas vendidas (un pack x2 cuenta 2)">Prendas · Costo/prenda</th>
                     <th className="text-right px-3 py-2.5 font-semibold">Ganancia</th>
                     <th className="text-left  px-4 py-2.5 font-semibold w-[190px]">Rendimiento</th>
                     <th className="text-center px-4 py-2.5 font-semibold">Estado</th>
@@ -362,7 +364,7 @@ export default function CampanasPanel() {
                       <React.Fragment key={`${f.plataforma}-${f.campana}`}>
                       {nuevaPlataforma && (
                         <tr key={`h-${f.plataforma}`} className="bg-[#F7F7F7] border-y border-[#E8E8E8]">
-                          <td colSpan={9} className="px-4 py-2">
+                          <td colSpan={10} className="px-4 py-2">
                             <div className="flex items-center gap-2">
                               <plat.Logo size={15} />
                               <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: plat.color }}>
@@ -393,6 +395,9 @@ export default function CampanasPanel() {
                         <td className="px-3 py-2.5 text-right text-[#6B6B6B]">{f.tasaCierre ? `${f.tasaCierre}%` : '—'}</td>
                         <td className="px-3 py-2.5 text-right font-semibold" style={{ color: f.confirmados ? '#EA580C' : '#9A9A9A' }}>
                           {f.confirmados ? pesos(f.costoPorVenta) : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-semibold" style={{ color: f.prendas ? '#0E9C92' : '#9A9A9A' }}>
+                          {f.prendas ? <>{pesos(f.costoPorPrenda ?? 0)} <span className="text-[10px] text-[#6B6B6B] font-normal">· {f.prendas} pr.</span></> : '—'}
                         </td>
                         <td className="px-3 py-2.5 text-right font-bold" style={{ color: buena ? '#15803D' : '#DC2626' }}>
                           {pesos(f.ganancia)}

@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     // Los pedidos se filtran por día completo
     const { data: pedidos, error: e2 } = await supabase
       .from('clientes_funnelish')
-      .select('utm_campaign, utm_source, confirmado, estado, valor, created_at')
+      .select('utm_campaign, utm_source, confirmado, estado, valor, producto, talla, cantidad, created_at')
       .gte('created_at', `${desde}T00:00:00`)
       .lte('created_at', `${hasta}T23:59:59`);
 

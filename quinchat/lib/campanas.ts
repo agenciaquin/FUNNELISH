@@ -1,3 +1,4 @@
+import { prendasDeVenta } from '@/lib/prendas';
 /**
  * Rentabilidad real por campaña.
  *
@@ -83,6 +84,8 @@ export interface FilaCampana {
   tasaCierre: number;      // % confirmados sobre pedidos resueltos
   costoPorPedido: number;  // lo que reporta la plataforma
   costoPorVenta: number;   // el real: gasto ÷ confirmados
+  prendas: number;         // prendas de las ventas confirmadas (un pack x2 = 2)
+  costoPorPrenda: number;  // gasto ÷ prendas confirmadas
   ganancia: number;        // ingresos − gasto (sin costo de producto)
 }
 
@@ -92,6 +95,8 @@ export interface Resumen {
   confirmados: number;
   ingresos: number;
   costoPorVenta: number;
+  prendas: number;
+  costoPorPrenda: number;
   tasaCierre: number;
 }
 
@@ -133,7 +138,7 @@ export function construirInforme(
         estado: (g.estado ?? '') as 'activa' | 'apagada' | '',
         gasto: Number(g.gasto ?? 0),
         pedidos: 0, confirmados: 0, cancelados: 0, pendientes: 0,
-        ingresos: 0, tasaCierre: 0, costoPorPedido: 0, costoPorVenta: 0, ganancia: 0,
+        ingresos: 0, tasaCierre: 0, costoPorPedido: 0, costoPorVenta: 0, prendas: 0, costoPorPrenda: 0, ganancia: 0,
       });
     }
   }
@@ -158,7 +163,7 @@ export function construirInforme(
         estado: '',
         gasto: 0,
         pedidos: 0, confirmados: 0, cancelados: 0, pendientes: 0,
-        ingresos: 0, tasaCierre: 0, costoPorPedido: 0, costoPorVenta: 0, ganancia: 0,
+        ingresos: 0, tasaCierre: 0, costoPorPedido: 0, costoPorVenta: 0, prendas: 0, costoPorPrenda: 0, ganancia: 0,
       };
       porCampana.set(clave, fila);
     }
@@ -170,6 +175,9 @@ export function construirInforme(
     if (p.confirmado === true) {
       fila.confirmados++;
       fila.ingresos += aNumero(p.valor);
+      fila.prendas += prendasDeVenta({
+        cantidadBot: Number(p.cantidad) || null, producto: p.producto, talla: p.talla, valor: aNumero(p.valor),
+      });
     } else if (estado === 'cancelado') {
       fila.cancelados++;
     } else {
@@ -186,6 +194,7 @@ export function construirInforme(
     f.tasaCierre     = resueltos > 0 ? Math.round((f.confirmados / resueltos) * 100) : 0;
     f.costoPorPedido = f.pedidos > 0 ? Math.round(f.gasto / f.pedidos) : 0;
     f.costoPorVenta  = f.confirmados > 0 ? Math.round(f.gasto / f.confirmados) : 0;
+    f.costoPorPrenda = f.prendas > 0 ? Math.round(f.gasto / f.prendas) : 0;
     f.ganancia       = f.ingresos - f.gasto;
     return f;
   }).sort((a, b) => {
@@ -209,8 +218,11 @@ export function construirInforme(
     confirmados: filas.reduce((s, f) => s + f.confirmados, 0),
     ingresos:    filas.reduce((s, f) => s + f.ingresos, 0),
     costoPorVenta: 0,
+    prendas:     filas.reduce((s, f) => s + f.prendas, 0),
+    costoPorPrenda: 0,
     tasaCierre: 0,
   };
+  resumen.costoPorPrenda = resumen.prendas > 0 ? Math.round(resumen.gasto / resumen.prendas) : 0;
   resumen.costoPorVenta = resumen.confirmados > 0 ? Math.round(resumen.gasto / resumen.confirmados) : 0;
   const resueltosTot = filas.reduce((s, f) => s + f.confirmados + f.cancelados, 0);
   resumen.tasaCierre = resueltosTot > 0 ? Math.round((resumen.confirmados / resueltosTot) * 100) : 0;
