@@ -12,7 +12,7 @@ import { grupoDeGuia } from '@/lib/effi-estados';
  *  · Una vez por guía (descuentos_entrega tiene la guía como llave) y máximo una por
  *    número cada 30 días.
  *  · Nunca a quien respondió SALIR (NO ENVIAR RECORDATORIO).
- *  · El chat queda con la etiqueta «DESCUENTO 15.000» y una nota, para que el asesor
+ *  · El chat queda con la etiqueta «BONO» y una nota, para que el asesor
  *    lo aplique en la siguiente compra.
  */
 export interface AjustesDescuento { activo: boolean; plantilla: string; monto: number; desde?: string }
@@ -106,7 +106,7 @@ export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviad
         id: `tpl-desc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         conversation_id: `57${tel10}`, content: texto, role: 'agent', type: 'text', whatsapp_id: r.wamid ?? null, created_at: ahora,
       });
-      const tag = `DESCUENTO ${pesos(cfg.monto).replace('$', '')}`;
+      const tag = 'BONO';   // etiqueta adicional para los que recibieron la plantilla de bono
       const nuevas = labels.some((l: string) => l.toUpperCase() === tag) ? labels : [...labels, tag];
       const fecha = new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 10);
       const notas = [String(conv?.notas ?? '').trim(), `[${fecha}] 🎁 Tiene ${pesos(cfg.monto)} de descuento para su próxima compra (guía ${guia} entregada).`].filter(Boolean).join('\n');

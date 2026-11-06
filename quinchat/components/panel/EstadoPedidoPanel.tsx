@@ -152,7 +152,7 @@ export default function EstadoPedidoPanel({ onAbrirChat }: { onAbrirChat?: (id: 
           )}
           <span className="w-full text-[10px] text-[#9A9A9A]">
             Al sincronizar con Effi, a cada guía que quede ENTREGADA (desde que lo enciendas) le llega la plantilla una sola vez;
-            máximo un descuento por cliente cada 30 días y nunca a quien respondió SALIR. Su chat queda con la etiqueta «DESCUENTO 15.000».
+            máximo un descuento por cliente cada 30 días y nunca a quien respondió SALIR. Su chat queda con la etiqueta «BONO».
           </span>
         </div>
       )}
