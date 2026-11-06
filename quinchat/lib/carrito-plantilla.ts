@@ -110,6 +110,12 @@ export async function enviarPlantillaCarrito(supabase: any, id: string): Promise
       last_message: recortar(texto, 100), last_message_time: ahora, unread_count: 0, linea: 'funnel',
       oculto: true,   // no sale en la bandeja hasta que el cliente responda
     }, { onConflict: 'id', ignoreDuplicates: true });
+    // Etiqueta adicional (beige) «CARRITO ABANDONADO», sin quitar las que ya tenga
+    const { data: cv } = await supabase.from('conversations').select('label').eq('id', `57${tel10}`).maybeSingle();
+    const etiquetas = String(cv?.label ?? '').split('|').map((x: string) => x.trim()).filter(Boolean);
+    if (!etiquetas.some((l: string) => l.toUpperCase() === 'CARRITO ABANDONADO')) {
+      await supabase.from('conversations').update({ label: [...etiquetas, 'CARRITO ABANDONADO'].join(' | ') }).eq('id', `57${tel10}`);
+    }
     // La foto del encabezado SÍ le llega al cliente; también se guarda en el chat
     // para que en el panel se vea igual que en su WhatsApp.
     if (imagen) {
