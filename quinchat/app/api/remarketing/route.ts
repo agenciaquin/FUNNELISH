@@ -100,6 +100,8 @@ export async function POST(req: NextRequest) {
     if (tel.length < 10 || vistos.has(tel)) return false;
     if (!tieneAntiguedad(c, dias)) return false;
     if (!enRango(c, desde, hasta)) return false;
+    // Quien pidió no recibir más mensajes (respondió SALIR) nunca entra.
+    if (parseLabels(c.label).some(l => l.toUpperCase() === 'NO ENVIAR RECORDATORIO')) return false;
     const tiene = parseLabels(c.label).some(l => objetivo.has(l.toUpperCase()));
     if (tiene) { vistos.add(tel); return true; }
     return false;

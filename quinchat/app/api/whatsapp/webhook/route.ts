@@ -712,6 +712,31 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ── BAJA: el cliente respondió "SALIR" / "STOP" (lo ofrece el pie de la plantilla
+  //    carrito_abandonado_v2). Se marca NO ENVIAR RECORDATORIO —que ya respetan los
+  //    seguimientos y remarketing— y no se le vuelve a escribir publicidad. ──────────
+  {
+    const m0 = value.messages[0];
+    const remite = m0?.from as string | undefined;
+    const txt = String(m0?.text?.body ?? m0?.button?.text ?? m0?.interactive?.button_reply?.title ?? '').trim().toUpperCase();
+    if (remite && /^(SALIR|STOP)[.!]?$/.test(txt)) {
+      try {
+        const ahoraB = new Date().toISOString();
+        await supabase.from('conversations').upsert({
+          id: remite, contact_name: contactName, last_message: txt, last_message_time: ahoraB, unread_count: 1, linea: tipoLinea,
+        }, { onConflict: 'id', ignoreDuplicates: true });
+        await supabase.from('messages').upsert({
+          id: `in-${m0.id}`, conversation_id: remite, content: txt, role: 'user', type: 'text', whatsapp_id: m0.id, created_at: ahoraB,
+        }, { onConflict: 'id' });
+        await agregarTagConv(supabase, remite, 'NO ENVIAR RECORDATORIO');
+        const adios = 'Listo ✅ No te enviaremos más mensajes promocionales. Si en algún momento necesitas algo, escríbenos por aquí.';
+        const w = await sendTextMessage(remite, adios);
+        await saveAndSend(supabase, remite, adios, 'text', w);
+      } catch (e) { console.error('[Webhook] baja SALIR:', e); }
+      return NextResponse.json({ status: 'ok' });
+    }
+  }
+
   // ── ORGANIZADOR DE PEDIDOS ─────────────────────────────────────────────────
   // Aislado en lib/organizador-pedidos, interruptor ajustes_bot.organizador_pedidos.
   // Solo números habilitados (hoy Yamile León). Si no es una pieza de pedido (p. ej.

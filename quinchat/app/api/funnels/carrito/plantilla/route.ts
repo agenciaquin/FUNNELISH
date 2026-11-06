@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
 
   const supabase = createServerSupabaseClient();
   const { data: c } = await supabase.from('carritos_abandonados')
-    .select('id, nombre, telefono, producto, talla, datos, recuperado, plantilla_enviada_at').eq('id', id).maybeSingle();
+    .select('id, slug, nombre, telefono, producto, talla, datos, recuperado, plantilla_enviada_at').eq('id', id).maybeSingle();
   if (!c) return NextResponse.json({ error: 'No encontré el carrito.' }, { status: 404 });
   if ((c as any).plantilla_enviada_at) return NextResponse.json({ error: 'A este carrito ya se le envió la plantilla.' }, { status: 409 });
   if ((c as any).recuperado) return NextResponse.json({ error: 'Este carrito ya está marcado como recuperado.' }, { status: 409 });
@@ -77,11 +77,21 @@ export async function POST(req: NextRequest) {
   }
 
   // 5) Variables según la plantilla: {{1}} primer nombre, {{2}} producto (+ talla)
-  const nombre = String((c as any).nombre ?? '').trim().split(/\s+/)[0] || 'hola';
-  const producto = [String((c as any).producto ?? '').trim(), String((c as any).talla ?? '').trim()].filter(Boolean).join(', ') || 'tu pedido';
+  // Meta rechaza variables con saltos de línea, tabulaciones o más de 4 espacios seguidos.
+  const limpio = (t: unknown) => String(t ?? '').replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  const nombre = limpio((c as any).nombre).split(' ')[0] || 'hola';
+  const producto = limpio([limpio((c as any).producto), limpio((c as any).talla)].filter(Boolean).join(', ')).slice(0, 120) || 'tu pedido';
   const variables = [nombre, producto].slice(0, tpl.variables);
   const imagenes = Array.isArray((c as any).datos?.imagenes) ? (c as any).datos.imagenes : [];
-  const imagen = tpl.tieneImagen ? (imagenes.find((u: any) => typeof u === 'string' && u.startsWith('http')) ?? null) : null;
+  let imagen: string | null = tpl.tieneImagen ? (imagenes.find((u: any) => typeof u === 'string' && u.startsWith('http')) ?? null) : null;
+  // Respaldo: la primera foto del embudo donde quedó el carrito.
+  if (tpl.tieneImagen && !imagen && (c as any).slug) {
+    try {
+      const { data: f } = await supabase.from('funnels').select('imagenes').eq('slug', (c as any).slug).maybeSingle();
+      const lista = Array.isArray((f as any)?.imagenes) ? (f as any).imagenes : [];
+      imagen = lista.find((u: any) => typeof u === 'string' && u.startsWith('http')) ?? null;
+    } catch { /* sin respaldo */ }
+  }
   if (tpl.tieneImagen && !imagen) {
     await supabase.from('carritos_abandonados').update({ plantilla_enviada_at: null, plantilla_error: 'La plantilla pide foto y el carrito no tiene foto del producto.' }).eq('id', id);
     return NextResponse.json({ error: 'La plantilla pide foto y este carrito no tiene foto del producto.' }, { status: 400 });
