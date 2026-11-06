@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { enviarPlantilla, listarPlantillas } from '@/lib/whatsapp-templates';
 import { recortar } from '@/lib/recortar';
+import { fotoDelCarrito } from '@/lib/foto-carrito';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,19 +83,16 @@ export async function POST(req: NextRequest) {
   const nombre = limpio((c as any).nombre).split(' ')[0] || 'hola';
   const producto = limpio([limpio((c as any).producto), limpio((c as any).talla)].filter(Boolean).join(', ')).slice(0, 120) || 'tu pedido';
   const variables = [nombre, producto].slice(0, tpl.variables);
-  const imagenes = Array.isArray((c as any).datos?.imagenes) ? (c as any).datos.imagenes : [];
-  let imagen: string | null = tpl.tieneImagen ? (imagenes.find((u: any) => typeof u === 'string' && u.startsWith('http')) ?? null) : null;
-  // Respaldo: la primera foto del embudo donde quedó el carrito.
-  if (tpl.tieneImagen && !imagen && (c as any).slug) {
-    try {
-      const { data: f } = await supabase.from('funnels').select('imagenes').eq('slug', (c as any).slug).maybeSingle();
-      const lista = Array.isArray((f as any)?.imagenes) ? (f as any).imagenes : [];
-      imagen = lista.find((u: any) => typeof u === 'string' && u.startsWith('http')) ?? null;
-    } catch { /* sin respaldo */ }
+  // Foto REAL del producto, sacada del catálogo de colores como al confirmar una compra.
+  // (La que guarda el formulario en el carrito es la MINIATURA del embudo, no el buzo.)
+  let imagen: string | null = null;
+  if (tpl.tieneImagen) {
+    try { imagen = await fotoDelCarrito(supabase, String((c as any).producto ?? ''), String((c as any).talla ?? '')); }
+    catch (e) { console.error('[Carrito] foto del catálogo:', e); }
   }
   if (tpl.tieneImagen && !imagen) {
-    await supabase.from('carritos_abandonados').update({ plantilla_enviada_at: null, plantilla_error: 'La plantilla pide foto y el carrito no tiene foto del producto.' }).eq('id', id);
-    return NextResponse.json({ error: 'La plantilla pide foto y este carrito no tiene foto del producto.' }, { status: 400 });
+    await supabase.from('carritos_abandonados').update({ plantilla_enviada_at: null, plantilla_error: 'No encontré la foto de este producto en el catálogo de colores.' }).eq('id', id);
+    return NextResponse.json({ error: 'No encontré la foto de este producto en el catálogo de colores; no se envió para no mandar una foto equivocada.' }, { status: 400 });
   }
 
   const r = await enviarPlantilla(`57${tel10}`, tpl.name, tpl.language || 'es', variables, imagen);
