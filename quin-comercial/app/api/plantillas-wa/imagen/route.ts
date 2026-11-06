@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { CACHE_UN_ANO, optimizarImagen } from '@/lib/optimizar-imagen-servidor';
 import { tenantActual } from '@/lib/tenant';
 
 /**
@@ -45,12 +46,13 @@ export async function POST(req: NextRequest) {
     }
 
     const mime = String(imagenMime || 'image/jpeg');
-    const ext  = mime.includes('png') ? 'png' : 'jpg';
+    // Esta foto va a Meta en cada envío: el optimizador solo devuelve JPEG o PNG, nunca WebP.
+    const img  = await optimizarImagen(buffer, mime);
     // Carpeta por tenant para no mezclar archivos entre clientes.
-    const ruta = `plantillas/${tid}/${nombre}-${Date.now()}.${ext}`;
+    const ruta = `plantillas/${tid}/${nombre}-${Date.now()}.${img.ext}`;
 
     const { error: upErr } = await supabase.storage
-      .from('chat-media').upload(ruta, buffer, { contentType: mime, upsert: true });
+      .from('chat-media').upload(ruta, img.buffer, { contentType: img.contentType, cacheControl: CACHE_UN_ANO, upsert: true });
     if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
 
     const { data: pub } = supabase.storage.from('chat-media').getPublicUrl(ruta);

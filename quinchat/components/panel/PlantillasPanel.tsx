@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { createBrowserSupabaseClient } from '@/lib/supabase';
+import { comprimirImagen } from '@/lib/imagen-comprimir';
 
 interface Plantilla {
   id: string;
@@ -100,12 +101,14 @@ export default function PlantillasPanel() {
     setUploading(true);
     setImgError(false);
 
-    const ext      = file.name.split('.').pop();
+    // Esta subida va directo del navegador a Storage: se comprime aquí o no se comprime.
+    const liviana  = await comprimirImagen(file);
+    const ext      = liviana.name.split('.').pop();
     const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
     const { data, error } = await supabase.storage
       .from('plantillas-images')
-      .upload(filename, file, { upsert: false, contentType: file.type });
+      .upload(filename, liviana, { upsert: false, contentType: liviana.type, cacheControl: '31536000' });
 
     if (error) {
       alert('Error al subir imagen: ' + error.message);

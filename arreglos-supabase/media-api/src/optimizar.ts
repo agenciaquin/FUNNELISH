@@ -111,15 +111,29 @@ export async function optimizarImagen(buffer: Buffer): Promise<Resultado> {
     };
   }
 
-  const conTransparencia = meta.hasAlpha === true;
+  // GIF (puede ser animado) y SVG se dejan tal cual: pasarlos a JPEG los rompe.
+  if (meta.format === 'gif' || meta.format === 'svg') {
+    return { buffer: null, contentType: 'image/jpeg', bytesOriginal: original, bytesFinal: original, motivo: `${meta.format}: no se toca` };
+  }
 
-  const redimensionada = sharp(buffer, { animated: true })
+  // `hasAlpha` dice si EXISTE el canal, no si se usa: casi toda captura de pantalla
+  // trae un alfa 100% opaco y debe ir a JPEG. Mismo criterio que
+  // `quinchat/lib/optimizar-imagen-servidor.ts`.
+  const conTransparencia = meta.hasAlpha === true && !(await sharp(buffer).stats()).isOpaque;
+
+  const redimensionada = sharp(buffer)
     .rotate() // aplica la orientación EXIF antes de que sharp la descarte
-    .resize({ width: config.imagen.anchoMax, withoutEnlargement: true });
+    .resize({ width: config.imagen.anchoMax, height: config.imagen.anchoMax, fit: 'inside', withoutEnlargement: true });
 
-  const optimizado = conTransparencia
-    ? await redimensionada.png({ compressionLevel: 9 }).toBuffer()
+  let optimizado = conTransparencia
+    ? await redimensionada.clone().png({ compressionLevel: 9 }).toBuffer()
     : await redimensionada.jpeg({ quality: config.imagen.calidad, mozjpeg: true }).toBuffer();
+
+  // Un WebP con alfa puede multiplicar su peso al pasar a PNG sin pérdida: entonces paleta.
+  if (conTransparencia && optimizado.length > original) {
+    const conPaleta = await redimensionada.clone().png({ compressionLevel: 9, palette: true, quality: 90 }).toBuffer();
+    if (conPaleta.length < optimizado.length) optimizado = conPaleta;
+  }
 
   const contentType = conTransparencia ? 'image/png' : 'image/jpeg';
 
@@ -167,18 +181,23 @@ export async function optimizarVideo(buffer: Buffer): Promise<Resultado> {
   try {
     await writeFile(entrada, buffer);
 
-    const escala = `scale=min(${config.video.anchoMax}\\,iw):-2,fps=${config.video.fpsMax}`;
+    // Sin tope de fps y con el audio copiado tal cual: un video a 60 fps no pierde
+    // fluidez y el sonido no se recodifica. El ahorro sale solo de la imagen.
+    // Medido el 06-11-2026 sobre 3 videos de embudos/: -11 a -79%, SSIM 0,985-0,992.
+    const escala = `scale=min(${config.video.anchoMax}\\,iw):-2`;
 
     await ejecutar([
       '-i', entrada,
+      '-map', '0:v:0',
+      '-map', '0:a?',
       '-vf', escala,
       '-c:v', 'libx264',
       '-crf', String(config.video.crf),
       '-preset', 'slow',
       '-profile:v', 'main',
       '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac',
-      '-b:a', `${config.video.audioKbps}k`,
+      '-c:a', 'copy',
+      '-map_metadata', '0',
       '-movflags', '+faststart',
       '-y', salida,
     ]);

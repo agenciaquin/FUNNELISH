@@ -35,7 +35,7 @@ export async function generarCollagePack(
     let left = 0;
     imgs.forEach((im: any) => { canvas.composite(im, left, 0); left += im.getWidth(); });
 
-    const buffer = await canvas.getBufferAsync(Jimp.MIME_JPEG);
+    const buffer = await canvas.quality(85).getBufferAsync(Jimp.MIME_JPEG); // Jimp usa q100 por defecto
 
     const { error: upErr } = await supabase.storage.from(bucket)
       .upload(path, buffer, { contentType: 'image/jpeg', upsert: true });

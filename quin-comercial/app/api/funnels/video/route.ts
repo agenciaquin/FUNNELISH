@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { CACHE_UN_ANO } from '@/lib/optimizar-imagen-servidor';
 
 export const maxDuration = 120;
 
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = createServerSupabaseClient();
     const { error } = await supabase.storage
-      .from('chat-media').upload(ruta, buffer, { contentType: file.type, upsert: false });
+      .from('chat-media').upload(ruta, buffer, { contentType: file.type, cacheControl: CACHE_UN_ANO, upsert: false });
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
