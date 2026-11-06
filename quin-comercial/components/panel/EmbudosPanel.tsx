@@ -10,6 +10,7 @@ import PapeleraEmbudos from './PapeleraEmbudos';
 import { type BloqueLayout } from '@/lib/funnel-layout';
 import { esVideo, acentoDe, type OpcionSelector, type SelectorVariante } from '@/lib/funnels';
 import { createBrowserSupabaseClient } from '@/lib/supabase';
+import { comprimirImagen } from '@/lib/imagen-comprimir';
 
 /**
  * Sube un archivo y devuelve su enlace público.
@@ -18,6 +19,9 @@ import { createBrowserSupabaseClient } from '@/lib/supabase';
  *   así no chocan con el tope de ~4.5 MB de las funciones de Vercel.
  */
 async function subirArchivo(file: File, slug: string): Promise<string | null> {
+  // Comprime la foto en el navegador ANTES de subir (videos/gif quedan intactos).
+  file = await comprimirImagen(file);
+
   const grande = file.size > 4 * 1024 * 1024;
   const esVid  = file.type.startsWith('video/');
 

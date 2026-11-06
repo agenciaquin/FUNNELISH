@@ -10,6 +10,7 @@ type EtqUI = { key: string; nombre: string; color: string; es_estado: boolean; d
 // Colores sugeridos para crear/editar estados y etiquetas desde el chat.
 const COLORES_ETQ = ['#8B5CF6','#00847A','#F59E0B','#DC2626','#14B8A6','#EF4444','#3B82F6','#EC4899','#6B7280','#0D0D0D'];
 import { createBrowserSupabaseClient } from '@/lib/supabase';
+import { comprimirImagen } from '@/lib/imagen-comprimir';
 import SelectorPlantillaWA from './SelectorPlantillaWA';
 import EntrenadorQuino from './EntrenadorQuino';
 
@@ -643,6 +644,10 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
   async function sendFile(file: File, caption?: string) {
     if (!conversation || !file) return;
     setSending(true);
+
+    // Las fotos se comprimen antes de decidir el camino: así casi todas bajan de
+    // 4 MB y van por el servidor (que vuelve a comprimir) en vez del enlace firmado.
+    if (file.type.startsWith('image/')) file = await comprimirImagen(file);
 
     const t = file.type;
     const waType = t.startsWith('image/') ? 'image' : t.startsWith('video/') ? 'video' : t.startsWith('audio/') ? 'audio' : 'document';

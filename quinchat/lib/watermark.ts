@@ -90,7 +90,7 @@ export async function estamparNombreDetallado(
     badge.print(font, padX, padY, txt);
     img.composite(badge, margin, margin);
 
-    const buffer = await img.getBufferAsync(Jimp.MIME_JPEG);
+    const buffer = await img.quality(85).getBufferAsync(Jimp.MIME_JPEG); // Jimp usa q100 por defecto
 
     const bucket = 'chat-media';
     const hash = Math.abs(hashStr(texto)).toString(36).slice(0, 6);

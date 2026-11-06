@@ -28,7 +28,10 @@ const nextConfig: NextConfig = {
     '/api/catalogos/re-estampar': ['./fonts/**/*'],
     '/api/catalogos/[id]/colores': ['./fonts/**/*'],
     '/api/catalogos/colores/[id]': ['./fonts/**/*'],
-    '/api/**': ['./fonts/**/*'],
+    // `sharp` (compresión de fotos) necesita también `libvips`, que en Linux va en
+    // un paquete aparte de `@img/` y el rastreo de Next no lo sigue. Sin esto:
+    // ERR_DLOPEN_FAILED en producción (pasó en quinchat el 31-08-2026).
+    '/api/**': ['./fonts/**/*', './node_modules/@img/**/*'],
   },
 };
 

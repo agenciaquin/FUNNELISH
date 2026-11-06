@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { uploadWhatsAppMedia, sendMediaMessage, sendTextMessage } from '@/lib/whatsapp';
 import { entrarLinea } from '@/lib/whatsapp-contexto';
+import { CACHE_UN_ANO, optimizarImagen } from '@/lib/optimizar-imagen-servidor';
 import { tenantActual, credsTenant } from '@/lib/tenant';
 import { supabaseTenant } from '@/lib/supabase-tenant';
 
@@ -33,9 +34,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing "to" or "file"' }, { status: 400 });
   }
 
-  const mimeType = file.type || 'application/octet-stream';
-  const filename = file.name || 'archivo';
-  const buffer   = Buffer.from(await file.arrayBuffer());
+  // Las fotos salen comprimidas: pesan menos en el bucket y llegan antes a Meta.
+  // Audio, video y documentos pasan intactos (el optimizador solo toca image/*).
+  const img      = await optimizarImagen(Buffer.from(await file.arrayBuffer()), file.type || 'application/octet-stream');
+  const mimeType = img.contentType;
+  const filename = img.optimizada ? `${(file.name || 'archivo').replace(/\.[^.]*$/, '')}.${img.ext}` : (file.name || 'archivo');
+  const buffer   = img.buffer;
 
   // Determine WhatsApp media type
   let waType: 'image' | 'document' | 'audio' | 'video';
@@ -69,7 +73,7 @@ export async function POST(req: NextRequest) {
     const storageKey = `${to}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
     const { error: upErr } = await supabase.storage
       .from('chat-media')
-      .upload(storageKey, buffer, { contentType: mimeType, upsert: false });
+      .upload(storageKey, buffer, { contentType: mimeType, cacheControl: CACHE_UN_ANO, upsert: false });
     if (!upErr) {
       const { data: urlData } = supabase.storage.from('chat-media').getPublicUrl(storageKey);
       permanentUrl = urlData.publicUrl;
