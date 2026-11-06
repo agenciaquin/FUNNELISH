@@ -6,6 +6,10 @@ import { chaChing, fanfarria, confeti, desbloquearAudio } from '@/lib/celebracio
 interface Metas {
   prendasMes: number;
   dineroMes: number;
+  ventasMes?: number;
+  tasaMes?: number;
+  pedidosMes?: number;
+  confirmadosMes?: number;
   metaActiva: number;
   metaIndice: number;
   todasLogradas: boolean;
@@ -17,8 +21,9 @@ const POS_KEY = 'monedero-pos';
 interface Props { onAbrir: () => void; }
 
 /**
- * Monedero flotante ARRASTRABLE. Suma $600 por prenda vendida este mes. Al entrar
- * una venta nueva hace "cha-ching" y salta; al cruzar una meta lanza confeti.
+ * Contador flotante ARRASTRABLE: ventas del MES y tasa de confirmación del mes
+ * (antes mostraba la plata). Al entrar una venta nueva hace "cha-ching" y salta;
+ * al cruzar una meta lanza confeti.
  * Se puede mover con el dedo/mouse a cualquier parte y recuerda dónde lo dejaste.
  * Un clic (sin arrastrar) abre el panel Tus metas.
  */
@@ -123,7 +128,7 @@ export default function MonederoFlotante({ onAbrir }: Props) {
     // Se renderiza oculto para poder medir el ancho antes de posicionar.
     return (
       <button ref={btnRef} aria-hidden className="fixed opacity-0 pointer-events-none top-1.5 left-1/2 flex items-center gap-2 pl-2.5 pr-3 py-1.5 text-[13px] font-semibold">
-        <span>💰</span><span>{datos ? pesos(datos.dineroMes) : '$0'}</span>
+        <span>🛒</span><span>{datos?.ventasMes ?? 0} ventas · 🎯 {datos?.tasaMes ?? 0}%</span>
       </button>
     );
   }
@@ -134,17 +139,19 @@ export default function MonederoFlotante({ onAbrir }: Props) {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      title="Arrástrame para moverme · toca para ver Tus metas"
+      title={`Ventas del mes: ${datos.ventasMes ?? 0} (${datos.prendasMes} prendas) · Tasa de confirmación del mes: ${datos.tasaMes ?? 0}% (${datos.confirmadosMes ?? 0} de ${datos.pedidosMes ?? 0} pedidos) · Arrástrame para moverme · toca para ver Tus metas`}
       style={{ left: pos.x, top: pos.y, touchAction: 'none', cursor: arrastrando ? 'grabbing' : 'grab' }}
       className={`fixed z-[60] flex items-center gap-2 pl-2.5 pr-3 py-1.5 rounded-full select-none
         bg-gradient-to-r from-[#00847A] to-[#00A89D] text-white shadow-lg shadow-black/20 border border-white/25
         text-[13px] font-semibold whitespace-nowrap ${brinca && !arrastrando ? 'monedero-brinca' : ''}`}
     >
-      <span className="text-base leading-none">💰</span>
-      <span className="tabular-nums">{pesos(datos.dineroMes)}</span>
+      <span className="text-base leading-none">🛒</span>
+      <span className="tabular-nums">{datos.ventasMes ?? 0}</span>
+      <span className="opacity-80 font-normal">ventas del mes</span>
       <span className="opacity-60">·</span>
-      <span className="tabular-nums">{datos.prendasMes}</span>
-      <span className="opacity-80 font-normal">prendas</span>
+      <span className="text-base leading-none">🎯</span>
+      <span className="tabular-nums">{datos.tasaMes ?? 0}%</span>
+      <span className="opacity-80 font-normal">confirmación</span>
       <style>{`
         @keyframes monederoBrinca{
           0%{transform:translateY(0) scale(1)}

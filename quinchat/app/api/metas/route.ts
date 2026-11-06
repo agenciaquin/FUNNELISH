@@ -91,6 +91,7 @@ export async function GET(req: NextRequest) {
 
   let prendasMes = 0;
   let prendasHoy = 0;
+  let ventasMes = 0;
 
   for (const v of lista) {
     const lab = labelPorConv.get(`57${String((v as any).telefono ?? '').replace(/^57/, '')}`);
@@ -107,8 +108,26 @@ export async function GET(req: NextRequest) {
     // Prendas del pedido: por su VALOR (1 unidad, 2 o 3 según el precio).
     const n = prendasDelPedido(v);
     prendasMes += n;
+    ventasMes++;
     if (f.d === diaActual) prendasHoy += n;
   }
+
+  // ── Tasa de confirmación del MES: de los pedidos que llegaron este mes, cuántos
+  // se confirmaron. Sin duplicados, sin papelera y sin Promociones (igual que Pedidos).
+  let tasaMes = 0, pedidosMes = 0, confirmadosMes = 0;
+  try {
+    const inicioMes = `${hoy.y}-${String(hoy.m + 1).padStart(2, '0')}-01T00:00:00-05:00`;
+    const { data: delMes } = await supabase
+      .from('clientes_funnelish')
+      .select('confirmado, estado, referencia, papelera_at')
+      .gte('created_at', inicioMes)
+      .limit(10000);
+    const validos = (delMes ?? []).filter((p: any) =>
+      !p.papelera_at && String(p.estado ?? '').toLowerCase() !== 'duplicado' && !String(p.referencia ?? '').startsWith('promo-'));
+    pedidosMes = validos.length;
+    confirmadosMes = validos.filter((p: any) => p.confirmado).length;
+    tasaMes = pedidosMes ? Math.round((confirmadosMes / pedidosMes) * 100) : 0;
+  } catch { /* sin tasa */ }
 
   // Meta activa: la primera que aún no se alcanza (o la máxima si ya se superaron todas)
   const metaActiva = METAS.find(m => prendasMes < m) ?? METAS[METAS.length - 1];
@@ -160,6 +179,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     rango,
     prendasMes,
+    ventasMes,
+    tasaMes, pedidosMes, confirmadosMes,
     dineroMes: prendasMes * VALOR_PRENDA,
     prendasHoy,
     valorPrenda: VALOR_PRENDA,
