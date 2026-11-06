@@ -95,7 +95,7 @@ export default function MonederoFlotante({ onAbrir }: Props) {
       } catch { /* reintenta en el próximo ciclo */ }
     };
     cargar();
-    const t = setInterval(() => { if (document.visibilityState === 'visible') cargar(); }, 12000);
+    const t = setInterval(() => { if (document.visibilityState === 'visible') cargar(); }, 60000);   // antes 12 s (carga de la base, 06-nov)
     return () => { vivo = false; clearInterval(t); };
   }, []);
 

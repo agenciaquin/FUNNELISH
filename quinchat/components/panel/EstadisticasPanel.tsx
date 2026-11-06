@@ -75,10 +75,16 @@ export default function EstadisticasPanel() {
     cargar();
     const ch = supabase
       .channel('estadisticas-conversations')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, () => cargar())
+      // Carga de la base (06-nov): los cambios en vivo se agrupan (máx. 1 recarga cada 15 s)
+      // y el repaso periódico pasa de 15 s a 60 s.
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, () => {
+        if (pend) return;
+        pend = setTimeout(() => { pend = null; cargar(); }, 15000);
+      })
       .subscribe();
-    const t = setInterval(() => { if (document.visibilityState === 'visible') cargar(); }, 15000);
-    return () => { supabase.removeChannel(ch); clearInterval(t); };
+    let pend: ReturnType<typeof setTimeout> | null = null;
+    const t = setInterval(() => { if (document.visibilityState === 'visible') cargar(); }, 60000);
+    return () => { supabase.removeChannel(ch); clearInterval(t); if (pend) clearTimeout(pend); };
   }, [cargar]);
 
   // ── Filtro por línea (Funnel vs WhatsApp) ──────────────────────────────────

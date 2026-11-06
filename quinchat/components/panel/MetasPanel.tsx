@@ -85,7 +85,7 @@ export default function MetasPanel() {
       } catch { setError(true); }
     };
     cargar();
-    const t = setInterval(() => { if (document.visibilityState === 'visible') cargar(); }, 12000);
+    const t = setInterval(() => { if (document.visibilityState === 'visible') cargar(); }, 60000);   // antes 12 s (carga de la base, 06-nov)
     return () => { vivo = false; clearInterval(t); };
   }, []);
 

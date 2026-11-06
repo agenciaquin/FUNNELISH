@@ -204,16 +204,45 @@ export default function WhatsAppPanel({ userName }: Props) {
   }, [loadConversations, loadMessages]);
 
   // ── Realtime: conversations ───────────────────────────────────────────────
+  // CARGA DE LA BASE (06-nov-2026): antes, CADA cambio en CUALQUIER chat hacía que cada
+  // panel abierto volviera a pedir TODAS las conversaciones (6.400+). Con varias personas
+  // conectadas en hora pico eso saturó la base y tumbó panel, bot y crons.
+  // Ahora: el cambio que llega en vivo se aplica SOLO a ese chat (sin consultar la base),
+  // y la recarga completa queda como respaldo, agrupada (máx. 1 cada 4 s).
+  const recargaPend = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recargarPronto = useCallback(() => {
+    if (recargaPend.current) return;
+    recargaPend.current = setTimeout(() => { recargaPend.current = null; loadConversations(); }, 4000);
+  }, [loadConversations]);
+  useEffect(() => () => { if (recargaPend.current) clearTimeout(recargaPend.current); }, []);
+
   useEffect(() => {
     loadConversations();
 
+    const ms = (s: any) => { const t = Date.parse(String(s ?? '').replace(' ', 'T').replace(/([+-]\d\d)$/, '$1:00')); return isNaN(t) ? 0 : t; };
     const ch = supabase
       .channel(`conversations-changes-${conexion}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, () => loadConversations())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, (payload: any) => {
+        if (payload?.eventType === 'DELETE') {
+          const idBorrado = payload?.old?.id;
+          if (idBorrado) setConversations(prev => prev.filter(c => c.id !== idBorrado)); else recargarPronto();
+          return;
+        }
+        const fila = payload?.new;
+        if (!fila?.id) { recargarPronto(); return; }   // el aviso llegó sin datos → respaldo
+        setConversations(prev => {
+          const resto = prev.filter(c => c.id !== fila.id);
+          const visible = !fila.oculto || fila.id === selectedIdRef.current;
+          if (!visible) return resto;
+          const anterior = prev.find(c => c.id === fila.id);
+          const lista = [{ ...(anterior ?? {}), ...fila } as Conversation, ...resto];
+          return lista.sort((a: any, b: any) => ms(b.last_message_time) - ms(a.last_message_time));
+        });
+      })
       .subscribe();
 
     return () => { supabase.removeChannel(ch); };
-  }, [loadConversations, conexion]);
+  }, [loadConversations, conexion, recargarPronto]);
 
   // ── Mantener el chat "en vivo" ────────────────────────────────────────────
   // 1) Al volver a la app (o recuperar internet) se refresca y se reconecta.
@@ -238,12 +267,19 @@ export default function WhatsAppPanel({ userName }: Props) {
 
   // 2) Red de seguridad: consulta periódica mientras la app está a la vista,
   //    por si la conexión en vivo se cae sin avisar.
+  //    Cada 6 s solo se revisan los mensajes del chat ABIERTO (consulta pequeña);
+  //    la lista completa de conversaciones se repasa cada 60 s (antes cada 6 s).
+  const ticks = useRef(0);
   useEffect(() => {
     const t = setInterval(() => {
-      if (document.visibilityState === 'visible') refrescar();
+      if (document.visibilityState !== 'visible') return;
+      ticks.current += 1;
+      if (ticks.current % 10 === 0) { refrescar(); return; }
+      const id = selectedIdRef.current;
+      if (id) loadMessages(id, true);
     }, 6000);
     return () => clearInterval(t);
-  }, [refrescar]);
+  }, [refrescar, loadMessages]);
 
   // ── Realtime: messages ────────────────────────────────────────────────────
   useEffect(() => {
