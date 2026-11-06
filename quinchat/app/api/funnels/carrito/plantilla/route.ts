@@ -113,6 +113,15 @@ export async function POST(req: NextRequest) {
       id: `57${tel10}`, contact_name: String((c as any).nombre ?? '').trim() || tel10,
       last_message: recortar(texto, 100), last_message_time: ahora, unread_count: 0, linea: 'funnel',
     }, { onConflict: 'id', ignoreDuplicates: true });
+    // La foto del encabezado SÍ le llega al cliente; también se guarda en el chat
+    // para que en el panel se vea igual que en su WhatsApp.
+    if (imagen) {
+      await supabase.from('messages').insert({
+        id: `tpl-carrito-img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        conversation_id: `57${tel10}`, content: imagen, role: 'agent', type: 'image',
+        created_at: new Date(Date.parse(ahora) - 1).toISOString(),
+      });
+    }
     await supabase.from('messages').insert({
       id: `tpl-carrito-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       conversation_id: `57${tel10}`, content: texto, role: 'agent', type: 'text',
