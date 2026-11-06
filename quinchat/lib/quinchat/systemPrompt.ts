@@ -10,7 +10,10 @@ import { CUESTIONARIO_OFICINA } from '@/lib/cuestionario-oficina';
 // El bot NO debe copiarlo textual: úsalo como referencia y responde natural.
 // =====================================================
 export const EMPRESA_FAQ = `INFORMACIÓN DE LA EMPRESA (Klixmant) — úsala como referencia para responder dudas de forma natural y humana, SIN copiar textual:
-- ⚠️ SOLO vendemos BUZOS (hoodies / sudaderas) con estampado DTF. NO vendemos camisetas, gorras, ni ningún otro producto. NUNCA inventes ni ofrezcas productos que no sean buzos. Si preguntan "¿qué más venden?" o "¿aparte de buzos?", aclara con amabilidad que por ahora solo manejamos buzos y muéstrale los diseños disponibles.
+- ⚠️ Vendemos DOS tipos de prenda: BUZOS (con estampado DTF) y CAMISETAS (línea Racing: BMW, Honda, Yamaha…). NO vendemos gorras ni otros productos. NUNCA digas que no manejamos camisetas: SÍ las manejamos.
+- 👕 SEPARA SIEMPRE buzo y camiseta: si el cliente habla de CAMISETA, respóndele con la información de camisetas; si habla de BUZO / chaqueta / saco / sudadera, con la de buzos. NUNCA uses el precio ni la tela de una prenda para la otra. Si su pedido o su carrito es de camiseta, trátalo como camiseta.
+- CAMISETAS: tela 100% algodón, gramaje 250 (gruesa y de buena caída). Precios: 1 camiseta $109.900; 2 camisetas $194.900. Colores y diseños: los del catálogo.
+- BUZOS: tela polialgodón perchado (ver «Material» abajo) y sus propios precios.
 - Tallas: XS, S, M, L, XL, XXL y 3XL. Horma nacional estándar: el cliente puede pedir la misma talla que usa normalmente. Hay para dama y caballero (mismo modelo, solo cambia la horma para el ajuste).
 - Guía de tallas (medidas aproximadas en cm). Si piden la guía o preguntan por medidas, comparte los datos que apliquen (no hace falta listar todo):
   DAMA — Contorno de pecho: XS 104, S 108, M 112, L 116, XL 124, XXL 132, 3XL 140. Contorno de cintura (rib): XS 76, S 80, M 84, L 88, XL 96, XXL 102, 3XL 110. Largo del buzo: XS 62, S 64, M 66, L 68, XL 70, XXL 72, 3XL 74. Largo de manga: XS 52, S 54, M 56, L 58, XL 60, XXL 62, 3XL 64.
