@@ -38,7 +38,10 @@ export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviad
   if (!cfg.activo || !cfg.desde) return { ...res, apagado: true };
 
   const { plantillas } = await listarPlantillas();
-  const tpl = (plantillas ?? []).find(p => p.name === cfg.plantilla && p.status === 'APPROVED');
+  // Preferencia: la v2 (el descuento va en la PRIMERA línea, no queda oculto tras «Leer más»);
+  // mientras Meta no la apruebe, se usa la configurada.
+  const tpl = [`${cfg.plantilla}_v2`, cfg.plantilla]
+    .map(n => (plantillas ?? []).find(p => p.name === n && p.status === 'APPROVED')).find(Boolean);
   if (!tpl) return { ...res, error: `La plantilla «${cfg.plantilla}» no está aprobada` };
 
   // Foto del encabezado: la que se guardó al crear la plantilla en QuinChat (Plantillas)
@@ -91,6 +94,7 @@ export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviad
       const ahora = new Date().toISOString();
       await supabase.from('conversations').upsert({
         id: `57${tel10}`, contact_name: String(g.nombre ?? tel10), last_message: recortar(texto, 100), last_message_time: ahora, unread_count: 0, linea: 'funnel',
+        oculto: true,   // no sale en la bandeja hasta que el cliente responda
       }, { onConflict: 'id', ignoreDuplicates: true });
       if (foto) {
         await supabase.from('messages').insert({

@@ -162,7 +162,10 @@ export default function WhatsAppPanel({ userName }: Props) {
       .select('*')
       .order('last_message_time', { ascending: false });
 
-    if (!error) setConversations(data ?? []);
+    // Chats creados solo por una plantilla automática (carrito / descuento) quedan OCULTOS
+    // hasta que el cliente responda; así la bandeja no se llena de mensajes enviados.
+    // (Si justo está abierto, se mantiene.)
+    if (!error) setConversations((data ?? []).filter((c: any) => !c.oculto || c.id === selectedIdRef.current));
     setLoading(false);
   }, []);
 

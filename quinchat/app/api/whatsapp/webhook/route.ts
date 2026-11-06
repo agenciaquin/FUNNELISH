@@ -707,7 +707,7 @@ export async function POST(req: NextRequest) {
         // El cliente escribió: es alcanzable, así que se quita la bandera de
         // "mensaje no entregado" si la tenía.
         await supabase.from('conversations')
-          .update({ linea: tipoLinea, entrega_fallida: false }).eq('id', remitente);
+          .update({ linea: tipoLinea, entrega_fallida: false, oculto: false }).eq('id', remitente); // si estaba oculto (solo plantilla), ya aparece
       } catch { /* si aún no existe el chat, se marca al crearlo */ }
     }
   }

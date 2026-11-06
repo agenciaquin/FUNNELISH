@@ -108,6 +108,7 @@ export async function enviarPlantillaCarrito(supabase: any, id: string): Promise
     await supabase.from('conversations').upsert({
       id: `57${tel10}`, contact_name: String((c as any).nombre ?? '').trim() || tel10,
       last_message: recortar(texto, 100), last_message_time: ahora, unread_count: 0, linea: 'funnel',
+      oculto: true,   // no sale en la bandeja hasta que el cliente responda
     }, { onConflict: 'id', ignoreDuplicates: true });
     // La foto del encabezado SÍ le llega al cliente; también se guarda en el chat
     // para que en el panel se vea igual que en su WhatsApp.

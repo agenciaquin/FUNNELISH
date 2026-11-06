@@ -16,10 +16,11 @@ export async function GET() {
   let pideFoto = false;
   try {
     const { plantillas } = await listarPlantillas();
-    const t = (plantillas ?? []).find(p => p.name === cfg.plantilla);
-    if (t) { plantillaEstado = t.status; pideFoto = t.tieneImagen; }
+    const v2 = (plantillas ?? []).find(p => p.name === `${cfg.plantilla}_v2` && p.status === 'APPROVED');
+    const t = v2 ?? (plantillas ?? []).find(p => p.name === cfg.plantilla);
+    if (t) { plantillaEstado = t.status; pideFoto = t.tieneImagen; cfg.plantilla = t.name; }
   } catch { plantillaEstado = 'desconocido'; }
-  const foto = await fotoPlantilla(supabase, cfg.plantilla);
+  const foto = await fotoPlantilla(supabase, cfg.plantilla);  // de la plantilla en uso (v2 si ya está aprobada)
   const { data: ultimos } = await supabase.from('descuentos_entrega')
     .select('guia, telefono, nombre, estado, motivo, enviado_at, creado_at').order('creado_at', { ascending: false }).limit(50);
   const { count: enviados } = await supabase.from('descuentos_entrega').select('guia', { count: 'exact', head: true }).eq('estado', 'enviado');
