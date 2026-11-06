@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
 
+// Sin esto Next guardaba la lista FIJA del momento de publicar: las etiquetas nuevas
+// (CARRITO ABANDONADO, BONO…) no aparecían en el panel hasta la siguiente publicación.
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   const supabase = createServerSupabaseClient();
   const { data, error } = await supabase

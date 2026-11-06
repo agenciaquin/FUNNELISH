@@ -106,12 +106,15 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
   // Las fijas del negocio + las que hayas creado en la sección Etiquetas
   const [etiquetasDB, setEtiquetasDB] = useState<Etiqueta[]>([]);
 
+  // Se vuelve a pedir al abrir el filtro de etiquetas: las nuevas salen sin recargar.
   useEffect(() => {
-    fetch('/api/etiquetas')
+    if (etiquetasDB.length && !labelDropOpen) return;
+    fetch('/api/etiquetas', { cache: 'no-store' })
       .then(r => r.json())
-      .then(d => setEtiquetasDB(Array.isArray(d) ? d : []))
+      .then(d => { if (Array.isArray(d)) setEtiquetasDB(d); })
       .catch(() => {});
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [labelDropOpen]);
 
   const etiquetas: Etiqueta[] = [
     ...ETIQUETAS_FIJAS,

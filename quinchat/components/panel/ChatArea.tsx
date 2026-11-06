@@ -412,9 +412,13 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
     } finally { setNotasGuardando(false); }
   }
 
+  // Se vuelve a pedir cada vez que se abre el menú: así las etiquetas nuevas
+  // (BONO, CARRITO ABANDONADO…) salen sin tener que recargar el panel.
   useEffect(() => {
-    fetch('/api/etiquetas').then(r => r.json()).then(d => setEtiquetasDB(Array.isArray(d) ? d : [])).catch(() => {});
-  }, []);
+    if (etiquetasDB.length && !labelOpen) return;
+    fetch('/api/etiquetas', { cache: 'no-store' }).then(r => r.json()).then(d => { if (Array.isArray(d)) setEtiquetasDB(d); }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [labelOpen]);
 
   useEffect(() => {
     if (!labelOpen) return;
