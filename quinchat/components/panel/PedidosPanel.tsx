@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, type MouseEvent } from 'react';
 import { imgOptim } from '@/lib/funnels';
 import CarritosAbandonados from './CarritosAbandonados';
+import EstadoPedidoPanel from './EstadoPedidoPanel';
 
 interface Pedido {
   id: string; referencia: string; nombre: string; telefono: string;
@@ -264,6 +265,8 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   useEffect(() => () => { if (rangoTimer.current) clearTimeout(rangoTimer.current); }, []);
   const [busca, setBusca]       = useState('');
   const [verCarritos, setVerCarritos] = useState(false);
+  // Panel secundario: 📊 Pedidos y estadísticas | 📦 Estado de pedido (guías de Effi)
+  const [vista, setVista] = useState<'pedidos' | 'estado'>('pedidos');
 
   // Selección múltiple y acciones
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
@@ -430,6 +433,31 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   // Carritos abandonados en pantalla completa (con "← Volver")
   if (verCarritos) return <CarritosAbandonados onClose={() => setVerCarritos(false)} onAbrirChat={onAbrirChat} />;
 
+  const pestanasVista = (
+    <div className="flex gap-2 mb-4 pl-10 md:pl-0">
+      {([['pedidos', '📊 Pedidos y estadísticas'], ['estado', '📦 Estado de pedido']] as const).map(([k, t]) => (
+        <button key={k} onClick={() => setVista(k)}
+          className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${vista === k ? 'bg-[#00A89D] text-white border-[#00A89D]' : 'bg-white text-[#4B5563] border-[#E8E8E8] hover:border-[#00A89D]'}`}>
+          {t}
+        </button>
+      ))}
+    </div>
+  );
+  if (vista === 'estado') {
+    return (
+      <div className="flex-1 min-w-0 overflow-y-auto bg-[#F6F8F8]">
+        <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6">
+          <header className="mb-4 pl-10 md:pl-0">
+            <h1 className="text-2xl md:text-[28px] font-extrabold text-[#0D0D0D] tracking-tight">Estado de pedido</h1>
+            <p className="text-xs text-[#6B6B6B] mt-1">Cómo van las guías en Effi: generadas, en tránsito, en oficina, entregadas y devueltas.</p>
+          </header>
+          {pestanasVista}
+          <EstadoPedidoPanel onAbrirChat={onAbrirChat} />
+        </div>
+      </div>
+    );
+  }
+
   // ── Series para las gráficas ───────────────────────────────────────────────
   const diasAsc = [...porDia].reverse();                      // del más viejo al más nuevo
   const serieKpi = porHora ?? diasAsc;                         // un solo día → por hora
@@ -516,6 +544,8 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
               className="h-10 px-4 rounded-xl border border-[#F59E0B]/50 bg-white text-[#B45309] text-sm font-semibold hover:bg-[#F59E0B]/10">🛒 Carritos</button>
           </div>
         </header>
+
+        {pestanasVista}
 
         {/* Filtros */}
         <div className={`${tarjeta} px-4 py-3 mb-5 space-y-2.5`}>

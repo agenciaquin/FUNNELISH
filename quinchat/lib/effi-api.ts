@@ -153,7 +153,14 @@ export async function sincronizarGuiasEffi(origen: 'cron' | 'boton', dias = 60) 
   const rem = await sincronizarRemisionesEffi(hasta, 20);
   if (reg?.id) await supabase.from('effi_sync_log').update({ remisiones: rem.n, error_remisiones: rem.error ?? null }).eq('id', reg.id);
 
-  return { ...(await cerrar({ ok: true, guias: filas.length, telefonos: telefonos.length })), remisiones: rem.n, error_remisiones: rem.error ?? null };
+  // 4) Descuento por entrega (si está encendido): plantilla a las guías recién ENTREGADAS.
+  let descuentos: any = null;
+  try {
+    const { procesarDescuentosEntrega } = await import('@/lib/descuento-entrega');
+    descuentos = await procesarDescuentosEntrega(supabase);
+  } catch (e: any) { descuentos = { error: e?.message ?? String(e) }; }
+
+  return { ...(await cerrar({ ok: true, guias: filas.length, telefonos: telefonos.length })), remisiones: rem.n, error_remisiones: rem.error ?? null, descuentos };
 }
 
 /** Todas las remisiones de venta entre dos fechas (GET remision_v, paginando de a 100). */
