@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { ajustesDescuento } from '@/lib/descuento-entrega';
+import { ajustesDescuento, fotoPlantilla } from '@/lib/descuento-entrega';
 import { listarPlantillas } from '@/lib/whatsapp-templates';
 
 export const dynamic = 'force-dynamic';
@@ -13,15 +13,17 @@ export async function GET() {
   const supabase = createServerSupabaseClient();
   const cfg = await ajustesDescuento(supabase);
   let plantillaEstado = 'no existe';
+  let pideFoto = false;
   try {
     const { plantillas } = await listarPlantillas();
     const t = (plantillas ?? []).find(p => p.name === cfg.plantilla);
-    if (t) plantillaEstado = t.status;
+    if (t) { plantillaEstado = t.status; pideFoto = t.tieneImagen; }
   } catch { plantillaEstado = 'desconocido'; }
+  const foto = await fotoPlantilla(supabase, cfg.plantilla);
   const { data: ultimos } = await supabase.from('descuentos_entrega')
     .select('guia, telefono, nombre, estado, motivo, enviado_at, creado_at').order('creado_at', { ascending: false }).limit(50);
   const { count: enviados } = await supabase.from('descuentos_entrega').select('guia', { count: 'exact', head: true }).eq('estado', 'enviado');
-  return NextResponse.json({ ...cfg, plantillaEstado, enviados: enviados ?? 0, ultimos: ultimos ?? [] });
+  return NextResponse.json({ ...cfg, plantillaEstado, pideFoto, foto, enviados: enviados ?? 0, ultimos: ultimos ?? [] });
 }
 
 /** { activo } — al encender se guarda `desde`: solo cuentan las entregas de ahí en adelante. */

@@ -23,6 +23,13 @@ export async function ajustesDescuento(supabase: any): Promise<AjustesDescuento>
   return { activo: v.activo === true, plantilla: String(v.plantilla || 'descuento_entregado_15mil'), monto: Number(v.monto) || 15000, desde: v.desde };
 }
 
+/** Foto guardada para una plantilla (configuracion «plantilla_img_<nombre>»). */
+export async function fotoPlantilla(supabase: any, nombre: string): Promise<string | null> {
+  const { data } = await supabase.from('configuracion').select('valor').eq('clave', `plantilla_img_${nombre}`).maybeSingle();
+  const v = String(data?.valor ?? '');
+  return v.startsWith('http') ? v : null;
+}
+
 const pesos = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
 
 export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviados: number; omitidos: number; errores: number; apagado?: boolean; error?: string }> {
@@ -33,6 +40,11 @@ export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviad
   const { plantillas } = await listarPlantillas();
   const tpl = (plantillas ?? []).find(p => p.name === cfg.plantilla && p.status === 'APPROVED');
   if (!tpl) return { ...res, error: `La plantilla «${cfg.plantilla}» no está aprobada` };
+
+  // Foto del encabezado: la que se guardó al crear la plantilla en QuinChat (Plantillas)
+  // o la que se suba en Estado de pedido. Sin foto, Meta rechaza el envío.
+  const foto = tpl.tieneImagen ? await fotoPlantilla(supabase, tpl.name) : null;
+  if (tpl.tieneImagen && !foto) return { ...res, error: `Falta la foto de la plantilla «${tpl.name}»` };
 
   const desdeDia = String(cfg.desde).slice(0, 10);
   const { data: guias } = await supabase.from('effi_guias_api')
@@ -67,7 +79,7 @@ export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviad
 
     const nombre = String(g.nombre ?? '').replace(/\s+/g, ' ').trim().split(' ')[0] || 'hola';
     const variables = [nombre, pesos(cfg.monto)].slice(0, tpl.variables);
-    const r = await enviarPlantilla(`57${tel10}`, tpl.name, tpl.language || 'es', variables, null);
+    const r = await enviarPlantilla(`57${tel10}`, tpl.name, tpl.language || 'es', variables, foto);
     if (!r.ok) { await marcar('error', { motivo: r.error ?? 'error de envío' }); res.errores++; continue; }
     await marcar('enviado', { wamid: r.wamid ?? null, enviado_at: new Date().toISOString() });
     res.enviados++;
@@ -80,6 +92,12 @@ export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviad
       await supabase.from('conversations').upsert({
         id: `57${tel10}`, contact_name: String(g.nombre ?? tel10), last_message: recortar(texto, 100), last_message_time: ahora, unread_count: 0, linea: 'funnel',
       }, { onConflict: 'id', ignoreDuplicates: true });
+      if (foto) {
+        await supabase.from('messages').insert({
+          id: `tpl-desc-img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          conversation_id: `57${tel10}`, content: foto, role: 'agent', type: 'image', created_at: new Date(Date.parse(ahora) - 1).toISOString(),
+        });
+      }
       await supabase.from('messages').insert({
         id: `tpl-desc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         conversation_id: `57${tel10}`, content: texto, role: 'agent', type: 'text', whatsapp_id: r.wamid ?? null, created_at: ahora,

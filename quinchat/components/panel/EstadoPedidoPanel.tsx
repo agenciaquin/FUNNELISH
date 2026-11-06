@@ -73,7 +73,21 @@ export default function EstadoPedidoPanel({ onAbrirChat }: { onAbrirChat?: (id: 
       || (dig.length >= 6 && String(g.telefono ?? '').includes(dig));
   });
   const tarjeta = 'bg-white rounded-2xl border border-[#EDEFEF] shadow-[0_1px_3px_rgba(16,24,40,.04)]';
-  const plantillaOk = desc?.plantillaEstado === 'APPROVED';
+  const plantillaOk = desc?.plantillaEstado === 'APPROVED' && (!desc?.pideFoto || !!desc?.foto);
+  const [subiendo, setSubiendo] = useState(false);
+  async function subirFoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f || !desc) return;
+    setSubiendo(true);
+    try {
+      const base64 = await new Promise<string>((ok, mal) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = mal; r.readAsDataURL(f); });
+      await fetch('/api/plantillas-wa/imagen', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre: desc.plantilla, imagenBase64: base64, imagenMime: f.type || 'image/jpeg' }),
+      });
+      cargarDesc();
+    } finally { setSubiendo(false); e.target.value = ''; }
+  }
 
   return (
     <div className="space-y-4">
@@ -124,6 +138,18 @@ export default function EstadoPedidoPanel({ onAbrirChat }: { onAbrirChat?: (id: 
             Plantilla <b>{desc.plantilla}</b>: {plantillaOk ? '✅ aprobada' : `⚠️ ${desc.plantillaEstado === 'no existe' ? 'falta crearla' : desc.plantillaEstado}`}
             {' · '}{desc.enviados} enviados
           </span>
+          {desc.pideFoto && (
+            <span className="flex items-center gap-2 text-[11px] text-[#6B6B6B]">
+              {desc.foto
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img src={desc.foto} alt="Foto de la plantilla" className="w-10 h-10 rounded-lg object-cover border border-[#E8E8E8]" />
+                : <span className="text-[#DC2626] font-semibold">⚠️ Falta la foto</span>}
+              <label className="px-2.5 py-1 rounded-lg border border-[#E8E8E8] cursor-pointer hover:bg-[#F5F5F5] font-semibold">
+                {subiendo ? 'Subiendo…' : desc.foto ? 'Cambiar foto' : 'Subir foto'}
+                <input type="file" accept="image/jpeg,image/png" className="hidden" onChange={subirFoto} />
+              </label>
+            </span>
+          )}
           <span className="w-full text-[10px] text-[#9A9A9A]">
             Al sincronizar con Effi, a cada guía que quede ENTREGADA (desde que lo enciendas) le llega la plantilla una sola vez;
             máximo un descuento por cliente cada 30 días y nunca a quien respondió SALIR. Su chat queda con la etiqueta «DESCUENTO 15.000».
