@@ -83,6 +83,11 @@ export async function sincronizarGuiasEffi(origen: 'cron' | 'boton', dias = 60) 
   // Por eso se pide hasta MAÑANA.
   const hasta = new Date(hoy.getTime() + 86400_000).toISOString().slice(0, 10);
   const desde = new Date(hoy.getTime() - dias * 86400_000).toISOString().slice(0, 10);
+  // Una sola sincronización a la vez: si el cron y el botón coinciden, chocaban al
+  // reescribir effi_guias ("duplicate key effi_guias_pkey", 05-nov-2026).
+  const { data: enCurso } = await supabase.from('effi_sync_log').select('id')
+    .is('fin', null).gte('inicio', new Date(Date.now() - 5 * 60_000).toISOString()).limit(1);
+  if (enCurso?.length) return { ok: false, error: 'Ya hay una sincronización en curso; intenta en un par de minutos.', desde, hasta };
   const { data: reg } = await supabase.from('effi_sync_log').insert({ origen, desde, hasta }).select('id').single();
   const cerrar = async (r: { ok: boolean; guias?: number; telefonos?: number; error?: string }) => {
     if (reg?.id) await supabase.from('effi_sync_log').update({ fin: new Date().toISOString(), ok: r.ok, guias: r.guias ?? 0, telefonos: r.telefonos ?? 0, error: r.error ?? null }).eq('id', reg.id);
@@ -114,8 +119,10 @@ export async function sincronizarGuiasEffi(origen: 'cron' | 'boton', dias = 60) 
     datos: g, actualizado_at: new Date().toISOString(),
   }));
   try {
-    for (let i = 0; i < filas.length; i += 500) {
-      const { error } = await supabase.from('effi_guias_api').upsert(filas.slice(i, i + 500), { onConflict: 'id_effi' });
+    // Lotes de 100: con 500 filas (cada una con su JSON completo) Supabase cortaba por
+    // "statement timeout" (05-nov-2026).
+    for (let i = 0; i < filas.length; i += 100) {
+      const { error } = await supabase.from('effi_guias_api').upsert(filas.slice(i, i + 100), { onConflict: 'id_effi' });
       if (error) throw new Error(error.message);
     }
   } catch (e: any) { return cerrar({ ok: false, guias: filas.length, error: `guardar guías: ${e?.message}` }); }
@@ -139,12 +146,12 @@ export async function sincronizarGuiasEffi(origen: 'cron' | 'boton', dias = 60) 
       // Se conserva el motivo de anulación que ya venía del archivo de Effi
       const { data: previas } = await supabase.from('effi_guias').select('telefono, motivo').in('telefono', lote);
       const motivo = new Map((previas ?? []).map((p: any) => [String(p.telefono), String(p.motivo ?? '')]));
-      const { error: delErr } = await supabase.from('effi_guias').delete().in('telefono', lote);
-      if (delErr) throw new Error(delErr.message);
-      const { error: insErr } = await supabase.from('effi_guias').insert(lote.map(t => ({
+      // upsert por teléfono (antes: borrar + insertar, que chocaba si dos procesos coincidían)
+      const { error: upErr } = await supabase.from('effi_guias').upsert(lote.map(t => ({
         telefono: t, estado: porTel.get(t)!.estado, flete: porTel.get(t)!.flete, motivo: motivo.get(t) ?? '',
-      })));
-      if (insErr) throw new Error(insErr.message);
+        actualizado_at: new Date().toISOString(),
+      })), { onConflict: 'telefono' });
+      if (upErr) throw new Error(upErr.message);
     }
   } catch (e: any) { return cerrar({ ok: false, guias: filas.length, error: `actualizar cruce: ${e?.message}` }); }
 
