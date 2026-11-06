@@ -73,7 +73,7 @@ function Sparkline({ valores, color }: { valores: number[]; color: string }) {
 }
 
 /** Barras agrupadas: por cada punto, dos barras (pedidos y prendas) con su número encima. */
-function BarrasDobles({ datos, alto = 165 }: { datos: { etiqueta: string; a: number; b: number; resaltar?: boolean; titulo?: string }[]; alto?: number }) {
+function BarrasDobles({ datos, alto = 165 }: { datos: { etiqueta: string; a: number; b: number; resaltar?: boolean; titulo?: string; nota?: string; notaColor?: string }[]; alto?: number }) {
   const [hover, setHover] = useState<number | null>(null);
   // Ancho real de la tarjeta: el dibujo ocupa todo el ancho sin estirarse ni dejar márgenes vacíos
   const caja = useRef<HTMLDivElement>(null);
@@ -91,7 +91,8 @@ function BarrasDobles({ datos, alto = 165 }: { datos: { etiqueta: string; a: num
   const marcas = Array.from({ length: tope / paso + 1 }, (_, i) => i * paso);
   const left = 28;
   const colW = Math.max(26, (ancho - left) / datos.length);
-  const W = datos.length * colW, H = alto, top = 18, bottom = 22;
+  const conNota = datos.some(d => d.nota);
+  const W = datos.length * colW, H = alto + (conNota ? 14 : 0), top = 18, bottom = conNota ? 36 : 22;
   const altoUtil = H - top - bottom;
   const y = (v: number) => top + altoUtil - (v / tope) * altoUtil;
   const bw = Math.min(16, colW * 0.3);
@@ -115,7 +116,8 @@ function BarrasDobles({ datos, alto = 165 }: { datos: { etiqueta: string; a: num
               <rect x={cx + 1} y={y(d.b)} width={bw} height={Math.max(hb, d.b ? 2 : 0)} rx="3" fill="#3CC7BC" className="qp-barra" />
               {d.a > 0 && <text x={cx - bw / 2 - 1} y={y(d.a) - 4} fontSize="10" fontWeight="700" fill="#0B6E4F" textAnchor="middle">{d.a}</text>}
               {d.b > 0 && <text x={cx + bw / 2 + 1} y={y(d.b) - 4} fontSize="10" fontWeight="700" fill="#0E9C92" textAnchor="middle">{d.b}</text>}
-              <text x={cx} y={H - 8} fontSize="10" fill={d.resaltar ? '#00847A' : '#6B6B6B'} fontWeight={d.resaltar ? 700 : 400} textAnchor="middle">{d.etiqueta}</text>
+              <text x={cx} y={H - (conNota ? 21 : 8)} fontSize="10" fill={d.resaltar ? '#00847A' : '#6B6B6B'} fontWeight={d.resaltar ? 700 : 400} textAnchor="middle">{d.etiqueta}</text>
+              {d.nota && <text x={cx} y={H - 6} fontSize="9.5" fontWeight="700" fill={d.notaColor ?? '#2F80ED'} textAnchor="middle">{d.nota}</text>}
             </g>
           );
         })}
@@ -234,6 +236,8 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   const [porHora, setPorHora] = useState<HoraFila[] | null>(null);
   // La gráfica principal puede mirar un rango distinto al filtro (por defecto 15 días)
   const [rangoGrafica, setRangoGrafica] = useState<'filtro' | '7' | '15' | '30'>('filtro');
+  // Vista de la gráfica: POR DÍA por defecto (pedido del dueño, 05-nov-2026); "Por hora" solo con un día.
+  const [vistaGraf, setVistaGraf] = useState<'dia' | 'hora'>('dia');
   const [diasGrafica, setDiasGrafica] = useState<DiaFila[]>([]);
   const [comparacion, setComparacion] = useState<Record<string, number> | null>(null);
   const [promoInfo, setPromoInfo] = useState<{ total: number; confirmados: number }>({ total: 0, confirmados: 0 });
@@ -430,11 +434,22 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   const diasAsc = [...porDia].reverse();                      // del más viejo al más nuevo
   const serieKpi = porHora ?? diasAsc;                         // un solo día → por hora
   const spark = (f: (d: any) => number) => serieKpi.map(f);
-  const datosGrafica = (rangoGrafica === 'filtro'
-    ? (porHora
-        ? porHora.filter((h, i) => h.total > 0 || i >= 6).map(h => ({ etiqueta: `${h.hora}h`, a: h.total, b: h.prendas, titulo: `${h.hora}:00 — ${h.total} pedidos · ${h.prendas} prendas · ${h.conf} confirmados` }))
-        : diasAsc.map(d => ({ etiqueta: diaBonito(d.dia), a: d.total, b: d.prendas ?? 0, resaltar: diaBonito(d.dia) === 'Hoy', titulo: `${diaBonito(d.dia)} — ${d.total} pedidos · ${d.prendas ?? 0} prendas · ${d.conf} confirmados` })))
-    : [...diasGrafica].reverse().map(d => ({ etiqueta: diaBonito(d.dia), a: d.total, b: d.prendas ?? 0, resaltar: diaBonito(d.dia) === 'Hoy', titulo: `${diaBonito(d.dia)} — ${d.total} pedidos · ${d.prendas ?? 0} prendas · ${d.conf} confirmados` })));
+  // % de confirmación de cada día (confirmados / pedidos), debajo de su fecha
+  const pctDia = (d: { total: number; conf: number }) => d.total ? Math.round((d.conf / d.total) * 100) : null;
+  const colorPct = (v: number) => v >= 75 ? '#15803D' : v >= 50 ? '#CA8A04' : '#DC2626';
+  const barraDia = (d: DiaFila) => {
+    const pc = pctDia(d);
+    return {
+      etiqueta: diaBonito(d.dia), a: d.total, b: d.prendas ?? 0, resaltar: diaBonito(d.dia) === 'Hoy',
+      nota: pc == null ? '' : `${pc}%`, notaColor: pc == null ? undefined : colorPct(pc),
+      titulo: `${diaBonito(d.dia)} — ${d.total} pedidos · ${d.prendas ?? 0} prendas · ${d.conf} confirmados${pc == null ? '' : ` (${pc}% de confirmación)`}`,
+    };
+  };
+  const puedeHora = rangoGrafica === 'filtro' && !!porHora;
+  const verHora = vistaGraf === 'hora' && puedeHora;
+  const datosGrafica = verHora
+    ? porHora!.filter((h, i) => h.total > 0 || i >= 6).map(h => ({ etiqueta: `${h.hora}h`, a: h.total, b: h.prendas, titulo: `${h.hora}:00 — ${h.total} pedidos · ${h.prendas} prendas · ${h.conf} confirmados` }))
+    : (rangoGrafica === 'filtro' ? diasAsc : [...diasGrafica].reverse()).map(barraDia);
   const etiquetaRango = preset === 'hoy' ? 'Hoy' : preset === 'ayer' ? 'Ayer' : preset === 'mes' ? 'Este mes' : preset === 'mesprev' ? 'Mes anterior'
     : preset === 'custom' ? 'Personalizado' : `Últimos ${preset} días`;
   const canalesGraf = (['funnelish', 'embudos', 'whatsapp'] as const).map(c => porCanal.find(x => x.canal === c)
@@ -605,8 +620,20 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
           <section className={`${tarjeta} p-4 xl:col-span-7`}>
             <div className="flex items-start justify-between gap-2 flex-wrap mb-2">
               <div>
-                <h2 className="text-[15px] font-extrabold text-[#0D0D0D]">📊 Ventas y prendas por {rangoGrafica === 'filtro' && porHora ? 'hora' : 'día'}</h2>
-                <p className="text-[11px] text-[#6B6B6B]">{rangoGrafica === 'filtro' ? `Período: ${etiquetaRango}` : `Comparativo de los últimos ${rangoGrafica} días`}</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-[15px] font-extrabold text-[#0D0D0D]">📊 Ventas y prendas por {verHora ? 'hora' : 'día'}</h2>
+                  <div className="flex rounded-lg border border-[#E8E8E8] overflow-hidden text-[11px] font-semibold">
+                    <button onClick={() => setVistaGraf('dia')}
+                      className={`px-2.5 py-1 ${!verHora ? 'bg-[#00A89D] text-white' : 'bg-white text-[#4B5563] hover:bg-[#F5F5F5]'}`}>Por día</button>
+                    <button onClick={() => puedeHora && setVistaGraf('hora')} disabled={!puedeHora}
+                      title={puedeHora ? 'Ver el día hora por hora' : 'Por hora solo está disponible con un solo día (Hoy, Ayer o un día personalizado)'}
+                      className={`px-2.5 py-1 border-l border-[#E8E8E8] ${verHora ? 'bg-[#00A89D] text-white' : 'bg-white text-[#4B5563] hover:bg-[#F5F5F5]'} disabled:opacity-40 disabled:cursor-not-allowed`}>Por hora</button>
+                  </div>
+                </div>
+                <p className="text-[11px] text-[#6B6B6B]">
+                  {rangoGrafica === 'filtro' ? `Período: ${etiquetaRango}` : `Comparativo de los últimos ${rangoGrafica} días`}
+                  {!verHora && ' · el % debajo de cada día es su tasa de confirmación'}
+                </p>
               </div>
               <div className="flex items-center gap-3 flex-wrap">
                 <span className="flex items-center gap-1.5 text-[11px] text-[#4B5563]"><span className="w-2.5 h-2.5 rounded-full bg-[#0B6E4F]" /> Ventas (pedidos)</span>
