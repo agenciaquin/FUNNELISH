@@ -66,8 +66,15 @@ export default function ArmarPackSelector({
     return new Set(listas[0].filter(w => listas.every(l => l.includes(w))));
   })();
   /** Muestra el nombre con la MARCA resaltada en un badge. */
-  const nombreConMarca = (nombre: string, activo: boolean) => {
+  // Texto blanco u oscuro según qué tan claro sea el color de fondo
+  const textoSobre = (hex: string) => {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim()); if (!m) return '#fff';
+    const n = parseInt(m[1], 16); const r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+    return (0.299 * r + 0.587 * g + 0.114 * b) > 170 ? '#0D0D0D' : '#fff';
+  };
+  const nombreConMarca = (nombre: string, activo: boolean, colorMarca?: string) => {
     const palabras = String(nombre ?? '').split(/\s+/).filter(Boolean);
+    const fondo = (colorMarca || '').trim() || '#F97316';
     return (
       <span className="leading-tight">
         {palabras.map((w, wi) => palabrasComunes.has(w.toUpperCase())
@@ -76,7 +83,7 @@ export default function ArmarPackSelector({
             <span key={wi}>
               <span
                 className="inline-block font-extrabold rounded px-1"
-                style={activo ? { background: '#fff', color: acento.texto } : { background: '#F97316', color: '#fff' }}
+                style={activo ? { background: '#fff', color: acento.texto } : { background: fondo, color: textoSobre(fondo) }}
               >{w}</span>{' '}
             </span>
           ))}
@@ -162,7 +169,13 @@ export default function ArmarPackSelector({
                 <div className="grid grid-cols-2 gap-1.5">
                   {config.categorias.map(c => (
                     <Chip key={c.nombre} activo={b.escuderia === c.nombre} onClick={() => set(i, { escuderia: c.nombre })}>
-                      {nombreConMarca(c.nombre, b.escuderia === c.nombre)}
+                      <span className="inline-flex items-center justify-center gap-1.5">
+                        {c.logo && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={c.logo} alt="" className="w-6 h-6 object-contain shrink-0 rounded bg-white/90" loading="lazy" />
+                        )}
+                        {nombreConMarca(c.nombre, b.escuderia === c.nombre, c.color)}
+                      </span>
                     </Chip>
                   ))}
                 </div>

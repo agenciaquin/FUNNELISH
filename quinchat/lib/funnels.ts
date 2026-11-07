@@ -35,6 +35,8 @@ export function normalizarOpciones(ops: (string | OpcionSelector)[]): OpcionSele
 export interface CategoriaPack {
   nombre: string;              // "ESCUDERIA RED BULL"
   colores: OpcionSelector[];   // colores de esa escudería (con foto)
+  logo?: string;               // logo opcional que se muestra al lado del nombre
+  color?: string;              // color del distintivo de la marca (def: naranja #F97316)
 }
 
 /**

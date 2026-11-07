@@ -79,7 +79,7 @@ interface Variante {
   id: string; nombre: string; precio: number; precioAntes?: number;
   imagen?: string; tallas?: string[]; selectores?: Selector[];
   // "Arma tu pack" (cascada): escudería → color → talla por buzo.
-  armarPack?: { unidades: number; categorias: { nombre: string; colores: Opcion[] }[]; tallas: string[]; labelCategoria?: string; labelPrenda?: string };
+  armarPack?: { unidades: number; categorias: { nombre: string; colores: Opcion[]; logo?: string; color?: string }[]; tallas: string[]; labelCategoria?: string; labelPrenda?: string };
   estilo?: string; // 'polos' → VARIABLES POLOS (a prueba de renombrado)
 }
 
@@ -1873,6 +1873,48 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
                           />
                         </div>
                       </div>
+                      {/* Logo (opcional) y color del distintivo de CADA opción */}
+                      {(v.armarPack.categorias?.length ?? 0) > 0 && (
+                        <div className="mt-2 bg-white rounded-lg border border-[#EEE] p-2">
+                          <p className="text-[10px] font-bold text-[#9A9A9A] uppercase mb-1">🎨 Logo y color de cada opción (opcional)</p>
+                          <div className="space-y-1.5">
+                            {v.armarPack.categorias.map((cat, ci) => {
+                              const setCat = (patch: Partial<{ logo?: string; color?: string }>) => cambiar({
+                                armarPack: { ...v.armarPack!, categorias: v.armarPack!.categorias.map((c, k) => (k === ci ? { ...c, ...patch } : c)) },
+                              });
+                              const PRESETS = ['#F97316', '#DC2626', '#2563EB', '#16A34A', '#7C3AED', '#0D0D0D', '#D4A017', '#DB2777'];
+                              return (
+                                <div key={cat.nombre} className="flex items-center gap-2 flex-wrap border-b border-[#F3F3F3] pb-1.5">
+                                  <label className="shrink-0 w-9 h-9 rounded-md border border-dashed border-[#CFCFCF] bg-[#FAFAFA] flex items-center justify-center cursor-pointer overflow-hidden" title="Subir logo (PNG con fondo transparente se ve mejor)">
+                                    {cat.logo
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      ? <img src={cat.logo} alt="" className="w-full h-full object-contain" />
+                                      : <span className="text-[9px] text-[#9A9A9A] leading-tight text-center">+ logo</span>}
+                                    <input type="file" accept="image/*" className="hidden" onChange={async e => {
+                                      const f = e.target.files?.[0]; e.target.value = '';
+                                      if (!f) return;
+                                      try { const url = await subirArchivo(f, (actual as any).slug || 'embudo'); if (url) setCat({ logo: url }); }
+                                      catch (err: any) { alert(err?.message ?? 'No se pudo subir el logo.'); }
+                                    }} />
+                                  </label>
+                                  <span className="flex-1 min-w-[120px] text-[11px] font-semibold truncate">{cat.nombre}</span>
+                                  {cat.logo && <button type="button" onClick={() => setCat({ logo: undefined })} className="text-[10px] text-[#DC2626]">Quitar logo</button>}
+                                  <div className="flex items-center gap-1">
+                                    {PRESETS.map(col => (
+                                      <button key={col} type="button" onClick={() => setCat({ color: col })} title={col}
+                                        className={`w-4 h-4 rounded-full border ${((cat.color || '#F97316').toUpperCase() === col) ? 'ring-2 ring-offset-1 ring-[#0D0D0D]' : 'border-white'}`}
+                                        style={{ background: col }} />
+                                    ))}
+                                    <input type="color" value={cat.color || '#F97316'} onChange={e => setCat({ color: e.target.value })}
+                                      className="w-6 h-6 p-0 border-0 bg-transparent cursor-pointer" title="Otro color" />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <p className="text-[10px] text-[#9A9A9A] mt-1">El color pinta la palabra destacada (ej. REAL MADRID). Sin color queda naranja. <b>Guarda</b> el embudo para aplicarlo.</p>
+                        </div>
+                      )}
                       {(v.armarPack.categorias?.length ?? 0) === 0 ? (
                         <p className="text-[11px] text-[#C2410C] font-bold mt-1">⚠️ No capturó escuderías: crea las escuderías con colores y foto en Catálogos y vuelve a tocar el botón.</p>
                       ) : (
