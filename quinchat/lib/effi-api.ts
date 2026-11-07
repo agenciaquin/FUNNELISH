@@ -39,6 +39,26 @@ export async function effiGet(ruta: string, params: Record<string, string | numb
   throw new Error('Effi: demasiadas peticiones (429) — se intenta en la próxima sincronización');
 }
 
+/**
+ * ESCRITURA en Effi (POST). Usa una clave APARTE: EFFI_API_TOKEN_ESCRITURA (Vercel).
+ * Solo la usa la subida de remisiones de Ventas Vendedores, con autorización del dueño.
+ * No reintenta: un POST repetido lo frena Effi con el idempotency_key (409).
+ */
+export function effiEscrituraConfigurada(): boolean {
+  return !!process.env.EFFI_API_TOKEN_ESCRITURA;
+}
+export async function effiPost(ruta: string, cuerpo: Record<string, any>): Promise<{ status: number; json: any }> {
+  const token = process.env.EFFI_API_TOKEN_ESCRITURA;
+  if (!token) throw new Error('Falta EFFI_API_TOKEN_ESCRITURA en Vercel');
+  const res = await fetch(`${BASE}/${ruta.replace(/^\/+/, '')}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(cuerpo), cache: 'no-store', signal: AbortSignal.timeout(45_000),
+  });
+  const json = await res.json().catch(() => null);
+  return { status: res.status, json };
+}
+
 /** Todas las guías creadas entre dos fechas (paginando de a 100). */
 export async function listarGuias(desde: string, hasta: string, maxPaginas = 60): Promise<any[]> {
   const todas: any[] = [];

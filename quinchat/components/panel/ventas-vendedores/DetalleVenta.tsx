@@ -87,6 +87,14 @@ export default function DetalleVenta({ id, onCerrar, onCambio, onChat }: {
     // La vista previa de la remisión está arriba del detalle: se sube para verla.
     document.getElementById('vv-detalle-scroll')?.scrollTo({ top: 0, behavior: 'smooth' });
   };
+  /** Envío REAL: crea la remisión en Effi. Pide confirmación. */
+  const enviarEffi = async () => {
+    if (!window.confirm('Se va a CREAR la remisión en Effi con los datos de la vista previa. ¿Confirmas?')) return;
+    const { ok, j } = await llamar(`/api/ventas-vendedores/${id}/effi`, 'POST', { enviar: true });
+    setAviso({ ok, t: [j.mensaje, ...(j.errores ?? [])].filter(Boolean).join(' · ') });
+    await cargar(); onCambio();
+    document.getElementById('vv-detalle-scroll')?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const totalPrendas = (d?.items ?? []).reduce((s, i) => s + (i.cantidad || 0), 0);
 
@@ -267,7 +275,10 @@ export default function DetalleVenta({ id, onCerrar, onCambio, onChat }: {
           {v && editable && (
             <div className="flex gap-2 flex-wrap">
               {['confirmada', 'lista_effi', 'error_effi', 'escalada'].includes(v.estado) && (
-                <button disabled={trabajando} onClick={subirEffi} className="h-10 px-4 rounded-xl bg-[#A5791F] text-white text-[13px] font-bold disabled:opacity-50">⬆ Subir a Effi</button>
+                <button disabled={trabajando} onClick={subirEffi} className="h-10 px-4 rounded-xl bg-[#A5791F] text-white text-[13px] font-bold disabled:opacity-50">{v.effi_payload?.vista ? '🔄 Revisar de nuevo' : '⬆ Subir a Effi'}</button>
+              )}
+              {v.estado === 'lista_effi' && v.effi_estado === 'simulado' && (
+                <button disabled={trabajando} onClick={enviarEffi} className="h-10 px-4 rounded-xl bg-[#14804A] text-white text-[13px] font-bold disabled:opacity-50">✅ Enviar a Effi</button>
               )}
               {['incompleta', 'ambigua', 'esperando_confirmacion', 'recibida', 'escalada'].includes(v.estado) && (
                 <button disabled={trabajando} onClick={() => accion('confirmar')} className="h-10 px-3 rounded-xl border border-[#E7E6E1] text-[13px] font-semibold">✓ Marcar confirmada</button>

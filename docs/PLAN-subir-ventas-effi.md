@@ -153,6 +153,16 @@ Revisión de las 13 preventas de prueba (solo lectura):
   detalle (errores ✖, avisos ⚠️, conceptos, pagos y «datos técnicos» con el JSON). Estado `lista_effi`.
 - Pendiente: id de la cuenta KLIXMANT SAS (solo para ventas con abono/pago total).
 
+## 2f. Fase 3 construida (07-nov-2026) — envío real con candados
+
+- El dueño autorizó subir **solo** PV-20261107-152032-G1 → `ajustes_bot.effi_remision.autorizadas`.
+- Panel: tras la vista previa aparece **«✅ Enviar a Effi»** (pide confirmación) → `POST /api/ventas-vendedores/[id]/effi {enviar:true}`.
+- Candados: clave aparte `EFFI_API_TOKEN_ESCRITURA`; venta en `autorizadas` (o `envio_effi='real'` en Fase 4);
+  bloqueo atómico a `enviando_effi`; `idempotency_key qc-<código>` (409 si se repite); clientes nuevos aún
+  no se crean por API.
+- Éxito → `estado en_effi`, `effi_remision = id_transaccion`, respuesta en `effi_respuesta`.
+  Error → `error_effi` con el mensaje de Effi; sin reintentos automáticos.
+
 ## 3. Huecos que quedan (en orden)
 
 Cédula, artículo, IVA, formas/medios de pago, centro de costos, vendedor y transportadora: **resueltos** (§2b).
