@@ -142,6 +142,7 @@ async function enviarAGuias(supabase: any, guias: any[], cfg: AjustesDescuento, 
       await supabase.from('conversations').upsert({
         id: `57${tel10}`, contact_name: String(g.nombre ?? tel10), last_message: recortar(texto, 100), last_message_time: ahora, unread_count: 0, linea: 'funnel',
         oculto: true,   // no sale en la bandeja hasta que el cliente responda
+        bot_enabled: false,
       }, { onConflict: 'id', ignoreDuplicates: true });
       if (foto) {
         await supabase.from('messages').insert({
@@ -157,7 +158,8 @@ async function enviarAGuias(supabase: any, guias: any[], cfg: AjustesDescuento, 
       const nuevas = labels.some((l: string) => l.toUpperCase() === tag) ? labels : [...labels, tag];
       const fecha = new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 10);
       const notas = [String(conv?.notas ?? '').trim(), `[${fecha}] 🎁 Tiene ${pesos(cfg.monto)} de descuento para su próxima compra (guía ${guia} entregada).`].filter(Boolean).join('\n');
-      await supabase.from('conversations').update({ label: nuevas.join(' | '), notas }).eq('id', `57${tel10}`);
+      // El chat del descuento lo atiende un HUMANO: bot apagado (07-nov-2026, decisión del dueño)
+      await supabase.from('conversations').update({ label: nuevas.join(' | '), notas, bot_enabled: false }).eq('id', `57${tel10}`);
     } catch (e) { console.error('[Descuento] registro en el chat:', e); }
   }
 }

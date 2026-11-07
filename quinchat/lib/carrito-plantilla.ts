@@ -139,7 +139,11 @@ export async function enviarPlantillaCarrito(supabase: any, id: string): Promise
       id: `57${tel10}`, contact_name: String((c as any).nombre ?? '').trim() || tel10,
       last_message: recortar(texto, 100), last_message_time: ahora, unread_count: 0, linea: 'funnel',
       oculto: true,   // no sale en la bandeja hasta que el cliente responda
+      bot_enabled: false,
     }, { onConflict: 'id', ignoreDuplicates: true });
+    // El chat de un carrito abandonado lo atiende un HUMANO: bot apagado también
+    // si el chat ya existía (07-nov-2026, decisión del dueño).
+    await supabase.from('conversations').update({ bot_enabled: false }).eq('id', `57${tel10}`);
     // Etiqueta adicional (beige) «CARRITO ABANDONADO», sin quitar las que ya tenga
     const { data: cv } = await supabase.from('conversations').select('label').eq('id', `57${tel10}`).maybeSingle();
     const etiquetas = String(cv?.label ?? '').split('|').map((x: string) => x.trim()).filter(Boolean);
