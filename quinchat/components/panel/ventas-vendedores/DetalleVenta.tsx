@@ -122,6 +122,8 @@ export default function DetalleVenta({ id, onCerrar, onCambio, onChat }: {
                   </div>
                   <div className="mt-3 rounded-xl bg-[#E0EAFA] text-[#1F5FBF] text-[13px] px-3 py-2.5">🔒 Esta venta ya está en Effi. Para cambiarla o anularla, escríbele a Novedades.</div>
                 </>
+              ) : v.effi_payload?.vista ? (
+                <VistaRemision p={v.effi_payload} lista={v.effi_estado === 'simulado'} />
               ) : v.effi_estado === 'simulado' ? (
                 <div className="mt-4 rounded-xl bg-[#F7EEDA] text-[#7A5A12] text-[13px] px-3 py-2.5">🧪 La solicitud a Effi está armada y guardada, pero <b>no se envió</b> (modo simulación).</div>
               ) : null}
@@ -285,6 +287,44 @@ export default function DetalleVenta({ id, onCerrar, onCambio, onChat }: {
           <img src={verFoto} alt="" className="max-w-full max-h-full rounded-xl" />
         </div>
       )}
+    </div>
+  );
+}
+
+/** Vista previa de la remisión de Effi tal como quedaría (no se envía). */
+function VistaRemision({ p, lista }: { p: any; lista: boolean }) {
+  const vi = p.vista ?? {};
+  const [verJson, setVerJson] = useState(false);
+  const fila = (t: string, x: ReactNode) => (
+    <div className="flex gap-2 text-[12.5px] py-1 border-b border-[#EFE6CF] last:border-0">
+      <span className="w-[108px] shrink-0 text-[#8B6B1F]">{t}</span><span className="flex-1 font-medium text-[#3A2E10] break-words">{x}</span>
+    </div>
+  );
+  return (
+    <div className="mt-4 rounded-2xl border border-[#E8D9B0] bg-[#FBF6E8] p-3">
+      <p className="text-[13px] font-extrabold text-[#7A5A12]">🧾 Remisión de venta en Effi — vista previa</p>
+      <p className="text-[11.5px] text-[#8B6B1F] mb-2">{lista ? 'Así quedaría. No se ha enviado nada a Effi.' : 'Faltan datos: corrígelos y vuelve a oprimir «Subir a Effi».'}</p>
+      {(p.errores ?? []).length > 0 && (
+        <div className="mb-2 rounded-xl bg-[#FBE3E3] text-[#B42318] text-[12.5px] px-3 py-2">{p.errores.map((e: string, i: number) => <div key={i}>✖ {e}</div>)}</div>
+      )}
+      {(p.avisos ?? []).length > 0 && (
+        <div className="mb-2 rounded-xl bg-[#FDEBD0] text-[#B25E00] text-[12.5px] px-3 py-2">{p.avisos.map((e: string, i: number) => <div key={i}>⚠️ {e}</div>)}</div>
+      )}
+      {fila('Cliente', vi.cliente)}
+      {fila('Dirección', vi.direccion)}
+      {fila('Ciudad (Effi)', vi.ciudad_ids)}
+      {fila('Vendedor', vi.vendedor)}
+      {fila('Ubicación venta', vi.ubicacion)}
+      {fila('Centro costos', vi.centro_costos)}
+      {(vi.prendas ?? []).map((x: any, i: number) => fila(`Concepto ${i + 1}`, (
+        <span>Art. <b>{x.articulo}</b> · {x.descripcion} · cant {x.cantidad}<br />
+          Observación <b>{x.observacion}</b> <span className="text-[#8B6B1F]">({x.estampado})</span><br />
+          ${Math.round(x.precio_con_iva).toLocaleString('es-CO')} con IVA → {Number(x.precio_sin_iva).toLocaleString('es-CO')} sin IVA + IVA 19%</span>
+      )))}
+      {fila('Pagos', (vi.pagos ?? []).join(' + ') || '—')}
+      {fila('Total', vi.total)}
+      <button onClick={() => setVerJson(s => !s)} className="mt-2 text-[11.5px] font-bold text-[#7A5A12] underline">{verJson ? 'Ocultar' : 'Ver'} datos técnicos</button>
+      {verJson && <pre className="mt-1 max-h-60 overflow-auto rounded-lg bg-white border border-[#EFE6CF] p-2 text-[10.5px] leading-snug">{JSON.stringify({ remision_v: p.solicitud, crear_cliente: p.crear_cliente }, null, 2)}</pre>}
     </div>
   );
 }

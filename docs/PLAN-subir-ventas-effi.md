@@ -127,7 +127,7 @@ Revisión de las 13 preventas de prueba (solo lectura):
 |---|---|
 | Sucursal Principal (Bucaramanga) | 1 |
 | Bodega Bucaramanga | 1 (2 = Bucaramanga DS, 3 = Garantías) |
-| Centro de costos AGENCIA QUIN | ⏳ Effi respondió 502 — reintentar |
+| Centro de costos AGENCIA QUIN | **12** |
 | Vendedor QUINO AGENCIA | tercero **46502** (cédula 96582541250) |
 | Ubicaciones | 33/32 CIUDAD BONITA SR/CR · 29/28 INTER RAPIDISIMO CR/SR · 27/26 ENVIA CR/SR · 25/24 COORDINADORA CR/SR · 23/22 SERVIENTREGA CR/SR · 21/20 JOSE ENVIOS CR/SR · 31 INTER PROPIO · 30 PUNTO DE VENTA |
 | IVA 19% | 1 |
@@ -139,6 +139,19 @@ Revisión de las 13 preventas de prueba (solo lectura):
 | Artículo HNLMARFILLES | **21703**, IVA 19%, «sin control de stock» (no lo frena el inventario) |
 | Bucaramanga / Santander / Colombia | ciudad 13371 · provincia 802 · país 47 |
 | Cliente 3143534918 | ya existe: tercero **26414** («josue»); también 414 JOSUE QUINTERO LEON (otra cédula) |
+
+## 2e. Fase 1–2 construida (07-nov-2026) — vista previa, NO envía
+
+- `quinchat/lib/ventas-vendedores/effi-remision.ts` → `armarRemision()`: arma el cuerpo exacto de
+  `POST api/remision_v` con las reglas de §2b–2d. Consulta Effi solo con GET (departamento, ciudad,
+  cliente por cédula/celular, artículo por Ref.). Si el cliente no existe, deja listo el cuerpo de
+  `POST api/cliente` (no lo crea).
+- Config editable en `ajustes_bot` clave `effi_remision`: `vendedores {tel: {tercero, nombre}}`,
+  `transportadoras {municipio: nombre}`, `cuenta_transferencia`. Por defecto: 573143534918 → QUINO AGENCIA
+  (46502); bucaramanga → CIUDAD BONITA.
+- Botón «⬆ Subir a Effi» del panel → guarda la vista previa en `vv_ventas.effi_payload` y la muestra en el
+  detalle (errores ✖, avisos ⚠️, conceptos, pagos y «datos técnicos» con el JSON). Estado `lista_effi`.
+- Pendiente: id de la cuenta KLIXMANT SAS (solo para ventas con abono/pago total).
 
 ## 3. Huecos que quedan (en orden)
 

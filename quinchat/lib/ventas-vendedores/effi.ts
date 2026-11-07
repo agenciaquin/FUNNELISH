@@ -1,15 +1,13 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { ajustesVV } from './config';
+import { armarRemision } from './effi-remision';
 
 /**
  * Subida de una preventa a Effi (módulo Ventas Vendedores).
  *
- * ESTADO: en SIMULACIÓN. QuinChat todavía no tiene la documentación ni las
- * credenciales de la API de Effi, así que aquí se arma la solicitud con los datos
- * reales de la venta, se valida y se GUARDA (effi_payload), pero NO se envía.
- * Cuando lleguen la documentación y las variables EFFI_API_URL / EFFI_API_TOKEN,
- * se completa `enviarReal()` con el formato exacto. Mientras tanto, aunque el
- * interruptor diga 'real', no sale nada.
+ * ESTADO: VISTA PREVIA (07-nov-2026). Se arma la remisión con el formato real de
+ * Effi (effi-remision.ts), consultando Effi solo con GET, y se GUARDA en effi_payload.
+ * NO se envía: el POST real llega en la Fase 3, con autorización del dueño y clave
+ * de escritura. Aunque el interruptor diga 'real', hoy no sale nada.
  *
  * Protecciones: si la venta ya tiene remisión no se vuelve a subir; cada intento
  * queda en vv_eventos; la llave de idempotencia es el código de la preventa.
@@ -68,19 +66,21 @@ export async function subirAEffi(ventaId: string, quien: string): Promise<{ ok: 
     await supabase.from('vv_eventos').insert({ venta_id: ventaId, tipo: 'validacion', quien, detalle: { ok: false, errores } });
     return { ok: false, mensaje: 'La venta no pasa la validación.', errores };
   }
-  const solicitud = armarSolicitud(venta, items ?? []);
-  const a = await ajustesVV(true);
-  const listoReal = a.envio_effi === 'real' && !!process.env.EFFI_API_URL && !!process.env.EFFI_API_TOKEN;
 
-  if (!listoReal) {
-    await supabase.from('vv_ventas').update({
-      estado: 'lista_effi', effi_estado: 'simulado', effi_payload: solicitud, actualizado_at: new Date().toISOString(),
-    }).eq('id', ventaId);
-    await supabase.from('vv_eventos').insert({ venta_id: ventaId, tipo: 'effi_simulado', quien, detalle: { solicitud } });
-    return { ok: true, simulado: true, mensaje: 'Simulación: la solicitud quedó armada y guardada. No se envió a Effi.' };
+  // 07-nov-2026: remisión con el formato REAL de Effi (solo consulta a Effi; no se envía).
+  const rem = await armarRemision(venta, items ?? []);
+  const ahora = new Date().toISOString();
+  const payload = { formato: 'remision_v', solicitud: rem.solicitud, crear_cliente: rem.crear_cliente, vista: rem.vista, avisos: rem.avisos, errores: rem.errores, armado_at: ahora };
+  if (!rem.ok) {
+    await supabase.from('vv_ventas').update({ effi_payload: payload, actualizado_at: ahora }).eq('id', ventaId);
+    await supabase.from('vv_eventos').insert({ venta_id: ventaId, tipo: 'validacion', quien, detalle: { ok: false, errores: rem.errores } });
+    return { ok: false, mensaje: 'Falta completar datos para Effi.', errores: rem.errores };
   }
 
-  // Envío real: pendiente de la documentación de la API de Effi.
-  await supabase.from('vv_eventos').insert({ venta_id: ventaId, tipo: 'effi_error', quien, detalle: { error: 'Integración real con Effi aún no implementada' } });
-  return { ok: false, mensaje: 'El envío real a Effi aún no está implementado: falta la documentación de su API.' };
+  // El envío real NO está habilitado todavía (Fase 3: autorización del dueño + clave de escritura).
+  await supabase.from('vv_ventas').update({
+    estado: 'lista_effi', effi_estado: 'simulado', effi_payload: payload, actualizado_at: ahora,
+  }).eq('id', ventaId);
+  await supabase.from('vv_eventos').insert({ venta_id: ventaId, tipo: 'effi_simulado', quien, detalle: { solicitud: rem.solicitud, crear_cliente: rem.crear_cliente } });
+  return { ok: true, simulado: true, mensaje: 'Vista previa lista: así quedaría la remisión en Effi. No se envió nada.' };
 }
