@@ -13,7 +13,7 @@ export function isCompleteAddress(addr: string | null | undefined): boolean {
 
   // Prefijos de vía + abreviaturas comunes en Colombia (kra, cra, cll, dg, tv, mz…)
   // Sin \b final: la vía puede ir pegada al número ("Calle27A", "Cra44C")
-  const VIA = String.raw`(?:calle|carrera|diagonal|transversal|avenida|autopista|manzana|clle|cll|cl|carr|cra|cr|kra|krra|kr|diag|dg|av|ave|tv|trans|mz)`;
+  const VIA = String.raw`(?:calle|carrera|karrera|carera|karera|kare|kara|diagonal|transversal|avenida|autopista|manzana|clle|cll|cl|carr|cra|crr|cr|kra|krra|kr|diag|dg|av|ave|tv|trans|mz)`;
 
   // Vía + número (puede llevar letra, ej "44C") + # o - + número
   if (new RegExp(String.raw`\b${VIA}\s*\d+\s*[a-z]?\s*[#\-]\s*\d`).test(a)) return true;

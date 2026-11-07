@@ -37,6 +37,14 @@ export default function EstadoPedidoPanel({ onAbrirChat }: { onAbrirChat?: (id: 
   const [cargando, setCargando] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
   const [desc, setDesc] = useState<any>(null);
+  // Lista de clientes a los que les llegó el mensaje del descuento
+  const [verEnvios, setVerEnvios] = useState(false);
+  const [envios, setEnvios] = useState<any[] | null>(null);
+  const [buscaEnv, setBuscaEnv] = useState('');
+  const abrirEnvios = () => {
+    setVerEnvios(v => !v);
+    if (!envios) fetch('/api/pedidos/descuento-entrega?lista=1', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(d => setEnvios(d?.lista ?? [])).catch(() => setEnvios([]));
+  };
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -136,8 +144,13 @@ export default function EstadoPedidoPanel({ onAbrirChat }: { onAbrirChat?: (id: 
           </button>
           <span className="text-[11px] text-[#6B6B6B]">
             Plantilla <b>{desc.plantilla}</b>: {plantillaOk ? '✅ aprobada' : `⚠️ ${desc.plantillaEstado === 'no existe' ? 'falta crearla' : desc.plantillaEstado}`}
-            {' · '}{desc.enviados} enviados
           </span>
+          <button onClick={abrirEnvios}
+            title="Ver a qué clientes les llegó el mensaje del descuento"
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border-2 text-xs font-bold transition-colors ${verEnvios ? 'bg-[#00A89D] text-white border-[#00A89D]' : 'bg-white text-[#00847A] border-[#00A89D]/50 hover:bg-[#00A89D]/10'}`}>
+            📨 <span className="text-base leading-none">{desc.resumen?.clientes ?? desc.enviados}</span> clientes con el mensaje
+            {desc.resumen?.hoy ? <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${verEnvios ? 'bg-white/25' : 'bg-[#00A89D]/15'}`}>+{desc.resumen.hoy} hoy</span> : null}
+          </button>
           {desc.pideFoto && (
             <span className="flex items-center gap-2 text-[11px] text-[#6B6B6B]">
               {desc.foto
@@ -152,10 +165,53 @@ export default function EstadoPedidoPanel({ onAbrirChat }: { onAbrirChat?: (id: 
           )}
           <span className="w-full text-[10px] text-[#9A9A9A]">
             Al sincronizar con Effi, a cada guía que quede ENTREGADA (desde que lo enciendas) le llega la plantilla una sola vez;
-            máximo un descuento por cliente cada 30 días y nunca a quien respondió SALIR. Su chat queda con la etiqueta «BONO».
+            máximo un descuento por cliente cada 30 días y nunca a quien respondió SALIR. Su chat queda con la etiqueta «DESCUENTO».
           </span>
         </div>
       )}
+
+      {/* Clientes a los que les llegó el descuento */}
+      {desc && verEnvios && (() => {
+        const q = buscaEnv.trim().toLowerCase(); const dig = q.replace(/\D/g, '');
+        const filas = (envios ?? []).filter((f: any) => !q || String(f.nombre ?? '').toLowerCase().includes(q) || String(f.guia ?? '').toLowerCase().includes(q) || (dig.length >= 4 && String(f.telefono ?? '').includes(dig)));
+        const r = desc.resumen ?? {};
+        return (
+          <div className={`${tarjeta} overflow-hidden`}>
+            <div className="px-4 py-3 border-b border-[#F0F0F0] flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-bold text-[#0D0D0D]">📨 Mensajes de descuento</span>
+              <span className="text-[11px] text-[#15803D] font-semibold">✅ {r.enviados ?? 0} enviados a {r.clientes ?? 0} clientes</span>
+              {r.usados ? <span className="text-[11px] text-[#00847A] font-semibold">· 🛍️ {r.usados} ya lo usaron</span> : null}
+              {r.omitidos ? <span className="text-[11px] text-[#9A9A9A]">· {r.omitidos} omitidos</span> : null}
+              {r.errores ? <span className="text-[11px] text-[#DC2626]">· {r.errores} con error</span> : null}
+              <input value={buscaEnv} onChange={e => setBuscaEnv(e.target.value)} placeholder="🔎 Buscar nombre, teléfono o guía…"
+                className="ml-auto w-full sm:w-64 px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-xs focus:outline-none focus:border-[#00A89D]" />
+            </div>
+            {!envios ? <p className="p-4 text-xs text-[#9A9A9A]">Cargando…</p> : (
+              <div className="max-h-[420px] overflow-y-auto divide-y divide-[#F5F5F5]">
+                {filas.map((f: any) => (
+                  <div key={f.guia} className="px-4 py-2 flex items-center gap-3">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${f.estado === 'enviado' ? 'bg-[#15803D]/10 text-[#15803D]' : f.estado === 'error' ? 'bg-[#DC2626]/10 text-[#DC2626]' : 'bg-[#F0F0F0] text-[#6B6B6B]'}`}>
+                      {f.estado === 'enviado' ? '✅ Enviado' : f.estado === 'error' ? '⚠️ Error' : f.estado === 'omitido' ? '⏭️ Omitido' : f.estado}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-semibold truncate">{f.nombre || '—'} <span className="text-[#00847A] font-normal">{f.telefono}</span></p>
+                      <p className="text-[11px] text-[#9A9A9A] truncate">
+                        Guía {f.guia} · {f.enviado_at ? new Date(f.enviado_at).toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' }) : fecha(f.creado_at)}
+                        {f.motivo ? ` · ${f.motivo}` : ''}
+                      </p>
+                    </div>
+                    {f.usado_at && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#00A89D]/15 text-[#00847A] shrink-0">🛍️ Lo usó</span>}
+                    {onAbrirChat && f.telefono && (
+                      <button onClick={() => onAbrirChat(`57${f.telefono}`)} className="h-7 px-2.5 rounded-lg bg-[#00A89D] text-white text-[11px] font-semibold hover:opacity-90 shrink-0">💬 Chat</button>
+                    )}
+                  </div>
+                ))}
+                {filas.length === 0 && <p className="p-4 text-xs text-[#9A9A9A]">Sin resultados.</p>}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Lista */}
       <div className={`${tarjeta} overflow-hidden`}>

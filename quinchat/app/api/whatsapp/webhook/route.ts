@@ -2385,7 +2385,13 @@ export async function POST(req: NextRequest) {
         ultBotTxt.includes('dirección de envío completa') ||
         ultBotTxt.includes('le falta *torre') ||
         ultBotTxt.includes('torre, apartamento') ||
-        ultBotTxt.includes('número de casa o barrio');
+        ultBotTxt.includes('número de casa o barrio') ||
+        // Las 3 preguntas variadas que se mandan tras el CONFIRMO (07-nov: no se
+        // reconocían, la respuesta del cliente se ignoraba y la venta quedaba pendiente)
+        ultBotTxt.includes('casa/apto o barrio') ||
+        ultBotTxt.includes('casa, apartamento o barrio') ||
+        ultBotTxt.includes('dirección *completa*') ||
+        ultBotTxt.includes('direccion *completa*');
     }
     // "no", "está mal", "cámbiala" → no darla por buena, pedir la correcta
     const niegaDireccion = /\b(no|nop|est[áa] mal|incorrect|equivocad|cambi|corrig|corrij|otra direcci)\b/i.test(textLower);
@@ -2454,7 +2460,10 @@ export async function POST(req: NextRequest) {
           /acabo de hacer un pedido|me confirmas si qued|gracias por tu compra|te saludo de|n[uú]mero de gu[ií]a|todo bien/i.test(limpio) ||
           limpio.includes('?') || limpio.includes('¿');
         const aporta = limpio.length > 3 && !esRuido && !base.toLowerCase().includes(limpio.toLowerCase());
-        const nuevaDir = aporta ? (base ? `${base}, ${limpio}` : limpio) : base;
+        // Si lo que mandó es una dirección ENTERA (vía/número con # o -), REEMPLAZA la
+        // anterior en vez de pegarse detrás ("Casa, Barrio X, Kra 3 #6-35…" quedaba feo).
+        const esDirEntera = /\d+\s*[a-z]?\s*[#\-n°º]\s*\d/i.test(limpio) && limpio.length >= 8;
+        const nuevaDir = aporta ? (esDirEntera || !base ? limpio : `${base}, ${limpio}`) : base;
 
         currentDireccion = nuevaDir;
         direccionOk = true;

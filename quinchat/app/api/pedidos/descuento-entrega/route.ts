@@ -8,7 +8,7 @@ import { listarPlantillas } from '@/lib/whatsapp-templates';
 export const dynamic = 'force-dynamic';
 
 /** Estado del descuento por entrega: interruptor, plantilla y últimos envíos. */
-export async function GET() {
+export async function GET(req: NextRequest) {
   if (!(await getServerSession(authOptions))) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
   const supabase = createServerSupabaseClient();
   const cfg = await ajustesDescuento(supabase);
@@ -24,7 +24,21 @@ export async function GET() {
   const { data: ultimos } = await supabase.from('descuentos_entrega')
     .select('guia, telefono, nombre, estado, motivo, enviado_at, creado_at').order('creado_at', { ascending: false }).limit(50);
   const { count: enviados } = await supabase.from('descuentos_entrega').select('guia', { count: 'exact', head: true }).eq('estado', 'enviado');
-  return NextResponse.json({ ...cfg, plantillaEstado, pideFoto, foto, enviados: enviados ?? 0, ultimos: ultimos ?? [] });
+  // Resumen por CLIENTE (un cliente puede tener varias guías) + lista completa si se pide
+  const { data: todos } = await supabase.from('descuentos_entrega')
+    .select('guia, telefono, nombre, estado, motivo, monto, enviado_at, creado_at, usado_at')
+    .order('creado_at', { ascending: false }).limit(5000);
+  const filas = todos ?? [];
+  const resumen = {
+    clientes: new Set(filas.filter(f => f.estado === 'enviado').map(f => f.telefono)).size,
+    enviados: filas.filter(f => f.estado === 'enviado').length,
+    omitidos: filas.filter(f => f.estado === 'omitido').length,
+    errores: filas.filter(f => f.estado === 'error').length,
+    usados: filas.filter(f => f.usado_at).length,
+    hoy: filas.filter(f => f.estado === 'enviado' && f.enviado_at && new Date(Date.parse(f.enviado_at) - 5 * 3600_000).toISOString().slice(0, 10) === new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 10)).length,
+  };
+  const lista = req.nextUrl.searchParams.get('lista') === '1' ? filas : undefined;
+  return NextResponse.json({ ...cfg, plantillaEstado, pideFoto, foto, enviados: enviados ?? 0, ultimos: ultimos ?? [], resumen, lista });
 }
 
 /** { activo } — al encender se guarda `desde`: solo cuentan las entregas de ahí en adelante. */
