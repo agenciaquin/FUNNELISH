@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 interface Venta {
   tipo: 'carrito' | 'descuento'; telefono: string; nombre: string | null; producto: string | null; talla: string | null;
   valor: number; confirmado: boolean; estado: string | null; pedido_at: string; enviado_at: string; origen: string | null; horas: number;
+  marcado?: boolean;   // contado por la etiqueta «COMPRO EN DESCUENTO»
 }
 interface Bloque { enviados: number; ventas: number; confirmadas: number; valor: number; lista: Venta[] }
 interface Datos { carrito: Bloque; descuento: Bloque; reglas: { dias_carrito: number; dias_descuento: number } }
@@ -64,7 +65,7 @@ export default function VentasRecuperadas({ onClose, onAbrirChat }: { onClose: (
           <Tarjeta k="carrito" icono="🛒" titulo="Carritos recuperados" b={d?.carrito} color="#D97706"
             nota={`Pedido hasta ${d?.reglas.dias_carrito ?? 7} días después de la plantilla de carrito abandonado`} />
           <Tarjeta k="descuento" icono="🎁" titulo="Ventas con descuento $15.000" b={d?.descuento} color="#00A89D"
-            nota={`Pedido hasta ${d?.reglas.dias_descuento ?? 30} días después de la plantilla de descuento`} />
+            nota={`Pedido hasta ${d?.reglas.dias_descuento ?? 30} días después de la plantilla de descuento, o chat con la etiqueta COMPRO EN DESCUENTO`} />
         </div>
 
         {error && <p className="text-sm text-red-600 mb-3">⚠️ {error}</p>}
@@ -88,7 +89,9 @@ export default function VentasRecuperadas({ onClose, onAbrirChat }: { onClose: (
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold truncate">{v.nombre || v.telefono} <span className="text-[#6B6B6B] font-normal">· {v.telefono}</span></p>
                   <p className="text-xs text-[#6B6B6B] truncate">{v.producto}{v.talla ? ` · ${v.talla}` : ''}</p>
-                  <p className="text-[10px] text-[#9A9A9A]">Plantilla {fecha(v.enviado_at)} → pedido {fecha(v.pedido_at)} (en {tardo(v.horas)})</p>
+                  {v.marcado
+                    ? <p className="text-[10px] text-[#00847A] font-semibold">🏷️ Marcado con la etiqueta COMPRO EN DESCUENTO · pedido {fecha(v.pedido_at)}</p>
+                    : <p className="text-[10px] text-[#9A9A9A]">Plantilla {fecha(v.enviado_at)} → pedido {fecha(v.pedido_at)} (en {tardo(v.horas)})</p>}
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-bold">{pesos(v.valor)}</p>

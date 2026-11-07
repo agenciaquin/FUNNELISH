@@ -79,9 +79,48 @@ export async function GET() {
     };
   };
 
+  const descuento = armar(envDesc, DIAS_DESCUENTO, 'descuento');
+
+  // ── Etiqueta manual «COMPRO EN DESCUENTO»: el asesor marca el chat cuando el cliente
+  //    compró usando el descuento. Esos chats SIEMPRE cuentan como venta con descuento
+  //    (aunque el pedido no se haya podido emparejar solo por fecha/teléfono).
+  const ETIQ = 'COMPRO EN DESCUENTO';
+  const { data: convs } = await supabase.from('conversations').select('id, contact_name, label')
+    .ilike('label', `%${ETIQ}%`).limit(1000);
+  const marcados = (convs ?? []).filter((c: any) => String(c.label ?? '').split('|').some((l: string) => l.trim().toUpperCase() === ETIQ));
+  const yaContados = new Set(descuento.lista.map((v: any) => v.telefono));
+  const faltan = marcados.map((c: any) => ({ t: tel10(c.id), nombre: c.contact_name })).filter(x => /^3\d{9}$/.test(x.t) && !yaContados.has(x.t));
+  if (faltan.length) {
+    const tels = faltan.map(x => x.t);
+    const { data: ped } = await supabase.from('clientes_funnelish')
+      .select('id, nombre, telefono, producto, talla, valor, confirmado, estado, created_at')
+      .in('telefono', [...tels, ...tels.map(t => `57${t}`)])
+      .gte('created_at', new Date(Date.now() - 90 * 86400_000).toISOString())
+      .order('created_at', { ascending: false });
+    const vivos = (ped ?? []).filter((p: any) => !['cancelado', 'duplicado'].includes(String(p.estado ?? '').toLowerCase()));
+    for (const x of faltan) {
+      const env = envDesc.get(x.t);
+      // El pedido más reciente después del descuento (o el más reciente, si no hay envío registrado)
+      const p = vivos.find((q: any) => tel10(q.telefono) === x.t && (!env || Date.parse(q.created_at) > Date.parse(env.at)))
+        ?? vivos.find((q: any) => tel10(q.telefono) === x.t);
+      descuento.lista.push({
+        tipo: 'descuento', telefono: x.t, nombre: p?.nombre || x.nombre || env?.nombre || null,
+        producto: p?.producto ?? '(marcado con la etiqueta)', talla: p?.talla ?? null,
+        valor: num(p?.valor), confirmado: p ? !!p.confirmado : true, estado: p?.estado ?? null,
+        pedido_at: p?.created_at ?? env?.at ?? new Date().toISOString(), enviado_at: env?.at ?? p?.created_at ?? new Date().toISOString(),
+        origen: 'etiqueta COMPRO EN DESCUENTO', horas: env && p ? Math.max(0, Math.round((Date.parse(p.created_at) - Date.parse(env.at)) / 3600_000)) : 0,
+        marcado: true,
+      });
+    }
+    descuento.lista.sort((a: any, b: any) => Date.parse(b.pedido_at) - Date.parse(a.pedido_at));
+    descuento.ventas = descuento.lista.length;
+    descuento.confirmadas = descuento.lista.filter((v: any) => v.confirmado).length;
+    descuento.valor = descuento.lista.filter((v: any) => v.confirmado).reduce((s: number, v: any) => s + v.valor, 0);
+  }
+
   return NextResponse.json({
     carrito: armar(envCarrito, DIAS_CARRITO, 'carrito'),
-    descuento: armar(envDesc, DIAS_DESCUENTO, 'descuento'),
+    descuento,
     reglas: { dias_carrito: DIAS_CARRITO, dias_descuento: DIAS_DESCUENTO },
   });
 }
