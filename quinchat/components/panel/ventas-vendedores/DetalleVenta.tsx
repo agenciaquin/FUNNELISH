@@ -84,6 +84,8 @@ export default function DetalleVenta({ id, onCerrar, onCambio, onChat }: {
     const { ok, j } = await llamar(`/api/ventas-vendedores/${id}/effi`, 'POST');
     setAviso({ ok, t: [j.mensaje, ...(j.errores ?? [])].filter(Boolean).join(' · ') });
     await cargar(); onCambio();
+    // La vista previa de la remisión está arriba del detalle: se sube para verla.
+    document.getElementById('vv-detalle-scroll')?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const totalPrendas = (d?.items ?? []).reduce((s, i) => s + (i.cantidad || 0), 0);
@@ -108,7 +110,7 @@ export default function DetalleVenta({ id, onCerrar, onCambio, onChat }: {
           <button onClick={onCerrar} className="w-9 h-9 rounded-xl border border-[#E7E6E1] hover:bg-[#F1F1EF]" aria-label="Cerrar">✕</button>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-5 pb-6">
+        <div id="vv-detalle-scroll" className="flex-1 overflow-y-auto px-5 pb-6">
           {!d || !v ? (
             <div className="space-y-3 pt-5">{[0, 1, 2].map(i => <div key={i} className="h-16 rounded-xl bg-[#F1F1EF] animate-pulse" />)}</div>
           ) : (
