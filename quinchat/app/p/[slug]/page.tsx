@@ -290,7 +290,7 @@ function renderBloque(
         const galeria = (f.imagenes || []).filter(Boolean);
         const sel = (Array.isArray(p.fotos) ? p.fotos : []).filter((u: string) => galeria.includes(u));
         const elegidas = sel.length ? sel : galeria;
-        if (elegidas.length) return <Galeria imagenes={elegidas} alt={f.producto} segundos={2} />;
+        if (elegidas.length) return <Galeria imagenes={elegidas} alt={f.producto} segundos={1} />;
       }
       if (p.modo === 'collage') {
         const fotos = (f.imagenes || []).filter(Boolean).slice(0, 4);

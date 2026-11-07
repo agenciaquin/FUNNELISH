@@ -412,7 +412,7 @@ function renderPreviewBloque(
               <div className="relative">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={elegidas[idx]} alt="" className="w-full h-auto" />
-                <span className="absolute top-1 left-1 text-[8px] bg-black/70 text-white px-1.5 py-0.5 rounded-full">🎞️ Carrusel · {elegidas.length} fotos · 2s</span>
+                <span className="absolute top-1 left-1 text-[8px] bg-black/70 text-white px-1.5 py-0.5 rounded-full">🎞️ Carrusel · {elegidas.length} fotos · 1s</span>
                 <div className="absolute bottom-1 left-0 right-0 flex justify-center gap-1">
                   {elegidas.map((_, k) => <span key={k} className={`h-1 rounded-full ${k === idx ? 'w-4 bg-white' : 'w-1 bg-white/60'}`} />)}
                 </div>

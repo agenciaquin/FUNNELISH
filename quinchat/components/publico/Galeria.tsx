@@ -5,7 +5,7 @@ import { esVideo, imgOptim } from '@/lib/funnels';
 
 /** Carrusel de fotos del producto. Avanza solo, y se detiene si el cliente toca. */
 export default function Galeria({
-  imagenes, alt, segundos = 2,
+  imagenes, alt, segundos = 1,
 }: { imagenes: string[]; alt: string; segundos?: number }) {
   const [i, setI] = useState(0);
   const [manual, setManual] = useState(false); // el cliente tomó el control
