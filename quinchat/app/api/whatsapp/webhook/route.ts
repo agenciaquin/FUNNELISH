@@ -3007,7 +3007,9 @@ export async function POST(req: NextRequest) {
       `💰 VALOR FIJO: el valor a pagar de este pedido es EXACTAMENTE *${pendingPedido.valor}*. NUNCA lo cambies, ni lo subas ni lo bajes, ni inventes precios de promo (nada de "2 prendas $219.900" u otros montos). Si el cliente pregunta el precio o dice que decía otro valor, responde SIEMPRE con *${pendingPedido.valor}* — ese es el precio real de su pedido.\n` +
       (pendingPedido.abono_recibido
         ? `IMPORTANTE: el cliente YA ENVIÓ el comprobante del abono. NUNCA se lo vuelvas a pedir ni digas que quedas pendiente de él.\n`
-        : '') +
+        : (Number(pendingPedido.abono) > 0 || isDirOficina(String(pendingPedido.direccion ?? '')))
+          ? `💵 ABONO PENDIENTE: este pedido va a OFICINA y el cliente AÚN NO ha enviado el comprobante del abono de $5.000. El pedido NO está confirmado ni se despacha hasta recibirlo. Si el cliente responde "ok", "gracias", "listo" o similar, recuérdale en UNA línea que solo falta el comprobante del abono. NUNCA le digas que su pedido está confirmado, que será despachado ni "gracias por tu compra".\n`
+          : '') +
       `IMPORTANTE: en este chat también escriben asesores humanos. Los mensajes que no son del cliente son tuyos o de un compañero: dalos por válidos, no repitas lo que ya se dijo ni contradigas lo que un asesor acordó con el cliente.\n` +
       `${missingList.length > 0
         ? `Aún falta: ${missingList.join(' y ')}. Pide SOLO eso, de forma amable y breve.`
@@ -3049,6 +3051,23 @@ export async function POST(req: NextRequest) {
       if (esRelleno(resp.message)) continue;      // "👍" suelto ante un "ok" → no se envía
       botReply = resp.message;
     } catch { continue; }
+
+    // 🔒 GUARDA (07-nov-2026): la IA a veces le decía al cliente "tu pedido está confirmado
+    // y será despachado" cuando el pedido NO estaba confirmado (p. ej. oficina con el abono
+    // pendiente) y luego el recordatorio le volvía a pedir el abono → contradicción que
+    // daña la venta. Si el pedido no está confirmado, la IA NUNCA puede afirmarlo.
+    {
+      const afirmaConfirmado = /(est[aá]|qued[oó]|queda|ha sido)\s+(\S+\s+)?confirmad|ser[aá]\s+despachad|gracias por tu compra|cuando recibas tu pedido|ya qued[oó] (listo|programad)/i.test(botReply);
+      if (afirmaConfirmado) {
+        const nomG = String(pendingPedido.nombre || '').split(' ')[0] || '';
+        const pendAbono = !pendingPedido.abono_recibido &&
+          (Number(pendingPedido.abono) > 0 || isDirOficina(String(pendingPedido.direccion ?? '')));
+        botReply = pendAbono
+          ? `Perfecto${nomG ? ', ' + nomG : ''} 🙌 Para despachar tu pedido a la oficina de Interrapidísimo solo me falta el *comprobante del abono de $5.000* (se descuenta del total). Apenas lo envíes por aquí, lo dejo listo 🚚`
+          : `¡Perfecto${nomG ? ', ' + nomG : ''}! 😊 ¿Me confirmas que todos los datos están correctos para procesar tu despacho? 🚚`;
+        console.log('[Webhook] guarda: la IA afirmaba un pedido confirmado que no lo está', from);
+      }
+    }
 
     const botWamid = await sendTextMessage(from, botReply);
     if (!botWamid) continue;
