@@ -326,7 +326,7 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
           </button>
 
           {labelDropOpen && (
-            <div className="absolute left-0 top-full mt-1 bg-white border border-[#E8E8E8] rounded-xl shadow-lg z-30 overflow-hidden min-w-[210px]">
+            <div className="absolute left-0 top-full mt-1 bg-white border border-[#E8E8E8] rounded-xl shadow-lg z-30 min-w-[210px] max-h-[min(65vh,520px)] overflow-y-auto overscroll-contain">
               {/* All */}
               <button
                 onClick={() => { setLabelFilter(null); setLabelDropOpen(false); }}
