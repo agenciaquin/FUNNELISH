@@ -60,8 +60,17 @@ export async function enviarPlantillaCarrito(supabase: any, id: string): Promise
   //     el teléfono como llave: si dos envíos corren a la vez, solo uno logra insertarlo.
   const { error: errTel } = await supabase.from('carritos_envios').insert({ telefono: tel10, carrito_id: id });
   if (errTel) {
-    await supabase.from('carritos_abandonados').update({ plantilla_enviada_at: null }).eq('id', id);
-    return { error: 'ya enviada a este número', bloqueado: true, status: 409 };
+    // Solo es "ya enviada" si el teléfono REALMENTE ya está (llave duplicada, 23505).
+    // Cualquier otro error (base saturada, tabla aún no visible para la API…) NO es un
+    // duplicado: se deja como error para reintentar, en vez de marcarlo para siempre.
+    // (06-nov: 3 carritos quedaron «duplicado» sin haber recibido nunca la plantilla.)
+    const dup = (errTel as any).code === '23505';
+    await supabase.from('carritos_abandonados')
+      .update({ plantilla_enviada_at: null, plantilla_error: dup ? null : `No se pudo reservar el número: ${errTel.message}` }).eq('id', id);
+    if (!dup) console.error('[Carrito] reserva del número falló:', errTel);
+    return dup
+      ? { error: 'ya enviada a este número', bloqueado: true, status: 409 }
+      : { error: `No se pudo reservar el número: ${errTel.message}`, status: 503 };
   }
   const soltarTel = () => supabase.from('carritos_envios').delete().eq('telefono', tel10).eq('carrito_id', id);
 

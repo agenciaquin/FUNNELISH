@@ -141,6 +141,18 @@ con la ficha ordenada (nombre, celular, dirección, barrio, ciudad, valor, talla
 Sus reportes numéricos al supervisor ("0", "1") siguen yendo a `atenderVendedor`.
 **Apagar:** `ajustes_bot` clave `organizador_pedidos` → `activo: false`. Números en `numeros`.
 
+### 8 · Horas pico: nada pesado en la base mientras hay tráfico
+
+El 6-nov-2026 Supabase (tamaño **Nano**) se saturó a las 12:04 p. m. y se colgaron panel, bot
+y crons ~20 min; hubo que reiniciar el proyecto. Causa de fondo: cada panel abierto pedía las
+6.400 conversaciones completas en cada cambio y cada 6 s (ya corregido en `WhatsAppPanel.tsx`).
+
+**Picos (hora Colombia):** 8–11 a. m. · 12–1 p. m. · 2–3 p. m. · 6–9 p. m. (más pedidos: 8 p. m.).
+**Ventana de mantenimiento:** 2:00–5:00 a. m. Ahí van: cambio de tamaño de Supabase, reinicios
+(salvo emergencia), conversiones/cargas masivas de fotos, migraciones que reescriban tablas,
+sincronizaciones grandes y consultas de diagnóstico sobre `messages`/`conversations`/`storage`.
+Publicar en Vercel sí se puede a cualquier hora. Detalle y tabla completa: `WIKI-QUINO/reglas/horas-pico.md`.
+
 ### 5 · No todas las subidas comprimen
 
 Comprimen: `funnels/imagen`, `plantillas-wa/imagen`, `catalogos/upload-imagen`.

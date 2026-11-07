@@ -15,12 +15,21 @@ import { grupoDeGuia } from '@/lib/effi-estados';
  *  · El chat queda con la etiqueta «BONO» y una nota, para que el asesor
  *    lo aplique en la siguiente compra.
  */
-export interface AjustesDescuento { activo: boolean; plantilla: string; monto: number; desde?: string }
+/**
+ * ATRASADOS (entregas de días ANTERIORES a «desde»): se envían por TANDAS para no
+ * arriesgar bloqueos de Meta. Config en el mismo ajuste:
+ *   atrasados: { activo, desde:'AAAA-MM-DD', lote: 20, cada_min: 110, horas: [8,10,12,14,18,20], ultimo_lote_at }
+ * El cron de Effi corre cada hora en punto; solo en las horas de la lista (hora Colombia)
+ * y si pasaron ≥ cada_min desde la última tanda, manda hasta `lote` mensajes.
+ * Cuando no queda ninguno pendiente, se apaga solo.
+ */
+export interface Atrasados { activo?: boolean; desde?: string; lote?: number; cada_min?: number; horas?: number[]; ultimo_lote_at?: string }
+export interface AjustesDescuento { activo: boolean; plantilla: string; monto: number; desde?: string; atrasados?: Atrasados }
 
 export async function ajustesDescuento(supabase: any): Promise<AjustesDescuento> {
   const { data } = await supabase.from('ajustes_bot').select('valor').eq('clave', 'descuento_entrega').maybeSingle();
   const v = (data?.valor ?? {}) as any;
-  return { activo: v.activo === true, plantilla: String(v.plantilla || 'descuento_entregado_15mil'), monto: Number(v.monto) || 15000, desde: v.desde };
+  return { activo: v.activo === true, plantilla: String(v.plantilla || 'descuento_entregado_15mil'), monto: Number(v.monto) || 15000, desde: v.desde, atrasados: v.atrasados };
 }
 
 /** Foto guardada para una plantilla (configuracion «plantilla_img_<nombre>»). */
@@ -32,9 +41,9 @@ export async function fotoPlantilla(supabase: any, nombre: string): Promise<stri
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
 
-export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviados: number; omitidos: number; errores: number; apagado?: boolean; error?: string }> {
+export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviados: number; omitidos: number; errores: number; apagado?: boolean; error?: string; atrasados?: number; atrasados_pendientes?: number }> {
   const cfg = await ajustesDescuento(supabase);
-  const res = { enviados: 0, omitidos: 0, errores: 0 };
+  const res: { enviados: number; omitidos: number; errores: number; atrasados?: number; atrasados_pendientes?: number } = { enviados: 0, omitidos: 0, errores: 0 };
   if (!cfg.activo || !cfg.desde) return { ...res, apagado: true };
 
   const { plantillas } = await listarPlantillas();
@@ -56,7 +65,45 @@ export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviad
     .gte('fecha_estado_final', `${desdeDia}T00:00:00Z`)
     .limit(200);
 
-  for (const g of guias ?? []) {
+  await enviarAGuias(supabase, guias ?? [], cfg, tpl, foto, res, Infinity);
+
+  // ── Tanda de ATRASADOS (entregas anteriores a «desde») ──────────────────────
+  const at = cfg.atrasados;
+  if (at?.activo && at.desde) {
+    const horaCo = new Date(Date.now() - 5 * 3600_000).getUTCHours();
+    const horas = Array.isArray(at.horas) && at.horas.length ? at.horas : [8, 10, 12, 14, 18, 20];
+    const cadaMin = Number(at.cada_min) || 110;
+    const ultimo = Date.parse(at.ultimo_lote_at ?? '') || 0;
+    if (horas.includes(horaCo) && Date.now() - ultimo >= cadaMin * 60_000) {
+      const { data: viejas } = await supabase.from('effi_guias_api')
+        .select('guia, id_effi, telefono, nombre, estado, estado_efficommerce, vigente, fecha_estado_final')
+        .ilike('estado_efficommerce', 'entregada%')
+        .gte('fecha_estado_final', `${String(at.desde).slice(0, 10)}T00:00:00Z`)
+        .lt('fecha_estado_final', `${desdeDia}T00:00:00Z`)
+        .order('fecha_estado_final', { ascending: false })
+        .limit(400);
+      const { data: hechas } = await supabase.from('descuentos_entrega').select('guia');
+      const yaHechas = new Set((hechas ?? []).map((h: any) => String(h.guia)));
+      const pendientes = (viejas ?? []).filter((g: any) => !yaHechas.has(String(g.guia || g.id_effi || '').trim()));
+      const lote = Math.max(1, Math.min(50, Number(at.lote) || 20));
+      const antes = res.enviados;
+      await enviarAGuias(supabase, pendientes, cfg, tpl, foto, res, lote);
+      res.atrasados = res.enviados - antes;
+      const quedan = Math.max(0, pendientes.length - lote);
+      const nuevoAt = { ...at, ultimo_lote_at: new Date().toISOString(), ...(pendientes.length === 0 ? { activo: false, terminado_at: new Date().toISOString() } : {}) };
+      const { data: fila } = await supabase.from('ajustes_bot').select('valor').eq('clave', 'descuento_entrega').maybeSingle();
+      await supabase.from('ajustes_bot').update({ valor: { ...(fila?.valor ?? {}), atrasados: nuevoAt } }).eq('clave', 'descuento_entrega');
+      res.atrasados_pendientes = quedan;
+    }
+  }
+  return res;
+}
+
+/** Envía el descuento a una lista de guías entregadas (máximo `tope` envíos reales). */
+async function enviarAGuias(supabase: any, guias: any[], cfg: AjustesDescuento, tpl: any, foto: string | null, res: any, tope: number) {
+  let enviadosAqui = 0;
+  for (const g of guias) {
+    if (enviadosAqui >= tope) break;
     if (grupoDeGuia(g) !== 'entregada') continue;
     const guia = String(g.guia || g.id_effi || '').trim();
     const tel10 = String(g.telefono ?? '').replace(/\D/g, '').replace(/^57/, '').slice(-10);
@@ -85,7 +132,7 @@ export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviad
     const r = await enviarPlantilla(`57${tel10}`, tpl.name, tpl.language || 'es', variables, foto);
     if (!r.ok) { await marcar('error', { motivo: r.error ?? 'error de envío' }); res.errores++; continue; }
     await marcar('enviado', { wamid: r.wamid ?? null, enviado_at: new Date().toISOString() });
-    res.enviados++;
+    res.enviados++; enviadosAqui++;
 
     // Registro en el chat + etiqueta y nota para que el asesor aplique el descuento
     try {
@@ -113,5 +160,4 @@ export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviad
       await supabase.from('conversations').update({ label: nuevas.join(' | '), notas }).eq('id', `57${tel10}`);
     } catch (e) { console.error('[Descuento] registro en el chat:', e); }
   }
-  return res;
 }

@@ -85,6 +85,7 @@ export async function GET(req: NextRequest) {
     if (r.ok) { await marcar(id, 'enviado'); resumen.enviados++; }
     else if (r.bloqueado) { await marcar(id, r.error === 'ya compró' ? 'compro' : r.error === 'ya enviada a este número' ? 'duplicado' : 'chat_abierto'); }
     else if (r.status === 409) { /* otro proceso ya lo envió: no se toca */ }
+    else if (r.status === 503) { resumen.errores++; /* falla pasajera de la base: se reintenta en la próxima pasada */ }
     else { await marcar(id, 'error'); resumen.errores++; }
   }
 

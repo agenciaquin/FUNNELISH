@@ -44,6 +44,7 @@ Entrada principal: [[overview]] · Bitácora: [[log]] · Esquema del mantenedor:
 | [[confirmacion-de-pedidos]] | Normalización, valor fijo, oficina con abono, dirección por partes |
 | [[reglas-duras]] | Los 7 límites no negociables |
 | [[identidad-de-marca]] | Colores, tipografías, mascota QUINO |
+| [[horas-pico]] | Horas pico (hora Colombia) y ventana de mantenimiento 2–5 a. m. |
 
 ## Decisiones
 

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, type MouseEvent } from 'react
 import { imgOptim } from '@/lib/funnels';
 import CarritosAbandonados from './CarritosAbandonados';
 import EstadoPedidoPanel from './EstadoPedidoPanel';
+import VentasRecuperadas from './VentasRecuperadas';
 
 interface Pedido {
   id: string; referencia: string; nombre: string; telefono: string;
@@ -265,6 +266,13 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
   useEffect(() => () => { if (rangoTimer.current) clearTimeout(rangoTimer.current); }, []);
   const [busca, setBusca]       = useState('');
   const [verCarritos, setVerCarritos] = useState(false);
+  // 💚 Ventas recuperadas (carrito abandonado + descuento $15.000)
+  const [verRecuperadas, setVerRecuperadas] = useState(false);
+  const [nRecuperadas, setNRecuperadas] = useState<number | null>(null);
+  useEffect(() => {
+    fetch('/api/pedidos/recuperadas', { cache: 'no-store' }).then(r => r.json())
+      .then(j => { if (!j.error) setNRecuperadas((j.carrito?.ventas ?? 0) + (j.descuento?.ventas ?? 0)); }).catch(() => {});
+  }, [verRecuperadas]);
   // Panel secundario: 📊 Pedidos y estadísticas | 📦 Estado de pedido (guías de Effi)
   const [vista, setVista] = useState<'pedidos' | 'estado'>('pedidos');
 
@@ -432,6 +440,7 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
 
   // Carritos abandonados en pantalla completa (con "← Volver")
   if (verCarritos) return <CarritosAbandonados onClose={() => setVerCarritos(false)} onAbrirChat={onAbrirChat} />;
+  if (verRecuperadas) return <VentasRecuperadas onClose={() => setVerRecuperadas(false)} onAbrirChat={onAbrirChat} />;
 
   const pestanasVista = (
     <div className="flex gap-2 mb-4 pl-10 md:pl-0">
@@ -542,6 +551,11 @@ export default function PedidosPanel({ onAbrirChat, onEditarEmbudo }: Props) {
             <button onClick={exportarCSV} className="h-10 px-4 rounded-xl bg-[#0D1B2A] text-white text-sm font-semibold hover:opacity-90">⬇ Exportar</button>
             <button onClick={() => setVerCarritos(true)} title="Clientes que empezaron a comprar y no terminaron"
               className="h-10 px-4 rounded-xl border border-[#F59E0B]/50 bg-white text-[#B45309] text-sm font-semibold hover:bg-[#F59E0B]/10">🛒 Carritos</button>
+            <button onClick={() => setVerRecuperadas(true)} title="Ventas salvadas por la plantilla de carrito abandonado y por el descuento de $15.000"
+              className="h-10 px-4 rounded-xl border border-[#15803D]/40 bg-white text-[#15803D] text-sm font-semibold hover:bg-[#15803D]/10 flex items-center gap-2">
+              💚 Ventas recuperadas
+              {nRecuperadas !== null && <span className="min-w-[22px] h-[22px] px-1.5 rounded-full bg-[#15803D] text-white text-xs font-bold flex items-center justify-center">{nRecuperadas}</span>}
+            </button>
           </div>
         </header>
 
