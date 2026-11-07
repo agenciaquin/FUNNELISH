@@ -34,8 +34,15 @@ export async function bloqueoCarrito(supabase: any, tel10: string, ignorarReserv
   return null;
 }
 
-export async function enviarPlantillaCarrito(supabase: any, id: string): Promise<ResultadoCarrito> {
-  const bloqueo = bloqueoCarrito;
+export async function enviarPlantillaCarrito(supabase: any, id: string, opts: { reintento?: boolean } = {}): Promise<ResultadoCarrito> {
+  // En un REINTENTO (Meta no entregó la primera) el chat ya existe porque lo creó nuestra
+  // propia plantilla: solo se frena si el cliente ya compró.
+  const bloqueo = async (sb: any, t: string, ignorarReserva = false) => {
+    if (!opts.reintento) return bloqueoCarrito(sb, t, ignorarReserva);
+    const { data: ped } = await sb.from('clientes_funnelish').select('id')
+      .eq('telefono', t).not('estado', 'in', '("cancelado","duplicado")').limit(1);
+    return ped && ped.length ? 'ya compró' : null;
+  };
   const { data: c } = await supabase.from('carritos_abandonados')
     .select('id, slug, nombre, telefono, producto, talla, valor, datos, recuperado, plantilla_enviada_at').eq('id', id).maybeSingle();
   if (!c) return { error: 'No encontré el carrito.', status: 404 };
@@ -167,4 +174,33 @@ export async function enviarPlantillaCarrito(supabase: any, id: string): Promise
   } catch (e) { console.error('[Carrito] no se pudo registrar en el chat:', e); }
 
   return { ok: true, status: 200, plantilla: tpl.name, wamid: r.wamid };
+}
+
+/**
+ * REINTENTO ÚNICO a los carritos cuya plantilla Meta NO entregó por el límite por
+ * persona (error 131049): pasadas 48 h se intenta UNA vez más, solo si el cliente no
+ * ha escrito ni comprado. Se marca reintento_at para no repetir nunca.
+ */
+export async function reintentarCarritosBloqueados(supabase: any, max = 1): Promise<number> {
+  const { wamidsBloqueados, clienteEscribio, esperarTurno } = await import('@/lib/ritmo-marketing');
+  const wamids = await wamidsBloqueados(supabase, 'tpl-carrito-');
+  if (!wamids.length) return 0;
+  const { data: cs } = await supabase.from('carritos_abandonados')
+    .select('id, telefono, plantilla_enviada_at').in('plantilla_wamid', wamids)
+    .is('reintento_at', null).eq('recuperado', false).limit(10);
+  let enviados = 0;
+  for (const c of cs ?? []) {
+    if (enviados >= max) break;
+    const tel10 = String(c.telefono ?? '').replace(/\D/g, '').replace(/^57/, '').slice(-10);
+    // Reserva atómica del reintento (nunca se reintenta dos veces)
+    const { data: tomado } = await supabase.from('carritos_abandonados')
+      .update({ reintento_at: new Date().toISOString() }).eq('id', c.id).is('reintento_at', null).select('id');
+    if (!tomado?.length) continue;
+    if (await clienteEscribio(supabase, `57${tel10}`, c.plantilla_enviada_at ?? new Date(0).toISOString())) continue;
+    await supabase.from('carritos_abandonados').update({ plantilla_enviada_at: null }).eq('id', c.id);
+    await supabase.from('carritos_envios').delete().eq('telefono', tel10);
+    const r = await enviarPlantillaCarrito(supabase, c.id, { reintento: true });
+    if (r.ok) { enviados++; await esperarTurno(); }
+  }
+  return enviados;
 }

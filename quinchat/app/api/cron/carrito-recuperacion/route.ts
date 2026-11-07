@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { enviarPlantillaCarrito, bloqueoCarrito } from '@/lib/carrito-plantilla';
+import { enviarPlantillaCarrito, bloqueoCarrito, reintentarCarritosBloqueados } from '@/lib/carrito-plantilla';
+import { frenoMeta, esperarTurno, TOPE_CARRITOS_POR_PASADA } from '@/lib/ritmo-marketing';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 120;   // con pausas entre envíos
 
 function autorizado(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -32,6 +33,9 @@ export async function GET(req: NextRequest) {
   const { data: aj } = await supabase.from('ajustes_bot').select('valor').eq('clave', 'carritos_auto').maybeSingle();
   const cfg = (aj?.valor ?? {}) as { activo?: boolean; minutos?: number; max_horas?: number; desde?: string };
   if (cfg.activo !== true) return NextResponse.json({ ok: true, apagado: true });
+  // Si Meta nos está limitando, esta pasada no envía nada (se retoma cuando baje).
+  const freno = await frenoMeta(supabase);
+  if (freno.frenado) return NextResponse.json({ ok: true, frenado: true, bloqueos_2h: freno.bloqueos });
   const minutos = Math.max(5, Number(cfg.minutos) || 10);
   const maxHoras = Math.min(72, Math.max(1, Number(cfg.max_horas) || 24));
 
@@ -70,7 +74,10 @@ export async function GET(req: NextRequest) {
       resumen.duplicados++;
     }
   }
+  let enviadosAqui = 0;
   for (const c of elegido.values()) {
+    // Ritmo: máximo N envíos por pasada; los demás quedan para la siguiente (cada 2 min)
+    if (enviadosAqui >= TOPE_CARRITOS_POR_PASADA) break;
     resumen.revisados++;
     const id = String((c as any).id);
     const tel10 = String((c as any).telefono ?? '').replace(/\D/g, '').replace(/^57/, '').slice(-10);
@@ -82,12 +89,17 @@ export async function GET(req: NextRequest) {
     if (b) { await marcar(id, 'chat_abierto'); resumen.chatAbierto++; continue; }
 
     const r = await enviarPlantillaCarrito(supabase, id);
-    if (r.ok) { await marcar(id, 'enviado'); resumen.enviados++; }
+    if (r.ok) { await marcar(id, 'enviado'); resumen.enviados++; enviadosAqui++; await esperarTurno(); }
     else if (r.bloqueado) { await marcar(id, r.error === 'ya compró' ? 'compro' : r.error === 'ya enviada a este número' ? 'duplicado' : 'chat_abierto'); }
     else if (r.status === 409) { /* otro proceso ya lo envió: no se toca */ }
     else if (r.status === 503) { resumen.errores++; /* falla pasajera de la base: se reintenta en la próxima pasada */ }
     else { await marcar(id, 'error'); resumen.errores++; }
   }
 
-  return NextResponse.json({ ok: true, minutos, ...resumen });
+  // Reintento único (48 h después) a los que Meta no entregó por su límite por persona
+  let reintentos = 0;
+  if (enviadosAqui < TOPE_CARRITOS_POR_PASADA) {
+    try { reintentos = await reintentarCarritosBloqueados(supabase, 1); } catch (e) { console.error('[Carrito] reintentos:', e); }
+  }
+  return NextResponse.json({ ok: true, minutos, ...resumen, reintentos });
 }

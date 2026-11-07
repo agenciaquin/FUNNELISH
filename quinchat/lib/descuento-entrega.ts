@@ -1,6 +1,7 @@
 import { enviarPlantilla, listarPlantillas } from '@/lib/whatsapp-templates';
 import { recortar } from '@/lib/recortar';
 import { grupoDeGuia } from '@/lib/effi-estados';
+import { frenoMeta, esperarTurno, TOPE_DESCUENTOS_POR_PASADA, wamidsBloqueados, clienteEscribio } from '@/lib/ritmo-marketing';
 
 /**
  * DESCUENTO POR ENTREGA: cuando una guía de Effi queda ENTREGADA, se le envía al cliente
@@ -58,6 +59,10 @@ export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviad
   const foto = tpl.tieneImagen ? await fotoPlantilla(supabase, tpl.name) : null;
   if (tpl.tieneImagen && !foto) return { ...res, error: `Falta la foto de la plantilla «${tpl.name}»` };
 
+  // Si Meta nos está limitando, esta pasada no envía nada (se retoma en la siguiente hora).
+  const freno = await frenoMeta(supabase);
+  if (freno.frenado) return { ...res, error: `Freno: Meta limitó ${freno.bloqueos} envíos en las últimas 2 h; se retoma en la próxima pasada` };
+
   const desdeDia = String(cfg.desde).slice(0, 10);
   const { data: guias } = await supabase.from('effi_guias_api')
     .select('guia, id_effi, telefono, nombre, estado, estado_efficommerce, vigente, fecha_estado_final')
@@ -65,7 +70,8 @@ export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviad
     .gte('fecha_estado_final', `${desdeDia}T00:00:00Z`)
     .limit(200);
 
-  await enviarAGuias(supabase, guias ?? [], cfg, tpl, foto, res, Infinity);
+  // Ritmo: máximo N por pasada (los demás salen en la siguiente hora) y pausa entre envíos
+  await enviarAGuias(supabase, guias ?? [], cfg, tpl, foto, res, TOPE_DESCUENTOS_POR_PASADA);
 
   // ── Tanda de ATRASADOS (entregas anteriores a «desde») ──────────────────────
   const at = cfg.atrasados;
@@ -74,7 +80,8 @@ export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviad
     const horas = Array.isArray(at.horas) && at.horas.length ? at.horas : [8, 10, 12, 14, 18, 20];
     const cadaMin = Number(at.cada_min) || 110;
     const ultimo = Date.parse(at.ultimo_lote_at ?? '') || 0;
-    if (horas.includes(horaCo) && Date.now() - ultimo >= cadaMin * 60_000) {
+    const cupo = TOPE_DESCUENTOS_POR_PASADA - res.enviados;   // lo que queda de esta pasada
+    if (cupo > 0 && horas.includes(horaCo) && Date.now() - ultimo >= cadaMin * 60_000) {
       const { data: viejas } = await supabase.from('effi_guias_api')
         .select('guia, id_effi, telefono, nombre, estado, estado_efficommerce, vigente, fecha_estado_final')
         .ilike('estado_efficommerce', 'entregada%')
@@ -85,7 +92,7 @@ export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviad
       const { data: hechas } = await supabase.from('descuentos_entrega').select('guia');
       const yaHechas = new Set((hechas ?? []).map((h: any) => String(h.guia)));
       const pendientes = (viejas ?? []).filter((g: any) => !yaHechas.has(String(g.guia || g.id_effi || '').trim()));
-      const lote = Math.max(1, Math.min(50, Number(at.lote) || 20));
+      const lote = Math.max(1, Math.min(cupo, Number(at.lote) || 20));
       const antes = res.enviados;
       await enviarAGuias(supabase, pendientes, cfg, tpl, foto, res, lote);
       res.atrasados = res.enviados - antes;
@@ -96,7 +103,47 @@ export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviad
       res.atrasados_pendientes = quedan;
     }
   }
+
+  // Reintento ÚNICO (48 h después) a los que Meta no entregó por su límite por persona (131049)
+  if (res.enviados < TOPE_DESCUENTOS_POR_PASADA) {
+    try { (res as any).reintentos = await reintentarDescuentosBloqueados(supabase, cfg, tpl, foto, 2); }
+    catch (e) { console.error('[Descuento] reintentos:', e); }
+  }
   return res;
+}
+
+/** Reenvía UNA vez el descuento a quien Meta no se lo entregó (131049), si no ha escrito ni lo usó. */
+async function reintentarDescuentosBloqueados(supabase: any, cfg: AjustesDescuento, tpl: any, foto: string | null, max: number): Promise<number> {
+  const wamids = await wamidsBloqueados(supabase, 'tpl-desc-');
+  if (!wamids.length) return 0;
+  const { data: filas } = await supabase.from('descuentos_entrega')
+    .select('guia, telefono, nombre, enviado_at').eq('estado', 'enviado').in('wamid', wamids)
+    .is('reintento_at', null).is('usado_at', null).limit(10);
+  let n = 0;
+  for (const f of filas ?? []) {
+    if (n >= max) break;
+    const { data: tomado } = await supabase.from('descuentos_entrega')
+      .update({ reintento_at: new Date().toISOString() }).eq('guia', f.guia).is('reintento_at', null).select('guia');
+    if (!tomado?.length) continue;
+    const tel10 = String(f.telefono ?? '');
+    if (!/^3\d{9}$/.test(tel10) || await clienteEscribio(supabase, `57${tel10}`, f.enviado_at ?? new Date(0).toISOString())) continue;
+    const nombre = String(f.nombre ?? '').replace(/\s+/g, ' ').trim().split(' ')[0] || 'hola';
+    const variables = [nombre, pesos(cfg.monto)].slice(0, tpl.variables);
+    const r = await enviarPlantilla(`57${tel10}`, tpl.name, tpl.language || 'es', variables, foto);
+    if (!r.ok) continue;
+    await supabase.from('descuentos_entrega').update({ wamid: r.wamid ?? null, enviado_at: new Date().toISOString() }).eq('guia', f.guia);
+    let texto = tpl.cuerpo || `🎁 Descuento de ${pesos(cfg.monto)} para la próxima compra`;
+    variables.forEach((v, i) => { texto = texto.replace(new RegExp(`\\{\\{\\s*${i + 1}\\s*\\}\\}`, 'g'), v); });
+    try {
+      await supabase.from('messages').insert({
+        id: `tpl-desc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        conversation_id: `57${tel10}`, content: texto, role: 'agent', type: 'text', whatsapp_id: r.wamid ?? null, created_at: new Date().toISOString(),
+      });
+    } catch { /* ignorar */ }
+    n++;
+    await esperarTurno();
+  }
+  return n;
 }
 
 /** Envía el descuento a una lista de guías entregadas (máximo `tope` envíos reales). */
@@ -133,6 +180,7 @@ async function enviarAGuias(supabase: any, guias: any[], cfg: AjustesDescuento, 
     if (!r.ok) { await marcar('error', { motivo: r.error ?? 'error de envío' }); res.errores++; continue; }
     await marcar('enviado', { wamid: r.wamid ?? null, enviado_at: new Date().toISOString() });
     res.enviados++; enviadosAqui++;
+    await esperarTurno();   // ritmo: no salen en ráfaga
 
     // Registro en el chat + etiqueta y nota para que el asesor aplique el descuento
     try {
