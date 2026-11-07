@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { contarPrendas } from '@/lib/prendas';
+import { contarPrendas, prendasDeVenta } from '@/lib/prendas';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +24,16 @@ function prendasPorValor(valor: number): number {
 
 /** Cuántas prendas cuenta un pedido: por su valor; si no hay valor, cae al nombre. */
 function prendasDelPedido(v: any): number {
+  // 07-nov-2026: se cuenta IGUAL que en Pedidos y estadísticas (prendasDeVenta), para que
+  // los números de las dos pantallas coincidan.
+  return prendasDeVenta({
+    cantidadBot: Number(v.cantidad) || null, producto: v.producto, talla: v.talla,
+    valor: Number(String(v.valor ?? '').replace(/[^\d]/g, '')) || null,
+  });
+}
+// (versión anterior, ya no se usa)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function prendasDelPedidoViejo(v: any): number {
   const valorNum = Number(String(v.valor ?? '').replace(/[^\d]/g, '')) || 0;
   if (valorNum > 0) return prendasPorValor(valorNum);
   if (Number(v.cantidad) > 0) return Number(v.cantidad);
@@ -63,18 +73,23 @@ export async function GET(req: NextRequest) {
 
   // Traemos las confirmadas de los últimos ~45 días y filtramos por mes en JS
   // (evita líos de zona horaria en la consulta).
-  const hace45 = new Date(Date.now() - 45 * 86_400_000).toISOString();
-
-  const { data: ventas, error } = await supabase
-    .from('clientes_funnelish')
-    .select('telefono, producto, confirmado_at, created_at, cantidad, valor')
-    .eq('confirmado', true)
-    .gte('created_at', hace45)   // created_at siempre existe (no perder ventas sin confirmado_at)
-    .limit(5000);
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  const lista = ventas ?? [];
+  // 07-nov-2026: antes se traían 45 días de un solo golpe y la base corta en 1.000 filas
+  // (había 1.036): se perdían ventas al azar, incluidas las de HOY, y la meta salía corta.
+  // Ahora: solo desde el inicio del mes (con 1 día de margen) y por páginas de 1.000.
+  const inicioMesMargen = new Date(Date.UTC(hoy.y, hoy.m, 1, 5) - 86_400_000).toISOString();
+  const lista: any[] = [];
+  for (let desdeFila = 0; desdeFila < 20000; desdeFila += 1000) {
+    const { data: pag, error } = await supabase
+      .from('clientes_funnelish')
+      .select('id, telefono, producto, talla, confirmado_at, created_at, cantidad, valor')
+      .eq('confirmado', true)
+      .or(`confirmado_at.gte.${inicioMesMargen},and(confirmado_at.is.null,created_at.gte.${inicioMesMargen})`)
+      .order('id', { ascending: true })
+      .range(desdeFila, desdeFila + 999);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    lista.push(...(pag ?? []));
+    if (!pag || pag.length < 1000) break;
+  }
 
   // Etiquetas actuales: si una venta ya no está en "VENTA REALIZADA", no cuenta.
   const convIds = [...new Set(lista.map((v: any) => `57${String(v.telefono ?? '').replace(/^57/, '')}`))];
@@ -148,7 +163,7 @@ export async function GET(req: NextRequest) {
     const lte = `${hasta}T23:59:59-05:00`;
     const { data: enRango } = await supabase
       .from('clientes_funnelish')
-      .select('telefono, producto, confirmado_at, cantidad, valor')
+      .select('telefono, producto, talla, confirmado_at, cantidad, valor')
       .eq('confirmado', true)
       .not('confirmado_at', 'is', null)
       .gte('confirmado_at', gte)
