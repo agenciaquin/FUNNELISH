@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 interface Opcion { valor: string; imagen?: string; familia?: string }
 const uidColor = (c: Opcion) => `${(c.familia ?? '').toLowerCase()}::${c.valor.toLowerCase()}`;
-interface Selector { etiqueta: string; grupo?: string; opciones: (string | Opcion)[] }
+interface Selector { etiqueta: string; grupo?: string; opciones: (string | Opcion)[]; portada?: string; nombre?: string }
 
 const norm = (ops: (string | Opcion)[]): Opcion[] =>
   (ops ?? []).map(o => (typeof o === 'string' ? { valor: o } : o)).filter(o => o?.valor);
@@ -41,12 +41,13 @@ export function selectoresPolos(unidades = 2): Selector[] {
  * del catálogo eligiendo, al importar, cuáles van a cada lado.
  */
 export default function EditorPareja({
-  selectores, onChange, coloresCatalogo, titulo,
+  selectores, onChange, coloresCatalogo, titulo, onSubirImagen,
 }: {
   selectores: Selector[];
   onChange: (s: Selector[]) => void;
   coloresCatalogo: Opcion[];
   titulo?: string;
+  onSubirImagen?: (f: File) => Promise<string | null>;   // para la portada de cada grupo
 }) {
   // Importador de colores: a qué grupo se está importando
   const [impGrupo, setImpGrupo] = useState<string | null>(null);
@@ -97,6 +98,18 @@ export default function EditorPareja({
       { grupo: nuevo, etiqueta: 'TALLA', opciones: ultimaTalla.length ? ultimaTalla : TALLAS_POLO.map(valor => ({ valor })) },
     ]);
   };
+
+  /** Portada / nombre del grupo: se guardan en su selector de COLOR (lo crea si no existe). */
+  const setMetaGrupo = (grupo: string, patch: { portada?: string; nombre?: string }) => {
+    let hay = false;
+    const next = selectores.map(s => {
+      if ((s.grupo ?? '') === grupo && /color/i.test(s.etiqueta)) { hay = true; return { ...s, ...patch }; }
+      return s;
+    });
+    if (!hay) next.push({ grupo, etiqueta: 'COLOR', opciones: [], ...patch });
+    onChange(next);
+  };
+  const [subiendo, setSubiendo] = useState<string | null>(null);
 
   const quitarGrupo = (grupo: string) => onChange(selectores.filter(s => (s.grupo ?? '') !== grupo));
 
@@ -162,6 +175,41 @@ export default function EditorPareja({
                 >✕ Quitar</button>
               )}
             </div>
+
+            {/* Portada y nombre corto (opcionales) — se ven arriba del grupo en el checkout */}
+            {esPolos && (() => {
+              const meta = sel(grupo, 'COLOR');
+              return (
+                <div className="flex items-center gap-2 rounded-md bg-[#F8FAFC] border border-[#EEF2F6] p-2">
+                  <label className="shrink-0 w-11 h-11 rounded-md border border-dashed border-[#CFCFCF] bg-white flex items-center justify-center cursor-pointer overflow-hidden" title="Subir portada (opcional)">
+                    {meta?.portada
+                      // eslint-disable-next-line @next/next/no-img-element
+                      ? <img src={meta.portada} alt="" className="w-full h-full object-contain" />
+                      : <span className="text-[9px] text-[#9A9A9A] text-center leading-tight">{subiendo === grupo ? 'Subiendo…' : '+ portada'}</span>}
+                    {onSubirImagen && (
+                      <input type="file" accept="image/*" className="hidden" onChange={async e => {
+                        const f = e.target.files?.[0]; e.target.value = ''; if (!f) return;
+                        setSubiendo(grupo);
+                        try { const url = await onSubirImagen(f); if (url) setMetaGrupo(grupo, { portada: url }); }
+                        catch (err: any) { alert(err?.message ?? 'No se pudo subir la portada.'); }
+                        finally { setSubiendo(null); }
+                      }} />
+                    )}
+                  </label>
+                  <div className="flex-1 min-w-0">
+                    <label className="block text-[10px] text-[#6B6B6B]">Nombre corto arriba (opcional)</label>
+                    <input
+                      key={`n-${grupo}`}
+                      defaultValue={meta?.nombre ?? ''}
+                      onBlur={e => { const nv = e.target.value.toUpperCase().trim(); if (nv !== (meta?.nombre ?? '')) setMetaGrupo(grupo, { nombre: nv || undefined }); }}
+                      placeholder="CAMISETA / BUZO / POLO"
+                      className={`${mini} w-full`}
+                    />
+                  </div>
+                  {meta?.portada && <button onClick={() => setMetaGrupo(grupo, { portada: undefined })} className="text-[10px] text-[#DC2626] shrink-0">Quitar portada</button>}
+                </div>
+              );
+            })()}
 
             {/* Colores */}
             <div>

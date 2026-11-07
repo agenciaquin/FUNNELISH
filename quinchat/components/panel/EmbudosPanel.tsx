@@ -1938,6 +1938,7 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
                       coloresCatalogo={coloresCatalogo}
                       onChange={(s) => cambiar({ selectores: s })}
                       titulo={esPolos ? '🎽 VARIABLES POLOS · cada polo con su color y talla' : undefined}
+                      onSubirImagen={f => subirArchivo(f, (actual as any).slug || 'embudo')}
                     />
                   )}
                   </div>

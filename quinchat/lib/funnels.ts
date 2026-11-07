@@ -24,6 +24,9 @@ export interface SelectorVariante {
   etiqueta: string;                        // "TALLA", "COLOR", "GÉNERO"
   grupo?: string;                          // "ELIGE BUZO 1" — agrupa varias elecciones
   opciones: (string | OpcionSelector)[];   // admite texto simple o con foto
+  // Solo en el selector de COLOR de un grupo (variables polos): portada y nombre opcionales
+  portada?: string;                        // foto pequeña al lado del título del grupo
+  nombre?: string;                         // nombre corto arriba del grupo: "CAMISETA", "BUZO"
 }
 
 /** Deja las opciones siempre en el mismo formato, vengan como vengan. */

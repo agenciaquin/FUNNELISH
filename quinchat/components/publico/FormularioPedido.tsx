@@ -535,7 +535,7 @@ export default function FormularioPedido({ funnel, utms, embebido, compacto, liv
                 <div className={`px-3 pb-3 ${señalando === 'talla' ? 'barrido' : ''}`} data-campo="talla">
                   {usaDropdown && (
                     <div className="space-y-3 pt-1">
-                      <p className="text-center text-[12px] text-[#6B6B6B]">{esPolos ? '🎽 Elige color y talla de cada polo' : '👫 Elige color y talla de cada buzo'}</p>
+                      <p className="text-center text-[11px] text-[#6B6B6B]">{esPolos ? '🎽 Elige color y talla de cada prenda' : '👫 Elige color y talla de cada buzo'}</p>
                       {grupos.map((g, gi) => {
                         const esDama = /dama|mujer/i.test(g.titulo || '');
                         const esCab  = /caballero|hombre/i.test(g.titulo || '');
@@ -564,33 +564,51 @@ export default function FormularioPedido({ funnel, utms, embebido, compacto, liv
                           <div key={gi} ref={el => { gruposRef.current[gi] = el; }}
                                className={`rounded-xl border-2 overflow-hidden transition-all ${activo && !listo ? 'ring-2 ring-offset-2' : ''}`}
                                style={{ borderColor: listo ? tono : '#D8D8D8', ['--tw-ring-color' as any]: tono }}>
+                            {esPolos ? (() => {
+                              // Portada y nombre corto del grupo (opcionales, se configuran en el editor)
+                              const meta: any = g.indices.map(i => selectores[i] as any).find(s => s?.portada || s?.nombre) ?? {};
+                              return (
+                                <div className="text-white px-2.5 py-1.5 flex items-center gap-2" style={{ background: tono }}>
+                                  {meta.portada && (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={meta.portada} alt="" className="w-10 h-10 rounded-md object-contain bg-white shrink-0" loading="lazy" />
+                                  )}
+                                  <div className="flex-1 min-w-0 text-center">
+                                    {meta.nombre && <p className="text-[9.5px] font-bold uppercase tracking-widest opacity-90 leading-none mb-0.5">{meta.nombre}</p>}
+                                    <p className="font-extrabold text-[12.5px] tracking-wide leading-tight">{g.titulo}</p>
+                                    {idxColor != null && elecciones[idxColor] && (
+                                      <span className="inline-block mt-1 bg-white text-[#0D8A3E] text-[9.5px] font-extrabold px-2 py-0.5 rounded-full shadow-sm max-w-full truncate">
+                                        ✅ {elecciones[idxColor]}{idxTalla != null && elecciones[idxTalla] ? ` · TALLA ${elecciones[idxTalla]}` : ''}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })() : (
                             <div className="text-white px-3 py-2 flex items-center justify-center gap-2 font-extrabold text-sm tracking-wide" style={{ background: tono }}>
                               <span>{esDama ? '👩 ' : esCab ? '👨 ' : '🎽 '}{g.titulo}</span>
-                              {esPolos && idxColor != null && elecciones[idxColor] && (
-                                <span className="bg-white text-[#0D8A3E] text-[11px] font-extrabold px-2.5 py-0.5 rounded-full whitespace-nowrap shadow-sm">
-                                  ✅ {elecciones[idxColor]}{idxTalla != null && elecciones[idxTalla] ? ` · TALLA ${elecciones[idxTalla]}` : ''}
-                                </span>
-                              )}
                             </div>
+                            )}
                             {esPolos ? (
                               /* VARIABLES POLOS: foto grande a la izquierda + desplegables al lado */
-                              <div className="p-3 flex items-stretch gap-3">
-                                <div className="w-[36%] shrink-0">
+                              <div className="p-2.5 flex items-center gap-2.5">
+                                <div className="w-[38%] shrink-0">
                                   {colorSel?.imagen ? (
+                                    // Foto COMPLETA (sin recortar): cuadrada, la prenda entera centrada
                                     // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={colorSel.imagen} alt="" className="w-full h-full object-cover rounded-lg border border-[#E0E0E0]" loading="lazy" />
+                                    <img src={colorSel.imagen} alt="" className="w-full aspect-square object-contain bg-white rounded-lg border border-[#E0E0E0]" loading="lazy" />
                                   ) : (
-                                    <div className="w-full h-full min-h-[110px] rounded-lg bg-[#F2F2F2] flex items-center justify-center text-3xl text-[#CCC]">🎽</div>
+                                    <div className="w-full aspect-square rounded-lg bg-[#F2F2F2] flex items-center justify-center text-3xl text-[#CCC]">🎽</div>
                                   )}
                                 </div>
-                                <div className="flex-1 min-w-0 space-y-2.5">
+                                <div className="flex-1 min-w-0 space-y-2">
                                   {idxColor != null && (
                                     <div className={`rounded-lg ${colorAhora ? 'p-1 ring-2 ring-offset-1 animate-pulse' : ''}`} style={colorAhora ? { ['--tw-ring-color' as any]: tono } : {}}>
-                                      <p className="text-[12px] font-extrabold mb-1" style={{ color: acento.texto }}>{marcaColor} Elige el color</p>
+                                      <p className="text-[11px] font-extrabold mb-0.5" style={{ color: acento.texto }}>{marcaColor} Elige el color</p>
                                       <select
                                         value={elecciones[idxColor] || ''}
                                         onChange={e => setSel(idxColor, e.target.value)}
-                                        className="w-full px-2 py-2.5 rounded-lg border-2 text-[13px] font-semibold bg-white focus:outline-none"
+                                        className="w-full px-1.5 py-2 rounded-lg border-2 text-[11.5px] font-semibold bg-white focus:outline-none"
                                         style={{ borderColor: elecciones[idxColor] ? tono : '#E0E0E0' }}
                                       >
                                         <option value="">— Elige color —</option>
@@ -602,11 +620,11 @@ export default function FormularioPedido({ funnel, utms, embebido, compacto, liv
                                   )}
                                   {idxTalla != null && (
                                     <div className={`rounded-lg ${tallaAhora ? 'p-1 ring-2 ring-offset-1 animate-pulse' : ''}`} style={tallaAhora ? { ['--tw-ring-color' as any]: tono } : {}}>
-                                      <p className="text-[12px] font-extrabold mb-1" style={{ color: acento.texto }}>{marcaTalla} Elige la talla</p>
+                                      <p className="text-[11px] font-extrabold mb-0.5" style={{ color: acento.texto }}>{marcaTalla} Elige la talla</p>
                                       <select
                                         value={elecciones[idxTalla] || ''}
                                         onChange={e => setSel(idxTalla, e.target.value)}
-                                        className="w-full px-2 py-2.5 rounded-lg border-2 text-[13px] font-semibold bg-white focus:outline-none"
+                                        className="w-full px-1.5 py-2 rounded-lg border-2 text-[11.5px] font-semibold bg-white focus:outline-none"
                                         style={{ borderColor: elecciones[idxTalla] ? tono : '#E0E0E0' }}
                                       >
                                         <option value="">— Elige talla —</option>
