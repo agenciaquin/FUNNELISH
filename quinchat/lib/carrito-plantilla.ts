@@ -17,9 +17,14 @@ export interface ResultadoCarrito {
 }
 
 /** ¿Bloqueado? 'chat abierto' si ya tiene chat; 'ya compró' si tiene un pedido (no cancelado/duplicado). */
-export async function bloqueoCarrito(supabase: any, tel10: string): Promise<string | null> {
-  const { data: env } = await supabase.from('carritos_envios').select('telefono').eq('telefono', tel10).maybeSingle();
-  if (env) return 'ya enviada a este número';
+export async function bloqueoCarrito(supabase: any, tel10: string, ignorarReserva = false): Promise<string | null> {
+  // ignorarReserva: en la verificación FINAL (justo antes de enviar) la reserva del
+  // número la acabamos de poner NOSOTROS; si se revisara, el envío se bloquearía a sí
+  // mismo («ya enviada a este número») y NUNCA saldría ninguna plantilla. (07-nov-2026)
+  if (!ignorarReserva) {
+    const { data: env } = await supabase.from('carritos_envios').select('telefono').eq('telefono', tel10).maybeSingle();
+    if (env) return 'ya enviada a este número';
+  }
   const { data: conv } = await supabase.from('conversations').select('id').eq('id', `57${tel10}`).maybeSingle();
   if (conv) return 'chat abierto';
   const { data: ped } = await supabase.from('clientes_funnelish').select('id')
@@ -75,7 +80,7 @@ export async function enviarPlantillaCarrito(supabase: any, id: string): Promise
   const soltarTel = () => supabase.from('carritos_envios').delete().eq('telefono', tel10).eq('carrito_id', id);
 
   // 4) Última verificación justo antes de enviar (por si compró o escribió en este instante)
-  const b2 = await bloqueo(supabase, tel10);
+  const b2 = await bloqueo(supabase, tel10, true);
   if (b2) {
     await supabase.from('carritos_abandonados').update({ plantilla_enviada_at: null, plantilla_error: null }).eq('id', id);
     await soltarTel();
