@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 // Ganancia que suma cada prenda vendida.
 const VALOR_PRENDA = 600;
 // Metas mensuales en cadena: al pasar una, se activa la siguiente.
-const METAS = [800, 1100, 1500];
+const METAS = [1600];   // 06-nov-2026: el dueño la cambió a 1.600 prendas (antes 800 → 1100 → 1500)
 
 /**
  * Prendas de un pedido según su VALOR (precio total). Con umbrales para no dejar

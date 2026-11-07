@@ -170,7 +170,7 @@ export default function MetasPanel() {
             <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5">
               <div className="flex items-end justify-between mb-2">
                 <div>
-                  <p className="text-xs text-gray-500 uppercase tracking-wide">Meta {d.metaIndice} de 3</p>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Meta {d.metaIndice} de {d.metas.length}</p>
                   <p className="text-lg font-bold text-[#0F3D3A]">
                     {d.todasLogradas ? '¡Todas las metas logradas! 🏆' : `Llegar a ${d.metaActiva} prendas`}
                   </p>
@@ -245,7 +245,7 @@ export default function MetasPanel() {
                   </p>
                   <p className="text-xs text-gray-600 mt-0.5">
                     {d.todasLogradas
-                      ? 'Superaste las tres metas del mes.'
+                      ? (d.metas.length > 1 ? 'Superaste todas las metas del mes.' : 'Superaste la meta del mes.')
                       : d.ritmo === 'adelantado'
                         ? `Llevas ${d.diferenciaRitmo} prendas más de lo esperado para el día ${d.diaActual}.`
                         : `Te faltan ${d.diferenciaRitmo} prendas para ir al día. ¡Tú puedes!`}
