@@ -24,7 +24,7 @@ const CONSULTAS: { clave: string; ruta: string; params?: Record<string, string> 
   { clave: 'forma_pago', ruta: 'forma_pago' },
   { clave: 'medio_pago', ruta: 'medio_pago' },
   { clave: 'caja', ruta: 'caja' },
-  { clave: 'cuenta_bancaria', ruta: 'cuenta_bancaria' },
+  { clave: 'cuenta_bancaria', ruta: 'cuenta' },
   // Venta de prueba PV-20261107-152032-G1
   { clave: 'articulo_prueba', ruta: 'articulo', params: { referencia: 'HNLMARFILLES' } },
   { clave: 'ciudad_prueba', ruta: 'ciudad', params: { nombre: 'Bucaramanga' } },

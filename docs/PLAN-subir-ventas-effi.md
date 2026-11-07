@@ -121,6 +121,25 @@ Revisión de las 13 preventas de prueba (solo lectura):
 - ⚠️ El adaptador actual (`lib/ventas-vendedores/effi.ts`) arma un formato provisional y pone el correo
   `gerencia@klixmant.com`; hay que pasarlo al formato real de §1 y usar `Gerenciaquin7@gmail.com`.
 
+## 2d. Ids de Effi (Fase 0, consulta de solo lectura 07-nov-2026)
+
+| Qué | Id |
+|---|---|
+| Sucursal Principal (Bucaramanga) | 1 |
+| Bodega Bucaramanga | 1 (2 = Bucaramanga DS, 3 = Garantías) |
+| Centro de costos AGENCIA QUIN | ⏳ Effi respondió 502 — reintentar |
+| Vendedor QUINO AGENCIA | tercero **46502** (cédula 96582541250) |
+| Ubicaciones | 33/32 CIUDAD BONITA SR/CR · 29/28 INTER RAPIDISIMO CR/SR · 27/26 ENVIA CR/SR · 25/24 COORDINADORA CR/SR · 23/22 SERVIENTREGA CR/SR · 21/20 JOSE ENVIOS CR/SR · 31 INTER PROPIO · 30 PUNTO DE VENTA |
+| IVA 19% | 1 |
+| Forma «Contado a 1 día» | **2** (tipo crédito → queda por cobrar, **no lleva medio de pago**) |
+| Forma «Contado» | **1** (contado → exige medio) |
+| Medio Transferencia bancaria | 5 |
+| Caja QUIN JOSUE | 5 (sucursal 1) |
+| Cuenta KLIXMANT SAS | ⏳ el servicio es `api/cuenta` — reintentar |
+| Artículo HNLMARFILLES | **21703**, IVA 19%, «sin control de stock» (no lo frena el inventario) |
+| Bucaramanga / Santander / Colombia | ciudad 13371 · provincia 802 · país 47 |
+| Cliente 3143534918 | ya existe: tercero **26414** («josue»); también 414 JOSUE QUINTERO LEON (otra cédula) |
+
 ## 3. Huecos que quedan (en orden)
 
 Cédula, artículo, IVA, formas/medios de pago, centro de costos, vendedor y transportadora: **resueltos** (§2b).
