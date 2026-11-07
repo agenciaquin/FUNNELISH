@@ -10,7 +10,8 @@ import { fotoDelCarrito } from '@/lib/foto-carrito';
  */
 
 /** Plantillas de carrito, en orden de preferencia (la v2 lleva nombre, producto y foto). */
-export const PLANTILLAS_CARRITO = ['carrito_abandonado_v2', 'carrito_abandonado'];
+export const PLANTILLAS_CARRITO = ['carrito_abandonado_v3', 'carrito_abandonado_v2', 'carrito_abandonado'];
+// v3 (07-nov): además del nombre y el producto, le muestra TODOS los datos que dejó en el checkout y el valor.
 
 export interface ResultadoCarrito {
   ok?: boolean; status: number; error?: string; bloqueado?: boolean; plantilla?: string; wamid?: string;
@@ -36,7 +37,7 @@ export async function bloqueoCarrito(supabase: any, tel10: string, ignorarReserv
 export async function enviarPlantillaCarrito(supabase: any, id: string): Promise<ResultadoCarrito> {
   const bloqueo = bloqueoCarrito;
   const { data: c } = await supabase.from('carritos_abandonados')
-    .select('id, slug, nombre, telefono, producto, talla, datos, recuperado, plantilla_enviada_at').eq('id', id).maybeSingle();
+    .select('id, slug, nombre, telefono, producto, talla, valor, datos, recuperado, plantilla_enviada_at').eq('id', id).maybeSingle();
   if (!c) return { error: 'No encontré el carrito.', status: 404 };
   if ((c as any).plantilla_enviada_at) return { error: 'A este carrito ya se le envió la plantilla.', status: 409 };
   if ((c as any).recuperado) return { error: 'Este carrito ya está marcado como recuperado.', status: 409 };
@@ -92,7 +93,22 @@ export async function enviarPlantillaCarrito(supabase: any, id: string): Promise
   const limpio = (t: unknown) => String(t ?? '').replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
   const nombre = limpio((c as any).nombre).split(' ')[0] || 'hola';
   const producto = limpio([limpio((c as any).producto), limpio((c as any).talla)].filter(Boolean).join(', ')).slice(0, 120) || 'tu pedido';
-  const variables = [nombre, producto].slice(0, tpl.variables);
+  // v3: {{3}} = todos los datos que dejó en el checkout (en una línea: Meta no acepta
+  // saltos de línea dentro de una variable) y {{4}} = el valor.
+  const d: Record<string, any> = ((c as any).datos && typeof (c as any).datos === 'object') ? (c as any).datos : {};
+  const campo = (...ks: string[]) => limpio(ks.map(k => d[k]).find(v => typeof v === 'string' && v.trim()) ?? '');
+  const nombreCompleto = limpio([campo('nombre') || limpio((c as any).nombre), campo('apellidos')].filter(Boolean).join(' '));
+  const dir = [campo('direccion'), campo('barrio') ? `Barrio ${campo('barrio').replace(/^barrio\s+/i, '')}` : ''].filter(Boolean).join(', ');
+  const datosLinea = [
+    nombreCompleto && `👤 ${nombreCompleto}`,
+    `📱 ${tel10}`,
+    campo('correo') && `✉️ ${campo('correo')}`,
+    dir && `📍 ${dir}`,
+    (campo('municipio', 'ciudad') || campo('departamento')) && `🌆 ${[campo('municipio', 'ciudad'), campo('departamento')].filter(Boolean).join(', ')}`,
+  ].filter(Boolean).join(' · ').slice(0, 900) || `📱 ${tel10}`;
+  const valorNum = Number(String((c as any).valor ?? '').replace(/[^\d]/g, '')) || 0;
+  const valorTxt = valorNum ? `$${valorNum.toLocaleString('es-CO')}` : 'el de tu pedido';
+  const variables = (tpl.variables >= 4 ? [nombre, producto, datosLinea, valorTxt] : [nombre, producto]).slice(0, tpl.variables);
   // Foto REAL del producto, sacada del catálogo de colores como al confirmar una compra.
   // (La que guarda el formulario en el carrito es la MINIATURA del embudo, no el buzo.)
   let imagen: string | null = null;
