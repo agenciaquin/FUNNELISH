@@ -141,7 +141,7 @@ const sinTildes = (t: string) => String(t ?? '').normalize('NFD').replace(/[\u03
 
 export async function POST(req: NextRequest) {
   try {
-    const { conversationId, producto: prodOverride, talla: tallaOverride, valor: valorOverride } = await req.json();
+    const { conversationId, producto: prodOverride, talla: tallaOverride, valor: valorOverride, recompra } = await req.json();
     if (!conversationId) {
       return NextResponse.json({ error: 'falta conversationId' }, { status: 400 });
     }
@@ -174,6 +174,75 @@ export async function POST(req: NextRequest) {
       .eq('telefono', tel10)
       .not('estado', 'in', '("cancelado","duplicado")')
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+    // ── CASO 3: RECOMPRA con el descuento (etiqueta COMPRO EN DESCUENTO) ──────────
+    //    El cliente ya tenía VENTA REALIZADA y vuelve a comprar: se crea un pedido
+    //    NUEVO (no se toca el anterior) y la ficha se envía a los supervisores.
+    if (recompra) {
+      const producto = String(prodOverride ?? '').trim();
+      const talla    = String(tallaOverride ?? '').trim();
+      const valorTxt = String(valorOverride ?? '').trim();
+      const valorNum = Number(valorTxt.replace(/[^\d]/g, '')) || 0;
+      if (!producto) return NextResponse.json({ error: 'falta la referencia' }, { status: 400 });
+
+      // Anti doble clic: misma recompra registrada hace menos de 10 min → no repetir
+      const { data: reciente } = await supabase.from('clientes_funnelish').select('id')
+        .eq('telefono', tel10).eq('estado', 'recompra_descuento')
+        .gte('created_at', new Date(Date.now() - 10 * 60_000).toISOString()).limit(1);
+      if (reciente?.length) return NextResponse.json({ ok: false, motivo: 'ya-registrada' });
+
+      // Datos de envío: los de su compra anterior + lo que haya corregido en el chat
+      const base: any = pedido ? { ...pedido } : {};
+      if (!pedido) {
+        const d = await extraerDatosDelChat(supabase, from);
+        Object.assign(base, { nombre: d.nombre, direccion: [d.direccion, d.barrio ? `Barrio ${String(d.barrio).replace(/^barrio\s+/i, '')}` : ''].filter(Boolean).join(', '), ciudad: d.ciudad, departamento: d.departamento, correo: d.correo });
+      } else {
+        const corr = await correccionesDelChat(supabase, from, { ...pedido, created_at: new Date(Date.now() - 7 * 86400_000).toISOString() });
+        if (corr.direccion) base.direccion = corr.direccion;
+        if (corr.complemento && !sinTildes(base.direccion ?? '').includes(sinTildes(corr.complemento))) base.direccion = `${base.direccion ?? ''}, ${corr.complemento}`;
+        if (corr.barrio) { const b = corr.barrio.replace(/^barrio\s+/i, ''); if (!sinTildes(base.direccion ?? '').includes(sinTildes(b))) base.direccion = `${base.direccion ?? ''}, Barrio ${b}`; }
+        for (const k of ['ciudad', 'departamento', 'nombre', 'correo'] as const) if (corr[k]) base[k] = corr[k];
+      }
+
+      const ficha =
+        `🎁 *VENTA CON DESCUENTO $15.000 — RECOMPRA*\n` +
+        `_Cliente que ya había comprado · marcada desde el panel_\n` +
+        `Nombre: ${base.nombre || '—'}\n` +
+        `Teléfono: ${tel10}\n` +
+        `Dirección: ${base.direccion || '—'}\n` +
+        `Ciudad: ${base.ciudad || '—'}\n` +
+        `Departamento: ${base.departamento || '—'}\n` +
+        (base.correo ? `Correo: ${base.correo}\n` : '') +
+        `${lineaTalla(talla)}\n` +
+        `Producto: ${producto}\n` +
+        `Valor: ${valorNum ? money(valorNum) : (valorTxt || '—')} — PAGO CONTRA ENTREGA (ya con el descuento)`;
+
+      const fotos = await fotosDelChat(supabase, from);
+      for (const s of DESTINOS) {
+        if (fotos.length > 0) {
+          try { await sendImageByUrl(s, fotos[0], ficha); } catch { /* ignorar */ }
+          for (const u of fotos.slice(1)) { try { await sendImageByUrl(s, u, ''); } catch { /* ignorar */ } }
+        } else {
+          try { await sendTextMessage(s, ficha); } catch { /* ignorar */ }
+        }
+      }
+
+      try {
+        await supabase.from('clientes_funnelish').insert({
+          nombre: base.nombre ?? null, telefono: tel10, direccion: base.direccion ?? null,
+          ciudad: base.ciudad ?? null, departamento: base.departamento ?? null, correo: base.correo ?? null,
+          talla, producto, valor: valorNum ? money(valorNum) : valorTxt,
+          confirmado: true, confirmado_at: new Date().toISOString(),
+          estado: 'recompra_descuento',
+          referencia: `desc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          created_at: new Date().toISOString(),
+        });
+      } catch (e: any) { console.error('[Ventas] no se pudo guardar la recompra:', e?.message); }
+      // Marca el descuento como usado (si se le había enviado)
+      try { await supabase.from('descuentos_entrega').update({ usado_at: new Date().toISOString() }).eq('telefono', tel10).is('usado_at', null); } catch { /* ignorar */ }
+
+      return NextResponse.json({ ok: true, origen: 'recompra-descuento' });
+    }
 
     // ── CASO 2: no hay pedido → armar con los datos del chat (WhatsApp puro) ────
     if (!pedido) {

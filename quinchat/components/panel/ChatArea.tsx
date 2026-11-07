@@ -361,6 +361,9 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
 
   // Revisión de la venta antes de registrarla a mano (corregir producto/talla/valor)
   const [ventaModal, setVentaModal]       = useState(false);
+  // 'recompra' = el cliente ya tenía VENTA REALIZADA y vuelve a comprar con el descuento
+  // (etiqueta COMPRO EN DESCUENTO): se registra un pedido NUEVO y se envía a Lilibeth.
+  const [ventaModo, setVentaModo]         = useState<'normal' | 'recompra'>('normal');
   const [ventaProducto, setVentaProducto] = useState('');
   const [ventaTalla, setVentaTalla]       = useState('');
   const [ventaValor, setVentaValor]       = useState('');
@@ -783,6 +786,7 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
           setVentaProducto(String(ped.producto ?? ''));
           setVentaTalla(String(ped.talla ?? ''));
           setVentaValor(String(ped.valor ?? ''));
+          setVentaModo('normal');
           setVentaModal(true);
         } else {
           // Chat de WhatsApp puro (sin pedido del funnel): se abre en blanco para
@@ -790,6 +794,7 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
           setVentaProducto('');
           setVentaTalla('');
           setVentaValor('');
+          setVentaModo('normal');
           setVentaModal(true);
         }
       } catch (e) {
@@ -811,9 +816,11 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
           producto: ventaProducto,
           talla: ventaTalla,
           valor: ventaValor,
+          ...(ventaModo === 'recompra' ? { recompra: true } : {}),
         }),
       });
       setVentaModal(false);
+      setVentaModo('normal');
     } catch (e) {
       console.error('[Panel] no se pudo registrar la venta manual:', e);
     } finally {
@@ -831,6 +838,18 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
       parseLabels(nuevo).some(l => l.toUpperCase() === 'HUMANO');
     await guardarEtiquetas(nuevo, activandoHumano ? { bot_enabled: false } : {});
     if (activandoHumano) setBotEnabled(false);
+
+    // COMPRO EN DESCUENTO (al PONERLA, no al quitarla): el cliente ya tenía una venta
+    // y volvió a comprar con el descuento → se abre la misma ventana de «Confirmar venta»
+    // para poner referencia, talla y precio, y se registra como pedido NUEVO.
+    const activandoDescuento =
+      nombre.toUpperCase() === 'COMPRO EN DESCUENTO' &&
+      parseLabels(nuevo).some(l => l.toUpperCase() === 'COMPRO EN DESCUENTO');
+    if (activandoDescuento) {
+      setVentaProducto(''); setVentaTalla(''); setVentaValor('');
+      setVentaModo('recompra');
+      setVentaModal(true);
+    }
   }
 
   // ── Empty state ────────────────────────────────────────────────────────────
@@ -1626,14 +1645,22 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div className="px-5 py-4 border-b border-[#E8E8E8] flex items-center justify-between">
-              <h3 className="text-base font-bold text-[#0D0D0D]">✅ Confirmar venta</h3>
-              <button onClick={() => setVentaModal(false)} className="text-[#6B6B6B] hover:text-[#0D0D0D] text-xl leading-none">×</button>
+              <h3 className="text-base font-bold text-[#0D0D0D]">{ventaModo === 'recompra' ? '🎁 Venta con descuento (recompra)' : '✅ Confirmar venta'}</h3>
+              <button onClick={() => { setVentaModal(false); setVentaModo('normal'); }} className="text-[#6B6B6B] hover:text-[#0D0D0D] text-xl leading-none">×</button>
             </div>
             <div className="px-5 py-4 flex flex-col gap-3">
+              {ventaModo === 'recompra' ? (
+                <p className="text-[12px] text-[#6B6B6B]">
+                  El cliente <b>volvió a comprar con el descuento de $15.000</b>. Escribe la referencia, la talla y el
+                  <b> precio final (ya con el descuento)</b>. Se registra como pedido NUEVO y la ficha le llega a Lilibeth por WhatsApp.
+                  Los datos de envío se toman de su compra anterior y de lo que haya corregido en el chat.
+                </p>
+              ) : (
               <p className="text-[12px] text-[#6B6B6B]">
                 Revisa que el pedido esté como quedó con el cliente. Si lo cambiaste por chat,
                 corrígelo aquí antes de registrar (así el registro y las estadísticas quedan bien).
               </p>
+              )}
               <div>
                 <label className="text-[11px] font-semibold text-[#6B6B6B] uppercase tracking-wide block mb-1">Producto</label>
                 <input
@@ -1666,12 +1693,12 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
             </div>
             <div className="px-5 py-4 border-t border-[#E8E8E8] flex justify-end gap-3">
               <button
-                onClick={() => setVentaModal(false)}
+                onClick={() => { setVentaModal(false); setVentaModo('normal'); }}
                 className="px-4 py-2 text-sm text-[#6B6B6B] hover:text-[#0D0D0D] rounded-xl border border-[#E8E8E8] hover:bg-[#F5F5F5]"
               >Cancelar</button>
               <button
                 onClick={confirmarVentaManual}
-                disabled={ventaGuardando || !ventaProducto.trim()}
+                disabled={ventaGuardando || !ventaProducto.trim() || (ventaModo === 'recompra' && (!ventaTalla.trim() || !ventaValor.trim()))}
                 className="px-5 py-2 text-sm font-semibold bg-[#00A89D] text-white rounded-xl hover:bg-[#008F85] disabled:opacity-40"
               >{ventaGuardando ? 'Registrando…' : 'Registrar venta'}</button>
             </div>
