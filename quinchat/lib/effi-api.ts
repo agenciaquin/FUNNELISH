@@ -16,7 +16,7 @@ export function effiConfigurado(): boolean {
   return !!process.env.EFFI_API_TOKEN;
 }
 
-async function effiGet(ruta: string, params: Record<string, string | number>): Promise<any> {
+export async function effiGet(ruta: string, params: Record<string, string | number>): Promise<any> {
   const token = process.env.EFFI_API_TOKEN;
   if (!token) throw new Error('Falta EFFI_API_TOKEN en Vercel');
   const qs = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]));

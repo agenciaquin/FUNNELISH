@@ -7,7 +7,8 @@ Fuente: documentación interna de Effi (Integraciones → Documentación API), p
 - Autenticación: cabecera `Authorization: Bearer <API_KEY_EFFI>`.
 - API key: Administración → Usuarios → Ver más detalles. Vigencia 360 días (botón «Renovar API Key»). 32–40 caracteres.
 - Recomendado: usuario aparte «QuinChat API» solo con permisos de consulta.
-- Rate limit: 120 peticiones/minuto por API key. Si se pasa → 429 + `Retry-After`.
+- Rate limit: 600 peticiones/minuto por API key (doc. del 07-nov-2026; antes decía 120). Si se pasa → 429 + `Retry-After`.
+- Escritura (POST): cuerpo JSON, `idempotency_key` obligatorio (409 si se repite). Ver `PLAN-subir-ventas-effi.md`.
 - Paginación: `pagina` (def. 1), `por_pagina` (def. 100, máx. 100). Respuesta trae `paginacion {pagina, por_pagina, total, total_paginas}`.
 - Respuesta OK: `{ "ok": true, "data": [...], "paginacion": {...} }`. Error: `{ "ok": false, "mensaje": "..." }`.
 - Errores: 400 petición inválida · 401 token/usuario inválido o API key vencida · 403 sin permiso · 429 límite.
