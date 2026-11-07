@@ -11,9 +11,10 @@ import { useEffect, useState } from 'react';
 interface Venta {
   tipo: 'carrito' | 'descuento'; telefono: string; nombre: string | null; producto: string | null; talla: string | null;
   valor: number; confirmado: boolean; estado: string | null; pedido_at: string; enviado_at: string; origen: string | null; horas: number;
-  marcado?: boolean;   // contado por la etiqueta «COMPRO EN DESCUENTO»
+  marcado?: boolean;
+  prendas?: number;   // contado por la etiqueta «COMPRO EN DESCUENTO»
 }
-interface Bloque { enviados: number; ventas: number; confirmadas: number; valor: number; lista: Venta[] }
+interface Bloque { enviados: number; ventas: number; confirmadas: number; valor: number; prendas?: number; lista: Venta[] }
 interface Datos { carrito: Bloque; descuento: Bloque; reglas: { dias_carrito: number; dias_descuento: number } }
 
 const pesos = (n: number) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
@@ -43,7 +44,7 @@ export default function VentasRecuperadas({ onClose, onAbrirChat }: { onClose: (
       style={{ background: color, borderColor: color, color: '#fff' }}>
       <p className="text-sm font-semibold opacity-90">{icono} {titulo}</p>
       <p className="text-4xl font-extrabold leading-tight mt-1">{b?.ventas ?? '…'}</p>
-      <p className="text-xs opacity-90">ventas salvadas · {pesos(b?.valor ?? 0)} confirmado</p>
+      <p className="text-xs opacity-90">ventas salvadas · <b>👕 {b?.prendas ?? 0} prendas</b> · {pesos(b?.valor ?? 0)} confirmado</p>
       <p className="text-[11px] opacity-80 mt-2">{b ? `${b.confirmadas} confirmadas · ${b.enviados} plantillas enviadas · ${tasa(b)}% compró` : ''}</p>
       <p className="text-[10px] opacity-70 mt-1">{nota}</p>
     </button>
@@ -75,7 +76,7 @@ export default function VentasRecuperadas({ onClose, onAbrirChat }: { onClose: (
           <div className="bg-white rounded-2xl border border-[#EDEDED] overflow-hidden">
             <div className="px-4 py-3 border-b border-[#F0F0F0] flex items-center justify-between">
               <p className="text-sm font-bold">
-                {filtro === 'todas' ? 'Todas las ventas recuperadas' : filtro === 'carrito' ? '🛒 Carritos recuperados' : '🎁 Ventas con descuento'} · {lista.length}
+                {filtro === 'todas' ? 'Todas las ventas recuperadas' : filtro === 'carrito' ? '🛒 Carritos recuperados' : '🎁 Ventas con descuento'} · {lista.length} ventas · 👕 {lista.reduce((t, v) => t + (v.prendas ?? 1), 0)} prendas
               </p>
               {filtro !== 'todas' && <button onClick={() => setFiltro('todas')} className="text-xs text-[#00847A] font-semibold">Ver todas</button>}
             </div>
@@ -95,6 +96,7 @@ export default function VentasRecuperadas({ onClose, onAbrirChat }: { onClose: (
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-bold">{pesos(v.valor)}</p>
+                  <p className="text-[10px] text-[#6B6B6B] font-semibold">👕 {v.prendas ?? 1} {(v.prendas ?? 1) === 1 ? 'prenda' : 'prendas'}</p>
                   <p className={`text-[10px] font-semibold ${v.confirmado ? 'text-[#15803D]' : 'text-[#B45309]'}`}>{v.confirmado ? '✅ Confirmado' : '⏳ Por confirmar'}</p>
                 </div>
                 {onAbrirChat && (

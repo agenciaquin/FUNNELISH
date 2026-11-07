@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { prendasDeVenta } from '@/lib/prendas';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +50,7 @@ export async function GET() {
     for (let i = 0; i < telefonos.length; i += 200) {
       const lote = telefonos.slice(i, i + 200);
       const { data, error } = await supabase.from('clientes_funnelish')
-        .select('id, nombre, telefono, producto, talla, valor, confirmado, estado, created_at')
+        .select('id, nombre, telefono, producto, talla, valor, cantidad, confirmado, estado, created_at')
         .in('telefono', [...lote, ...lote.map(t => `57${t}`)]).gte('created_at', minFecha).order('created_at', { ascending: true });
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       pedidos.push(...(data ?? []));
@@ -66,6 +67,7 @@ export async function GET() {
       ventas.push({
         tipo, telefono: t, nombre: p.nombre || e.nombre, producto: p.producto, talla: p.talla,
         valor: num(p.valor), confirmado: !!p.confirmado, estado: p.estado, pedido_at: p.created_at,
+        prendas: prendasDeVenta({ cantidadBot: Number(p.cantidad) || null, producto: p.producto, talla: p.talla, valor: num(p.valor) }),
         enviado_at: e.at, origen: e.extra, horas: Math.round((Date.parse(p.created_at) - desde) / 3600_000),
       });
     }
@@ -75,6 +77,7 @@ export async function GET() {
       ventas: ventas.length,
       confirmadas: ventas.filter(v => v.confirmado).length,
       valor: ventas.filter(v => v.confirmado).reduce((s, v) => s + v.valor, 0),
+      prendas: ventas.filter(v => v.confirmado).reduce((s, v) => s + (v.prendas || 0), 0),
       lista: ventas,
     };
   };
@@ -93,7 +96,7 @@ export async function GET() {
   if (faltan.length) {
     const tels = faltan.map(x => x.t);
     const { data: ped } = await supabase.from('clientes_funnelish')
-      .select('id, nombre, telefono, producto, talla, valor, confirmado, estado, created_at')
+      .select('id, nombre, telefono, producto, talla, valor, cantidad, confirmado, estado, created_at')
       .in('telefono', [...tels, ...tels.map(t => `57${t}`)])
       .gte('created_at', new Date(Date.now() - 90 * 86400_000).toISOString())
       .order('created_at', { ascending: false });
@@ -107,6 +110,7 @@ export async function GET() {
         tipo: 'descuento', telefono: x.t, nombre: p?.nombre || x.nombre || env?.nombre || null,
         producto: p?.producto ?? '(marcado con la etiqueta)', talla: p?.talla ?? null,
         valor: num(p?.valor), confirmado: p ? !!p.confirmado : true, estado: p?.estado ?? null,
+        prendas: p ? prendasDeVenta({ cantidadBot: Number(p.cantidad) || null, producto: p.producto, talla: p.talla, valor: num(p.valor) }) : 1,
         pedido_at: p?.created_at ?? env?.at ?? new Date().toISOString(), enviado_at: env?.at ?? p?.created_at ?? new Date().toISOString(),
         origen: 'etiqueta COMPRO EN DESCUENTO', horas: env && p ? Math.max(0, Math.round((Date.parse(p.created_at) - Date.parse(env.at)) / 3600_000)) : 0,
         marcado: true,
@@ -116,6 +120,7 @@ export async function GET() {
     descuento.ventas = descuento.lista.length;
     descuento.confirmadas = descuento.lista.filter((v: any) => v.confirmado).length;
     descuento.valor = descuento.lista.filter((v: any) => v.confirmado).reduce((s: number, v: any) => s + v.valor, 0);
+    descuento.prendas = descuento.lista.filter((v: any) => v.confirmado).reduce((s: number, v: any) => s + (v.prendas || 0), 0);
   }
 
   return NextResponse.json({
