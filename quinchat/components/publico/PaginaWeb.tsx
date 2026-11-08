@@ -1,21 +1,22 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { ConfigPagina, DatosPagina, CatalogoWeb } from '@/lib/mi-pagina';
-import { BASE_TIENDA, pesosCOP } from '@/lib/mi-pagina';
+import type { ConfigPagina, DatosPagina, CatalogoWeb, EmbudoWeb } from '@/lib/mi-pagina';
+import { BASE_TIENDA, pesosCOP, grupoSugerido, nombreBonito } from '@/lib/mi-pagina';
 
 /**
- * Página pública de «Mi Página». La misma pieza se usa:
+ * Página pública de «Mi Página» (tienda hecha con los embudos). La misma pieza se usa:
  *  · en /web/<slug> (lo publicado), y
  *  · dentro del panel como vista previa (preview = true): escucha la config que le manda el editor
  *    por postMessage y se redibuja al instante, sin guardar.
+ * «Ver producto» abre el embudo tal cual (pedido.klixmant.shop/<slug>): no se toca su lógica.
  */
 export default function PaginaWeb({ config: inicial, datos, preview = false }: {
   config: ConfigPagina; datos: DatosPagina; preview?: boolean;
 }) {
   const [config, setConfig] = useState(inicial);
   const [filtro, setFiltro] = useState('Todos');
-  const [abierto, setAbierto] = useState<CatalogoWeb | null>(null);
+  const [abierto, setAbierto] = useState<(CatalogoWeb & { embudo: EmbudoWeb | null }) | null>(null);
   const [menu, setMenu] = useState(false);
 
   useEffect(() => {
@@ -30,63 +31,63 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
   }, [preview]);
 
   const color = /^#[0-9a-f]{6}$/i.test(config.marca.color) ? config.marca.color : '#00A895';
-  const oscuro = mezclar(color, '#06201F', 0.72);
+  const oscuro = mezclar(color, '#041716', 0.78);
 
-  // Catálogos elegidos, en el orden del editor, con su grupo y su embudo
-  const porId = useMemo(() => new Map(datos.catalogos.map(c => [c.id, c])), [datos]);
-  const elegidos = useMemo(() => config.catalogos
+  // Embudos en la tienda, en el orden del editor
+  const productos = useMemo(() => config.productos
+    .filter(p => p.visible && !p.quitado && datos.embudos[p.slug])
+    .map(p => { const e = datos.embudos[p.slug]; return { ...e, foto: p.foto || e.foto, grupo: grupoSugerido(e.producto) }; }),
+  [config.productos, datos.embudos]);
+  const grupos = useMemo(() => ['Todos', ...new Set(productos.map(p => p.grupo))], [productos]);
+  const visibles = filtro === 'Todos' ? productos : productos.filter(p => p.grupo === filtro);
+
+  // Catálogos (sección opcional)
+  const porId = useMemo(() => new Map(datos.catalogos.map(c => [c.id, c])), [datos.catalogos]);
+  const catalogos = useMemo(() => config.catalogos
     .filter(s => s.visible && porId.has(s.id))
-    .map(s => {
-      const c = porId.get(s.id)!;
-      return { ...c, grupo: s.grupo || 'Buzos', portada: s.portada || c.portada, embudo: (s.embudo && datos.embudos[s.embudo]) || null };
-    })
+    .map(s => { const c = porId.get(s.id)!; return { ...c, portada: s.portada || c.portada, embudo: (s.embudo && datos.embudos[s.embudo]) || null }; })
     .filter(c => c.productos.length > 0), [config.catalogos, porId, datos.embudos]);
-  const grupos = useMemo(() => ['Todos', ...new Set(elegidos.map(c => c.grupo))], [elegidos]);
-  const visibles = filtro === 'Todos' ? elegidos : elegidos.filter(c => c.grupo === filtro);
+  const nuevos = useMemo(() => catalogos
+    .flatMap(c => c.productos.map(p => ({ ...p, cat: c })))
+    .sort((a, b) => b.creado.localeCompare(a.creado))
+    .slice(0, config.nuevos_cantidad), [catalogos, config.nuevos_cantidad]);
 
   const wa = String(config.contacto.whatsapp ?? '').replace(/\D/g, '');
   const waNum = wa.length === 10 ? `57${wa}` : wa;
   const linkWa = (texto: string) => waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent(texto)}` : null;
-  const linkCompra = (c: { embudo: CatalogoWeb['embudo']; familia: string }, colorTxt?: string) => {
-    const slug = c.embudo?.slug;
-    if (slug) return `${BASE_TIENDA}/${slug}`;
-    return linkWa(`Hola 👋 quiero el ${c.familia}${colorTxt ? ` color ${colorTxt}` : ''}`);
-  };
-
-  const nuevos = useMemo(() => elegidos
-    .flatMap(c => c.productos.map(p => ({ ...p, cat: c })))
-    .sort((a, b) => b.creado.localeCompare(a.creado))
-    .slice(0, config.nuevos_cantidad), [elegidos, config.nuevos_cantidad]);
+  const linkCat = (c: { embudo: EmbudoWeb | null; familia: string }, colorTxt?: string) =>
+    c.embudo ? `${BASE_TIENDA}/${c.embudo.slug}` : linkWa(`Hola 👋 quiero el ${c.familia}${colorTxt ? ` color ${colorTxt}` : ''}`);
 
   const secciones = config.secciones.filter(s => s.visible);
   const hay = (t: string) => secciones.some(s => s.tipo === t);
-  const ir = (id: string) => { setMenu(false); document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }); };
+  const ir = (id: string, g?: string) => { setMenu(false); if (g) setFiltro(g); document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }); };
+  const navGrupos = hay('productos') ? grupos.filter(g => g !== 'Todos').slice(0, 5) : [];
 
   return (
-    <div className="min-h-screen bg-[#F7F7F5] text-[#111] font-sans">
+    <div className="min-h-screen bg-[#F6F7F6] text-[#111] font-sans">
       {/* Encabezado */}
       <header className="sticky top-0 z-30 text-white shadow-md" style={{ background: oscuro }}>
-        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center gap-4">
-          <button onClick={() => ir('inicio')} className="flex items-center gap-2 min-w-0">
+        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center gap-3">
+          <button onClick={() => ir('inicio')} className="flex items-center gap-3 min-w-0">
             {config.marca.logo
               // eslint-disable-next-line @next/next/no-img-element
-              ? <img src={config.marca.logo} alt={config.marca.nombre} className="h-10 w-auto max-w-[140px] object-contain" />
-              : <span className="text-lg font-extrabold tracking-tight truncate">{config.marca.nombre}</span>}
+              ? <img src={config.marca.logo} alt={config.marca.nombre} className="h-10 w-auto max-w-[120px] object-contain" />
+              : <span className="text-xl font-extrabold tracking-tight truncate">{config.marca.nombre}</span>}
+            {config.marca.eslogan && <span className="hidden sm:block text-sm font-semibold text-white/90 truncate">{config.marca.eslogan}</span>}
           </button>
-          <nav className="hidden md:flex items-center gap-6 ml-auto text-sm font-medium text-white/85">
+          <nav className="hidden md:flex items-center gap-5 ml-auto text-[13px] font-semibold text-white/85">
             <button onClick={() => ir('inicio')} className="hover:text-white">Inicio</button>
-            {hay('catalogos') && <button onClick={() => ir('catalogos')} className="hover:text-white">Catálogos</button>}
+            {navGrupos.map(g => <button key={g} onClick={() => ir('productos', g)} className="hover:text-white">{g}</button>)}
             {hay('promociones') && datos.promociones.length > 0 && <button onClick={() => ir('promociones')} className="hover:text-white">Promociones</button>}
-            {hay('opiniones') && config.opiniones.length > 0 && <button onClick={() => ir('opiniones')} className="hover:text-white">Opiniones</button>}
             {hay('contacto') && <button onClick={() => ir('contacto')} className="hover:text-white">Contacto</button>}
           </nav>
           <button onClick={() => setMenu(m => !m)} className="md:hidden ml-auto w-10 h-10 rounded-lg hover:bg-white/10 text-xl" aria-label="Menú">☰</button>
         </div>
         {menu && (
           <div className="md:hidden border-t border-white/10 px-4 py-2 flex flex-col text-sm">
-            {[['inicio', 'Inicio', true], ['catalogos', 'Catálogos', hay('catalogos')], ['promociones', 'Promociones', hay('promociones') && datos.promociones.length > 0],
-              ['opiniones', 'Opiniones', hay('opiniones') && config.opiniones.length > 0], ['contacto', 'Contacto', hay('contacto')]]
-              .filter(x => x[2]).map(([id, t]) => <button key={String(id)} onClick={() => ir(String(id))} className="text-left py-2">{t}</button>)}
+            <button onClick={() => ir('inicio')} className="text-left py-2">Inicio</button>
+            {navGrupos.map(g => <button key={g} onClick={() => ir('productos', g)} className="text-left py-2">{g}</button>)}
+            {hay('contacto') && <button onClick={() => ir('contacto')} className="text-left py-2">Contacto</button>}
           </div>
         )}
       </header>
@@ -94,31 +95,15 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
 
       {secciones.map(s => {
         switch (s.tipo) {
-          case 'banner': return (
-            <section key={s.id} className="relative overflow-hidden text-white" style={{ background: `linear-gradient(120deg, ${oscuro} 0%, ${color} 140%)` }}>
-              <div className="max-w-6xl mx-auto px-4 py-10 md:py-16 grid md:grid-cols-2 gap-6 items-center">
-                <div>
-                  <h1 className="text-3xl md:text-5xl font-extrabold italic leading-tight">{config.banner.titulo}</h1>
-                  {config.banner.subtitulo && <p className="mt-2 text-white/85 md:text-lg">{config.banner.subtitulo}</p>}
-                  {config.banner.boton && hay('catalogos') && (
-                    <button onClick={() => ir('catalogos')} className="mt-5 px-5 py-2.5 rounded-full bg-white text-[#111] text-sm font-bold shadow hover:scale-[1.02] transition">
-                      {config.banner.boton} →
-                    </button>
-                  )}
-                </div>
-                {config.banner.imagen && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={config.banner.imagen} alt="" className="w-full max-h-[340px] object-contain drop-shadow-2xl" />
-                )}
-              </div>
-            </section>
-          );
+          case 'banner': return <Portada key={s.id} config={config} color={color} oscuro={oscuro} fotos={productos.map(p => p.foto).filter(Boolean).slice(0, 3) as string[]} onVer={() => ir('productos')} />;
 
-          case 'catalogos': return elegidos.length === 0 ? null : (
-            <section key={s.id} id="catalogos" className="max-w-6xl mx-auto px-4 py-10">
-              <Titulo texto={s.titulo || 'Catálogos'} color={color} />
+          case 'productos': return productos.length === 0 ? null : (
+            <section key={s.id} id="productos" className="max-w-6xl mx-auto px-4 py-10">
+              <h2 className="text-center text-2xl md:text-3xl font-extrabold mb-5">
+                <span className="text-[#C9CFCD] mr-3">—</span>{s.titulo || 'Nuestros Productos'}<span className="text-[#C9CFCD] ml-3">—</span>
+              </h2>
               {grupos.length > 2 && (
-                <div className="flex gap-2 overflow-x-auto pb-2 mb-4 -mx-1 px-1">
+                <div className="flex gap-2 overflow-x-auto pb-2 mb-4 justify-start md:justify-center -mx-1 px-1">
                   {grupos.map(g => (
                     <button key={g} onClick={() => setFiltro(g)}
                       className={`shrink-0 px-4 py-2 rounded-full text-sm font-semibold border transition ${filtro === g ? 'text-white border-transparent' : 'bg-white text-[#333] border-[#E5E5E5]'}`}
@@ -127,30 +112,46 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
                 </div>
               )}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-5">
-                {visibles.map(c => (
+                {visibles.map(p => (
+                  <article key={p.slug} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-[#ECEEED] flex flex-col hover:shadow-lg transition">
+                    <a href={`${BASE_TIENDA}/${p.slug}`} className="block aspect-square bg-[#EEF1F0] overflow-hidden">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {p.foto && <img src={p.foto} alt={p.producto} loading="lazy" className="w-full h-full object-cover hover:scale-105 transition duration-300" />}
+                    </a>
+                    <div className="p-3 flex-1 flex flex-col">
+                      <h3 className="text-sm md:text-[15px] font-bold leading-tight">{nombreBonito(p.producto)}</h3>
+                      <p className="mt-1.5 text-base md:text-lg font-extrabold text-[#C62828]">
+                        {pesosCOP(p.precio)}
+                        {p.precio_antes && p.precio && p.precio_antes > p.precio
+                          ? <span className="ml-1.5 text-[11px] text-[#9A9A9A] line-through font-normal">{pesosCOP(p.precio_antes)}</span> : null}
+                      </p>
+                      <a href={`${BASE_TIENDA}/${p.slug}`} className="mt-auto pt-3">
+                        <span className="block text-center px-2 py-2.5 rounded-xl text-white text-[13px] font-bold" style={{ background: color }}>🛒 Ver producto</span>
+                      </a>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          );
+
+          case 'catalogos': return catalogos.length === 0 ? null : (
+            <section key={s.id} className="max-w-6xl mx-auto px-4 py-10">
+              <Titulo texto={s.titulo || 'Catálogos'} color={color} />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-5">
+                {catalogos.map(c => (
                   <article key={c.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-[#EEE] flex flex-col">
                     <button onClick={() => setAbierto(c)} className="aspect-square bg-[#F1F1EF] overflow-hidden">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      {c.portada && <img src={c.portada} alt={c.familia} loading="lazy" className="w-full h-full object-contain hover:scale-105 transition" />}
+                      {c.portada && <img src={c.portada} alt={c.familia} loading="lazy" className="w-full h-full object-contain" />}
                     </button>
                     <div className="p-3 flex-1 flex flex-col">
                       <h3 className="text-sm font-bold leading-tight">{c.familia}</h3>
-                      <p className="text-[11px] text-[#777] mt-0.5">{c.productos.length} {c.productos.length === 1 ? 'color' : 'colores'}</p>
-                      <div className="flex gap-1 mt-2">
-                        {c.productos.slice(0, 5).map(p => (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img key={p.id} src={p.foto} alt={p.color} title={p.color} loading="lazy" className="w-7 h-7 rounded-md object-cover border border-[#EEE]" />
-                        ))}
-                      </div>
-                      {c.embudo?.precio != null && (
-                        <p className="mt-2 text-sm font-extrabold" style={{ color }}>
-                          {pesosCOP(c.embudo.precio)}
-                          {c.embudo.precio_antes ? <span className="ml-1 text-[11px] text-[#999] line-through font-normal">{pesosCOP(c.embudo.precio_antes)}</span> : null}
-                        </p>
-                      )}
+                      <p className="text-[11px] text-[#777]">{c.productos.length} colores</p>
+                      {c.embudo?.precio != null && <p className="mt-1 text-sm font-extrabold text-[#C62828]">{pesosCOP(c.embudo.precio)}</p>}
                       <div className="mt-auto pt-3 flex gap-1.5">
                         <button onClick={() => setAbierto(c)} className="flex-1 px-2 py-2 rounded-xl border border-[#E5E5E5] text-xs font-semibold">Ver colores</button>
-                        <Comprar href={linkCompra(c)} color={color} embudo={!!c.embudo} />
+                        <Comprar href={linkCat(c)} color={color} embudo={!!c.embudo} />
                       </div>
                     </div>
                   </article>
@@ -170,8 +171,7 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
                     <div className="p-2.5">
                       <p className="text-xs font-bold leading-tight line-clamp-2">{p.cat.familia}</p>
                       <p className="text-[11px] text-[#777]">{p.color}</p>
-                      {p.cat.embudo?.precio != null && <p className="text-sm font-extrabold mt-1" style={{ color }}>{pesosCOP(p.cat.embudo.precio)}</p>}
-                      <div className="mt-2"><Comprar href={linkCompra(p.cat, p.color)} color={color} embudo={!!p.cat.embudo} ancho /></div>
+                      <div className="mt-2"><Comprar href={linkCat(p.cat, p.color)} color={color} embudo={!!p.cat.embudo} ancho /></div>
                     </div>
                   </article>
                 ))}
@@ -189,10 +189,7 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
                     {p.foto && <img src={p.foto} alt={p.nombre} loading="lazy" className="w-full aspect-square object-contain bg-[#F1F1EF]" />}
                     <div className="p-3">
                       <p className="text-sm font-bold leading-tight">{p.nombre}</p>
-                      <p className="mt-1 text-sm font-extrabold" style={{ color }}>
-                        {pesosCOP(p.precio)}
-                        {p.precio_antes ? <span className="ml-1 text-[11px] text-[#999] line-through font-normal">{pesosCOP(p.precio_antes)}</span> : null}
-                      </p>
+                      <p className="mt-1 text-sm font-extrabold text-[#C62828]">{pesosCOP(p.precio)}</p>
                       <span className="mt-2 inline-block text-xs font-bold text-white px-3 py-1.5 rounded-lg" style={{ background: color }}>🔥 Ver promo</span>
                     </div>
                   </a>
@@ -201,8 +198,8 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
             </section>
           );
 
-          case 'opiniones': return config.opiniones.length === 0 ? null : (
-            <section key={s.id} id="opiniones" className="max-w-6xl mx-auto px-4 py-10">
+          case 'opiniones': return config.opiniones.filter(o => o.texto.trim()).length === 0 ? null : (
+            <section key={s.id} className="max-w-6xl mx-auto px-4 py-10">
               <Titulo texto={s.titulo || 'Opiniones'} color={color} />
               <div className="grid md:grid-cols-3 gap-4">
                 {config.opiniones.filter(o => o.texto.trim()).map((o, i) => (
@@ -228,16 +225,14 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
           );
 
           case 'contacto': return (
-            <section key={s.id} id="contacto" className="text-white" style={{ background: oscuro }}>
+            <section key={s.id} id="contacto" className="text-white mt-6" style={{ background: oscuro }}>
               <div className="max-w-6xl mx-auto px-4 py-10 grid md:grid-cols-2 gap-6 items-center">
                 <div>
                   <h2 className="text-2xl font-extrabold">{s.titulo || 'Contacto'}</h2>
                   {config.contacto.texto && <p className="mt-2 text-white/80">{config.contacto.texto}</p>}
                 </div>
                 <div className="flex flex-wrap gap-3 md:justify-end">
-                  {linkWa('Hola 👋 vengo de su página') && (
-                    <a href={linkWa('Hola 👋 vengo de su página')!} target="_blank" rel="noreferrer" className="px-5 py-3 rounded-full bg-[#25D366] text-white font-bold text-sm">WhatsApp</a>
-                  )}
+                  {waNum && <a href={linkWa('Hola 👋 vengo de su página')!} target="_blank" rel="noreferrer" className="px-5 py-3 rounded-full bg-[#25D366] text-white font-bold text-sm">WhatsApp</a>}
                   {config.contacto.instagram && (
                     <a href={`https://instagram.com/${config.contacto.instagram.replace(/^@/, '')}`} target="_blank" rel="noreferrer" className="px-5 py-3 rounded-full bg-white/10 border border-white/20 font-bold text-sm">Instagram</a>
                   )}
@@ -249,17 +244,13 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
         }
       })}
 
-      <footer className="text-center text-[11px] text-[#999] py-6">© {new Date().getFullYear()} {config.marca.nombre}{config.marca.eslogan ? ` · ${config.marca.eslogan}` : ''}</footer>
+      <footer className="text-center text-[11px] text-[#999] py-6">© {new Date().getFullYear()} {config.marca.nombre}</footer>
 
-      {/* Colores de un catálogo */}
       {abierto && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-end md:items-center justify-center p-0 md:p-6" onClick={() => setAbierto(null)}>
           <div className="bg-white w-full md:max-w-3xl max-h-[88vh] overflow-y-auto rounded-t-3xl md:rounded-3xl p-4 md:p-6" onClick={e => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-3 mb-4">
-              <div>
-                <h3 className="text-lg font-extrabold">{abierto.familia}</h3>
-                {abierto.embudo?.precio != null && <p className="text-sm font-bold" style={{ color }}>{pesosCOP(abierto.embudo.precio)}</p>}
-              </div>
+              <h3 className="text-lg font-extrabold">{abierto.familia}</h3>
               <button onClick={() => setAbierto(null)} className="w-9 h-9 rounded-full bg-[#F1F1EF] text-lg">×</button>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -269,7 +260,7 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
                   <img src={p.foto} alt={p.color} loading="lazy" className="w-full aspect-square object-contain bg-[#F1F1EF]" />
                   <div className="p-2 flex items-center justify-between gap-2">
                     <span className="text-xs font-semibold truncate">{p.color}</span>
-                    <Comprar href={linkCompra(abierto, p.color)} color={color} embudo={!!abierto.embudo} mini />
+                    <Comprar href={linkCat(abierto, p.color)} color={color} embudo={!!abierto.embudo} mini />
                   </div>
                 </div>
               ))}
@@ -278,12 +269,67 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
         </div>
       )}
 
-      {/* Botón flotante de WhatsApp */}
       {waNum && (
         <a href={linkWa('Hola 👋 vengo de su página')!} target="_blank" rel="noreferrer" aria-label="WhatsApp"
           className="fixed bottom-4 right-4 z-40 w-14 h-14 rounded-full bg-[#25D366] text-white text-2xl flex items-center justify-center shadow-xl">💬</a>
       )}
     </div>
+  );
+}
+
+/** Portada: la foto que suba el dueño, o una por defecto armada con las fotos reales de sus embudos. */
+function Portada({ config, color, oscuro, fotos, onVer }: { config: ConfigPagina; color: string; oscuro: string; fotos: string[]; onVer: () => void }) {
+  const b = config.banner;
+  const iconos = ['👕', '🏅', '🚚', '⭐'];
+  const textos = (
+    <div className="relative z-10">
+      <h1 className="text-[34px] leading-[0.95] md:text-6xl font-black italic uppercase drop-shadow-lg">
+        {b.titulo}{b.titulo2 && <><br /><span style={{ color: mezclar(color, '#FFFFFF', 0.35) }}>{b.titulo2}</span></>}
+      </h1>
+      {b.subtitulo && <p className="mt-3 text-white/90 md:text-lg">{b.subtitulo}</p>}
+      {b.beneficios.filter(Boolean).length > 0 && (
+        <div className="mt-5 flex gap-5 md:gap-8">
+          {b.beneficios.filter(Boolean).slice(0, 4).map((t, i) => (
+            <div key={i} className="text-center w-16 md:w-20">
+              <div className="text-xl md:text-2xl">{iconos[i]}</div>
+              <p className="text-[10px] md:text-xs font-bold leading-tight mt-1">{t}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {b.boton && (
+        <button onClick={onVer} className="mt-6 px-6 py-3 rounded-full bg-white text-[#111] text-sm font-extrabold shadow-lg hover:scale-[1.03] transition">{b.boton} →</button>
+      )}
+    </div>
+  );
+  if (b.imagen) {
+    return (
+      <section className="relative overflow-hidden text-white">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={b.imagen} alt="" className="absolute inset-0 w-full h-full object-cover" />
+        <div className="absolute inset-0" style={{ background: `linear-gradient(90deg, ${oscuro}E6 0%, ${oscuro}80 45%, transparent 75%)` }} />
+        <div className="relative max-w-6xl mx-auto px-5 py-12 md:py-24">{textos}</div>
+      </section>
+    );
+  }
+  return (
+    <section className="relative overflow-hidden text-white" style={{ background: `radial-gradient(circle at 75% 40%, ${mezclar(color, '#041716', 0.35)} 0%, ${oscuro} 60%)` }}>
+      <div className="max-w-6xl mx-auto px-5 py-10 md:py-16 grid md:grid-cols-2 gap-6 items-center">
+        {textos}
+        {fotos.length > 0 && (
+          <div className="relative h-56 md:h-80">
+            {fotos.map((f, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={f} src={f} alt="" className="absolute top-1/2 rounded-2xl shadow-2xl object-cover border-4 border-white/10"
+                style={{
+                  width: '46%', aspectRatio: '1 / 1', left: `${[27, 2, 52][i] ?? 27}%`,
+                  transform: `translateY(-50%) rotate(${[0, -7, 7][i] ?? 0}deg) scale(${i === 0 ? 1.08 : 0.92})`, zIndex: i === 0 ? 3 : 1,
+                }} />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 

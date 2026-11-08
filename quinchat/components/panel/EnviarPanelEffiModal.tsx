@@ -239,6 +239,55 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
   const [aviso, setAviso] = useState<{ ok: boolean; t: string; lista?: string[] } | null>(null);
   const llave = useRef(0);
 
+  // ── Ventana movible y de tamaño ajustable (08-nov-2026) ─────────────────────
+  // Se arrastra desde el encabezado, se agranda/achica desde los bordes y la esquina,
+  // y se puede minimizar (barra abajo) o maximizar. El tamaño se recuerda en este equipo.
+  const MIN_W = 640, MIN_H = 380;
+  const [caja, setCaja] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [modoVentana, setModoVentana] = useState<'normal' | 'max' | 'min'>('normal');
+  const gesto = useRef<{ tipo: string; px: number; py: number; caja: { x: number; y: number; w: number; h: number } } | null>(null);
+  useEffect(() => {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    let w = Math.min(1180, vw - 24), h = Math.min(Math.round(vh * 0.95), 920);
+    try {
+      const g = JSON.parse(localStorage.getItem('qc-ventana-panel-effi') || 'null');
+      if (g?.w && g?.h) { w = Math.min(Math.max(MIN_W, g.w), vw - 8); h = Math.min(Math.max(MIN_H, g.h), vh - 8); }
+    } catch { /* sin almacenamiento */ }
+    setCaja({ x: Math.round((vw - w) / 2), y: Math.round((vh - h) / 2), w, h });
+  }, []);
+  const empezarGesto = (tipo: string) => (e: React.PointerEvent) => {
+    if (!caja || modoVentana !== 'normal' || e.button !== 0) return;
+    if (tipo === 'mover' && (e.target as HTMLElement).closest('button, a, input, select, textarea')) return;
+    e.preventDefault();
+    gesto.current = { tipo, px: e.clientX, py: e.clientY, caja: { ...caja } };
+    const mover = (ev: PointerEvent) => {
+      const g = gesto.current; if (!g) return;
+      const dx = ev.clientX - g.px, dy = ev.clientY - g.py;
+      const vw = window.innerWidth, vh = window.innerHeight;
+      let { x, y, w, h } = g.caja;
+      if (g.tipo === 'mover') {
+        x = Math.min(Math.max(x + dx, 80 - w), vw - 80);   // siempre queda un pedazo visible
+        y = Math.min(Math.max(y + dy, 0), vh - 60);        // el encabezado nunca se esconde arriba
+      } else {
+        if (g.tipo.includes('e')) w = Math.max(MIN_W, Math.min(w + dx, vw - x - 4));
+        if (g.tipo.includes('s')) h = Math.max(MIN_H, Math.min(h + dy, vh - y - 4));
+        if (g.tipo.includes('w')) { const nw = Math.max(MIN_W, w - dx); x = x + (w - nw); w = nw; }
+        if (g.tipo.includes('n')) { const nh = Math.max(MIN_H, h - dy); y = Math.max(0, y + (h - nh)); h = nh; }
+      }
+      setCaja({ x, y, w, h });
+    };
+    const soltar = () => {
+      window.removeEventListener('pointermove', mover); window.removeEventListener('pointerup', soltar);
+      gesto.current = null;
+      setCaja(c => { if (c) { try { localStorage.setItem('qc-ventana-panel-effi', JSON.stringify({ w: c.w, h: c.h })); } catch { /* */ } } return c; });
+    };
+    window.addEventListener('pointermove', mover); window.addEventListener('pointerup', soltar);
+  };
+  const estiloVentana: React.CSSProperties = modoVentana === 'max'
+    ? { left: 8, top: 8, width: 'calc(100vw - 16px)', height: 'calc(100vh - 16px)' }
+    : caja ? { left: caja.x, top: caja.y, width: caja.w, height: caja.h } : { left: '50%', top: '50%', width: 1180, height: '90vh', transform: 'translate(-50%,-50%)' };
+  const centrar = () => setCaja(c => c ? { ...c, x: Math.round((window.innerWidth - c.w) / 2), y: Math.round((window.innerHeight - c.h) / 2) } : c);
+
   const set = (k: string, v: any) => setDatos(d => ({ ...d, [k]: v }));
 
   useEffect(() => {
@@ -330,15 +379,47 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
     </div>
   );
   return (
-    <div className="fixed inset-0 z-[80] bg-black/40 flex items-center justify-center p-3" onClick={onCerrar}>
-      <div className="w-full max-w-[1180px] max-h-[95vh] bg-white rounded-3xl shadow-[0_24px_80px_rgba(0,0,0,.25)] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-        <header className="flex items-start gap-3 px-6 pt-5 pb-3">
+    <div className="fixed inset-0 z-[80] pointer-events-none">
+      {/* Minimizada: barra pequeña abajo a la derecha (los datos se conservan) */}
+      {modoVentana === 'min' && (
+        <div className="pointer-events-auto absolute bottom-4 right-4 flex items-center gap-2 bg-white rounded-2xl shadow-[0_12px_40px_rgba(0,0,0,.25)] border border-[#E5E7EB] pl-3 pr-1.5 py-1.5">
+          <span className="w-8 h-8 rounded-xl flex items-center justify-center text-white" style={{ background: VERDE }}>📋</span>
+          <button onClick={() => setModoVentana('normal')} className="text-[13px] font-bold text-[#0D0D0D] max-w-[260px] truncate" title="Abrir de nuevo">
+            Confirmar datos{datos.cliente_nombre ? ` · ${datos.cliente_nombre}` : ''}
+          </button>
+          <button onClick={() => setModoVentana('normal')} className="w-8 h-8 rounded-lg hover:bg-[#F3F4F6]" title="Restaurar">▢</button>
+          <button onClick={onCerrar} className="w-8 h-8 rounded-lg hover:bg-[#FEE2E2]" title="Cerrar">✕</button>
+        </div>
+      )}
+      <div className={`pointer-events-auto absolute bg-white shadow-[0_24px_80px_rgba(0,0,0,.30)] border border-[#E5E7EB] flex flex-col overflow-hidden ${modoVentana === 'max' ? 'rounded-2xl' : 'rounded-3xl'} ${modoVentana === 'min' ? 'hidden' : ''}`}
+        style={estiloVentana}>
+        {/* Bordes para cambiar el tamaño */}
+        {modoVentana === 'normal' && <>
+          <div onPointerDown={empezarGesto('e')} className="absolute top-3 bottom-3 right-0 w-2 cursor-ew-resize z-20" />
+          <div onPointerDown={empezarGesto('w')} className="absolute top-3 bottom-3 left-0 w-2 cursor-ew-resize z-20" />
+          <div onPointerDown={empezarGesto('s')} className="absolute left-3 right-3 bottom-0 h-2 cursor-ns-resize z-20" />
+          <div onPointerDown={empezarGesto('n')} className="absolute left-3 right-3 top-0 h-1.5 cursor-ns-resize z-20" />
+          <div onPointerDown={empezarGesto('se')} className="absolute right-0 bottom-0 w-5 h-5 cursor-nwse-resize z-30 flex items-end justify-end p-1" title="Arrastra para cambiar el tamaño">
+            <svg width="10" height="10" viewBox="0 0 10 10" className="text-[#9CA3AF]"><path d="M9 1L1 9M9 5L5 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+          </div>
+          <div onPointerDown={empezarGesto('sw')} className="absolute left-0 bottom-0 w-4 h-4 cursor-nesw-resize z-30" />
+          <div onPointerDown={empezarGesto('ne')} className="absolute right-0 top-0 w-4 h-4 cursor-nesw-resize z-30" />
+          <div onPointerDown={empezarGesto('nw')} className="absolute left-0 top-0 w-4 h-4 cursor-nwse-resize z-30" />
+        </>}
+        <header onPointerDown={empezarGesto('mover')} onDoubleClick={() => setModoVentana(m => (m === 'max' ? 'normal' : 'max'))}
+          className={`flex items-start gap-3 px-6 pt-5 pb-3 select-none ${modoVentana === 'normal' ? 'cursor-move' : ''}`}
+          title="Arrastra para mover · doble clic para agrandar">
           <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white text-[22px] shrink-0" style={{ background: VERDE }}>📋</div>
           <div className="flex-1 min-w-0">
             <h2 className="text-[22px] font-extrabold text-[#0D0D0D] leading-tight">Confirmar datos antes de pasar al panel</h2>
             <p className="text-[14px] text-[#6B7280]">Revisa, edita y valida la información del pedido antes de enviarlo al panel de Effi.</p>
           </div>
-          <button onClick={onCerrar} className="w-10 h-10 rounded-xl border border-[#E5E7EB] hover:bg-[#F3F4F6] text-[18px]" aria-label="Cerrar">✕</button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button onClick={() => setModoVentana('min')} className="w-10 h-10 rounded-xl border border-[#E5E7EB] hover:bg-[#F3F4F6] text-[18px] leading-none" title="Minimizar (los datos se conservan)" aria-label="Minimizar">–</button>
+            <button onClick={() => { if (modoVentana === 'max') setModoVentana('normal'); else setModoVentana('max'); }} className="w-10 h-10 rounded-xl border border-[#E5E7EB] hover:bg-[#F3F4F6] text-[15px]" title={modoVentana === 'max' ? 'Restaurar tamaño' : 'Pantalla completa'} aria-label="Maximizar">{modoVentana === 'max' ? '❐' : '▢'}</button>
+            {modoVentana === 'normal' && <button onClick={centrar} className="w-10 h-10 rounded-xl border border-[#E5E7EB] hover:bg-[#F3F4F6] text-[15px]" title="Centrar ventana" aria-label="Centrar">⌖</button>}
+            <button onClick={onCerrar} className="w-10 h-10 rounded-xl border border-[#E5E7EB] hover:bg-[#F3F4F6] text-[18px]" aria-label="Cerrar">✕</button>
+          </div>
         </header>
         <div className="mx-6 mb-3 rounded-xl px-4 py-2.5 flex items-center gap-3 text-[13.5px] flex-wrap" style={{ background: '#E6F5F2' }}>
           <span className="font-bold" style={{ color: VERDE }}>⚡ Datos detectados en vivo desde el chat</span>

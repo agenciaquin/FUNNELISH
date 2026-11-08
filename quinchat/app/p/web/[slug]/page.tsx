@@ -2,7 +2,8 @@ import { notFound } from 'next/navigation';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { normalizarConfig, cargarDatosPagina } from '@/lib/mi-pagina';
+import { normalizarConfig } from '@/lib/mi-pagina';
+import { cargarDatosPagina } from '@/lib/mi-pagina-servidor';
 import PaginaWeb from '@/components/publico/PaginaWeb';
 
 /**
@@ -26,7 +27,7 @@ export async function generateMetadata({ params }: Props) {
   const cfg = p?.publicado ? normalizarConfig(p.publicado) : null;
   if (!cfg) return { title: 'Página no disponible' };
   return {
-    title: `${cfg.marca.nombre}${cfg.banner.titulo ? ` · ${cfg.banner.titulo}` : ''}`,
+    title: `${cfg.marca.nombre}${cfg.banner.titulo ? ` · ${cfg.banner.titulo} ${cfg.banner.titulo2}`.trimEnd() : ''}`,
     description: cfg.banner.subtitulo || cfg.contacto.texto || undefined,
     openGraph: cfg.banner.imagen ? { images: [cfg.banner.imagen] } : undefined,
   };
@@ -42,7 +43,7 @@ export default async function MiPaginaPublica({ params, searchParams }: Props) {
     const sesion = await getServerSession(authOptions);
     if (!sesion) notFound();
     const cfg = normalizarConfig(p.borrador);
-    const datos = await cargarDatosPagina(cfg, null);
+    const datos = await cargarDatosPagina(cfg, true);
     return <PaginaWeb config={cfg} datos={datos} preview />;
   }
 
@@ -54,7 +55,6 @@ export default async function MiPaginaPublica({ params, searchParams }: Props) {
     );
   }
   const cfg = normalizarConfig(p.publicado);
-  const ids = cfg.catalogos.filter(c => c.visible).map(c => c.id);
-  const datos = await cargarDatosPagina(cfg, ids);
+  const datos = await cargarDatosPagina(cfg, false);
   return <PaginaWeb config={cfg} datos={datos} />;
 }

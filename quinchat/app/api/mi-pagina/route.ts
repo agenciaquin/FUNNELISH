@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exigirSesion } from '@/lib/ventas-vendedores/auth';
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { normalizarConfig, grupoSugerido } from '@/lib/mi-pagina';
+import { normalizarConfig, configInicial, sincronizarProductos, grupoSugerido } from '@/lib/mi-pagina';
+import { embudosActivos } from '@/lib/mi-pagina-servidor';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * Mi Página (panel). Exige sesión: en pedido.klixmant.shop el middleware deja pasar /api/ sin login.
- *  GET            → la página (si existe) + catálogos activos + embudos activos (solo lectura).
+ *  GET            → la página (se crea sola la primera vez con portada + TODOS los embudos activos),
+ *                   los embudos (nombre, fotos, precio) y los catálogos. Solo lee embudos y catálogos.
  *  PUT  {slug, slug_anterior?, nombre, borrador}  → guarda el BORRADOR (no cambia lo publicado).
  *  POST {slug, accion: 'publicar' | 'ocultar' | 'mostrar'}
- * No escribe en catálogos ni embudos.
  */
 const norm = (t: unknown) => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 const SLUG = /^[a-z0-9][a-z0-9-]{1,40}$/;
@@ -19,36 +20,35 @@ export async function GET() {
   const auth = await exigirSesion();
   if (auth.error) return auth.error;
   const supabase = createServerSupabaseClient();
-  const [{ data: paginas }, { data: cats }, { data: fun }] = await Promise.all([
+  const [{ data: paginas }, embudos, { data: cats }] = await Promise.all([
     supabase.from('mi_pagina').select('*').order('creado_at', { ascending: true }).limit(1),
-    supabase.from('catalogos_bot').select('id, familia, patron, created_at, catalogo_colores(url_imagen, activo)')
+    embudosActivos(null),
+    supabase.from('catalogos_bot').select('id, familia, patron, catalogo_colores(url_imagen, activo)')
       .eq('activo', true).is('eliminado_at', null).order('created_at', { ascending: false }).limit(300),
-    supabase.from('funnels').select('slug, producto, nombre, precio, activo, eliminado, imagenes, variantes')
-      .eq('activo', true).limit(300),
   ]);
-  const embudos = (fun ?? []).filter((f: any) => !f.eliminado);
+  const slugs = embudos.map(e => e.slug);
 
-  const catalogos = (cats ?? []).map((c: any) => {
+  let p: any = (paginas ?? [])[0] ?? null;
+  if (!p) {
+    // Primera vez: portada por defecto + todos los embudos activos, en el orden más reciente primero.
+    const borrador = sincronizarProductos(configInicial(), slugs);
+    const { data: nueva } = await supabase.from('mi_pagina')
+      .upsert({ slug: 'klixmant', nombre: borrador.marca.nombre, borrador }, { onConflict: 'slug' }).select('*').single();
+    p = nueva;
+  }
+  const borrador = p ? sincronizarProductos(normalizarConfig(p.borrador), slugs) : sincronizarProductos(configInicial(), slugs);
+
+  const catalogos = ((cats ?? []) as any[]).map(c => {
     const fotos = ((c.catalogo_colores ?? []) as any[]).filter(x => x.activo !== false && x.url_imagen).map(x => String(x.url_imagen));
-    // Embudo sugerido: comparte una foto con el catálogo, o su nombre contiene el del catálogo.
-    const base = (u: string) => u.split('?')[0];
-    const fotosSet = new Set(fotos.map(base));
     const nom = norm(c.patron || c.familia);
-    const porFoto = embudos.find((f: any) => [...(f.imagenes ?? []), ...((f.variantes ?? []).map((v: any) => v?.imagen))]
-      .some((u: any) => typeof u === 'string' && fotosSet.has(base(u))));
-    const porNombre = nom.length >= 4 ? embudos.find((f: any) => ` ${norm(`${f.producto} ${f.nombre}`)} `.includes(` ${nom} `)) : null;
-    const sug: any = porFoto ?? porNombre ?? null;
-    return {
-      id: String(c.id), familia: String(c.familia ?? ''), fotos: fotos.length, portada: fotos[0] ?? null,
-      grupo: grupoSugerido(c.familia), embudo_sugerido: sug?.slug ?? null,
-    };
+    const sug = nom.length >= 4 ? embudos.find(f => ` ${norm(f.producto)} `.includes(` ${nom} `)) : null;
+    return { id: String(c.id), familia: String(c.familia ?? ''), fotos: fotos.length, portada: fotos[0] ?? null, grupo: grupoSugerido(c.familia), embudo_sugerido: sug?.slug ?? null };
   });
 
-  const p = (paginas ?? [])[0] ?? null;
   return NextResponse.json({
-    pagina: p ? { ...p, borrador: normalizarConfig(p.borrador) } : null,
+    pagina: p ? { slug: p.slug, nombre: p.nombre, publicada: p.publicada, publicado_at: p.publicado_at, actualizado_at: p.actualizado_at, borrador } : null,
+    embudos,
     catalogos,
-    embudos: embudos.map((f: any) => ({ slug: f.slug, producto: f.producto || f.nombre || f.slug, precio: f.precio != null ? Number(f.precio) : null })),
   });
 }
 
