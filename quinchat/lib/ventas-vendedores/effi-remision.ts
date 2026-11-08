@@ -89,6 +89,39 @@ function normalizarTransportadora(t: string): string | null {
   return null;
 }
 
+/**
+ * Transportadora recomendada por municipio (tabla transportadoras_municipios, copia de kls-app
+ * del 08-nov-2026). La tabla guarda solo las excepciones; la fila ('*','*') es la regla general.
+ * En kls-app los centros poblados van como «MUNICIPIO - CENTRO POBLADO»; el casco urbano es la fila
+ * sin « - », o la que dice «MUNICIPIO - MUNICIPIO, DISTRITO…».
+ */
+const nTx = (s: unknown) => sinTildes(s).toUpperCase().replace(/,?\s*D\.?\s*C\.?$/, '').replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+export async function transportadoraDeMunicipio(departamento: string, municipio: string): Promise<{
+  transportadora: string; abono: boolean; entrega_dias: number | null; restriccion: string | null; cantidad_minima: number; exacta: boolean;
+} | null> {
+  const supabase = createServerSupabaseClient();
+  const { data } = await supabase.from('transportadoras_municipios').select('departamento, municipio, transportadora, abono, entrega_dias, restriccion, cantidad_minima');
+  const filas = data ?? [];
+  const def = filas.find((f: any) => f.departamento === '*') ?? null;
+  const m = nTx(municipio), d = nTx(departamento);
+  if (!m) return def ? { ...def, exacta: false } : null;
+  const base = (f: any) => nTx(String(f.municipio).split(' - ')[0]);
+  let candidatas = filas.filter((f: any) => f.departamento !== '*' && base(f) === m);
+  // «Cúcuta» → «SAN JOSÉ DE CÚCUTA», «Cartagena» → «CARTAGENA DE INDIAS»
+  if (!candidatas.length && m.length >= 4) candidatas = filas.filter((f: any) => f.departamento !== '*' && (base(f).endsWith(` ${m}`) || base(f).startsWith(`${m} `)));
+  const casco = (f: any) => {
+    const partes = String(f.municipio).split(' - ');
+    if (partes.length === 1) return true;
+    const sub = nTx(partes.slice(1).join(' - '));
+    return sub.startsWith(m) || /DISTRITO/.test(sub);
+  };
+  const delDepto = candidatas.filter((f: any) => { const fd = nTx(f.departamento); return !d || fd === d || fd.startsWith(d) || d.startsWith(fd); });
+  const pool = delDepto.length ? delDepto : candidatas;
+  const elegida = pool.find(casco) ?? null;
+  if (elegida) return { ...elegida, exacta: true };
+  return def ? { ...def, exacta: false } : null;
+}
+
 const hoyBogota = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
 const dinero = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
 
@@ -123,9 +156,24 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
 
   // ── Transportadora → ubicación de venta ───────────────────────────────
   const muni = sinTildes(venta.municipio);
-  const transp = normalizarTransportadora(String(venta.transportadora ?? '')) ?? (cfg.transportadoras[muni] ? normalizarTransportadora(cfg.transportadoras[muni]) : null);
+  // Orden: la que escribió el asesor → ajuste manual por municipio → tabla de transportadoras (kls-app)
+  let transp = normalizarTransportadora(String(venta.transportadora ?? '')) ?? (cfg.transportadoras[muni] ? normalizarTransportadora(cfg.transportadoras[muni]) : null);
+  if (!transp && !String(venta.transportadora ?? '').trim()) {
+    const rec = await transportadoraDeMunicipio(String(venta.departamento ?? ''), String(venta.municipio ?? '')).catch(() => null);
+    if (rec) {
+      if (/NO HAY CUBRIMIENTO/i.test(rec.transportadora)) {
+        errores.push(`No hay cubrimiento de transportadora en ${venta.municipio} (${venta.departamento}). Elige una a mano o confirma con despacho.`);
+      } else {
+        transp = normalizarTransportadora(rec.transportadora);
+        if (!rec.exacta) avisos.push(`Transportadora por regla general: ${rec.transportadora} (${venta.municipio} no tiene una especial).`);
+        if (rec.abono && porCobrar > 0 && pagado === 0) avisos.push(`${venta.municipio} pide ABONO según la tabla de transportadoras.`);
+        if (rec.restriccion) avisos.push(`${rec.transportadora}: ${rec.restriccion}`);
+        if (rec.cantidad_minima > 0) avisos.push(`${venta.municipio}: cantidad mínima de venta ${rec.cantidad_minima}.`);
+      }
+    }
+  }
   let ubicacion: number | null = null;
-  if (!transp) errores.push(`Falta la transportadora para ${venta.municipio || 'este municipio'} (escríbela en «Transportadora»: CIUDAD BONITA, INTER RAPIDISIMO, ENVIA, COORDINADORA, SERVIENTREGA o JOSE ENVIOS)`);
+  if (!transp) { if (!errores.some(e => e.startsWith('No hay cubrimiento'))) errores.push(`Falta la transportadora para ${venta.municipio || 'este municipio'} (escríbela en «Transportadora»: CIUDAD BONITA, INTER RAPIDISIMO, ENVIA, COORDINADORA, SERVIENTREGA o JOSE ENVIOS)`); }
   else ubicacion = porCobrar > 0 ? UBICACIONES[transp].cr : UBICACIONES[transp].sr;
 
   // ── Vendedor ──────────────────────────────────────────────────────────
