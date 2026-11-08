@@ -125,6 +125,32 @@ export async function transportadoraDeMunicipio(departamento: string, municipio:
   return def ? { ...def, exacta: false } : null;
 }
 
+/** Nombre de lugar comparable: sin tildes, sin «D.C.», sin signos. «Bogotá, D.C.» → «bogota». */
+const normLugar = (t: unknown) => sinTildes(t).replace(/\bd\s*\.?\s*c\s*\.?(?=\s|$)/g, ' ').replace(/[^a-z0-9ñ ]/g, ' ').replace(/\s+/g, ' ').trim();
+const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+/** Total como lo calcula Effi: subtotal (bases de 2 decimales × cantidad) + IVA 19 % redondeado. */
+function totalEffi(bases: number[], cantidades: number[]): number {
+  const sub = r2(bases.reduce((s, b, i) => s + b * (cantidades[i] || 0), 0));
+  return r2(sub + r2(sub * 0.19));
+}
+/** Bases sin IVA (2 decimales) cuyo total en Effi da EXACTO el total con IVA del vendedor. */
+function ajustarBases(precios: number[], cantidades: number[], total: number): number[] {
+  const bases = precios.map(p => r2(p / 1.19));
+  if (!total || Math.abs(totalEffi(bases, cantidades) - total) < 0.005) return bases;
+  // Se toca primero una prenda de cantidad 1 (cada centavo mueve el total ~1,19 centavos)
+  const orden = cantidades.map((c, i) => i).sort((a, b) => (cantidades[a] === 1 ? 0 : 1) - (cantidades[b] === 1 ? 0 : 1));
+  for (const k of orden) {
+    for (let paso = 1; paso <= 5; paso++) {
+      for (const signo of [-1, 1]) {
+        const prueba = [...bases];
+        prueba[k] = r2(prueba[k] + signo * paso * 0.01);
+        if (Math.abs(totalEffi(prueba, cantidades) - total) < 0.005) return prueba;
+      }
+    }
+  }
+  return bases;
+}
+
 const hoyBogota = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
 const dinero = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
 
@@ -193,10 +219,12 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
   const articulos: ({ id: number; descripcion: string; referencia: string } | null)[] = [];
   try {
     // Departamento
-    const deptoN = sinTildes(venta.departamento);
+    // En Effi Bogotá es la ciudad «Bogotá D.C.» dentro de CUNDINAMARCA (así salen las guías).
+    const deptoTxt = /^bogota\b/.test(normLugar(venta.departamento)) ? 'Cundinamarca' : String(venta.departamento ?? '');
+    const deptoN = sinTildes(deptoTxt);
     if (!deptoN) errores.push('Falta el departamento');
     else {
-      const prov = await effiGet('provincia', { nombre: String(venta.departamento).slice(0, 40), pais: EFFI_IDS.pais, por_pagina: 100 });
+      const prov = await effiGet('provincia', { nombre: deptoTxt.slice(0, 40), pais: EFFI_IDS.pais, por_pagina: 100 });
       const p = (prov?.data ?? []).find((x: any) => sinTildes(x.nombre) === deptoN)
         ?? ((prov?.data ?? []).length === 1 ? prov.data[0] : null);
       if (!p) errores.push(`Effi no reconoce el departamento «${venta.departamento}»`);
@@ -207,8 +235,14 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
       if (!muni) errores.push('Falta el municipio');
       else {
         const ciu = await effiGet('ciudad', { nombre: String(venta.municipio).slice(0, 40), provincia: idProvincia, por_pagina: 100 });
-        const c = (ciu?.data ?? []).find((x: any) => sinTildes(x.nombre) === muni)
-          ?? ((ciu?.data ?? []).length === 1 ? ciu.data[0] : null);
+        const lista = ciu?.data ?? [];
+        const m = normLugar(venta.municipio);
+        // 1) igual (sin tildes, sin «D.C.» ni signos) · 2) el municipio principal, no sus localidades
+        //    («Suba (Bogotá D.C.)») · 3) si solo hay una
+        const c = lista.find((x: any) => sinTildes(x.nombre) === muni)
+          ?? lista.find((x: any) => normLugar(x.nombre) === m)
+          ?? lista.find((x: any) => !/\(/.test(String(x.nombre)) && (normLugar(x.nombre).startsWith(`${m} `) || m.startsWith(`${normLugar(x.nombre)} `)))
+          ?? (lista.length === 1 ? lista[0] : null);
         if (!c) errores.push(`Effi no tiene «${venta.municipio}» en ${venta.departamento}`);
         else idCiudad = Number(c.id);
       }
@@ -280,9 +314,13 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
 
   // ── Conceptos ─────────────────────────────────────────────────────────
   // El precio del vendedor ya trae IVA: a Effi va la base (Effi suma el 19%).
-  const base = (p: number) => Math.round((p / 1.19) * 10000) / 10000;
-  const totalCalculado = items.reduce((s, it) => s + Math.round(base(Number(it.precio) || 0) * 1.19 * 100) / 100 * (Number(it.cantidad) || 0), 0);
-  if (total && Math.abs(totalCalculado - total) >= 0.01) avisos.push(`Redondeo: Effi podría calcular ${totalCalculado.toFixed(2)} en vez de ${total}`);
+  // Effi guarda la base con 2 decimales y calcula total = base·cant + 19 %. Con varias prendas el
+  // redondeo podía dar 1 centavo de más y Effi rechazaba la remisión (08-nov-2026: 194.900,01 ≠ 194.900).
+  // Por eso se ajusta la base de una prenda en ±1 centavo hasta que el total de Effi cuadre EXACTO.
+  const bases = ajustarBases(items.map(it => Number(it.precio) || 0), items.map(it => Number(it.cantidad) || 0), total);
+  const base = (_p: number, i: number) => bases[i];
+  const totalCalculado = totalEffi(bases, items.map(it => Number(it.cantidad) || 0));
+  if (total && Math.abs(totalCalculado - total) >= 0.005) errores.push(`Redondeo: Effi calcularía ${totalCalculado.toFixed(2)} en vez de ${total}. Ajusta un precio en 1 peso.`);
 
   // Regla del dueño (08-nov-2026): en Effi va SOLO la observación de la venta (sin código QuinChat ni celular).
   const observacion = String(venta.observaciones ?? '').trim().slice(0, 255) || undefined;
@@ -298,7 +336,7 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
     articulo: articulos.map(a => a?.id ?? null),
     descripcion: articulos.map((a, i) => a?.descripcion ?? items[i]?.sku ?? ''),
     cantidad: items.map(it => Number(it.cantidad) || 0),
-    precio: items.map(it => base(Number(it.precio) || 0)),
+    precio: items.map((it, i) => base(Number(it.precio) || 0, i)),
     impuestos: Object.fromEntries(items.map((_, i) => [String(i + 1), [EFFI_IDS.iva19]])),
     observacion_concepto: items.map(it => String(it.id_variante ?? '')),
     t_forma_pago, valor_forma_pago,
@@ -317,7 +355,7 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
       articulo: articulos[i] ? `${articulos[i]!.referencia} (${articulos[i]!.id})` : '—',
       descripcion: articulos[i]?.descripcion ?? it.sku, observacion: String(it.id_variante ?? '—'),
       estampado: `${it.catalogo ?? ''} · ${it.color ?? ''} · ${it.talla ?? ''}`,
-      cantidad: it.cantidad, precio_con_iva: Number(it.precio) || 0, precio_sin_iva: base(Number(it.precio) || 0),
+      cantidad: it.cantidad, precio_con_iva: Number(it.precio) || 0, precio_sin_iva: base(Number(it.precio) || 0, i),
     })),
     pagos: [
       ...(porCobrar > 0 ? [`Contado a 1 día ${dinero(porCobrar)} (por cobrar)`] : []),

@@ -71,7 +71,9 @@ const SISTEMA =
   `si cambiaron un color, una talla o la dirección, usa lo nuevo). No inventes: si no aparece, "" o null. ` +
   `celular 10 dígitos. cedula solo si el cliente la escribió (nunca el celular). ` +
   `Si acordaron RECLAMAR EN OFICINA de la transportadora, direccion = "Oficina <transportadora>" y referencia = "Reclama en oficina".\n` +
-  `barrio sin la palabra "barrio". complemento = apto, torre, casa, conjunto, interior. referencia = indicaciones para llegar.\n` +
+  `SEPARA SIEMPRE la dirección: direccion = solo calle/carrera y número (ej. "Cra 50 #31-91"); barrio = el nombre del barrio ` +
+  `sin la palabra "barrio" (ej. "Los 4 Vientos"); complemento = apto, torre, casa, conjunto, interior, manzana; ` +
+  `referencia = indicaciones para llegar (ej. "entrando por Muebles Jamar, diagonal a Unicolombo"). Nunca dejes el barrio ni la referencia dentro de direccion.\n` +
   `prendas: UNA por cada prenda distinta del pedido (un pack de 2 con tallas o colores distintos = 2 prendas, cada una cantidad 1). ` +
   `producto = tipo de prenda + diseño tal como lo nombran (ej. "CAMISETA AMERICA", "BUZO AMERICA LINEA", "CUELLO ALTO MERCEDES"); ` +
   `NUNCA cambies camiseta por buzo ni al revés. color COMPLETO como lo dice el producto o el cliente (ej. «Blanco Marfil», «Azul Navy», «Negro»), no lo recortes. talla sola (S, M, L, XL, XXL, 2XL…). ` +
@@ -140,6 +142,8 @@ export async function prellenarDesdeChat(conv: string) {
     abono: (pedido?.abono_recibido ? Number(pedido?.abono) || 0 : 0) || (num(x.abono_recibido) ?? 0),
     observaciones: s(x.observaciones),
   };
+  // Respaldo si la IA dejó todo junto: «Cra 50#31-91, Barrio Los 4 vientos entrando por …»
+  Object.assign(datos, separarDireccion(datos));
   // El cliente a veces escribe la ciudad en «departamento» y al revés (Departamento: Cartagena,
   // Ciudad: Bolívar). Si lo de «departamento» no es un departamento y lo de «municipio» sí, se cruzan.
   if (!esDepartamento(datos.departamento) && esDepartamento(datos.municipio)) {
@@ -256,6 +260,44 @@ function puntajeColor(colores: string[], color: string, producto: string): numbe
   if (col && cs.some(c => c === col || c.includes(col) || col.includes(c))) p = Math.max(p, 10);
   if (col && cs.some(c => (TONOS[col] ?? []).includes(c))) p = Math.max(p, 5);
   return p;
+}
+
+/**
+ * Separa barrio, complemento y referencia cuando vienen dentro de la dirección (08-nov-2026).
+ * Solo actúa si el barrio está vacío y la dirección trae la palabra «barrio» (o B/, Br., Urb., Sector).
+ * Ej.: «Cra 50#31-91, Barrio Los 4 vientos entrando por muebles Jamar diagonal a unicolombo»
+ *   → direccion «Cra 50#31-91» · barrio «Los 4 vientos» · referencia «entrando por muebles Jamar diagonal a unicolombo».
+ */
+const PALABRAS_REF = /\b(entrando|entrada|diagonal|frente|cerca|al lado|junto|detr[aá]s|despu[eé]s|antes de|por la|por el|a una cuadra|a media cuadra|esquina|donde|llegando|subiendo|bajando|enseguida|contiguo|via|v[ií]a)\b/i;
+const PALABRAS_COMP = /^(casa|apto|apartamento|apt|torre|piso|interior|int|local|bloque|manzana|mz|conjunto|edificio|etapa|lote)\b/i;
+export function separarDireccion<T extends { direccion: string; barrio: string; complemento: string; referencia_dir: string }>(d: T): T {
+  const dir = String(d.direccion ?? '').trim();
+  if (!dir || String(d.barrio ?? '').trim()) return d;
+  const m = dir.match(/^(.*?)[\s,;.-]*\b(?:barrio|b\/|br\.|bº|urbanizaci[oó]n|urb\.?|sector)\s+(.+)$/i);
+  if (!m || m[1].trim().length < 4) return d;
+  const calle = m[1].replace(/[\s,;.-]+$/, '').trim();
+  let resto = m[2].trim();
+  // El barrio termina en una coma o donde empiezan las indicaciones / el complemento
+  let barrio = resto, despues = '';
+  const coma = resto.search(/[,;]/);
+  const ref = resto.search(PALABRAS_REF);
+  const comp = resto.search(/\b(casa|apto|apartamento|torre|piso|interior|local|bloque|manzana|mz|conjunto|edificio)\b/i);
+  const cortes = [coma, ref, comp].filter(i => i > 0);
+  if (cortes.length) { const i = Math.min(...cortes); barrio = resto.slice(0, i); despues = resto.slice(i); }
+  barrio = barrio.replace(/[\s,;.-]+$/, '').trim();
+  despues = despues.replace(/^[\s,;.-]+/, '').trim();
+  if (!barrio) return d;
+  let complemento = String(d.complemento ?? '').trim(), referencia = String(d.referencia_dir ?? '').trim();
+  if (despues) {
+    if (PALABRAS_COMP.test(despues)) {
+      const r = despues.search(PALABRAS_REF);
+      const c = (r > 0 ? despues.slice(0, r) : despues).replace(/[\s,;.-]+$/, '').trim();
+      const resto2 = r > 0 ? despues.slice(r).trim() : '';
+      complemento = [complemento, c].filter(Boolean).join(' ');
+      if (resto2) referencia = [referencia, resto2].filter(Boolean).join(' · ');
+    } else referencia = [referencia, despues].filter(Boolean).join(' · ');
+  }
+  return { ...d, direccion: calle, barrio, complemento, referencia_dir: referencia };
 }
 
 /** Los 32 departamentos de Colombia + Bogotá D.C. (con los nombres cortos que usa la gente). */
