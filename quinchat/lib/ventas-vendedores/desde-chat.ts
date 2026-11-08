@@ -93,7 +93,7 @@ export async function prellenarDesdeChat(conv: string) {
 
   const [{ data: pedidos }, { data: msgs }, { data: existentes }] = await Promise.all([
     supabase.from('clientes_funnelish')
-      .select('id, nombre, telefono, correo, direccion, ciudad, departamento, producto, talla, valor, cantidad, abono, abono_recibido, foto_producto, created_at')
+      .select('id, nombre, telefono, correo, direccion, ciudad, departamento, producto, talla, valor, cantidad, abono, abono_recibido, foto_producto, funnel_slug, created_at')
       .in('telefono', [tel, `57${tel}`]).is('papelera_at', null)
       .order('created_at', { ascending: false }).limit(1),
     supabase.from('messages').select('content, role, created_at')
@@ -159,8 +159,12 @@ export async function prellenarDesdeChat(conv: string) {
   const unidades = prendasIA.reduce((t, p) => t + Math.max(1, Math.min(50, Number(p?.cantidad) || 1)), 0) || 1;
   const precioUnidad = Math.round(total / unidades);
 
+  // Producto EXACTO desde el embudo: la foto que eligió el cliente en cada grupo (BUZO 1, BUZO 2, CAMISETA…)
+  // es una foto del catálogo que sabe a qué producto de KlixmSoft corresponde (las rotuladas). 08-nov-2026.
+  const desdeEmbudo = await itemsDesdeEmbudo(supabase, pedido, prendasIA);
+
   const prendas = [];
-  for (const p of prendasIA.slice(0, 6)) {
+  for (const [idx, p] of prendasIA.slice(0, 6).entries()) {
     const producto = s(p.producto) || s(pedido?.producto);
     const color = s(p.color);
     const talla = limpiarTalla(s(p.talla).split(/\s+-\s+/)[0]);
@@ -175,6 +179,8 @@ export async function prellenarDesdeChat(conv: string) {
       const ids = new Set(enlazados.map(c => c.id_item));
       candidatos = [...enlazados, ...candidatos.filter(c => !ids.has(c.id_item))];
     }
+    const exacto = desdeEmbudo[idx] ?? null;
+    if (exacto) candidatos = [exacto, ...candidatos.filter(c => c.id_item !== exacto.id_item)];
     // El TIPO de prenda manda: una camiseta nunca se propone como buzo.
     // EXCEPTO cuando el catálogo de QuinChat está ENLAZADO a mano a uno de KlixmSoft («Nombre en KlixmSoft»):
     // ese enlace lo puso el dueño y gana. (08-nov-2026: «BUZO MOTO YAMAHA REFLECTIVO» está enlazado a
@@ -188,8 +194,9 @@ export async function prellenarDesdeChat(conv: string) {
     // Nombre exacto del catálogo dentro del texto → ese primero (los enlazados ya van adelante)
     const pTxt = sinTildes(producto);
     if (!enlazados.length) candidatos.sort((a, b) => Number(pTxt.includes(sinTildes(b.catalogo))) - Number(pTxt.includes(sinTildes(a.catalogo))));
+    if (exacto) candidatos = [exacto, ...candidatos.filter(c => c.id_item !== exacto.id_item)]; // el del embudo siempre primero
     const primero = candidatos[0] ?? null;
-    const confiable = !!primero && (enlazados.length > 0 || !tipoTxt || tipoDePrenda(`${primero.catalogo} ${primero.tipo ?? ''}`) === tipoTxt);
+    const confiable = !!exacto || (!!primero && (enlazados.length > 0 || !tipoTxt || tipoDePrenda(`${primero.catalogo} ${primero.tipo ?? ''}`) === tipoTxt));
     prendas.push({
       texto: producto, color, talla, genero, cantidad, precio: precioUnidad,
       id_item: confiable ? primero!.id_item : null,
@@ -313,6 +320,68 @@ const DEPARTAMENTOS = ['amazonas', 'antioquia', 'arauca', 'atlantico', 'bolivar'
 function esDepartamento(t: string): boolean {
   const x = sinTildes(t).replace(/[^a-z. ]/g, ' ').replace(/\s+/g, ' ').trim();
   return !!x && DEPARTAMENTOS.includes(x);
+}
+
+/**
+ * Para pedidos de un EMBUDO: en cada grupo del producto («BUZO 1», «BUZO 2», «COLOR Y TALLA CAMISETA»…) el cliente
+ * eligió un color con su foto. Esa foto es del catálogo y sabe su producto de KlixmSoft (klixmsoft_item_id).
+ * Devuelve, por prenda (en orden), el producto exacto del género pedido. null si no se puede saber.
+ */
+async function itemsDesdeEmbudo(supabase: any, pedido: any, prendasIA: any[]): Promise<(Candidato | null)[]> {
+  try {
+    const slug = String(pedido?.funnel_slug ?? '').trim();
+    if (!slug || !prendasIA.length) return [];
+    const { data: f } = await supabase.from('funnels').select('variantes').eq('slug', slug).maybeSingle();
+    const vars: any[] = Array.isArray(f?.variantes) ? f.variantes : [];
+    const prodTxt = sinTildes(String(pedido?.producto ?? '').split(/\s+-\s+/)[0]);
+    const variante = vars.find(v => sinTildes(v?.nombre) === prodTxt)
+      ?? vars.find(v => sinTildes(v?.nombre) && prodTxt.includes(sinTildes(v?.nombre)))
+      ?? (vars.length === 1 ? vars[0] : null);
+    if (!variante) return [];
+    const sels: any[] = Array.isArray(variante.selectores) ? variante.selectores : [];
+    const conFoto = (sl: any) => Array.isArray(sl?.opciones) && sl.opciones.some((o: any) => o?.imagen);
+    // Un selector de COLOR (con fotos) por grupo, en el orden del embudo
+    const grupos: any[] = [];
+    const vistos = new Set<string>();
+    for (const sl of sels) {
+      if (!conFoto(sl)) continue;
+      const g = String(sl.grupo ?? '').trim() || `__${grupos.length}`;
+      if (vistos.has(g)) continue;
+      vistos.add(g); grupos.push(sl);
+    }
+    if (!grupos.length) return [];
+    const urls: string[] = [], colores: string[] = [];
+    prendasIA.forEach((p, i) => {
+      const sl = grupos[i] ?? grupos[0];
+      const c = sinTildes(p?.color);
+      const op = (sl.opciones as any[]).find(o => sinTildes(o?.valor) === c)
+        ?? (sl.opciones as any[]).find(o => c && (sinTildes(o?.valor).includes(c) || c.includes(sinTildes(o?.valor))));
+      urls.push(op?.imagen ?? ''); colores.push(op?.valor ?? p?.color ?? '');
+    });
+    const { itemsKlixmsoft } = await import('@/lib/foto-vigente');
+    const items = await itemsKlixmsoft(supabase, urls, colores);
+    const ids = [...new Set(items.filter(Boolean) as number[])];
+    if (!ids.length) return [];
+    const campos = 'id_item, id_catalogo, catalogo, nombre, referencia, tipo, genero_id, foto_card, foto_main, foto_thumb, colores, tallas';
+    const { data: base } = await supabase.from('vv_cat_productos').select(campos).in('id_item', ids);
+    const porId = new Map(((base ?? []) as any[]).map(x => [x.id_item, x]));
+    const salida: (Candidato | null)[] = [];
+    for (const [i, id] of items.entries()) {
+      const b: any = id ? porId.get(id) : null;
+      if (!b) { salida.push(null); continue; }
+      // El producto rotulado suele ser el de hombre: si el pedido es de dama, el hermano del mismo catálogo y color
+      const gen = /dama|mujer/i.test(String(prendasIA[i]?.genero ?? '')) ? 2 : /nin/i.test(sinTildes(prendasIA[i]?.genero)) ? 4 : 1;
+      let elegido = b;
+      if (b.genero_id !== gen) {
+        const { data: hermanos } = await supabase.from('vv_cat_productos').select(campos)
+          .eq('id_catalogo', b.id_catalogo).eq('genero_id', gen).eq('activo', true).limit(40);
+        const col = sinTildes((b.colores ?? [])[0]);
+        elegido = ((hermanos ?? []) as any[]).find(h => (h.colores ?? []).some((x: string) => sinTildes(x) === col)) ?? b;
+      }
+      salida.push({ ...elegido, puntaje: 1000 } as Candidato);
+    }
+    return salida;
+  } catch { return []; }
 }
 
 /** Texto ÚNICO para las entregas en oficina de Interrapidísimo (regla del dueño, 08-nov-2026). */
