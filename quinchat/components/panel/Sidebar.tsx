@@ -74,7 +74,7 @@ export default function Sidebar({ userName, activeSection, onSectionChange }: Pr
   useEffect(() => { if (enHerramientas) setHerramientasAbierto(true); }, [enHerramientas]);
 
   return (
-    <aside className="w-[200px] h-full min-h-0 flex flex-col shrink-0 text-white bg-gradient-to-b from-[#00B5A6] via-[#00A89D] to-[#00847A] shadow-xl shadow-[#00847A]/20">
+    <aside className="w-[224px] h-full min-h-0 flex flex-col shrink-0 text-white bg-gradient-to-b from-[#00B5A6] via-[#00A89D] to-[#00847A] shadow-xl shadow-[#00847A]/20">
 
       {/* Brand — logo QuinChat */}
       <div className="px-4 py-4 border-b border-white/15 flex flex-col items-center">
@@ -111,9 +111,9 @@ export default function Sidebar({ userName, activeSection, onSectionChange }: Pr
             <button
               key={item.key}
               onClick={() => onSectionChange(item.key)}
-              className={`group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium text-left transition-all duration-200 ease-out ${
+              className={`group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[12px] font-bold uppercase tracking-tight text-left transition-all duration-200 ease-out ${
                 active
-                  ? 'bg-white text-[#00847A] font-semibold shadow-md shadow-black/10'
+                  ? 'bg-white text-[#00847A] shadow-md shadow-black/10'
                   : 'text-white/90 hover:text-white hover:bg-white/15 hover:translate-x-0.5'
               }`}
             >
@@ -135,7 +135,7 @@ export default function Sidebar({ userName, activeSection, onSectionChange }: Pr
         <button
           onClick={() => setHerramientasAbierto(prev => !prev)}
           aria-expanded={herramientasAbierto}
-          className={`group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold text-left transition-all duration-200 ease-out border ${
+          className={`group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[12px] font-bold uppercase tracking-tight text-left transition-all duration-200 ease-out border ${
             enHerramientas && !herramientasAbierto
               ? 'bg-white text-[#00847A] border-white shadow-md shadow-black/10'
               : herramientasAbierto
@@ -158,9 +158,9 @@ export default function Sidebar({ userName, activeSection, onSectionChange }: Pr
                 <button
                   key={item.key}
                   onClick={() => onSectionChange(item.key)}
-                  className={`group w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[12.5px] text-left transition-all duration-200 ease-out ${
+                  className={`group w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[11px] font-bold uppercase tracking-tight text-left transition-all duration-200 ease-out ${
                     active
-                      ? 'bg-white text-[#00847A] font-semibold shadow-sm'
+                      ? 'bg-white text-[#00847A] shadow-sm'
                       : 'text-white/85 hover:text-white hover:bg-white/15 hover:translate-x-0.5'
                   }`}
                 >

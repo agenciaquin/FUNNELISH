@@ -281,7 +281,8 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
   const totalCalculado = items.reduce((s, it) => s + Math.round(base(Number(it.precio) || 0) * 1.19 * 100) / 100 * (Number(it.cantidad) || 0), 0);
   if (total && Math.abs(totalCalculado - total) >= 0.01) avisos.push(`Redondeo: Effi podría calcular ${totalCalculado.toFixed(2)} en vez de ${total}`);
 
-  const observacion = [`QuinChat ${venta.codigo}`, `Cel ${venta.cliente_celular ?? ''}`, venta.observaciones].filter(Boolean).join(' · ').slice(0, 255);
+  // Regla del dueño (08-nov-2026): en Effi va SOLO la observación de la venta (sin código QuinChat ni celular).
+  const observacion = String(venta.observaciones ?? '').trim().slice(0, 255) || undefined;
   const solicitud: Record<string, any> = {
     idempotency_key: `qc-${venta.codigo}`.slice(0, 36),
     sucursal: EFFI_IDS.sucursal, bodega: EFFI_IDS.bodega, centro_costos: EFFI_IDS.centro_costos,
