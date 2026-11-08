@@ -81,6 +81,8 @@ function TarjetaPrenda({ n, inicial, fotoChat, cantidad, precio, onCantidad, onP
 
   useEffect(() => {
     if (inicial.id_item) cargarProducto(inicial.id_item, inicial.color, inicial.talla, inicial.genero);
+    // Sin producto reconocido: el buscador abre YA con resultados del nombre del chat (antes quedaba vacío)
+    else if (inicial.texto && !inicial.candidatos.length) buscar(inicial.texto);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const colores = useMemo(() => [...new Set((producto?.variantes ?? []).map(v => v.color).filter(Boolean))] as string[], [producto]);
@@ -163,21 +165,21 @@ function TarjetaPrenda({ n, inicial, fotoChat, cantidad, precio, onCantidad, onP
               </div>
               {inicial.texto && <p className="mt-1 text-[11px] text-[#6B7280]">Del chat: <i>{[inicial.texto, inicial.color, inicial.talla, inicial.genero].filter(Boolean).join(' · ')}</i></p>}
             </div>
-            <button onClick={() => setBuscando(b => !b)} className="h-8 px-2.5 rounded-lg border text-[12px] font-bold shrink-0" style={{ borderColor: VERDE, color: VERDE }}>⇄ Cambiar</button>
+            <button onClick={() => { const abrir = !buscando; setBuscando(abrir); if (abrir && !resultados.length && q.trim().length >= 2) buscar(q); }} className="h-8 px-2.5 rounded-lg border text-[12px] font-bold shrink-0" style={{ borderColor: VERDE, color: VERDE }}>⇄ Cambiar</button>
             {onQuitar && <button onClick={onQuitar} title="Quitar prenda" className="w-8 h-8 rounded-lg border border-[#FCA5A5] text-[#DC2626] hover:bg-[#FEF2F2] shrink-0">🗑</button>}
           </div>
 
           {buscando && (
             <div className="mt-2 rounded-xl border border-[#E5E7EB] p-2">
               <input autoFocus className={input} value={q} placeholder="Buscar en el catálogo KLIXMANT…" onChange={e => buscar(e.target.value)} />
-              <div className="mt-2 max-h-[200px] overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              <div className="mt-2 max-h-[280px] overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                 {lista.map(p => (
                   <button key={p.id_item} onClick={() => elegirProducto(p)} className={`flex items-center gap-2 p-1.5 rounded-lg border text-left hover:bg-[#F0FAF8] ${producto?.id_item === p.id_item ? 'border-[#0E8A7E]' : 'border-[#EEE]'}`}>
                     {p.foto ? <img src={p.foto} alt="" className="w-10 h-10 rounded object-cover shrink-0" /> : <div className="w-10 h-10 rounded bg-[#F3F4F6] shrink-0" />}
                     <span className="text-[11.5px] leading-tight"><b>{p.catalogo}</b><br /><span className="text-[#6B7280]">{p.genero} · {(p.colores ?? []).join(', ')}</span></span>
                   </button>
                 ))}
-                {!lista.length && <p className="col-span-2 text-[12px] text-[#9CA3AF] px-1">Escribe el nombre del diseño (ej. «camiseta america»).</p>}
+                {!lista.length && <p className="col-span-2 text-[12px] text-[#9CA3AF] px-1">{q.trim().length >= 2 ? `No encontré «${q.trim()}». Prueba con otra palabra (ej. «bucaramanga», «camiseta america»).` : 'Escribe el nombre del diseño (ej. «camiseta america»).'}</p>}
               </div>
             </div>
           )}

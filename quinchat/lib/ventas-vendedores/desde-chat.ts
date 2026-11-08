@@ -376,13 +376,33 @@ export async function productoConVariantes(idItem: number) {
 /** Buscador del catálogo por texto (catálogo, nombre, referencia, color). */
 export async function buscarEnCatalogo(q: string, max = 24) {
   const supabase = createServerSupabaseClient();
-  const palabras = sinTildes(q).replace(/[^a-z0-9ñ ]/g, ' ').split(' ').filter(w => w.length >= 2).slice(0, 6);
+  // Palabras que no ayudan a encontrar el diseño (vienen en los nombres de los embudos: «PROMO BUZO Y CAMISETA BUCAROS»)
+  const VACIAS = new Set(['promo', 'promocion', 'y', 'de', 'del', 'la', 'el', 'los', 'las', 'pack', 'x2', 'x3', 'combo', 'con', 'para', 'hombre', 'dama', 'mujer', 'talla']);
+  // Raíz de 5 letras para palabras largas: «bucaros» encuentra «bucaramanga» y «bucaro leopardo».
+  const palabras = [...new Set(sinTildes(q).replace(/[^a-z0-9ñ ]/g, ' ').split(' ')
+    .filter(w => w.length >= 2 && !VACIAS.has(w)).map(w => (w.length >= 6 ? w.slice(0, 5) : w)))].slice(0, 6);
   if (!palabras.length) return [];
-  let consulta = supabase.from('vv_cat_productos')
-    .select('id_item, catalogo, nombre, referencia, tipo, genero_id, foto_card, foto_main, foto_thumb, colores, tallas')
-    .eq('activo', true).eq('personalizado', false);
+  const campos = 'id_item, catalogo, nombre, referencia, tipo, genero_id, foto_card, foto_main, foto_thumb, colores, tallas, busqueda';
+  // 1) Todas las palabras
+  let consulta = supabase.from('vv_cat_productos').select(campos).eq('activo', true).eq('personalizado', false);
   for (const w of palabras) consulta = consulta.ilike('busqueda', `%${w}%`);
-  const { data } = await consulta.order('catalogo').limit(max);
+  let { data } = await consulta.order('catalogo').limit(max);
+  // 2) Si no hay nada (ej. un combo «BUZO Y CAMISETA BUCAROS»): solo las palabras del DISEÑO (sin buzo/camiseta…),
+  //    y adelante los que además coinciden en el tipo de prenda.
+  const TIPOS = new Set(['buzo', 'buzos', 'camis', 'cuello', 'alto', 'chaqu', 'polo', 'polos', 'hoodi', 'saco']);
+  const diseno = palabras.filter(w => !TIPOS.has(w));
+  if (!(data ?? []).length && diseno.length && diseno.length < palabras.length) {
+    let c2 = supabase.from('vv_cat_productos').select(campos).eq('activo', true).eq('personalizado', false);
+    for (const w of diseno) c2 = c2.ilike('busqueda', `%${w}%`);
+    const { data: porDiseno } = await c2.limit(150);
+    const tipos = palabras.filter(w => TIPOS.has(w));
+    const puntos = (c: any) => tipos.filter(w => String(c.busqueda ?? '').includes(w)).length;
+    // Uno por catálogo y género (los colores se eligen después) para que se vean todos los diseños
+    const vistos = new Set<string>();
+    data = [...(porDiseno ?? [])].sort((a: any, b: any) => puntos(b) - puntos(a) || String(a.catalogo).localeCompare(String(b.catalogo)))
+      .filter((c: any) => { const k = `${c.catalogo}|${c.genero_id}`; if (vistos.has(k)) return false; vistos.add(k); return true; })
+      .slice(0, max);
+  }
   return (data ?? []).map((c: any) => ({
     id_item: c.id_item, catalogo: c.catalogo, nombre: c.nombre, referencia: c.referencia, tipo: c.tipo,
     genero: nombreGenero(c.genero_id), foto: c.foto_card || c.foto_main || c.foto_thumb || null, colores: c.colores, tallas: c.tallas,

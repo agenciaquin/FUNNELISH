@@ -10,6 +10,7 @@ import { lineaTalla } from '@/lib/formato-pedido';
 import { validateAddressLupap, getLupapMessage } from '@/lib/lupap';
 import Jimp from 'jimp';
 import { prendasPorPrecio } from '@/lib/prendas';
+import { fotosVigentes } from '@/lib/foto-vigente';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -545,14 +546,16 @@ export async function POST(req: NextRequest) {
   // Si el catálogo no tenía foto real, usar la que mandó la página de venta.
   // Así la plantilla siempre lleva imagen y el primer mensaje SÍ se entrega.
   if ((!imageUrl || imageUrl === FALLBACK_IMAGE) && imagenPagina.startsWith('http')) {
-    imageUrl = imagenPagina;
+    imageUrl = (await fotosVigentes(supabase, [imagenPagina], [pack.colores[0]]))[0];
   }
 
   // ── "Arma tu pack": el cliente eligió 2 buzos con foto propia cada uno ────────
   // Vienen las fotos exactas de cada buzo → se unen en UN collage (x2).
-  const imagenesPack: string[] = Array.isArray(body.imagenes)
+  // Las fotos que manda la página son las del embudo (pueden ser fotos viejas del catálogo):
+  // se cambian por la foto VIGENTE de ese color (ej. la rotulada de KlixmSoft). 08-nov-2026.
+  const imagenesPack: string[] = await fotosVigentes(supabase, Array.isArray(body.imagenes)
     ? body.imagenes.filter((u: any) => typeof u === 'string' && u.startsWith('http'))
-    : [];
+    : [], pack.colores);
   if (imagenesPack.length >= 2) {
     const collage = await generarCollagePack(
       supabase,
