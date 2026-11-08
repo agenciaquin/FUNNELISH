@@ -79,11 +79,11 @@ export default function Sidebar({ userName, activeSection, onSectionChange }: Pr
       {/* Brand — logo QuinChat */}
       <div className="px-4 py-4 border-b border-white/15 flex flex-col items-center">
         <Image
-          src="/logo-quin-app.png"
+          src="/logo-quinchat.png"
           alt="QuinChat — Agencia Quin"
-          width={110}
-          height={110}
-          className="object-contain drop-shadow-lg"
+          width={168}
+          height={112}
+          className="w-full h-auto rounded-xl object-contain shadow-lg shadow-black/25 ring-1 ring-white/20"
           priority
         />
         <p className="text-[10px] text-white/70 mt-2">Panel de administración</p>
