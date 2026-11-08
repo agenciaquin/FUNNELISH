@@ -176,8 +176,12 @@ export async function prellenarDesdeChat(conv: string) {
       candidatos = [...enlazados, ...candidatos.filter(c => !ids.has(c.id_item))];
     }
     // El TIPO de prenda manda: una camiseta nunca se propone como buzo.
+    // EXCEPTO cuando el catálogo de QuinChat está ENLAZADO a mano a uno de KlixmSoft («Nombre en KlixmSoft»):
+    // ese enlace lo puso el dueño y gana. (08-nov-2026: «BUZO MOTO YAMAHA REFLECTIVO» está enlazado a
+    // «CUELLO ALTO YAMAHA REFLECTIVO» —es la foto que manda el bot— y el filtro por tipo lo cambiaba por
+    // «BUZO YAMAHA REFLECTIVO», que es otro producto.)
     const tipoTxt = tipoDePrenda(producto);
-    if (tipoTxt) {
+    if (tipoTxt && !enlazados.length) {
       const mismos = candidatos.filter(c => tipoDePrenda(`${c.catalogo} ${c.tipo ?? ''}`) === tipoTxt);
       candidatos = [...mismos, ...candidatos.filter(c => !mismos.includes(c))];
     }

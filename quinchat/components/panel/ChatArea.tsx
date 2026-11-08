@@ -7,6 +7,7 @@ import { createBrowserSupabaseClient } from '@/lib/supabase';
 import { comprimirImagen } from '@/lib/imagen-comprimir';
 import SelectorPlantillaWA from './SelectorPlantillaWA';
 import EnviarPanelEffiModal from './EnviarPanelEffiModal';
+import CatalogosChatModal from './CatalogosChatModal';
 
 // ─── Emoji data ───────────────────────────────────────────────────────────────
 const EMOJI_DATA: { icon: string; label: string; emojis: string[] }[] = [
@@ -174,6 +175,7 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
   const [notasGuardando, setNotasGuardando] = useState(false);
   const [notasGuardado, setNotasGuardado]   = useState(false);
   const [plantillaOpen, setPlantillaOpen] = useState(false);
+  const [catalogosOpen, setCatalogosOpen] = useState(false); // 🗂️ enviar un catálogo al cliente
 
   // Archivos en espera de confirmación antes de enviarse
   const [preview, setPreview]       = useState<{ file: File; url: string; caption: string }[]>([]);
@@ -1493,6 +1495,15 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
               📋
             </button>
 
+            {/* 🗂️ Catálogos: buscar y enviarle al cliente las fotos de cualquier catálogo */}
+            <button
+              onClick={() => { setCatalogosOpen(true); setShowAttach(false); setShowEmoji(false); }}
+              title="Catálogos — busca uno por nombre y envíaselo al cliente"
+              className="h-9 px-2.5 flex items-center gap-1 justify-center rounded-xl border text-sm font-semibold transition-all shrink-0 bg-[#F5F5F5] border-[#E8E8E8] text-[#6B6B6B] hover:border-[#00A89D]/40 hover:text-[#00A89D]"
+            >
+              🗂️<span className="hidden sm:inline text-[12px]">Catálogos</span>
+            </button>
+
             {/* 😊 Emoji */}
             <button
               onClick={() => { setShowEmoji(prev => !prev); setShowAttach(false); }}
@@ -1670,6 +1681,21 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
           </div>
         );
       })()}
+
+      {catalogosOpen && (
+        <CatalogosChatModal
+          conv={conversation.id}
+          nombreCliente={conversation.contact_name}
+          onCerrar={() => setCatalogosOpen(false)}
+          onEnviada={m => {
+            onMessageSent({
+              id: m.id, conversation_id: conversation.id, content: `🖼️ Imagen${m.caption ? `: ${m.caption}` : ''}`,
+              role: 'agent', type: 'image', caption: m.caption || undefined, media_url: m.media_url, created_at: new Date().toISOString(),
+            } as Message);
+            onConversationsUpdate();
+          }}
+        />
+      )}
 
       {plantillaOpen && (
         <SelectorPlantillaWA
