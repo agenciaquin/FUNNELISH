@@ -60,7 +60,13 @@ const SISTEMA =
   `Te doy los DATOS DEL PEDIDO (pueden estar vacíos) y la CONVERSACIÓN con el cliente. ` +
   `Devuelve SOLO un JSON con los datos FINALES para despachar:\n` +
   `{"nombre":"","celular":"","cedula":"","correo":"","departamento":"","municipio":"","direccion":"","barrio":"","complemento":"","referencia":"",` +
-  `"prendas":[{"producto":"","color":"","talla":"","genero":"","cantidad":1}],"valor_total":null,"observaciones":""}\n` +
+  `"prendas":[{"producto":"","color":"","talla":"","genero":"","cantidad":1}],"valor_total":null,"observaciones":"",` +
+  `"reclama_en_oficina":false,"transportadora":"","abono_recibido":0}\n` +
+  `ABONO: si el ASESOR o el cliente dejan claro que el abono YA se pagó o se recibió (ej. "ya recibí tu abono", ` +
+  `"te envío el comprobante" seguido de confirmación), abono_recibido = el valor pagado en pesos si aparece en el chat; ` +
+  `si se confirmó pero no dicen el valor, usa 5000 (el abono de recogida en oficina es de $5.000). Si no se confirmó, 0.\n` +
+  `OFICINA: si acordaron que el cliente RECLAMA EN OFICINA de la transportadora, reclama_en_oficina = true y transportadora = ` +
+  `la transportadora de esa oficina (ej. "INTERRAPIDISIMO").\n` +
   `REGLAS: usa el pedido como base y aplica lo que el CLIENTE o el ASESOR acordaron después en el chat (el último valor manda: ` +
   `si cambiaron un color, una talla o la dirección, usa lo nuevo). No inventes: si no aparece, "" o null. ` +
   `celular 10 dígitos. cedula solo si el cliente la escribió (nunca el celular). ` +
@@ -126,11 +132,18 @@ export async function prellenarDesdeChat(conv: string) {
     municipio: s(x.municipio) || s(pedido?.ciudad),
     direccion: s(x.direccion) || s(pedido?.direccion),
     barrio: s(x.barrio), complemento: s(x.complemento), referencia_dir: s(x.referencia),
+    // Regla del dueño (08-nov-2026): si reclama en OFICINA de Interrapidísimo, la transportadora es
+    // Interrapidísimo sin importar la ciudad.
     transportadora: '',
     tipo_pago: 'contraentrega',
-    abono: pedido?.abono_recibido ? Number(pedido?.abono) || 0 : 0,
+    // Abono: el registrado en el pedido; si no, el que el asesor confirmó en el chat
+    abono: (pedido?.abono_recibido ? Number(pedido?.abono) || 0 : 0) || (num(x.abono_recibido) ?? 0),
     observaciones: s(x.observaciones),
   };
+  if (esOficinaInter([x.transportadora, x.direccion, x.referencia, x.observaciones, x.reclama_en_oficina ? 'oficina' : ''].join(' '))
+      || (x.reclama_en_oficina && /inter/i.test(String(x.transportadora ?? '')))) {
+    datos.transportadora = 'INTER RAPIDISIMO';
+  }
   // Prendas: las de la IA; si no trajo, una sola con lo del pedido.
   let prendasIA: any[] = Array.isArray(x.prendas) ? x.prendas.filter((p: any) => s(p?.producto) || s(p?.talla) || s(p?.color)) : [];
   if (!prendasIA.length) prendasIA = [{ producto: s(pedido?.producto), color: '', talla: s(pedido?.talla).split('-')[0], genero: /dama|mujer/i.test(String(pedido?.talla ?? '')) ? 'Dama' : '', cantidad: Number(pedido?.cantidad) || 1 }];
@@ -216,6 +229,12 @@ async function candidatosPorCatalogoQuin(supabase: any, producto: string, color:
     return (col && cs.some((c: string) => c === col || c.includes(col) || col.includes(c)) ? 10 : 0) + (p.genero_id === gen ? 3 : 0);
   };
   return [...(prods ?? [])].sort((a, b) => puntaje(b) - puntaje(a)).map((p: any) => ({ ...p, puntaje: 100 + puntaje(p) }));
+}
+
+/** ¿El texto dice que se reclama en una oficina de Interrapidísimo? */
+export function esOficinaInter(t: string): boolean {
+  const x = String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  return /oficina/.test(x) && /inter\s*-?\s*rap/.test(x);
 }
 
 /** Tipo de prenda de un texto (para no confundir camiseta con buzo). */

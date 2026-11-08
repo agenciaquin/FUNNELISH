@@ -158,6 +158,11 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
   const muni = sinTildes(venta.municipio);
   // Orden: la que escribió el asesor → ajuste manual por municipio → tabla de transportadoras (kls-app)
   let transp = normalizarTransportadora(String(venta.transportadora ?? '')) ?? (cfg.transportadoras[muni] ? normalizarTransportadora(cfg.transportadoras[muni]) : null);
+  // Regla del dueño (08-nov-2026): reclama en OFICINA de Interrapidísimo → Interrapidísimo, sin importar la ciudad.
+  if (!transp) {
+    const txtDir = sinTildes([venta.direccion, venta.referencia_dir, venta.complemento, venta.observaciones].filter(Boolean).join(' '));
+    if (/oficina/.test(txtDir) && /inter\s*-?\s*rap/.test(txtDir)) transp = 'INTER RAPIDISIMO';
+  }
   if (!transp && !String(venta.transportadora ?? '').trim()) {
     const rec = await transportadoraDeMunicipio(String(venta.departamento ?? ''), String(venta.municipio ?? '')).catch(() => null);
     if (rec) {
