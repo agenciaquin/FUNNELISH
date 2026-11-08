@@ -1092,10 +1092,13 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
             title={enPanelEffi
               ? `Ya está en el panel de Effi: preventa ${enPanelEffi.codigo}${enPanelEffi.effi_remision ? ` · remisión ${enPanelEffi.effi_remision}` : ''}`
               : 'Revisar los datos del pedido y pasarlo al panel de Effi'}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all text-white ${
-              enPanelEffi
-                ? 'bg-[#2563EB] border-[#2563EB] hover:bg-[#1D4ED8]'
-                : 'bg-[#0E8A7E] border-[#0E8A7E] hover:bg-[#0B7368]'
+            // Amarillo = sin subir al panel · Verde = en el panel · Azul = ya subida a Effi (remisión)
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+              enPanelEffi?.effi_remision
+                ? 'bg-[#2563EB] border-[#2563EB] text-white hover:bg-[#1D4ED8]'
+                : enPanelEffi
+                  ? 'bg-[#16A34A] border-[#16A34A] text-white hover:bg-[#15803D]'
+                  : 'bg-[#FACC15] border-[#EAB308] text-[#422006] hover:bg-[#EAB308]'
             }`}
           >{enPanelEffi
             ? (enPanelEffi.effi_remision ? `✅ En Effi · remisión ${enPanelEffi.effi_remision}` : '✅ Venta enviada al panel de Effi')
