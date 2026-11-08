@@ -8,6 +8,7 @@ import { comprimirImagen } from '@/lib/imagen-comprimir';
 import SelectorPlantillaWA from './SelectorPlantillaWA';
 import EnviarPanelEffiModal from './EnviarPanelEffiModal';
 import CatalogosChatModal from './CatalogosChatModal';
+import YaEnEffiModal from './YaEnEffiModal';
 
 // ─── Emoji data ───────────────────────────────────────────────────────────────
 const EMOJI_DATA: { icon: string; label: string; emojis: string[] }[] = [
@@ -361,8 +362,9 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
   ];
   const [labelOpen, setLabelOpen]       = useState(false);
   const [panelEffiOpen, setPanelEffiOpen] = useState(false);
+  const [yaEnEffiOpen, setYaEnEffiOpen] = useState(false); // 🔗 marcar a mano «ya está en Effi»
   // Preventa ya enviada al panel de Effi desde este chat → el botón se pinta azul
-  const [enPanelEffi, setEnPanelEffi] = useState<{ codigo: string; estado: string; effi_remision: string | null } | null>(null);
+  const [enPanelEffi, setEnPanelEffi] = useState<{ codigo: string; estado: string; effi_remision: string | null; manual?: boolean; vinculo?: { remision: string; telefono_effi: string } } | null>(null);
   const revisarPanelEffi = async (convId: string) => {
     try {
       const r = await fetch(`/api/ventas-vendedores/desde-chat?existe=${encodeURIComponent(convId)}`, { cache: 'no-store' });
@@ -1105,6 +1107,14 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
           >{enPanelEffi
             ? (enPanelEffi.effi_remision ? `✅ En Effi · remisión ${enPanelEffi.effi_remision}` : '✅ Venta enviada al panel de Effi')
             : '🧾 Enviar al panel de Effi'}</button>
+          {/* Botón pequeño: la venta ya está en Effi (p. ej. con otro número del cliente) → se verifica y se marca */}
+          {!enPanelEffi?.effi_remision || enPanelEffi?.vinculo ? (
+            <button
+              onClick={e => { e.stopPropagation(); setYaEnEffiOpen(true); }}
+              title="Esta venta ya está en Effi (con otro número): pega el ID de la remisión y el teléfono para marcarla"
+              className="px-2 py-1 rounded-full border border-[#93C5FD] text-[10.5px] font-semibold text-[#1D4ED8] bg-white hover:bg-[#EFF6FF] whitespace-nowrap"
+            >🔗 {enPanelEffi?.vinculo ? 'Marcada a mano' : 'Ya está en Effi'}</button>
+          ) : null}
           </div>
         </div>
       </div>
@@ -1681,6 +1691,16 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
           </div>
         );
       })()}
+
+      {yaEnEffiOpen && (
+        <YaEnEffiModal
+          conv={conversation.id}
+          telefonoChat={conversation.id}
+          vinculo={enPanelEffi?.vinculo ?? null}
+          onCerrar={() => setYaEnEffiOpen(false)}
+          onListo={() => { revisarPanelEffi(conversation.id); onConversationsUpdate(); }}
+        />
+      )}
 
       {catalogosOpen && (
         <CatalogosChatModal

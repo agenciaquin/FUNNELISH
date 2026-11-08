@@ -37,12 +37,20 @@ export async function GET(req: NextRequest) {
       }
       // Empalme con Effi: ventas que se subieron A MANO a Effi estos días (sin pasar por el panel)
       for (const id of Object.keys(await remisionesManuales(supabase))) if (!mapa[id] || mapa[id] === 'panel') mapa[id] = 'effi';
+      // Marcadas a mano con «Ya está en Effi» (remisión verificada)
+      const { data: vinc } = await supabase.from('effi_vinculos').select('conversacion_id').limit(5000);
+      for (const v of (vinc ?? []) as any[]) mapa[String(v.conversacion_id)] = 'effi';
       return NextResponse.json({ estados: mapa });
     }
     // ¿Este chat ya tiene una preventa en el panel? (para pintar el botón en azul). Consulta liviana, sin IA.
     if (sp.get('existe')) {
-      const c = String(sp.get('existe')).replace(/\D/g, '');
+      const crudo = String(sp.get('existe'));
+      const c = crudo.replace(/\D/g, '');
       const supabase = createServerSupabaseClient();
+      // Marcada a mano con «Ya está en Effi»
+      const { data: vinc } = await supabase.from('effi_vinculos').select('remision, telefono_effi, cliente_effi')
+        .in('conversacion_id', [...new Set([crudo, c])]).limit(1).maybeSingle();
+      if (vinc) return NextResponse.json({ existente: { codigo: 'marcada a mano', estado: 'en_effi', effi_remision: vinc.remision, manual: true, vinculo: vinc } });
       const { data } = await supabase.from('vv_ventas').select('codigo, estado, effi_remision, creado_at')
         .eq('conversacion_id', c).neq('estado', 'cancelada').order('creado_at', { ascending: false }).limit(1).maybeSingle();
       if (data?.effi_remision) return NextResponse.json({ existente: data });
@@ -64,6 +72,12 @@ export async function POST(req: NextRequest) {
   if (auth.error) return auth.error;
   const b = await req.json().catch(() => null);
   if (!b) return NextResponse.json({ ok: false, mensaje: 'Datos inválidos' }, { status: 400 });
+  if (b.accion === 'vincular') return vincularManual(b, auth.quien);
+  if (b.accion === 'desvincular') {
+    const supabase = createServerSupabaseClient();
+    await supabase.from('effi_vinculos').delete().eq('conversacion_id', String(b.conv ?? ''));
+    return NextResponse.json({ ok: true, mensaje: 'Se quitó la marca «Ya está en Effi».' });
+  }
   const r = await crearDesdeChat(b, auth.quien);
   return NextResponse.json(r, { status: r.ok ? 200 : 400 });
 }
@@ -111,4 +125,50 @@ async function calcularManuales(supabase: any, soloConv?: string): Promise<Recor
     }
     return out;
   } catch { return {}; }
+}
+
+/**
+ * Botón «Ya está en Effi» (08-nov-2026): el asesor pega el número de la remisión y el teléfono con el
+ * que quedó en Effi (a veces el cliente da otro número). Se VERIFICA contra la copia de remisiones de
+ * Effi; si no está, se trae lo de los últimos 3 días de Effi (solo lectura) y se vuelve a buscar.
+ * Solo si coinciden remisión y teléfono se marca el chat como subido. Nunca escribe en Effi.
+ */
+async function vincularManual(b: any, quien: string) {
+  const conv = String(b.conv ?? '').trim();
+  const remision = String(b.remision ?? '').replace(/\D/g, '');
+  const tel = String(b.telefono ?? '').replace(/\D/g, '').slice(-10);
+  if (!conv) return NextResponse.json({ ok: false, mensaje: 'Chat inválido.' }, { status: 400 });
+  if (!remision) return NextResponse.json({ ok: false, mensaje: 'Pega el número (ID) de la remisión de Effi.' }, { status: 400 });
+  if (!/^\d{10}$/.test(tel)) return NextResponse.json({ ok: false, mensaje: 'El teléfono debe tener 10 dígitos.' }, { status: 400 });
+  const supabase = createServerSupabaseClient();
+  const buscar = async () => {
+    const { data } = await supabase.from('effi_remisiones_api').select('id_effi, id_transaccion, telefono, nombre, estado, vendedor, total, fecha_trans')
+      .or(`id_effi.eq.${remision},id_transaccion.eq.${remision}`).limit(1).maybeSingle();
+    return data as any;
+  };
+  let r = await buscar();
+  if (!r) {
+    // Puede ser de hoy y la copia de Effi aún no la trae: se actualiza la copia de los últimos días
+    try {
+      const { sincronizarRemisionesEffi } = await import('@/lib/effi-api');
+      const manana = new Date(Date.now() - 5 * 3600_000 + 86400_000).toISOString().slice(0, 10);
+      await sincronizarRemisionesEffi(manana, 3);
+      r = await buscar();
+    } catch { /* sin conexión con Effi */ }
+  }
+  if (!r) return NextResponse.json({ ok: false, mensaje: `❌ No encontré la remisión ${remision} en Effi (últimos 20 días). Revisa el número.` }, { status: 404 });
+  if (/anulad/i.test(String(r.estado ?? ''))) return NextResponse.json({ ok: false, mensaje: `❌ La remisión ${remision} está ANULADA en Effi.` }, { status: 400 });
+  const telEffi = String(r.telefono ?? '').replace(/\D/g, '').slice(-10);
+  if (telEffi !== tel) {
+    return NextResponse.json({ ok: false, mensaje: `❌ La remisión ${remision} existe, pero en Effi tiene el teléfono ${telEffi ? `…${telEffi.slice(-4)}` : '(vacío)'}, no ${tel}. Revisa el número.` }, { status: 400 });
+  }
+  const { error } = await supabase.from('effi_vinculos').upsert({
+    conversacion_id: conv, remision: String(r.id_effi ?? r.id_transaccion ?? remision), telefono_effi: tel,
+    cliente_effi: r.nombre ?? null, quien, creado_at: new Date().toISOString(),
+  }, { onConflict: 'conversacion_id' });
+  if (error) return NextResponse.json({ ok: false, mensaje: `No se pudo guardar: ${error.message}` }, { status: 500 });
+  return NextResponse.json({
+    ok: true, remision: String(r.id_effi ?? remision),
+    mensaje: `✅ Reconocida: remisión ${r.id_effi ?? remision} · ${r.nombre ?? ''} · ${r.vendedor ?? ''}${r.total ? ` · $${Math.round(Number(r.total)).toLocaleString('es-CO')}` : ''}. Quedó como subida a Effi.`,
+  });
 }
