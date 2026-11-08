@@ -128,6 +128,25 @@ async function enviarReal(venta: any, payload: any, rem: Awaited<ReturnType<type
   let status = 0, json: any = null, falla: string | null = null;
   try {
     ({ status, json } = await effiPost('remision_v', rem.solicitud));
+    // Red de seguridad del redondeo: si Effi dice «la suma de las formas de pago debe ser igual al total de la
+    // remision: $X», se ajusta el pago a X (solo si difiere en centavos) y se intenta UNA vez más.
+    const txt = `${json?.mensaje ?? ''} ${JSON.stringify(json?.errores ?? json?.errors ?? '')}`;
+    const m = status === 400 ? txt.match(/total de la remisi[oó]n:?\s*\$?\s*([\d.,]+)/i) : null;
+    if (m && rem.solicitud) {
+      const totalEffi = Number(m[1].replace(/,/g, ''));
+      const sol: any = rem.solicitud;
+      const suma = (sol.valor_forma_pago ?? []).reduce((a: number, b: number) => a + Number(b), 0);
+      const dif = Math.round((totalEffi - suma) * 100) / 100;
+      if (Number.isFinite(totalEffi) && dif !== 0 && Math.abs(dif) <= 0.05 && sol.valor_forma_pago?.length) {
+        const i = sol.valor_forma_pago.length - 1;
+        sol.valor_forma_pago[i] = Math.round((Number(sol.valor_forma_pago[i]) + dif) * 100) / 100;
+        if (sol.valor_medio_pago?.length && i === sol.t_forma_pago.length - 1 && sol.t_forma_pago[i] !== 2) {
+          const j = sol.valor_medio_pago.length - 1;
+          sol.valor_medio_pago[j] = Math.round((Number(sol.valor_medio_pago[j]) + dif) * 100) / 100;
+        }
+        ({ status, json } = await effiPost('remision_v', sol));
+      }
+    }
   } catch (e: any) {
     falla = e?.message ?? String(e);
   }

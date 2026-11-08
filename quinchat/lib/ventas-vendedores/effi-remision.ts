@@ -377,7 +377,23 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
   const bases = ajustarBases(items.map(it => Number(it.precio) || 0), items.map(it => Number(it.cantidad) || 0), total);
   const base = (_p: number, i: number) => bases[i];
   const totalCalculado = totalEffi(bases, items.map(it => Number(it.cantidad) || 0));
-  if (total && Math.abs(totalCalculado - total) >= 0.005) errores.push(`Redondeo: Effi calcularía ${totalCalculado.toFixed(2)} en vez de ${total}. Ajusta un precio en 1 peso.`);
+  // Hay totales que NINGUNA combinación de bases con 2 decimales da exacto (08-nov-2026: 104.950 × 2 → Effi
+  // calcula 209.900,01 o 209.899,99). En ese caso el pago se ajusta al total que calcula Effi (±1 centavo),
+  // porque Effi exige que la suma de las formas de pago sea igual al total de la remisión.
+  if (total && Math.abs(totalCalculado - total) >= 0.005) {
+    const dif = r2(totalCalculado - total);
+    if (Math.abs(dif) <= 0.05 && valor_forma_pago.length) {
+      const iCobrar = t_forma_pago.indexOf(EFFI_IDS.forma_contado_1_dia);
+      if (iCobrar >= 0) valor_forma_pago[iCobrar] = r2(valor_forma_pago[iCobrar] + dif);
+      else {
+        valor_forma_pago[valor_forma_pago.length - 1] = r2(valor_forma_pago[valor_forma_pago.length - 1] + dif);
+        if (valor_medio_pago.length) valor_medio_pago[valor_medio_pago.length - 1] = r2(valor_medio_pago[valor_medio_pago.length - 1] + dif);
+      }
+      avisos.push(`Redondeo de Effi: el total queda en ${totalCalculado.toFixed(2)} (${dif > 0 ? '+' : ''}${dif.toFixed(2)} centavos) y el pago se ajustó igual.`);
+    } else {
+      errores.push(`Redondeo: Effi calcularía ${totalCalculado.toFixed(2)} en vez de ${total}. Ajusta un precio en 1 peso.`);
+    }
+  }
 
   // Regla del dueño (08-nov-2026): en Effi va SOLO la observación de la venta (sin código QuinChat ni celular).
   const observacion = String(venta.observaciones ?? '').trim().slice(0, 255) || undefined;
