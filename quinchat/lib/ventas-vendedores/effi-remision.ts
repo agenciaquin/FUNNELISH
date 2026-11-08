@@ -29,6 +29,8 @@ export const EFFI_IDS = {
   medio_transferencia: 5,
   caja_sucursal: 1, caja_quin_josue: 5,
   t_dni_cedula: 2,
+  depto_cundinamarca: 789,
+  ciudad_bogota: 12688,   // «Bogotá D.C.» en Effi
 };
 
 /** Ubicaciones de venta (transportadoras) de Effi: [con recaudo, sin recaudo]. */
@@ -190,6 +192,9 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
   // Regla del dueño (08-nov-2026): reclama en OFICINA de Interrapidísimo → Interrapidísimo, sin importar la ciudad.
   const oficinaInter = esOficinaInter([venta.direccion, venta.referencia_dir, venta.complemento, venta.observaciones].filter(Boolean).join(' '));
   if (!transp && oficinaInter) transp = 'INTER RAPIDISIMO';
+  // Regla del dueño (08-nov-2026): Bogotá (aunque llegue «Bogotá, Bogotá») va con COORDINADORA.
+  const esBogota = normLugar(venta.municipio) === 'bogota' || (!normLugar(venta.municipio) && normLugar(venta.departamento) === 'bogota');
+  if (!transp && esBogota) transp = 'COORDINADORA';
   if (!transp && !String(venta.transportadora ?? '').trim()) {
     const rec = await transportadoraDeMunicipio(String(venta.departamento ?? ''), String(venta.municipio ?? ''))
       .catch((e: any) => { errores.push(e?.message ?? String(e)); return null; });
@@ -219,10 +224,12 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
   const articulos: ({ id: number; descripcion: string; referencia: string } | null)[] = [];
   try {
     // Departamento
-    // En Effi Bogotá es la ciudad «Bogotá D.C.» dentro de CUNDINAMARCA (así salen las guías).
+    // En Effi Bogotá es la ciudad 12688 «Bogotá D.C.» del departamento 789 CUNDINAMARCA (dueño, 08-nov-2026).
+    if (esBogota) { idProvincia = EFFI_IDS.depto_cundinamarca; idCiudad = EFFI_IDS.ciudad_bogota; }
     const deptoTxt = /^bogota\b/.test(normLugar(venta.departamento)) ? 'Cundinamarca' : String(venta.departamento ?? '');
     const deptoN = sinTildes(deptoTxt);
-    if (!deptoN) errores.push('Falta el departamento');
+    if (esBogota) { /* ids fijos */ }
+    else if (!deptoN) errores.push('Falta el departamento');
     else {
       const prov = await effiGet('provincia', { nombre: deptoTxt.slice(0, 40), pais: EFFI_IDS.pais, por_pagina: 100 });
       const p = (prov?.data ?? []).find((x: any) => sinTildes(x.nombre) === deptoN)
@@ -231,7 +238,7 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
       else idProvincia = Number(p.id);
     }
     // Ciudad
-    if (idProvincia) {
+    if (idProvincia && !esBogota) {
       if (!muni) errores.push('Falta el municipio');
       else {
         const ciu = await effiGet('ciudad', { nombre: String(venta.municipio).slice(0, 40), provincia: idProvincia, por_pagina: 100 });
