@@ -31,7 +31,7 @@ const NAV_MAIN: NavItem[] = [
   { key: 'pedidos',      label: 'Pedidos',      icon: '🛒' },
   { key: 'ventas',       label: 'Estado en Effi', icon: '🔵' },
   { key: 'vendedores',   label: 'Vendedores',   icon: '🏆' },
-  { key: 'ventas_vendedores', label: 'Ventas Vendedores', icon: '🧾' },
+  { key: 'ventas_vendedores', label: 'Centro Maestro EFFI', icon: '👑' },
   { key: 'seguimiento',  label: 'META ADS',     icon: '🎯' },
   { key: 'objeciones',   label: 'Objeciones',   icon: '🔎' },
   { key: 'supervisor',   label: 'Supervisor del bot', icon: '🧑‍🏫' },

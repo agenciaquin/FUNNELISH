@@ -41,7 +41,7 @@ export default function AjustesVV({ onCerrar }: { onCerrar: () => void }) {
     <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4" onClick={onCerrar}>
       <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl p-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-[16px] font-extrabold">Ajustes · Ventas Vendedores</h3>
+          <h3 className="text-[16px] font-extrabold">Ajustes · Centro Maestro EFFI</h3>
           <button onClick={onCerrar} className="w-8 h-8 rounded-lg hover:bg-[#F1F1EF]">✕</button>
         </div>
         {!a ? <p className="text-sm text-[#8B8B86]">Cargando…</p> : (
