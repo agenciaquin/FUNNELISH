@@ -149,6 +149,23 @@ export async function correoPorDefecto(avanzar: boolean): Promise<string> {
   } catch { return CORREOS_DEFECTO[0]; }
 }
 
+/** Todas las ciudades de un departamento en Effi (solo lectura, hasta 5 páginas de 100), con caché de 1 día. */
+const cacheCiudades = new Map<number, { t: number; lista: any[] }>();
+async function ciudadesDelDepto(idProvincia: number): Promise<any[]> {
+  const c = cacheCiudades.get(idProvincia);
+  if (c && Date.now() - c.t < 86400_000) return c.lista;
+  const lista: any[] = [];
+  for (let pagina = 1; pagina <= 5; pagina++) {
+    const r = await effiGet('ciudad', { provincia: idProvincia, pagina, por_pagina: 100 }).catch(() => null);
+    const d = r?.data ?? [];
+    lista.push(...d);
+    const total = Number(r?.paginacion?.total_paginas) || 1;
+    if (!d.length || pagina >= total) break;
+  }
+  if (lista.length) cacheCiudades.set(idProvincia, { t: Date.now(), lista });
+  return lista;
+}
+
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 /** Total como lo calcula Effi: subtotal (bases de 2 decimales × cantidad) + IVA 19 % redondeado. */
 function totalEffi(bases: number[], cantidades: number[]): number {
@@ -268,15 +285,18 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
     if (idProvincia && !esBogota) {
       if (!muni) errores.push('Falta el municipio');
       else {
-        const ciu = await effiGet('ciudad', { nombre: String(venta.municipio).slice(0, 40), provincia: idProvincia, por_pagina: 100 });
-        const lista = ciu?.data ?? [];
         const m = normLugar(venta.municipio);
         // 1) igual (sin tildes, sin «D.C.» ni signos) · 2) el municipio principal, no sus localidades
         //    («Suba (Bogotá D.C.)») · 3) si solo hay una
-        const c = lista.find((x: any) => sinTildes(x.nombre) === muni)
+        const elegir = (lista: any[], unicoVale: boolean) => lista.find((x: any) => sinTildes(x.nombre) === muni)
           ?? lista.find((x: any) => normLugar(x.nombre) === m)
           ?? lista.find((x: any) => !/\(/.test(String(x.nombre)) && (normLugar(x.nombre).startsWith(`${m} `) || m.startsWith(`${normLugar(x.nombre)} `)))
-          ?? (lista.length === 1 ? lista[0] : null);
+          ?? (unicoVale && lista.length === 1 ? lista[0] : null);
+        const ciu = await effiGet('ciudad', { nombre: String(venta.municipio).slice(0, 40), provincia: idProvincia, por_pagina: 100 });
+        let c = elegir(ciu?.data ?? [], true);
+        // La búsqueda de Effi no ignora tildes: «San Jose del Guaviare» no encuentra «San José del Guaviare»
+        // (08-nov-2026). Si no aparece, se traen TODAS las ciudades del departamento y se compara sin tildes.
+        if (!c) c = elegir(await ciudadesDelDepto(idProvincia), false);
         if (!c) errores.push(`Effi no tiene «${venta.municipio}» en ${venta.departamento}`);
         else idCiudad = Number(c.id);
       }
