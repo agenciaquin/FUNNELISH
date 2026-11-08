@@ -6,6 +6,7 @@ import { ETIQUETAS_FIJAS, ESTADOS_CONV, parseLabels, conEstado, conTag } from '@
 import { createBrowserSupabaseClient } from '@/lib/supabase';
 import { comprimirImagen } from '@/lib/imagen-comprimir';
 import SelectorPlantillaWA from './SelectorPlantillaWA';
+import EnviarPanelEffiModal from './EnviarPanelEffiModal';
 
 // ─── Emoji data ───────────────────────────────────────────────────────────────
 const EMOJI_DATA: { icon: string; label: string; emojis: string[] }[] = [
@@ -357,6 +358,7 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
       .filter(n => !ESTADOS_CONV.includes(n.toUpperCase())),
   ];
   const [labelOpen, setLabelOpen]       = useState(false);
+  const [panelEffiOpen, setPanelEffiOpen] = useState(false);
   const [currentLabel, setCurrentLabel] = useState<string | null>(null);
 
   // Revisión de la venta antes de registrarla a mano (corregir producto/talla/valor)
@@ -1070,9 +1072,19 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
               </div>
             );
           })()}
+
+          {/* Enviar al panel de Effi (Ventas Vendedores): abre la ventana de confirmación; nada se guarda sin confirmar */}
+          <button
+            onClick={e => { e.stopPropagation(); setMenuOpen(false); setPanelEffiOpen(true); }}
+            title="Revisar los datos del pedido y pasarlo al panel de Effi"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all bg-[#0E8A7E] text-white border-[#0E8A7E] hover:bg-[#0B7368]"
+          >🧾 Enviar al panel de Effi</button>
           </div>
         </div>
       </div>
+      {panelEffiOpen && (
+        <EnviarPanelEffiModal conv={conversation.id} onCerrar={() => setPanelEffiOpen(false)} />
+      )}
 
       {/* ── Messages ── */}
       <div className="flex-1 overflow-y-auto px-5 py-5 space-y-2">

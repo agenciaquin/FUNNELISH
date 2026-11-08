@@ -16,6 +16,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const campos: Record<string, unknown> = { familia: body.familia, patron: body.patron };
   if (body.anuncios !== undefined) campos.anuncios = String(body.anuncios ?? '').trim() || null;
+  // 07-nov-2026: nombre del catálogo en KlixmSoft (solo identificación de fotos)
+  if (body.nombre_klixmsoft !== undefined) campos.nombre_klixmsoft = String(body.nombre_klixmsoft ?? '').trim().toUpperCase() || null;
 
   let { data, error } = await supabase
     .from('catalogos_bot').update(campos).eq('id', id)

@@ -114,7 +114,7 @@ export default function DetalleVenta({ id, onCerrar, onCambio, onChat }: {
               </div>
             )}
           </div>
-          {v && <button onClick={() => onChat(v.vendedor_tel)} className="h-9 px-3 rounded-xl border-2 border-[#14804A] text-[#14804A] text-[13px] font-bold hover:bg-[#E0F3E8]">💬 Novedades</button>}
+          {v && <button onClick={() => onChat(v.vendedor_tel === 'panel' && v.conversacion_id ? v.conversacion_id : v.vendedor_tel)} className="h-9 px-3 rounded-xl border-2 border-[#14804A] text-[#14804A] text-[13px] font-bold hover:bg-[#E0F3E8]">💬 Novedades</button>}
           <button onClick={onCerrar} className="w-9 h-9 rounded-xl border border-[#E7E6E1] hover:bg-[#F1F1EF]" aria-label="Cerrar">✕</button>
         </header>
 

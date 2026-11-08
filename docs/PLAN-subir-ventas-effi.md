@@ -163,6 +163,22 @@ Revisión de las 13 preventas de prueba (solo lectura):
 - Éxito → `estado en_effi`, `effi_remision = id_transaccion`, respuesta en `effi_respuesta`.
   Error → `error_effi` con el mensaje de Effi; sin reintentos automáticos.
 
+**Resultado Fase 3 (07-nov-2026 15:58 COL):** Effi respondió 201 → **remisión 78344**, total $130.000,00
+(cuadra exacto con el precio sin IVA 109.243,6975 + IVA 19%). 1 intento, sin errores. Prefijo vacío.
+
+## 2g. Botón «🧾 Enviar al panel de Effi» en el chat (07-nov-2026)
+
+- Junto a la etiqueta del chat. Abre «Confirmar datos antes de pasar al panel» (`components/panel/EnviarPanelEffiModal.tsx`).
+- Prellenado (`lib/ventas-vendedores/desde-chat.ts` → `prellenarDesdeChat`): último pedido del cliente +
+  lo que escribió en el chat (1 llamada de IA) + candidatos del catálogo KLIXMANT. No escribe nada.
+- Todo editable: cliente, dirección, transportadora, pago/abono, producto (buscador del catálogo), color
+  (cambia al producto hermano del mismo diseño), talla-género, precio, cantidad, notas y foto (subir otra,
+  foto del catálogo o foto del chat).
+- «Confirmar y pasar al panel» → `POST /api/ventas-vendedores/desde-chat`: el servidor vuelve a calcular
+  ID de variante y SKU; crea `vv_ventas` (estado confirmada, `vendedor_tel='panel'`, `conversacion_id`) +
+  `vv_items`. Anti-duplicado: si el chat ya tiene preventa viva (3 días) pide marcar «Es otra compra».
+- Pendiente: vendedor de Effi para las ventas del panel → `ajustes_bot.effi_remision.vendedores.panel`.
+
 ## 3. Huecos que quedan (en orden)
 
 Cédula, artículo, IVA, formas/medios de pago, centro de costos, vendedor y transportadora: **resueltos** (§2b).

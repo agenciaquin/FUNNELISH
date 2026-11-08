@@ -17,6 +17,8 @@ interface Catalogo {
   familia: string;
   patron: string;
   anuncios?: string | null;
+  /** Nombre del catálogo en KlixmSoft (solo para identificar las fotos; no cambia la familia). */
+  nombre_klixmsoft?: string | null;
   catalogo_colores: ColorVariant[];
 }
 
@@ -27,10 +29,11 @@ function ModalCatalogo({
   onClose,
 }: {
   initial?: Catalogo;
-  onSave: (familia: string, patron: string, anuncios: string) => void;
+  onSave: (familia: string, patron: string, anuncios: string, nombreKlix: string) => void;
   onClose: () => void;
 }) {
   const [familia, setFamilia] = useState(initial?.familia ?? '');
+  const [nombreKlix, setNombreKlix] = useState(initial?.nombre_klixmsoft ?? '');
   const [patron,  setPatron]  = useState(initial?.patron  ?? '');
   const [ids, setIds] = useState<string[]>(
     String(initial?.anuncios ?? '').split(/[,\n]+/).map(s => s.trim()).filter(Boolean),
@@ -75,6 +78,18 @@ function ModalCatalogo({
               }}
             />
             <p className="text-[11px] text-[#6B6B6B] mt-1">Este nombre se muestra en el panel.</p>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-[#6B6B6B] uppercase tracking-wide block mb-1">
+              Nombre en KlixmSoft
+            </label>
+            <input
+              className="w-full border border-[#E8E8E8] rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A89D]/40"
+              placeholder="Tal cual aparece en KlixmSoft. Ej: BUCARO LEOPARDO"
+              value={nombreKlix}
+              onChange={e => setNombreKlix(e.target.value)}
+            />
+            <p className="text-[11px] text-[#6B6B6B] mt-1">Solo para identificar las fotos. No cambia el nombre de la familia en QuinChat.</p>
           </div>
           <div>
             <label className="text-xs font-semibold text-[#6B6B6B] uppercase tracking-wide block mb-1">
@@ -161,7 +176,7 @@ function ModalCatalogo({
             Cancelar
           </button>
           <button
-            onClick={() => familia.trim() && patron.trim() && onSave(familia.trim().toUpperCase(), patron.trim().toUpperCase(), [...new Set(ids.map(s => s.trim()).filter(Boolean))].join(', '))}
+            onClick={() => familia.trim() && patron.trim() && onSave(familia.trim().toUpperCase(), patron.trim().toUpperCase(), [...new Set(ids.map(s => s.trim()).filter(Boolean))].join(', '), nombreKlix.trim().toUpperCase())}
             disabled={!familia.trim() || !patron.trim()}
             className="px-5 py-2 text-sm font-semibold bg-[#00A89D] text-white rounded-xl hover:bg-[#008F85] disabled:opacity-40 transition-all"
           >
@@ -397,11 +412,11 @@ export default function CatalogosPanel() {
   );
 
   // ── Handlers de catálogo ─────────────────────────────────────────────────────
-  const handleSaveCat = async (familia: string, patron: string, anuncios: string) => {
+  const handleSaveCat = async (familia: string, patron: string, anuncios: string, nombreKlix = '') => {
     if (modalCat && typeof modalCat === 'object' && 'id' in modalCat) {
       await fetch(`/api/catalogos/${modalCat.id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ familia, patron, anuncios }),
+        body: JSON.stringify({ familia, patron, anuncios, nombre_klixmsoft: nombreKlix }),
       });
     } else {
       const res = await fetch('/api/catalogos', {
@@ -416,6 +431,31 @@ export default function CatalogosPanel() {
     }
     setModalCat(null);
     load();
+  };
+
+  // ── Fotos rotuladas de KlixmSoft (07-nov-2026) ──────────────────────────────
+  const [klixCargando, setKlixCargando] = useState<string | null>(null);
+  const traerFotosKlix = async (cat: Catalogo) => {
+    const nombre = window.prompt(
+      `Nombre del catálogo en KlixmSoft para «${cat.familia}» (tal cual aparece allá):`,
+      cat.nombre_klixmsoft ?? '',
+    );
+    if (nombre == null || !nombre.trim()) return;
+    if (!confirm(`Se reemplazarán las fotos de los ${cat.catalogo_colores.length} colores de «${cat.familia}» por las fotos ROTULADAS de KlixmSoft «${nombre.trim().toUpperCase()}».\n\nEl nombre de la familia en QuinChat no cambia. ¿Continuar?`)) return;
+    setKlixCargando(cat.id);
+    try {
+      const r = await fetch(`/api/catalogos/${cat.id}/klixmsoft`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre_klixmsoft: nombre.trim() }),
+      });
+      const j = await r.json().catch(() => ({}));
+      const detalle = (j.colores ?? []).map((c: any) => `${c.ok ? '✅' : '❌'} ${c.color}: ${c.detalle}`).join('\n');
+      const sug = (j.sugerencias ?? []).length ? `\n\n¿Quizá es alguno de estos?\n${j.sugerencias.join('\n')}` : '';
+      alert(`${j.mensaje ?? 'Listo'}${detalle ? `\n\n${detalle}` : ''}${sug}`);
+    } finally {
+      setKlixCargando(null);
+      load();
+    }
   };
 
   const handleDeleteCat = async (id: string) => {
@@ -681,9 +721,21 @@ export default function CatalogosPanel() {
                     </div>
                     <p className="text-xs text-[#6B6B6B] mt-0.5">
                       Patrón: <code className="bg-[#F5F5F5] px-1 rounded text-[11px]">{cat.patron}</code>
+                      <span className="ml-3">
+                        Nombre en KlixmSoft:{' '}
+                        {cat.nombre_klixmsoft
+                          ? <code className="bg-[#FFF4E5] text-[#B45309] px-1 rounded text-[11px] font-semibold">{cat.nombre_klixmsoft}</code>
+                          : <span className="italic text-[#9A9A9A]">sin definir</span>}
+                      </span>
                     </p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                    <button
+                      onClick={() => traerFotosKlix(cat)}
+                      disabled={klixCargando === cat.id}
+                      className="px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border border-[#F59E0B]/50 text-[#B45309] bg-[#FFF8EB] hover:bg-[#FFEFD2] disabled:opacity-50 transition-all"
+                      title="Reemplazar las fotos de los colores por las rotuladas de KlixmSoft"
+                    >{klixCargando === cat.id ? 'Trayendo…' : '📥 Fotos KlixmSoft'}</button>
                     <button
                       onClick={() => setModalCat(cat)}
                       className="p-2 text-[#6B6B6B] hover:text-[#0D0D0D] hover:bg-[#F5F5F5] rounded-lg transition-all text-sm"

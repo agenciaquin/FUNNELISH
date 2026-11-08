@@ -14,7 +14,7 @@ export interface VentaVV {
   departamento: string | null; municipio: string | null; direccion: string | null; barrio: string | null;
   complemento: string | null; referencia_dir: string | null; transportadora: string | null; tipo_pago: string | null;
   total: number | null; abono: number | null; observaciones: string | null; faltantes: string[]; motivo_revision: string | null;
-  fotos_vendedor: string[]; es_prueba: boolean; effi_estado: string | null; effi_remision: string | null; effi_payload?: any;
+  fotos_vendedor: string[]; es_prueba: boolean; effi_estado: string | null; effi_remision: string | null; effi_payload?: any; conversacion_id?: string | null;
   effi_intentos: number; effi_enviado_at: string | null; confirmado_at: string | null; creado_at: string; actualizado_at: string;
   items: ItemVV[];
 }
