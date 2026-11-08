@@ -23,6 +23,8 @@ const FILTER_TABS: { key: string; label: string; color: string; test: (c: Conver
   { key: 'interbot',  label: '🤖 Interacción bot',       color: '#0EA5A0', test: c => !!(c as any).interaccion_bot },
   { key: 'pendconf',  label: 'Pendiente por confirmar',  color: '#8B5CF6', test: c => !!c.label && c.label.includes('PENDIENTE POR CONFIRMACIÓN') },
   { key: 'venta',     label: 'Venta realizada',          color: '#00847A', test: c => !!c.label && c.label.includes('VENTA REALIZADA') },
+  // Se resuelve dentro del componente con la etapa Effi real (ver etapaEffi)
+  { key: 'porsubir',  label: '🟡 Por subir al panel',    color: '#EAB308', test: () => false },
   { key: 'humano',    label: 'Humano',                   color: '#6B7280', test: c => !!c.label && c.label.toUpperCase().includes('HUMANO') },
   { key: 'abono',     label: 'Pendiente de abono',       color: '#EAB308', test: c => !!c.label && c.label.includes('PENDIENTE DE ABONO') },
   { key: 'procesado', label: 'Anulado en Effi',         color: '#DC2626', test: c => !!c.label && c.label.includes('ANULADO EN EFFI') },
@@ -31,6 +33,16 @@ const FILTER_TABS: { key: string; label: string; color: string; test: (c: Conver
   { key: 'oficon',    label: '🏢 Oficina con abono',     color: '#15803D', test: c => !!c.label && c.label.toUpperCase().includes('OFICINA CON ABONO') },
   { key: 'noentreg',  label: '📵 No entregado',          color: '#B91C1C', test: c => !!(c as any).entrega_fallida },
 ];
+
+/** Etapa del pedido hacia Effi (barra vertical en los chats con VENTA REALIZADA). */
+type EtapaEffi = 'por_subir' | 'panel' | 'subido';
+// txt = completo (al pasar el mouse) · corto = el que cabe vertical en la fila
+const ETAPAS: Record<EtapaEffi, { txt: string; corto: string; color: string; fondo: string; texto: string }> = {
+  por_subir: { txt: 'POR SUBIR AL PANEL',     corto: 'POR SUBIR', color: '#EAB308', fondo: '#FEF9C3', texto: '#713F12' },
+  panel:     { txt: 'EN EL PANEL DE EFFI',    corto: 'EN PANEL',  color: '#16A34A', fondo: '#DCFCE7', texto: '#14532D' },
+  subido:    { txt: 'SUBIDO AL SISTEMA EFFI', corto: 'EN EFFI',   color: '#2563EB', fondo: '#DBEAFE', texto: '#1E3A8A' },
+};
+const tieneVentaRealizada = (c: Conversation) => !!c.label && c.label.toUpperCase().includes('VENTA REALIZADA');
 
 /** ¿Es un chat del equipo de vendedores (no un cliente)? */
 const esConvVendedor = (c: Conversation) => !!c.label && c.label.toUpperCase().includes('VENDEDOR');
@@ -77,6 +89,23 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
   const [submenu, setSubmenu]             = useState<'estado' | 'tags' | null>(null);
 
   const supabase = createBrowserSupabaseClient();
+
+  // Etapa Effi real de cada chat (Centro Maestro EFFI). Se refresca cada 30 s y al cambiar la lista.
+  const [estadosEffi, setEstadosEffi] = useState<Record<string, 'panel' | 'effi'>>({});
+  const nVentas = conversations.filter(tieneVentaRealizada).length;
+  useEffect(() => {
+    let vivo = true;
+    const traer = () => fetch('/api/ventas-vendedores/desde-chat?estados_chat=1', { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null)).then(j => { if (vivo && j?.estados) setEstadosEffi(j.estados); }).catch(() => {});
+    traer();
+    const t = setInterval(() => { if (document.visibilityState === 'visible') traer(); }, 30_000);
+    return () => { vivo = false; clearInterval(t); };
+  }, [nVentas]);
+  const etapaEffi = (c: Conversation): EtapaEffi | null => {
+    if (!tieneVentaRealizada(c)) return null;
+    const e = estadosEffi[c.id];
+    return e === 'effi' ? 'subido' : e === 'panel' ? 'panel' : 'por_subir';
+  };
 
   // Búsqueda por CONTENIDO: al escribir, busca la palabra dentro de los mensajes
   // y guarda los IDs de esos chats (ej. "abono" → todos los que hablaron de abono).
@@ -177,7 +206,7 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
       || (digitos.length >= 6 && c.id.includes(digitos))
       || (c.last_message ?? '').toLowerCase().includes(term)
       || (idsMensaje?.has(c.id) ?? false);   // coincide con el CONTENIDO de sus mensajes
-    const matchTab    = activeTab.test(c);
+    const matchTab    = activeTab.key === 'porsubir' ? etapaEffi(c) === 'por_subir' : activeTab.test(c);
     const matchLabel =
       labelFilter === null ? true :
       labelFilter === ''   ? !c.label :
@@ -393,7 +422,9 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
           const active = tabKey === tab.key;
           const count  = tab.key === 'todos'
             ? conversations.filter(c => !esConvVendedor(c)).length   // el inbox normal no cuenta vendedores
-            : conversations.filter(tab.test).length;
+            : tab.key === 'porsubir'
+              ? conversations.filter(c => etapaEffi(c) === 'por_subir').length
+              : conversations.filter(tab.test).length;
           return (
             <button
               key={tab.key}
@@ -409,6 +440,18 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
           );
         })}
       </div>
+
+      {/* Leyenda de la barra de etapa Effi (solo si hay ventas realizadas) */}
+      {nVentas > 0 && (
+        <div className="flex items-center gap-3 px-3 py-1.5 border-b border-[#E8E8E8] text-[9.5px] text-[#4B5563] overflow-x-auto scrollbar-none">
+          {(['por_subir', 'panel', 'subido'] as EtapaEffi[]).map(k => (
+            <span key={k} className="flex items-center gap-1 shrink-0">
+              <span className="w-2 h-2 rounded-full" style={{ background: ETAPAS[k].color }} />
+              {k === 'por_subir' ? 'Por subir al panel' : k === 'panel' ? 'En el panel de Effi' : 'Subido a Effi'}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* ── List ── */}
       <div className="flex-1 overflow-y-auto">
@@ -469,6 +512,8 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
           const status     = (conv.status ?? 'nuevo') as ConversationStatus;
           const cfg        = STATUS_CONFIG[status];
           const labels     = (conv.label ?? '').split('|').map(s => s.trim()).filter(Boolean);
+          const etapa      = etapaEffi(conv);
+          const et         = etapa ? ETAPAS[etapa] : null;
 
           return (
             <div
@@ -480,7 +525,21 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
               onMouseLeave={() => setHoveredId(null)}
             >
               {/* Teal left bar when selected */}
-              {selected && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#00A89D] rounded-r z-10" />}
+              {selected && !et && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#00A89D] rounded-r z-10" />}
+
+              {/* Barra de etapa Effi (solo chats con VENTA REALIZADA): amarillo / verde / azul */}
+              {et && (
+                <div
+                  className="absolute left-0 top-1 bottom-1 w-[16px] rounded-r-md z-10 flex items-center justify-center overflow-hidden border-l-[3px]"
+                  style={{ background: et.fondo, borderColor: et.color }}
+                  title={et.txt}
+                >
+                  <span
+                    className="text-[7.5px] font-extrabold tracking-wide whitespace-nowrap leading-none"
+                    style={{ color: et.texto, writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+                  >{et.corto}</span>
+                </div>
+              )}
 
               {/* Flechita del menú (como en WhatsApp) */}
               {(isHovered || menuId === conv.id) && !isConfirm && (
@@ -604,7 +663,7 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
               {/* Main row */}
               <button
                 onClick={() => { if (!isConfirm) onSelect(conv.id); }}
-                className="w-full text-left px-3 py-3"
+                className={`w-full text-left pr-3 py-3 ${et ? 'pl-[22px]' : 'pl-3'}`}
               >
                 <div className="flex items-center gap-2.5">
                   {/* Avatar */}

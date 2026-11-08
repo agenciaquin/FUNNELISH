@@ -23,6 +23,20 @@ export async function GET(req: NextRequest) {
       return p ? NextResponse.json(p) : NextResponse.json({ error: 'Producto no encontrado' }, { status: 404 });
     }
     if (sp.get('q') != null) return NextResponse.json({ resultados: await buscarEnCatalogo(String(sp.get('q'))) });
+    // Etapa Effi de TODOS los chats con preventa (barra de color en la lista de chats). Liviana, sin IA.
+    // 'effi' = ya tiene remisión en Effi · 'panel' = está en el Centro Maestro EFFI sin subir.
+    if (sp.get('estados_chat')) {
+      const supabase = createServerSupabaseClient();
+      const { data } = await supabase.from('vv_ventas').select('conversacion_id, effi_remision')
+        .not('conversacion_id', 'is', null).neq('estado', 'cancelada').limit(5000);
+      const mapa: Record<string, 'panel' | 'effi'> = {};
+      for (const v of data ?? []) {
+        const id = String(v.conversacion_id);
+        if (v.effi_remision) mapa[id] = 'effi';
+        else if (!mapa[id]) mapa[id] = 'panel';
+      }
+      return NextResponse.json({ estados: mapa });
+    }
     // ¿Este chat ya tiene una preventa en el panel? (para pintar el botón en azul). Consulta liviana, sin IA.
     if (sp.get('existe')) {
       const c = String(sp.get('existe')).replace(/\D/g, '');
