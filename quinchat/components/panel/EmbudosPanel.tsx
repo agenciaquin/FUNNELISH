@@ -96,6 +96,7 @@ interface Embudo {
   video_url: string | null;
   color: string | null;
   miniatura_url: string | null;
+  portada_panel?: string | null; // portada de la tarjeta en «Mis Embudos» (solo panel)
   anuncios: string | null;
   layout: LayoutEmbudo | null;
   insignia: Insignia | null;
@@ -650,6 +651,22 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
   const [modoLista, setModoLista] = useState<'grid' | 'lista'>('grid');
   const [menuDe, setMenuDe] = useState<string | null>(null);
   const [resumen, setResumen] = useState<Record<string, { ventas: number; visitas: number; conv: number }>>({});
+  // Portada de la tarjeta: sube la foto y guarda SOLO ese campo (ajustes rápidos), sin abrir el editor.
+  const [portadaSubiendo, setPortadaSubiendo] = useState<string | null>(null);
+  async function cambiarPortada(slug: string, file: File) {
+    setPortadaSubiendo(slug);
+    try {
+      const url = await subirArchivo(file, slug);
+      if (!url) return;
+      const ok = await guardarAjustes(slug, { portada_panel: url } as any);
+      if (ok) setEmbudos(l => l.map(x => (x.slug === slug ? { ...x, portada_panel: url } : x)));
+    } catch (e: any) { setAviso(`❌ ${e?.message ?? 'No se pudo subir la portada'}`); }
+    finally { setPortadaSubiendo(null); }
+  }
+  async function quitarPortada(slug: string) {
+    const ok = await guardarAjustes(slug, { portada_panel: null } as any);
+    if (ok) setEmbudos(l => l.map(x => (x.slug === slug ? { ...x, portada_panel: null } : x)));
+  }
   useEffect(() => {
     fetch('/api/funnels/resumen', { cache: 'no-store' })
       .then(r => (r.ok ? r.json() : null)).then(j => { if (j?.embudos) setResumen(j.embudos); }).catch(() => {});
@@ -751,7 +768,7 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
               .filter(e => filtroLista === 'todos' || (filtroLista === 'activos' ? e.activo : !e.activo))
               .filter(e => !q || `${e.producto} ${e.nombre ?? ''} ${e.slug}`.toLowerCase().includes(q));
             if (!lista.length) return <p className="text-sm text-[#6B6B6B] py-10 text-center">Ningún embudo coincide con el filtro.</p>;
-            const portadaDe = (e: Embudo) => e.variantes?.[0]?.imagen || e.imagenes?.[0] || null;
+            const portadaDe = (e: Embudo) => e.portada_panel || e.variantes?.[0]?.imagen || e.imagenes?.[0] || null;
 
             // Menú ⋮ con las acciones secundarias (las mismas de antes)
             const Menu = (e: Embudo) => (
@@ -853,6 +870,17 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
                         {portada ? <img src={imgOptim(portada, 480)} alt="" loading="lazy" className="h-full w-full object-contain p-2" />
                           : <span className="text-4xl">🛍️</span>}
                         <span className="absolute top-2 left-2">{Estado(e)}</span>
+                        {/* Portada propia de la tarjeta (solo se ve aquí y en Mi Página, no en la página de venta) */}
+                        <label className={`absolute bottom-2 right-2 px-2.5 py-1.5 rounded-lg bg-white/90 text-[11px] font-bold text-[#0D1F1C] shadow cursor-pointer hover:bg-white ${portadaSubiendo === e.slug ? 'opacity-60' : ''}`}
+                          title="Cambiar la portada de esta tarjeta">
+                          {portadaSubiendo === e.slug ? '⏳ Subiendo…' : `🖼 ${e.portada_panel ? 'Cambiar portada' : 'Poner portada'}`}
+                          <input type="file" accept="image/*" className="hidden" disabled={portadaSubiendo === e.slug}
+                            onChange={ev => { const f = ev.target.files?.[0]; if (f) cambiarPortada(e.slug, f); ev.target.value = ''; }} />
+                        </label>
+                        {e.portada_panel && (
+                          <button onClick={() => quitarPortada(e.slug)} title="Quitar la portada (vuelve a la foto del producto)"
+                            className="absolute bottom-2 left-2 px-2 py-1.5 rounded-lg bg-white/80 text-[11px] text-[#6B6B6B] shadow hover:bg-white">✕</button>
+                        )}
                         <label className="absolute top-2 right-2 w-7 h-7 rounded-lg bg-white/90 flex items-center justify-center shadow cursor-pointer" title="Seleccionar">
                           <input type="checkbox" checked={seleccion.has(e.slug)} onChange={() => alternarSel(e.slug)} className="w-4 h-4 accent-[#00A89D]" />
                         </label>

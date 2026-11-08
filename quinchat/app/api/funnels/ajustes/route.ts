@@ -27,6 +27,8 @@ export async function POST(req: NextRequest) {
   if ('pixel_meta_token'   in b) patch.pixel_meta_token   = limpio(b.pixel_meta_token);
   if ('pixel_tiktok'       in b) patch.pixel_tiktok       = limpio(b.pixel_tiktok);
   if ('pixel_tiktok_token' in b) patch.pixel_tiktok_token = limpio(b.pixel_tiktok_token);
+  // Portada de la tarjeta en «Mis Embudos» (no se ve en la página de venta). 08-nov-2026.
+  if ('portada_panel'      in b) patch.portada_panel      = limpio(b.portada_panel);
   if ('confirmacion_modo'  in b) {
     const m = String(b.confirmacion_modo ?? 'bot').trim();
     patch.confirmacion_modo = MODOS.has(m) ? m : 'bot';

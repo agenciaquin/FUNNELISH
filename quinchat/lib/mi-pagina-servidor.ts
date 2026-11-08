@@ -10,7 +10,7 @@ import type { ConfigPagina, DatosPagina, EmbudoWeb, CatalogoWeb, PromoWeb } from
 export async function embudosActivos(slugs: string[] | null): Promise<EmbudoWeb[]> {
   const supabase = createServerSupabaseClient();
   let q = supabase.from('funnels')
-    .select('slug, producto, nombre, precio, precio_antes, miniatura_url, imagenes, variantes, activo, eliminado, creado_at')
+    .select('slug, producto, nombre, precio, precio_antes, miniatura_url, portada_panel, imagenes, variantes, activo, eliminado, creado_at')
     .eq('activo', true).order('creado_at', { ascending: false });
   if (slugs) q = q.in('slug', slugs.length ? slugs : ['__ninguno__']);
   const { data } = await q.limit(400);
@@ -20,7 +20,7 @@ export async function embudosActivos(slugs: string[] | null): Promise<EmbudoWeb[
     const imgs = (Array.isArray(f.imagenes) ? f.imagenes : []).filter((u: any) => typeof u === 'string' && u && !esVideo(u));
     const vars = (Array.isArray(f.variantes) ? f.variantes : []).map((v: any) => v?.imagen).filter((u: any) => typeof u === 'string' && u && !esVideo(u));
     // Primero la foto propia del producto (variantes): la 1.ª de «imagenes» suele ser un banner compartido entre embudos
-    const fotos = [...new Set([f.miniatura_url, ...vars, ...imgs].filter((u: any) => typeof u === 'string' && u))] as string[];
+    const fotos = [...new Set([f.portada_panel, f.miniatura_url, ...vars, ...imgs].filter((u: any) => typeof u === 'string' && u && !esVideo(u)))] as string[];
     // Portada del producto: la primera foto que no esté usando ya otro embudo (al duplicar, la 1.ª foto quedaba compartida)
     const foto = fotos.find(u => !usadas.has(sinQuery(u))) ?? fotos[0] ?? null;
     if (foto) usadas.add(sinQuery(foto));

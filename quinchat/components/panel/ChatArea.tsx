@@ -1112,7 +1112,7 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
             <button
               onClick={e => { e.stopPropagation(); setYaEnEffiOpen(true); }}
               title="Esta venta ya está en Effi (con otro número): pega el ID de la remisión y el teléfono para marcarla"
-              className="px-2 py-1 rounded-full border border-[#93C5FD] text-[10.5px] font-semibold text-[#1D4ED8] bg-white hover:bg-[#EFF6FF] whitespace-nowrap"
+              className="px-1.5 py-0.5 rounded-full border border-[#E5E7EB] text-[9.5px] font-medium text-[#9CA3AF] bg-[#F9FAFB] opacity-70 hover:opacity-100 hover:text-[#6B7280] whitespace-nowrap transition"
             >🔗 {enPanelEffi?.vinculo ? 'Marcada a mano' : 'Ya está en Effi'}</button>
           ) : null}
           </div>
