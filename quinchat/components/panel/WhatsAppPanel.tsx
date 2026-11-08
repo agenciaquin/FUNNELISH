@@ -24,7 +24,7 @@ const CatalogosPanel     = dynamic(() => import('./CatalogosPanel'),     { ssr: 
 const EstadisticasPanel  = dynamic(() => import('./EstadisticasSeccion'), { ssr: false });
 const MemoriaPanel       = dynamic(() => import('./MemoriaPanel'),        { ssr: false });
 const FaqPanel           = dynamic(() => import('./FaqPanel'),            { ssr: false });
-const EmbudosPanel       = dynamic(() => import('./EmbudosPanel'),        { ssr: false });
+const EmbudosPanel       = dynamic(() => import('./EmbudosModulo'),       { ssr: false }); // pestañas Mis Embudos / Mi Página
 const PedidosPanel       = dynamic(() => import('./PedidosPanel'),        { ssr: false });
 const SeguimientoPanel   = dynamic(() => import('./SeguimientoPanel'),    { ssr: false });
 const RemarketingPanel   = dynamic(() => import('./RemarketingPanel'),     { ssr: false });

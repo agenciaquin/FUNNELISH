@@ -644,6 +644,17 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
     return out;
   })();
 
+  // ── Lista: filtros, vista y cifras (solo presentación; 08-nov-2026) ──────────
+  const [filtroLista, setFiltroLista] = useState<'todos' | 'activos' | 'apagados'>('todos');
+  const [buscarLista, setBuscarLista] = useState('');
+  const [modoLista, setModoLista] = useState<'grid' | 'lista'>('grid');
+  const [menuDe, setMenuDe] = useState<string | null>(null);
+  const [resumen, setResumen] = useState<Record<string, { ventas: number; visitas: number; conv: number }>>({});
+  useEffect(() => {
+    fetch('/api/funnels/resumen', { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null)).then(j => { if (j?.embudos) setResumen(j.embudos); }).catch(() => {});
+  }, []);
+
   const input = 'w-full px-3 py-2 rounded-lg border border-[#E8E8E8] text-sm focus:outline-none focus:border-[#00A89D]';
   const label = 'block text-xs font-semibold text-[#0D0D0D] mb-1';
 
@@ -659,47 +670,61 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
   // ── Lista ─────────────────────────────────────────────────────────────────
   if (vista === 'lista') {
     return (
-      <div className="flex-1 min-w-0 overflow-y-auto bg-[#FAF9F6]">
-        <div className="max-w-4xl mx-auto px-4 md:px-8 py-6">
-          <header className="flex items-start justify-between gap-3 mb-5 pl-10 md:pl-0 flex-wrap">
-            <div>
-              <h1 className="text-xl md:text-2xl font-bold text-[#0D0D0D]">Embudos</h1>
-              <p className="text-xs text-[#6B6B6B] mt-1">
-                Tus páginas de venta. El pedido entra directo al chat, sin intermediarios.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => setVerCampanas(true)}
-                title="Prendas y dinero vendido por cada campaña"
-                className="px-4 py-2.5 rounded-xl border border-[#8B5CF6]/40 text-[#6D28D9] text-sm font-semibold hover:bg-[#8B5CF6]/10"
-              >📊 Campañas</button>
-              <button
-                onClick={() => setVerPlantillas(true)}
-                title="Diseños reutilizables para tus páginas"
-                className="px-4 py-2.5 rounded-xl border border-[#00A89D]/40 text-[#00847A] text-sm font-semibold hover:bg-[#00A89D]/10"
-              >🧩 Plantillas</button>
-              <button
-                onClick={() => setCarritosOpen(true)}
-                title="Clientes que empezaron a comprar y no terminaron"
-                className="px-4 py-2.5 rounded-xl border border-[#F59E0B]/50 text-[#B45309] text-sm font-semibold hover:bg-[#F59E0B]/10"
-              >🛒 Carritos abandonados</button>
-              <button
-                onClick={() => setPapeleraOpen(true)}
-                title="Embudos eliminados (se pueden restaurar)"
-                className="px-4 py-2.5 rounded-xl border border-[#E8E8E8] text-[#6B6B6B] text-sm font-semibold hover:bg-[#F5F5F5]"
-              >🗑️ Papelera</button>
-              <button
-                onClick={() => setConfirmarEliminar(true)}
-                disabled={seleccion.size === 0}
-                title="Enviar a la papelera los embudos seleccionados"
-                className="px-4 py-2.5 rounded-xl bg-[#DC2626] text-white text-sm font-semibold hover:bg-[#B91C1C] disabled:opacity-40 disabled:cursor-not-allowed"
-              >🗑 Eliminar{seleccion.size ? ` (${seleccion.size})` : ''}</button>
+      <div className="flex-1 min-w-0 overflow-y-auto bg-[#F4F6F5]">
+        <div className="max-w-[1500px] mx-auto px-4 md:px-6 pb-8">
+          {/* Rediseño visual (08-nov-2026): mismas acciones y mismos handlers de siempre. */}
+          <header className="bg-white rounded-2xl border border-[#E8ECEB] shadow-sm p-5 mb-4">
+            <div className="flex items-start gap-4 flex-wrap">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl bg-[#E6F7F4]">🚀</div>
+              <div className="flex-1 min-w-[220px]">
+                <h1 className="text-2xl font-extrabold text-[#0D1F1C]">Mis Embudos</h1>
+                <p className="text-[13px] text-[#5B6B68] mt-0.5">Crea, edita y gestiona tus páginas de venta. El pedido entra directo al chat, sin intermediarios.</p>
+              </div>
               <button
                 onClick={() => { historial.current = []; setPasosDeshacer(0); setActual(vacio()); setVista('editar'); setAviso(null); marcarSinGuardar(false); }}
-                className="px-4 py-2.5 rounded-xl bg-[#00A89D] text-white text-sm font-semibold hover:bg-[#00847A]"
+                className="px-5 py-3 rounded-2xl bg-[#00A89D] text-white text-sm font-bold shadow-sm hover:bg-[#00847A]"
               >+ Nuevo embudo</button>
             </div>
+            <div className="flex items-center gap-2 flex-wrap mt-4">
+              <button onClick={() => setVerCampanas(true)} title="Prendas y dinero vendido por cada campaña"
+                className="px-3.5 py-2 rounded-xl border border-[#8B5CF6]/40 text-[#6D28D9] text-xs font-semibold hover:bg-[#8B5CF6]/10">📊 Campañas</button>
+              <button onClick={() => setVerPlantillas(true)} title="Diseños reutilizables para tus páginas"
+                className="px-3.5 py-2 rounded-xl border border-[#00A89D]/40 text-[#00847A] text-xs font-semibold hover:bg-[#00A89D]/10">🧩 Plantillas</button>
+              <button onClick={() => setCarritosOpen(true)} title="Clientes que empezaron a comprar y no terminaron"
+                className="px-3.5 py-2 rounded-xl border border-[#F59E0B]/50 text-[#B45309] text-xs font-semibold hover:bg-[#F59E0B]/10">🛒 Carritos abandonados</button>
+              <button onClick={() => setPapeleraOpen(true)} title="Embudos eliminados (se pueden restaurar)"
+                className="px-3.5 py-2 rounded-xl border border-[#E1E5E4] text-[#5B6B68] text-xs font-semibold hover:bg-[#F4F7F6]">🗑️ Papelera</button>
+              <button onClick={() => setConfirmarEliminar(true)} disabled={seleccion.size === 0} title="Enviar a la papelera los embudos seleccionados"
+                className="px-3.5 py-2 rounded-xl bg-[#DC2626] text-white text-xs font-semibold hover:bg-[#B91C1C] disabled:opacity-30 disabled:cursor-not-allowed"
+              >🗑 Eliminar{seleccion.size ? ` (${seleccion.size})` : ''}</button>
+            </div>
+
+            {/* Filtros, búsqueda y vista */}
+            {!cargando && embudos.length > 0 && (() => {
+              const nAct = embudos.filter(x => x.activo).length;
+              const chip = (k: typeof filtroLista, txt: string, n: number, punto: string) => (
+                <button key={k} onClick={() => setFiltroLista(k)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border transition ${filtroLista === k ? 'bg-[#0B7F78] text-white border-transparent' : 'bg-white text-[#1F2A28] border-[#DCE4E2] hover:bg-[#F4F8F7]'}`}>
+                  {punto && <span className="w-2 h-2 rounded-full" style={{ background: punto }} />}{txt}
+                  <span className={filtroLista === k ? 'text-white/80' : 'text-[#7A8A87]'}>{n}</span>
+                </button>
+              );
+              return (
+                <div className="flex items-center gap-2 flex-wrap mt-4">
+                  {chip('todos', 'Todos', embudos.length, '')}
+                  {chip('activos', 'Activos', nAct, '#22C55E')}
+                  {chip('apagados', 'Apagados', embudos.length - nAct, '#F59E0B')}
+                  <div className="flex-1 min-w-[180px] flex items-center gap-2 px-3 py-2 rounded-full border border-[#DCE4E2] bg-white">
+                    <span className="text-[#9AA7A5]">🔍</span>
+                    <input value={buscarLista} onChange={ev => setBuscarLista(ev.target.value)} placeholder="Buscar embudo…" className="flex-1 text-sm outline-none bg-transparent" />
+                  </div>
+                  <div className="flex p-1 rounded-xl border border-[#DCE4E2] bg-white">
+                    <button onClick={() => setModoLista('grid')} title="Tarjetas" className={`px-2.5 py-1 rounded-lg text-sm ${modoLista === 'grid' ? 'bg-[#0B7F78] text-white' : 'text-[#5B6B68]'}`}>▦</button>
+                    <button onClick={() => setModoLista('lista')} title="Lista" className={`px-2.5 py-1 rounded-lg text-sm ${modoLista === 'lista' ? 'bg-[#0B7F78] text-white' : 'text-[#5B6B68]'}`}>☰</button>
+                  </div>
+                </div>
+              );
+            })()}
           </header>
 
           {aviso && <div className="mb-4 text-xs p-3 rounded-xl bg-white border border-[#E8E8E8]">{aviso}</div>}
@@ -712,6 +737,7 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
               {seleccion.size > 0 && (
                 <span className="text-[#6B6B6B]"><b className="text-[#0D0D0D]">{seleccion.size}</b> seleccionado(s)</span>
               )}
+              <span className="ml-auto text-[#7A8A87]">Ventas y conversión: últimos 30 días</span>
             </div>
           )}
 
@@ -719,111 +745,133 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
             <p className="text-sm text-[#6B6B6B] py-10 text-center">Cargando…</p>
           ) : embudos.length === 0 ? (
             <p className="text-sm text-[#6B6B6B] py-10 text-center">Aún no tienes embudos. Crea el primero.</p>
-          ) : (
-            <div className="space-y-3">
-              {embudos.map(e => (
-                <div key={e.slug} className={`bg-white rounded-2xl border p-4 shadow-sm flex items-center gap-3 ${
-                  seleccion.has(e.slug) ? 'border-[#00A89D] ring-1 ring-[#00A89D]/30' : 'border-[#E8E8E8]'
-                }`}>
-                  <input
-                    type="checkbox"
-                    checked={seleccion.has(e.slug)}
-                    onChange={() => alternarSel(e.slug)}
-                    title="Seleccionar"
-                    className="w-4 h-4 accent-[#00A89D] shrink-0"
-                  />
-                  {(() => {
-                    // Miniatura del PRODUCTO: la foto de la 1ª variante es la propia de
-                    // cada embudo (imagenes[0] a veces quedó compartida al duplicar).
-                    const portada = e.variantes?.[0]?.imagen || e.imagenes?.[0] || null;
-                    return portada ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={imgOptim(portada, 120)} alt="" className="w-14 h-14 rounded-lg object-contain bg-[#F5F5F5] shrink-0" />
-                    ) : (
-                      <div className="w-14 h-14 rounded-lg bg-[#F5F5F5] flex items-center justify-center text-xl shrink-0">🛍️</div>
-                    );
-                  })()}
+          ) : (() => {
+            const q = buscarLista.trim().toLowerCase();
+            const lista = embudos
+              .filter(e => filtroLista === 'todos' || (filtroLista === 'activos' ? e.activo : !e.activo))
+              .filter(e => !q || `${e.producto} ${e.nombre ?? ''} ${e.slug}`.toLowerCase().includes(q));
+            if (!lista.length) return <p className="text-sm text-[#6B6B6B] py-10 text-center">Ningún embudo coincide con el filtro.</p>;
+            const portadaDe = (e: Embudo) => e.variantes?.[0]?.imagen || e.imagenes?.[0] || null;
 
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start gap-2 flex-wrap">
-                      <span className="text-sm font-semibold break-words">{e.producto}</span>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        e.activo ? 'text-[#15803D] bg-[#15803D]/10' : 'text-[#DC2626] bg-[#DC2626]/10'
-                      }`}>{e.activo ? 'Activo' : 'Apagado'}</span>
+            // Menú ⋮ con las acciones secundarias (las mismas de antes)
+            const Menu = (e: Embudo) => (
+              <div className="relative">
+                <button onClick={() => setMenuDe(menuDe === e.slug ? null : e.slug)} title="Más acciones"
+                  className="w-9 h-9 rounded-xl border border-[#E1E5E4] text-lg leading-none hover:bg-[#F4F7F6]">⋮</button>
+                {menuDe === e.slug && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setMenuDe(null)} />
+                    <div className="absolute right-0 bottom-11 z-20 w-56 bg-white rounded-xl border border-[#E8ECEB] shadow-xl p-1 text-sm">
+                      <a href={`/p/${e.slug}`} target="_blank" rel="noreferrer" onClick={() => setMenuDe(null)} className="block px-3 py-2 rounded-lg hover:bg-[#F4F7F6]">👁 Ver página</a>
+                      <button onClick={() => { copiarEnlace(e.slug); setMenuDe(null); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#F4F7F6]">{copiado === e.slug ? '✓ Copiado' : '🔗 Copiar enlace'}</button>
+                      <button onClick={() => { setPixelDe(e); setMenuDe(null); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#F4F7F6]">📊 Píxel y token</button>
+                      <button onClick={() => { optimizarFotos(e.slug); setMenuDe(null); }} disabled={optimizando === e.slug} className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#F4F7F6] disabled:opacity-50">{optimizando === e.slug ? '⏳ Optimizando…' : '⚡ Optimizar fotos'}</button>
+                      <button onClick={() => { duplicar(e); setMenuDe(null); }} disabled={guardando} className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#F4F7F6] disabled:opacity-50">⧉ Duplicar</button>
+                      <button onClick={() => { borrar(e.slug); setMenuDe(null); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#FEE2E2] text-[#DC2626]">🗑 Eliminar</button>
                     </div>
-                    <p className="text-[11px] text-[#6B6B6B] truncate">
-                      pedido.klixmant.shop/{e.slug} · {pesos(e.precio)}
-                    </p>
-                    {/* Confirmación: decide si el bot responde al cliente o lo hace un humano */}
-                    <div className="flex items-center gap-1 mt-1">
-                      <span className="text-[10px] font-bold text-[#6B6B6B] shrink-0">💬 Confirmación:</span>
-                      <select
-                        value={e.confirmacion_modo || 'bot'}
-                        disabled={modoGuardando === e.slug}
-                        onChange={async (ev) => {
-                          const modo = ev.target.value;
-                          setModoGuardando(e.slug);
-                          await guardarAjustes(e.slug, { confirmacion_modo: modo });
-                          setModoGuardando(null);
-                        }}
-                        className="text-[11px] rounded-md border border-[#E0E0E0] px-1.5 py-1 bg-white max-w-[240px] disabled:opacity-50"
-                      >
-                        <option value="bot">Por defecto (bot confirma)</option>
-                        <option value="agente">Confirmación con agente (bot cierra la venta)</option>
-                        <option value="humano">Solo enviar y apagar bot (confirma un humano)</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={() => optimizarFotos(e.slug)}
-                      disabled={optimizando === e.slug}
-                      title="Comprime las fotos ya subidas para que la página cargue rápido en celular"
-                      className="px-3 py-1.5 rounded-lg border border-[#F59E0B]/50 text-[#B45309] text-xs hover:bg-[#F59E0B]/10 font-semibold disabled:opacity-50"
-                    >{optimizando === e.slug ? '⏳ Optimizando…' : '⚡ Optimizar fotos'}</button>
-                    <button
-                      onClick={() => setPixelDe(e)}
-                      title="Pegar el píxel y token de Meta / TikTok sin abrir el editor"
-                      className="px-3 py-1.5 rounded-lg border border-[#7C3AED]/40 text-[#7C3AED] text-xs hover:bg-[#7C3AED]/10 font-semibold"
-                    >📊 Píxel y token</button>
-                    <button
-                      onClick={() => copiarEnlace(e.slug)}
-                      title="Copiar el enlace para compartirlo"
-                      className={`px-3 py-1.5 rounded-lg border text-xs transition-colors ${
-                        copiado === e.slug
-                          ? 'border-[#15803D] text-[#15803D] bg-[#15803D]/10 font-semibold'
-                          : 'border-[#E8E8E8] hover:bg-[#F5F5F5]'
-                      }`}
-                    >{copiado === e.slug ? '✓ Copiado' : '🔗 Copiar'}</button>
-                    <a
-                      href={`/p/${e.slug}`} target="_blank" rel="noreferrer"
-                      className="px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-xs hover:bg-[#F5F5F5]"
-                    >Ver</a>
-                    <button
-                      onClick={() => setStatsDe({ slug: e.slug, producto: e.producto })}
-                      title="Ver dónde llegan y dónde se cae la venta"
-                      className="px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-xs hover:bg-[#F5F5F5]"
-                    >📊 Estadísticas</button>
-                    <button
-                      onClick={() => { historial.current = []; setPasosDeshacer(0); setActual({ ...vacio(), ...e }); setVista('editar'); setAviso(null); marcarSinGuardar(false); }}
-                      className="px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-xs hover:bg-[#F5F5F5]"
-                    >Editar</button>
-                    <button
-                      onClick={() => duplicar(e)}
-                      disabled={guardando}
-                      title="Crear una copia idéntica con otra dirección"
-                      className="px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-xs hover:bg-[#F5F5F5] disabled:opacity-50"
-                    >⧉ Duplicar</button>
-                    <button
-                      onClick={() => borrar(e.slug)}
-                      className="w-8 h-8 rounded-lg text-[#DC2626] hover:bg-[#FEE2E2]"
-                    >🗑</button>
-                  </div>
+                  </>
+                )}
+              </div>
+            );
+            const Confirmacion = (e: Embudo) => (
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-bold text-[#6B6B6B] shrink-0">💬 Confirmación:</span>
+                <select
+                  value={e.confirmacion_modo || 'bot'}
+                  disabled={modoGuardando === e.slug}
+                  onChange={async (ev) => {
+                    const modo = ev.target.value;
+                    setModoGuardando(e.slug);
+                    await guardarAjustes(e.slug, { confirmacion_modo: modo });
+                    setModoGuardando(null);
+                  }}
+                  className="flex-1 min-w-0 text-[11px] rounded-md border border-[#E0E0E0] px-1.5 py-1 bg-white disabled:opacity-50"
+                >
+                  <option value="bot">Por defecto (bot confirma)</option>
+                  <option value="agente">Confirmación con agente (bot cierra la venta)</option>
+                  <option value="humano">Solo enviar y apagar bot (confirma un humano)</option>
+                </select>
+              </div>
+            );
+            const Cifras = (e: Embudo) => {
+              const r = resumen[e.slug];
+              return (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-xl bg-[#F5F8F7] px-3 py-2 text-[12px] text-[#1F2A28]">🛒 <b>{r ? r.ventas : '—'}</b> ventas</div>
+                  <div className="rounded-xl bg-[#F5F8F7] px-3 py-2 text-[12px] text-[#1F2A28]" title={r ? `${r.visitas} visitas` : ''}>📈 <b>{r ? `${r.conv}%` : '—'}</b> conv.</div>
                 </div>
-              ))}
-            </div>
-          )}
+              );
+            };
+            const Editar = (e: Embudo) => (
+              <button
+                onClick={() => { historial.current = []; setPasosDeshacer(0); setActual({ ...vacio(), ...e }); setVista('editar'); setAviso(null); marcarSinGuardar(false); }}
+                className="flex-1 px-3 py-2 rounded-xl border border-[#E1E5E4] text-sm font-semibold hover:bg-[#F4F7F6]"
+              >⚙️ Editar</button>
+            );
+            const Stats = (e: Embudo) => (
+              <button onClick={() => setStatsDe({ slug: e.slug, producto: e.producto })} title="Ver dónde llegan y dónde se cae la venta"
+                className="flex-1 px-3 py-2 rounded-xl border border-[#E1E5E4] text-sm font-semibold hover:bg-[#F4F7F6]">📊 Estadísticas</button>
+            );
+            const Estado = (e: Embudo) => (
+              <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full ${e.activo ? 'text-[#15803D] bg-[#DCFCE7]' : 'text-[#B45309] bg-[#FEF3C7]'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${e.activo ? 'bg-[#22C55E]' : 'bg-[#F59E0B]'}`} />{e.activo ? 'Activo' : 'Apagado'}
+              </span>
+            );
+
+            if (modoLista === 'lista') return (
+              <div className="space-y-2">
+                {lista.map(e => {
+                  const portada = portadaDe(e);
+                  return (
+                    <div key={e.slug} className={`bg-white rounded-2xl border p-3 shadow-sm flex items-center gap-3 flex-wrap ${seleccion.has(e.slug) ? 'border-[#00A89D] ring-1 ring-[#00A89D]/30' : 'border-[#E8ECEB]'}`}>
+                      <input type="checkbox" checked={seleccion.has(e.slug)} onChange={() => alternarSel(e.slug)} title="Seleccionar" className="w-4 h-4 accent-[#00A89D] shrink-0" />
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {portada ? <img src={imgOptim(portada, 120)} alt="" className="w-14 h-14 rounded-xl object-contain bg-[#F5F5F5] shrink-0" />
+                        : <div className="w-14 h-14 rounded-xl bg-[#F5F5F5] flex items-center justify-center text-xl shrink-0">🛍️</div>}
+                      <div className="flex-1 min-w-[200px]">
+                        <div className="flex items-center gap-2 flex-wrap"><span className="text-sm font-bold break-words">{e.producto}</span>{Estado(e)}</div>
+                        <p className="text-[11px] text-[#6B6B6B] truncate">pedido.klixmant.shop/{e.slug} · {pesos(e.precio)}</p>
+                        <div className="mt-1 max-w-sm">{Confirmacion(e)}</div>
+                      </div>
+                      <div className="w-56">{Cifras(e)}</div>
+                      <div className="flex items-center gap-2 w-72">{Editar(e)}{Stats(e)}{Menu(e)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+
+            return (
+              <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                {lista.map(e => {
+                  const portada = portadaDe(e);
+                  return (
+                    <article key={e.slug} className={`bg-white rounded-2xl border shadow-sm overflow-hidden flex flex-col transition hover:shadow-md ${seleccion.has(e.slug) ? 'border-[#00A89D] ring-2 ring-[#00A89D]/30' : 'border-[#E8ECEB]'}`}>
+                      <div className="relative bg-gradient-to-br from-[#0D2B29] to-[#0B5E58] aspect-[16/9] flex items-center justify-center">
+                        {/* Miniatura del PRODUCTO: la foto de la 1ª variante es la propia de cada embudo */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        {portada ? <img src={imgOptim(portada, 480)} alt="" loading="lazy" className="h-full w-full object-contain p-2" />
+                          : <span className="text-4xl">🛍️</span>}
+                        <span className="absolute top-2 left-2">{Estado(e)}</span>
+                        <label className="absolute top-2 right-2 w-7 h-7 rounded-lg bg-white/90 flex items-center justify-center shadow cursor-pointer" title="Seleccionar">
+                          <input type="checkbox" checked={seleccion.has(e.slug)} onChange={() => alternarSel(e.slug)} className="w-4 h-4 accent-[#00A89D]" />
+                        </label>
+                      </div>
+                      <div className="p-4 flex-1 flex flex-col gap-3">
+                        <div>
+                          <h3 className="text-[15px] font-extrabold text-[#0D1F1C] leading-tight break-words">{e.producto}</h3>
+                          <p className="text-[11px] text-[#6B7B78] truncate mt-0.5">pedido.klixmant.shop/{e.slug} · <b className="text-[#1F2A28]">{pesos(e.precio)}</b></p>
+                        </div>
+                        {Cifras(e)}
+                        {Confirmacion(e)}
+                        <div className="mt-auto flex items-center gap-2">{Editar(e)}{Stats(e)}{Menu(e)}</div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
         {statsDe && <EmbudoStatsModal slug={statsDe.slug} producto={statsDe.producto} onClose={() => setStatsDe(null)} />}
 

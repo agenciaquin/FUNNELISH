@@ -156,6 +156,15 @@ y crons ~20 min; hubo que reiniciar el proyecto. Causa de fondo: cada panel abie
 sincronizaciones grandes y consultas de diagnóstico sobre `messages`/`conversations`/`storage`.
 Publicar en Vercel sí se puede a cualquier hora. Detalle y tabla completa: `WIKI-QUINO/reglas/horas-pico.md`.
 
+### 9 · Embudos → «Mi Página» (08-nov-2026), independiente de los embudos
+
+`components/panel/EmbudosModulo.tsx` pone dos pestañas: **Mis Embudos** (`EmbudosPanel` tal cual; solo se
+rediseñó el JSX de su lista, mismos handlers) y **Mi Página** (`MiPaginaPanel`).
+Mi Página: tabla propia `mi_pagina` (borrador / publicado), `lib/mi-pagina.ts`, `app/api/mi-pagina` (con sesión),
+pública en `pedido.klixmant.shop/web/<slug>` → `app/p/web/[slug]` (sin tocar el middleware). Solo LEE
+catálogos, embudos y promociones. Comprar = embudo enlazado al catálogo; sin embudo = WhatsApp.
+Cifras de las tarjetas: `app/api/funnels/resumen` (solo lectura, 30 días, caché 10 min).
+
 ### 5 · No todas las subidas comprimen
 
 Comprimen: `funnels/imagen`, `plantillas-wa/imagen`, `catalogos/upload-imagen`.

@@ -215,7 +215,14 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
   else ubicacion = porCobrar > 0 ? UBICACIONES[transp].cr : UBICACIONES[transp].sr;
 
   // ── Vendedor ──────────────────────────────────────────────────────────
-  const vend = cfg.vendedores[String(venta.vendedor_tel ?? '')] ?? null;
+  // Preventas viejas del panel quedaron con vendedor «panel» (antes de separar Funnel / WhatsApp):
+  // se toma el de la línea del chat (funnel → FUNNELISTH LANDING, ventas → QUINO AGENCIA).
+  let telVend = String(venta.vendedor_tel ?? '');
+  if (telVend === 'panel' && venta.conversacion_id) {
+    const { data: conv } = await createServerSupabaseClient().from('conversations').select('linea').eq('id', venta.conversacion_id).maybeSingle();
+    telVend = conv?.linea === 'ventas' ? 'panel-whatsapp' : 'panel-funnel';
+  }
+  const vend = cfg.vendedores[telVend] ?? null;
   if (!vend) errores.push(`El vendedor ${venta.vendedor_nombre || venta.vendedor_tel} no está enlazado a un empleado de Effi`);
 
   // ── Consultas a Effi (solo lectura) ───────────────────────────────────
