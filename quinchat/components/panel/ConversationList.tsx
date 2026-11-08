@@ -18,13 +18,14 @@ function formatTime(iso: string): string {
 
 // Pestañas horizontales: filtran por etiqueta / no leídos.
 const FILTER_TABS: { key: string; label: string; color: string; test: (c: Conversation) => boolean }[] = [
+  // Orden pedido por el dueño (08-nov-2026): Todos · Venta realizada · Por subir al panel primero.
   { key: 'todos',     label: 'Todos',                    color: '#475569', test: () => true },
-  { key: 'noleido',   label: 'No leído',                 color: '#38BDF8', test: c => (c.unread_count ?? 0) > 0 },
-  { key: 'interbot',  label: '🤖 Interacción bot',       color: '#0EA5A0', test: c => !!(c as any).interaccion_bot },
-  { key: 'pendconf',  label: 'Pendiente por confirmar',  color: '#8B5CF6', test: c => !!c.label && c.label.includes('PENDIENTE POR CONFIRMACIÓN') },
   { key: 'venta',     label: 'Venta realizada',          color: '#00847A', test: c => !!c.label && c.label.includes('VENTA REALIZADA') },
   // Se resuelve dentro del componente con la etapa Effi real (ver etapaEffi)
   { key: 'porsubir',  label: '🟡 Por subir al panel',    color: '#EAB308', test: () => false },
+  { key: 'noleido',   label: 'No leído',                 color: '#38BDF8', test: c => (c.unread_count ?? 0) > 0 },
+  { key: 'interbot',  label: '🤖 Interacción bot',       color: '#0EA5A0', test: c => !!(c as any).interaccion_bot },
+  { key: 'pendconf',  label: 'Pendiente por confirmar',  color: '#8B5CF6', test: c => !!c.label && c.label.includes('PENDIENTE POR CONFIRMACIÓN') },
   { key: 'humano',    label: 'Humano',                   color: '#6B7280', test: c => !!c.label && c.label.toUpperCase().includes('HUMANO') },
   { key: 'abono',     label: 'Pendiente de abono',       color: '#EAB308', test: c => !!c.label && c.label.includes('PENDIENTE DE ABONO') },
   { key: 'procesado', label: 'Anulado en Effi',         color: '#DC2626', test: c => !!c.label && c.label.includes('ANULADO EN EFFI') },
