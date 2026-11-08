@@ -79,6 +79,8 @@ const SISTEMA =
   `OFICINA: si acordaron que el cliente RECLAMA EN OFICINA de la transportadora, reclama_en_oficina = true y transportadora = ` +
   `la transportadora de esa oficina (ej. "INTERRAPIDISIMO").\n` +
   `Si en el chat hay VARIAS compras, los datos son SOLO de la compra MÁS RECIENTE (la del pedido); ignora las anteriores.\n` +
+  `PRIORIDAD: los mensajes van en orden de tiempo. Si un dato cambia (nombre, celular, dirección, ciudad, color, talla, producto, ` +
+  `oficina, abono), SIEMPRE vale el ÚLTIMO que dijo el CLIENTE o el ASESOR, aunque el pedido diga otra cosa.\n` +
   `REGLAS: usa el pedido como base y aplica lo que el CLIENTE o el ASESOR acordaron después en el chat (el último valor manda: ` +
   `si cambiaron un color, una talla o la dirección, usa lo nuevo). No inventes: si no aparece, "" o null. ` +
   `celular 10 dígitos. cedula solo si el cliente la escribió (nunca el celular). ` +
@@ -116,13 +118,28 @@ export async function prellenarDesdeChat(conv: string) {
       .eq('conversacion_id', conv).neq('estado', 'cancelada')
       .order('creado_at', { ascending: false }).limit(1),
   ]);
-  const pedido: any = (pedidos ?? [])[0] ?? null;
-
-  // Cliente que VUELVE a comprar: solo cuenta la conversación desde el pedido más reciente (con 10 min de
-  // margen). Antes la IA mezclaba los datos de la compra anterior que seguían en el chat (08-nov-2026).
-  const desdePedido = pedido?.created_at ? new Date(pedido.created_at).getTime() - 10 * 60_000 : 0;
-  const charla = (msgs ?? []).reverse()
-    .filter((m: any) => !desdePedido || new Date(m.created_at).getTime() >= desdePedido)
+  // ── SIEMPRE MANDAN LOS DATOS NUEVOS (regla del dueño, 08-nov-2026) ──────────────────────────────
+  // 1) La conversación ACTUAL empieza después del último silencio largo (más de 24 h sin mensajes):
+  //    lo de compras de días anteriores no se lee.
+  // 2) Si hay pedido, se lee desde el pedido (sin margen). Si el pedido es de una compra vieja (antes de la
+  //    conversación actual y de hace más de 3 días), no se usa como base: mandan los datos que el cliente dio ahora.
+  // 3) Dentro de lo que se lee, el ÚLTIMO dato que diga el cliente o el asesor reemplaza al anterior (prompt).
+  const enOrden = [...(msgs ?? [])].reverse();
+  let inicioConversacion = 0;
+  for (let i = enOrden.length - 1; i > 0; i--) {
+    const t = new Date(enOrden[i].created_at).getTime(), tPrev = new Date(enOrden[i - 1].created_at).getTime();
+    if (t - tPrev > 24 * 3600_000) { inicioConversacion = t; break; }
+  }
+  const pedidoLeido: any = (pedidos ?? [])[0] ?? null;
+  const tPedido = pedidoLeido?.created_at ? new Date(pedidoLeido.created_at).getTime() : 0;
+  // El pedido es de OTRA compra vieja si quedó antes de la conversación actual y tiene más de 3 días.
+  // (Si es de hace 1–3 días y el cliente vuelve hoy a corregir algo, sigue siendo la misma compra.)
+  const pedidoViejo = !!pedidoLeido && !!inicioConversacion && tPedido < inicioConversacion - 3600_000
+    && Date.now() - tPedido > 3 * 86400_000;
+  const pedido: any = pedidoLeido && !pedidoViejo ? pedidoLeido : null;
+  const desde = pedido ? tPedido : inicioConversacion;
+  const charla = enOrden
+    .filter((m: any) => !desde || new Date(m.created_at).getTime() >= desde)
     .filter((m: any) => typeof m.content === 'string' && m.content.trim() && !m.content.startsWith('http'))
     .map((m: any) => `${m.role === 'user' ? 'CLIENTE' : m.role === 'agent' ? 'ASESOR' : 'BOT'}: ${m.content.trim().slice(0, 500)}`)
     .join('\n').slice(-6000);
