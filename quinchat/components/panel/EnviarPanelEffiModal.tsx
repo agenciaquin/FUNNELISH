@@ -451,7 +451,7 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
                     {Campo({ l: 'Nombre', k: 'cliente_nombre', req: true })}
                     {Campo({ l: 'Celular', k: 'cliente_celular', req: true })}
                     {Campo({ l: 'Identificación', k: 'cliente_identificacion', ph: 'Ej. 1045678901 (vacío = celular)' })}
-                    {Campo({ l: 'Correo', k: 'cliente_correo', ph: 'Gerenciaquin7@gmail.com' })}
+                    {Campo({ l: 'Correo', k: 'cliente_correo', ph: 'Vacío = Gerenciaquin7 / creativoquin (se alternan)' })}
                     <div>
                       <label className={etq}>Tipo de pago</label>
                       <select className={input} value={datos.tipo_pago ?? 'contraentrega'} onChange={e => set('tipo_pago', e.target.value)}>

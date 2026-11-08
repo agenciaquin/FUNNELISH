@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exigirSesion } from '@/lib/ventas-vendedores/auth';
-import { prellenarDesdeChat, productoConVariantes, buscarEnCatalogo, crearDesdeChat } from '@/lib/ventas-vendedores/desde-chat';
+import { prellenarDesdeChat, productoConVariantes, buscarEnCatalogo, crearDesdeChat, convDelPanel } from '@/lib/ventas-vendedores/desde-chat';
 import { createServerSupabaseClient } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     // ¿Este chat ya tiene una preventa en el panel? (para pintar el botón en azul). Consulta liviana, sin IA.
     if (sp.get('existe')) {
       const crudo = String(sp.get('existe'));
-      const c = crudo.replace(/\D/g, '');
+      const c = convDelPanel(crudo) ?? crudo.replace(/\D/g, '');
       const supabase = createServerSupabaseClient();
       // Marcada a mano con «Ya está en Effi»
       const { data: vinc } = await supabase.from('effi_vinculos').select('remision, telefono_effi, cliente_effi')
@@ -55,12 +55,13 @@ export async function GET(req: NextRequest) {
         .eq('conversacion_id', c).neq('estado', 'cancelada').order('creado_at', { ascending: false }).limit(1).maybeSingle();
       if (data?.effi_remision) return NextResponse.json({ existente: data });
       // Subida a mano en Effi (empalme): se muestra en azul con su remisión
-      const manual = (await remisionesManuales(supabase, c))[c];
+      // (los chats con nombre de usuario «CO.…» no traen teléfono: no se cruzan por número)
+      const manual = /^\d+$/.test(c) ? (await remisionesManuales(supabase, c))[c] : undefined;
       if (manual) return NextResponse.json({ existente: { codigo: data?.codigo ?? 'subida a mano en Effi', estado: data?.estado ?? 'en_effi', effi_remision: manual, manual: true } });
       return NextResponse.json({ existente: data ?? null });
     }
-    const conv = String(sp.get('conv') ?? '').replace(/\D/g, '');
-    if (!/^57\d{10}$/.test(conv)) return NextResponse.json({ error: 'Chat inválido' }, { status: 400 });
+    const conv = convDelPanel(sp.get('conv'));
+    if (!conv) return NextResponse.json({ error: 'Chat inválido' }, { status: 400 });
     return NextResponse.json(await prellenarDesdeChat(conv));
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? String(e) }, { status: 500 });

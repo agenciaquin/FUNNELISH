@@ -25,6 +25,17 @@ function extraerJSON(t: string): any {
 const s = (v: unknown) => String(v ?? '').trim();
 const num = (v: unknown) => { const x = Number(String(v ?? '').replace(/[^\d]/g, '')); return x > 0 ? x : null; };
 export const tel10De = (v: unknown) => String(v ?? '').replace(/\D/g, '').slice(-10);
+/**
+ * Id del chat válido para el panel: «57» + 10 dígitos, o el código de WhatsApp de un cliente con
+ * NOMBRE DE USUARIO (número oculto), ej. «CO.987263843930721» (BSUID). null si no sirve.
+ */
+export const esBsuid = (v: unknown) => /^[A-Z]{2}\.\d{6,}$/.test(String(v ?? '').trim());
+export function convDelPanel(v: unknown): string | null {
+  const t = String(v ?? '').trim();
+  if (esBsuid(t)) return t;
+  const d = t.replace(/\D/g, '');
+  return /^57\d{10}$/.test(d) ? d : null;
+}
 
 /**
  * Vendedor en Effi según el chat de donde sale la venta (regla del dueño, 08-nov-2026):
@@ -82,7 +93,8 @@ const SISTEMA =
 
 export async function prellenarDesdeChat(conv: string) {
   const supabase = createServerSupabaseClient();
-  const tel = tel10De(conv);
+  // Cliente con nombre de usuario (BSUID): WhatsApp no da su número → el celular sale del chat o se escribe a mano
+  const tel = esBsuid(conv) ? '' : tel10De(conv);
 
   // La copia del catálogo KlixmSoft no tiene cron: si tiene más de 24 h, se actualiza aquí
   // (el 08-nov-2026 llevaba 6 días vieja y no tenía CAMISETA AMERICA ni BUCARO LEOPARDO).
@@ -129,7 +141,9 @@ export async function prellenarDesdeChat(conv: string) {
     cliente_nombre: s(x.nombre) || s(pedido?.nombre),
     cliente_celular: tel10De(x.celular) || tel10De(pedido?.telefono) || tel,
     cliente_identificacion: s(x.cedula).replace(/[^\dA-Za-z-]/g, ''),
-    cliente_correo: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s(x.correo)) ? s(x.correo).toLowerCase() : s(pedido?.correo),
+    // Solo correos de verdad: si el cliente puso su celular u otra cosa, queda vacío (se usa el de la empresa, alternando)
+    cliente_correo: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s(x.correo)) ? s(x.correo).toLowerCase()
+      : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s(pedido?.correo)) && !/^gerenciaquin7@gmail\.com$/i.test(s(pedido?.correo)) ? s(pedido?.correo).toLowerCase() : '',
     departamento: s(x.departamento) || s(pedido?.departamento),
     municipio: s(x.municipio) || s(pedido?.ciudad),
     direccion: s(x.direccion) || s(pedido?.direccion),
@@ -492,8 +506,8 @@ export async function crearDesdeChat(e: EntradaPanel, quien: string): Promise<{ 
   const errores: string[] = [];
   // Al guardar también se estandariza la oficina de Interrapidísimo (por si la escribieron a mano)
   const d = normalizarOficinaInter({ ...(e.datos ?? {}) });
-  const conv = String(e.conv ?? '').replace(/\D/g, '');
-  if (!/^57\d{10}$/.test(conv)) return { ok: false, mensaje: 'Chat inválido' };
+  const conv = convDelPanel(e.conv);
+  if (!conv) return { ok: false, mensaje: 'Chat inválido' };
 
   const cel = tel10De(d.cliente_celular);
   if (!s(d.cliente_nombre)) errores.push('Falta el nombre');

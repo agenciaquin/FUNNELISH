@@ -92,7 +92,13 @@ async function enviarReal(venta: any, payload: any, rem: Awaited<ReturnType<type
     let detalle: any = null;
     if (!tercero) {
       try {
-        const { status, json } = await effiPost('cliente', rem.crear_cliente);
+        // Cliente sin correo: se toma el correo de la empresa que toca y se pasa el turno (alternan)
+        const { correo_por_defecto, ...cuerpoCliente } = rem.crear_cliente as any;
+        if (correo_por_defecto) {
+          const { correoPorDefecto } = await import('./effi-remision');
+          cuerpoCliente.email = await correoPorDefecto(true);
+        }
+        const { status, json } = await effiPost('cliente', cuerpoCliente);
         detalle = { status, json };
         tercero = Number(json?.data?.tercero) || null;
         if (!tercero) tercero = await buscar();

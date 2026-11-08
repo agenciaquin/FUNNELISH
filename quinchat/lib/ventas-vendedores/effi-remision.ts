@@ -129,6 +129,26 @@ export async function transportadoraDeMunicipio(departamento: string, municipio:
 
 /** Nombre de lugar comparable: sin tildes, sin «D.C.», sin signos. «Bogotá, D.C.» → «bogota». */
 const normLugar = (t: unknown) => sinTildes(t).replace(/\bd\s*\.?\s*c\s*\.?(?=\s|$)/g, ' ').replace(/[^a-z0-9ñ ]/g, ' ').replace(/\s+/g, ' ').trim();
+/**
+ * Correos de la empresa para clientes SIN correo (regla del dueño, 08-nov-2026): se ALTERNAN.
+ * El turno se guarda en ajustes_bot «correos_por_defecto» ({ lista, siguiente }).
+ * avanzar=false solo mira cuál toca (vista previa); avanzar=true lo usa y pasa el turno (al crear el cliente).
+ */
+export const CORREOS_DEFECTO = ['Gerenciaquin7@gmail.com', 'creativoquin@gmail.com'];
+export const correoValido = (t: unknown) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(t ?? '').trim());
+export async function correoPorDefecto(avanzar: boolean): Promise<string> {
+  try {
+    const supabase = createServerSupabaseClient();
+    const { data } = await supabase.from('ajustes_bot').select('valor').eq('clave', 'correos_por_defecto').maybeSingle();
+    const lista: string[] = Array.isArray((data?.valor as any)?.lista) && (data!.valor as any).lista.length ? (data!.valor as any).lista : CORREOS_DEFECTO;
+    const i = Math.abs(Number((data?.valor as any)?.siguiente) || 0) % lista.length;
+    if (avanzar) {
+      await supabase.from('ajustes_bot').upsert({ clave: 'correos_por_defecto', valor: { lista, siguiente: (i + 1) % lista.length }, actualizado_at: new Date().toISOString() }, { onConflict: 'clave' });
+    }
+    return lista[i];
+  } catch { return CORREOS_DEFECTO[0]; }
+}
+
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 /** Total como lo calcula Effi: subtotal (bases de 2 decimales × cantidad) + IVA 19 % redondeado. */
 function totalEffi(bases: number[], cantidades: number[]): number {
@@ -307,10 +327,13 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
       t_dni: EFFI_IDS.t_dni_cedula, numero: identificacion, nombre: String(venta.cliente_nombre ?? '').slice(0, 120),
       celular: String(venta.cliente_celular ?? '').replace(/\D/g, '').slice(-10),
       whatsapp: String(venta.cliente_celular ?? '').replace(/\D/g, '').slice(-10),
-      email: venta.cliente_correo || 'Gerenciaquin7@gmail.com',
+      // Sin correo válido del cliente → uno de los correos de la empresa, alternando (se fija al enviar)
+      email: correoValido(venta.cliente_correo) ? String(venta.cliente_correo).trim() : await correoPorDefecto(false),
+      correo_por_defecto: !correoValido(venta.cliente_correo),
       direcciones: [{ id_pais: EFFI_IDS.pais, id_provincia: idProvincia, id_ciudad: idCiudad, direccion: direccionTxt, referencia: referenciaTxt }],
     };
     avisos.push(`El cliente no existe en Effi: se creará con identificación ${identificacion}${venta.cliente_identificacion ? '' : ' (celular, no dio cédula)'}`);
+    if (crear_cliente.correo_por_defecto) avisos.push(`El cliente no dio correo: se usará ${crear_cliente.email} (se alternan los correos de la empresa).`);
   }
   if (!direccionTxt) errores.push('Falta la dirección');
 
