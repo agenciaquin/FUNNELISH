@@ -149,6 +149,20 @@ export async function correoPorDefecto(avanzar: boolean): Promise<string> {
   } catch { return CORREOS_DEFECTO[0]; }
 }
 
+/** Distancia de edición (letras que hay que cambiar) entre dos textos cortos. */
+function distancia(a: string, b: string): number {
+  const f = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = f[0]; f[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = f[j];
+      f[j] = Math.min(f[j] + 1, f[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return f[b.length];
+}
+
 /** Todas las ciudades de un departamento en Effi (solo lectura, hasta 5 páginas de 100), con caché de 1 día. */
 const cacheCiudades = new Map<number, { t: number; lista: any[] }>();
 async function ciudadesDelDepto(idProvincia: number): Promise<any[]> {
@@ -296,7 +310,21 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
         let c = elegir(ciu?.data ?? [], true);
         // La búsqueda de Effi no ignora tildes: «San Jose del Guaviare» no encuentra «San José del Guaviare»
         // (08-nov-2026). Si no aparece, se traen TODAS las ciudades del departamento y se compara sin tildes.
-        if (!c) c = elegir(await ciudadesDelDepto(idProvincia), false);
+        if (!c) {
+          const todas = await ciudadesDelDepto(idProvincia);
+          c = elegir(todas, false);
+          // Mal escrita («San José del Guavaire»): la más parecida, si es una sola y casi igual (máx. 2 letras distintas)
+          if (!c && m.length >= 4) {
+            const tope = m.length >= 8 ? 2 : 1;
+            const cerca = todas.filter((x: any) => !/\(/.test(String(x.nombre)))
+              .map((x: any) => ({ x, d: distancia(normLugar(x.nombre), m) }))
+              .filter(o => o.d <= tope).sort((a, b) => a.d - b.d);
+            if (cerca.length && (cerca.length === 1 || cerca[0].d < cerca[1].d)) {
+              c = cerca[0].x;
+              avisos.push(`El municipio «${venta.municipio}» estaba mal escrito: se usó «${c.nombre}» de Effi.`);
+            }
+          }
+        }
         if (!c) errores.push(`Effi no tiene «${venta.municipio}» en ${venta.departamento}`);
         else idCiudad = Number(c.id);
       }
