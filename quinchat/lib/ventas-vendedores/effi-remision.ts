@@ -101,7 +101,9 @@ export async function transportadoraDeMunicipio(departamento: string, municipio:
   transportadora: string; abono: boolean; entrega_dias: number | null; restriccion: string | null; cantidad_minima: number; exacta: boolean;
 } | null> {
   const supabase = createServerSupabaseClient();
-  const { data } = await supabase.from('transportadoras_municipios').select('departamento, municipio, transportadora, abono, entrega_dias, restriccion, cantidad_minima');
+  const { data, error } = await supabase.from('transportadoras_municipios').select('departamento, municipio, transportadora, abono, entrega_dias, restriccion, cantidad_minima');
+  // 08-nov-2026: faltaba el permiso de lectura y el error quedaba escondido («Falta la transportadora»).
+  if (error) throw new Error(`No se pudo leer la tabla de transportadoras: ${error.message}`);
   const filas = data ?? [];
   const def = filas.find((f: any) => f.departamento === '*') ?? null;
   const m = nTx(municipio), d = nTx(departamento);
@@ -163,7 +165,8 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
   const oficinaInter = esOficinaInter([venta.direccion, venta.referencia_dir, venta.complemento, venta.observaciones].filter(Boolean).join(' '));
   if (!transp && oficinaInter) transp = 'INTER RAPIDISIMO';
   if (!transp && !String(venta.transportadora ?? '').trim()) {
-    const rec = await transportadoraDeMunicipio(String(venta.departamento ?? ''), String(venta.municipio ?? '')).catch(() => null);
+    const rec = await transportadoraDeMunicipio(String(venta.departamento ?? ''), String(venta.municipio ?? ''))
+      .catch((e: any) => { errores.push(e?.message ?? String(e)); return null; });
     if (rec) {
       if (/NO HAY CUBRIMIENTO/i.test(rec.transportadora)) {
         errores.push(`No hay cubrimiento de transportadora en ${venta.municipio} (${venta.departamento}). Elige una a mano o confirma con despacho.`);
