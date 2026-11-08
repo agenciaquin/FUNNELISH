@@ -496,6 +496,29 @@ export async function POST(req: NextRequest) {
   // "XL CABALLERO" y la confirmación perdía la talla "S DAMA").
   const perPrenda = tallaPorPrenda(variantName);
   if (perPrenda && /\s\+\s/.test(perPrenda)) talla = perPrenda;
+
+  // Combos del embudo con un grupo por prenda («COLOR Y TALLA CAMISETA», «COLOR Y TALLA BUZO»):
+  // cada prenda lleva su TIPO para que se sepa cuál es cuál (08-nov-2026).
+  //   "BLANCO L HOMBRE + NEGRO L HOMBRE" → "CAMISETA BLANCO L HOMBRE + BUZO NEGRO L HOMBRE"
+  // Solo lee el embudo (sus grupos, en el mismo orden en que el cliente eligió). No cambia nada más.
+  if (/\s\+\s/.test(talla)) {
+    try {
+      const slugEmbudo = String((body?.meta ?? body?.metadata ?? {})?.slug ?? body?.slug ?? '').trim().toLowerCase();
+      if (slugEmbudo) {
+        const { data: f } = await createServerSupabaseClient().from('funnels').select('variantes').eq('slug', slugEmbudo).maybeSingle();
+        const nombreVar = String(product?.name ?? '').trim().toUpperCase();
+        const v = ((f?.variantes ?? []) as any[]).find(x => String(x?.nombre ?? '').trim().toUpperCase() === nombreVar)
+          ?? (((f?.variantes ?? []) as any[]).length === 1 ? (f!.variantes as any[])[0] : null);
+        const grupos = [...new Set(((v?.selectores ?? []) as any[]).map(sl => String(sl?.grupo ?? '').trim()).filter(Boolean))];
+        const tipo = (g: string) => g.toUpperCase().replace(/\b(COLOR(ES)?|Y|TALLAS?|ELIGE|ESCOGE|TU|SU|DE|DEL|LA|EL)\b/g, ' ').replace(/\s+/g, ' ').trim();
+        const etiquetas = grupos.map(tipo);
+        const prendas = talla.split(/\s*\+\s*/);
+        if (etiquetas.length === prendas.length && etiquetas.every(Boolean)) {
+          talla = prendas.map((p, i) => (p.toUpperCase().startsWith(etiquetas[i]) ? p : `${etiquetas[i]} ${p}`)).join(' + ');
+        }
+      }
+    } catch { /* si no se puede leer el embudo, queda como antes */ }
+  }
   const nombreImagenPrincipal = packProductos[0] ?? productoNombre;
 
   const mensaje = buildMensaje({ nombre, telefono: tel10, direccion, ciudad, departamento, correo, talla, producto: productoNombre, valor });
