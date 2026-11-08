@@ -1475,7 +1475,8 @@ export async function POST(req: NextRequest) {
           .from('messages').select('content')
           .eq('conversation_id', from).in('role', ['assistant', 'agent'])
           .order('created_at', { ascending: false }).limit(1).maybeSingle();
-        const yaPreguntamos = (ultimoBot?.content ?? '').toLowerCase().includes(MARCA_PREGUNTA);
+        const ultimoTxt = (ultimoBot?.content ?? '').toLowerCase();
+        const yaPreguntamos = ultimoTxt.includes(MARCA_PREGUNTA) || ultimoTxt.includes('como tienes dos pedidos') || ultimoTxt.includes('cuál de los dos');
 
         // Datos que le faltan a un pedido para poder despacharlo
         const faltantesDe = (p: any): string[] => {
@@ -1516,6 +1517,27 @@ export async function POST(req: NextRequest) {
               const palabras = String(p.producto ?? '').toUpperCase().split(/\s+/).filter((w: string) => w.length >= 4);
               return palabras.some((w: string) => textLower.includes(w.toLowerCase()));
             });
+          }
+          // «Una», «uno», «solo una», «la primera», «la segunda», «la última»… (08-nov-2026: el cliente dijo
+          // «Una» y el bot no lo entendió y volvió a preguntar).
+          const sinTil = textLower.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          if (!elegido) {
+            if (/\b(primer[oa]?|1ro|1ra)\b/.test(sinTil)) elegido = lista[0];
+            else if (/\b(segund[oa]|2do|2da)\b/.test(sinTil)) elegido = lista[1] ?? null;
+            else if (/\b(ultim[oa])\b/.test(sinTil)) elegido = lista[lista.length - 1];
+          }
+          const quiereUno = !quiereAmbos && /^\s*(solo|solamente|nada mas)?\s*(un[oa]?|1)\s*(sol[oa]|nada mas|no mas|porfa(vor)?|por favor|gracias)?\s*[.!]*\s*$|\b(solo|solamente) (un[oa]?|1)\b|\b(un[oa]|1) sol[oa]\b|\b(quiero|dejo|me llevo|llevo|deja|dejame) (solo |solamente )?(un[oa]|1)\b/.test(sinTil);
+          // Pedidos IGUALES (mismo producto y talla: suele ser un pedido repetido): con «uno» basta, se deja el más reciente.
+          const firma = (p: any) => `${String(p.producto ?? '').trim().toUpperCase()}|${String(p.talla ?? '').replace(/\s+/g, ' ').trim().toUpperCase()}`;
+          const todosIguales = lista.every((p: any) => firma(p) === firma(lista[0]));
+          if (!elegido && quiereUno && todosIguales) elegido = lista[lista.length - 1];
+          if (!elegido && quiereUno) {
+            // Quiere uno pero son distintos: preguntar cuál, sin contarlo como «no te entendí»
+            const opciones = lista.map((p: any, i: number) => `${i + 1}️⃣ *${p.producto}*${p.talla && p.talla !== 'Por confirmar' ? ` — talla ${p.talla}` : ''}`).join('\n');
+            const msg = `¡Perfecto, solo uno! 😊 ¿Cuál de los dos? Responde *1* o *2*:\n\n${opciones}`;
+            const w = await sendTextMessage(from, msg);
+            await saveAndSend(supabase, from, msg, 'text', w);
+            continue;
           }
 
           if (quiereAmbos) {

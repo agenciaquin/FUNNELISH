@@ -78,6 +78,7 @@ const SISTEMA =
   `si se confirmó pero no dicen el valor, usa 5000 (el abono de recogida en oficina es de $5.000). Si no se confirmó, 0.\n` +
   `OFICINA: si acordaron que el cliente RECLAMA EN OFICINA de la transportadora, reclama_en_oficina = true y transportadora = ` +
   `la transportadora de esa oficina (ej. "INTERRAPIDISIMO").\n` +
+  `Si en el chat hay VARIAS compras, los datos son SOLO de la compra MÁS RECIENTE (la del pedido); ignora las anteriores.\n` +
   `REGLAS: usa el pedido como base y aplica lo que el CLIENTE o el ASESOR acordaron después en el chat (el último valor manda: ` +
   `si cambiaron un color, una talla o la dirección, usa lo nuevo). No inventes: si no aparece, "" o null. ` +
   `celular 10 dígitos. cedula solo si el cliente la escribió (nunca el celular). ` +
@@ -117,7 +118,11 @@ export async function prellenarDesdeChat(conv: string) {
   ]);
   const pedido: any = (pedidos ?? [])[0] ?? null;
 
+  // Cliente que VUELVE a comprar: solo cuenta la conversación desde el pedido más reciente (con 10 min de
+  // margen). Antes la IA mezclaba los datos de la compra anterior que seguían en el chat (08-nov-2026).
+  const desdePedido = pedido?.created_at ? new Date(pedido.created_at).getTime() - 10 * 60_000 : 0;
   const charla = (msgs ?? []).reverse()
+    .filter((m: any) => !desdePedido || new Date(m.created_at).getTime() >= desdePedido)
     .filter((m: any) => typeof m.content === 'string' && m.content.trim() && !m.content.startsWith('http'))
     .map((m: any) => `${m.role === 'user' ? 'CLIENTE' : m.role === 'agent' ? 'ASESOR' : 'BOT'}: ${m.content.trim().slice(0, 500)}`)
     .join('\n').slice(-6000);
