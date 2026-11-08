@@ -5,25 +5,220 @@ import { comprimirImagen } from '@/lib/imagen-comprimir';
 
 /**
  * Ventana «Confirmar datos antes de pasar al panel» (botón «Enviar al panel de Effi» del chat).
- * Todo es editable: cliente, dirección, transportadora, producto (del catálogo KLIXMANT),
- * color, talla, precio, cantidad, notas y la foto. Nada se guarda hasta «Confirmar y pasar
- * al panel»; el servidor vuelve a calcular el ID de variante y el SKU desde el catálogo.
+ *
+ * Diseño: cliente y dirección arriba · prendas (una tarjeta por prenda) al centro · resumen a la derecha.
+ * Cada prenda es independiente: producto del catálogo KLIXMANT, color, talla-género, cantidad,
+ * precio unitario, foto y notas; su ID de variante, SKU y referencia salen SOLO del catálogo.
+ * El valor total del pedido se reparte entre las unidades mientras el precio no se edite a mano.
+ * Nada se guarda hasta «Confirmar y pasar al panel»; el servidor vuelve a calcular ID y SKU.
  */
 
-interface Variante { id: number; id_item: number; color: string | null; talla: string | null; sku: string | null; genero?: string; referencia?: string | null; foto?: string | null }
+interface Variante { id: number; id_item: number; color: string | null; talla: string | null; sku: string | null; genero?: string; referencia?: string | null; nombre?: string | null; foto?: string | null }
 interface Producto { id_item: number; id_catalogo?: number; catalogo: string; nombre: string | null; referencia: string | null; tipo: string | null; genero: string; foto: string | null; variantes?: Variante[]; colores?: string[]; tallas?: string[] }
+interface PrendaInicial { texto: string; color: string; talla: string; genero: string; cantidad: number; precio: number; id_item: number | null; candidatos: Producto[] }
+interface PrendaElegida { id_item: number; color: string; talla: string; genero: string; catalogo: string; tipo: string | null; foto: string | null; notas: string }
+interface Fila extends PrendaInicial { key: number }
 
 const TRANSPORTADORAS = ['', 'CIUDAD BONITA', 'INTER RAPIDISIMO', 'ENVIA', 'COORDINADORA', 'SERVIENTREGA', 'JOSE ENVIOS'];
 const VERDE = '#0E8A7E';
 const pesos = (n: number) => `$${Math.round(n || 0).toLocaleString('es-CO')}`;
+const input = 'w-full h-10 px-3 rounded-xl border border-[#DADDE0] bg-white text-[13.5px] text-[#0D0D0D] focus:outline-none focus:border-[#0E8A7E] focus:ring-2 focus:ring-[#0E8A7E]/15';
+const etq = 'block text-[12px] font-medium text-[#4B5563] mb-1';
+/** «XXL» = «2XL», «XXXL» = «3XL» (así las nombra KlixmSoft). */
+const tallaNorm = (t: string) => String(t ?? '').toLowerCase().replace(/^talla\s+/, '').replace(/\s+/g, '')
+  .replace(/^xxxxl$/, '4xl').replace(/^xxxl$/, '3xl').replace(/^xxl$/, '2xl');
+const sinT = (t: string) => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
-/** Tarjeta de sección (fuera del componente para que los campos no pierdan el foco al escribir). */
-function Tarjeta({ icono, titulo, children }: { icono: string; titulo: string; children: ReactNode }) {
+function Tarjeta({ icono, titulo, children, accion, className = '' }: { icono: string; titulo: ReactNode; children: ReactNode; accion?: ReactNode; className?: string }) {
   return (
-    <section className="rounded-2xl border border-[#E5E7EB] bg-white p-4">
-      <h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0D0D0D] mb-3"><span className="text-[18px]">{icono}</span>{titulo}</h3>
+    <section className={`rounded-2xl border border-[#E5E7EB] bg-white p-4 ${className}`}>
+      <h3 className="flex items-center gap-2 text-[15px] font-bold text-[#0D0D0D] mb-3"><span className="text-[18px]">{icono}</span>{titulo}{accion && <span className="ml-auto flex gap-2">{accion}</span>}</h3>
       {children}
     </section>
+  );
+}
+const Chip = ({ children }: { children: ReactNode }) => (
+  <span className="inline-flex items-center px-2 py-0.5 rounded-full border border-[#E5E7EB] bg-[#F9FAFB] text-[11px] text-[#374151] whitespace-nowrap">{children}</span>
+);
+
+/** Una prenda: foto, producto, color, talla-género, cantidad, precio y datos del catálogo. */
+function TarjetaPrenda({ n, inicial, fotoChat, cantidad, precio, onCantidad, onPrecio, onCambio, onQuitar }: {
+  n: number; inicial: PrendaInicial; fotoChat: string | null; cantidad: number; precio: number;
+  onCantidad: (c: number) => void; onPrecio: (p: number) => void;
+  onCambio: (p: PrendaElegida | null) => void; onQuitar?: () => void;
+}) {
+  const [producto, setProducto] = useState<Producto | null>(null);
+  const [color, setColor] = useState('');
+  const [varId, setVarId] = useState<number | null>(null);
+  const [notas, setNotas] = useState('');
+  const [foto, setFoto] = useState<string | null>(null);
+  const [buscando, setBuscando] = useState(!inicial.id_item);
+  const [q, setQ] = useState(inicial.texto ?? '');
+  const [resultados, setResultados] = useState<Producto[]>([]);
+  const [subiendo, setSubiendo] = useState(false);
+  const archivo = useRef<HTMLInputElement>(null);
+
+  const cargarProducto = async (idItem: number, colorPref = '', tallaPref = '', generoPref = '') => {
+    const r = await fetch(`/api/ventas-vendedores/desde-chat?producto=${idItem}`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const p: Producto = await r.json();
+    setProducto(p);
+    const vs = p.variantes ?? [];
+    const colores = [...new Set(vs.map(v => v.color).filter(Boolean))] as string[];
+    const cp = sinT(colorPref).replace(/\s+/g, '');
+    const c = colores.find(x => sinT(x).replace(/\s+/g, '') === cp)
+      ?? colores.find(x => cp && (sinT(x).replace(/\s+/g, '').includes(cp) || cp.includes(sinT(x).replace(/\s+/g, ''))))
+      ?? vs.find(v => v.id_item === idItem)?.color ?? colores[0] ?? '';
+    setColor(c);
+    const t = tallaNorm(tallaPref);
+    const g = sinT(generoPref);
+    // Solo se preselecciona la talla si el chat la trae: nunca se inventa.
+    const deTalla = t ? vs.filter(v => v.color === c && tallaNorm(v.talla ?? '') === t) : [];
+    const v = deTalla.find(x => g && sinT(x.genero ?? '') === g) ?? deTalla.find(x => x.id_item === idItem) ?? deTalla[0] ?? null;
+    setVarId(v?.id ?? null);
+    setFoto(v?.foto ?? vs.find(x => x.color === c)?.foto ?? p.foto);
+  };
+
+  useEffect(() => {
+    if (inicial.id_item) cargarProducto(inicial.id_item, inicial.color, inicial.talla, inicial.genero);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const colores = useMemo(() => [...new Set((producto?.variantes ?? []).map(v => v.color).filter(Boolean))] as string[], [producto]);
+  const opcionesTalla = useMemo(() => (producto?.variantes ?? []).filter(v => !color || v.color === color), [producto, color]);
+  const variante = useMemo(() => (producto?.variantes ?? []).find(v => v.id === varId) ?? null, [producto, varId]);
+  const fotoCatalogo = variante?.foto ?? (producto?.variantes ?? []).find(v => v.color === color)?.foto ?? producto?.foto ?? null;
+
+  useEffect(() => {
+    onCambio(variante && producto ? {
+      id_item: variante.id_item, color: variante.color ?? '', talla: variante.talla ?? '', genero: variante.genero ?? '',
+      catalogo: producto.catalogo, tipo: producto.tipo, foto, notas,
+    } : null);
+  }, [variante, producto, foto, notas]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const cambiarColor = (c: string) => {
+    const fotoAntes = fotoCatalogo;
+    setColor(c);
+    const nueva = (producto?.variantes ?? []).find(v => v.color === c && v.talla === variante?.talla && v.genero === variante?.genero) ?? null;
+    setVarId(nueva?.id ?? null);
+    if (!foto || foto === fotoAntes) setFoto(nueva?.foto ?? (producto?.variantes ?? []).find(v => v.color === c)?.foto ?? foto);
+  };
+  const cambiarTalla = (id: number | null) => {
+    const fotoAntes = fotoCatalogo;
+    setVarId(id);
+    const v = (producto?.variantes ?? []).find(x => x.id === id);
+    if (v?.foto && (!foto || foto === fotoAntes)) setFoto(v.foto); // la foto del género elegido
+  };
+  const buscar = async (texto: string) => {
+    setQ(texto);
+    if (texto.trim().length < 2) { setResultados([]); return; }
+    const r = await fetch(`/api/ventas-vendedores/desde-chat?q=${encodeURIComponent(texto)}`, { cache: 'no-store' });
+    const j = await r.json().catch(() => ({}));
+    setResultados(j.resultados ?? []);
+  };
+  const elegirProducto = async (p: Producto) => {
+    setBuscando(false); setResultados([]);
+    await cargarProducto(p.id_item, color || inicial.color, variante?.talla ?? inicial.talla, variante?.genero ?? inicial.genero);
+  };
+  const subirFoto = async (f: File) => {
+    setSubiendo(true);
+    try {
+      const liviana = await comprimirImagen(f).catch(() => f);
+      const fd = new FormData(); fd.append('file', liviana);
+      const r = await fetch('/api/catalogos/upload-imagen', { method: 'POST', body: fd });
+      const j = await r.json().catch(() => ({}));
+      if (j.url) setFoto(j.url);
+    } finally { setSubiendo(false); }
+  };
+
+  const lista = resultados.length ? resultados : inicial.candidatos;
+  const lista_ok = !!variante;
+  return (
+    <div className={`rounded-2xl border bg-white p-3 ${lista_ok ? 'border-[#E5E7EB]' : 'border-[#F59E0B]'}`}>
+      <div className="flex gap-3">
+        <div className="flex flex-col items-center gap-2 shrink-0">
+          <span className="w-7 h-7 rounded-full text-white text-[13px] font-bold flex items-center justify-center" style={{ background: VERDE }}>{n}</span>
+        </div>
+        <div className="w-[150px] shrink-0">
+          <div className="relative w-[150px] h-[120px] rounded-xl overflow-hidden bg-[#F3F4F6] border border-[#E5E7EB]">
+            {foto ? <img src={foto} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[#9CA3AF] text-[12px]">Sin foto</div>}
+            {subiendo && <div className="absolute inset-0 bg-white/70 flex items-center justify-center text-[12px] font-semibold">Subiendo…</div>}
+          </div>
+          <input ref={archivo} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) subirFoto(f); e.target.value = ''; }} />
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            <button onClick={() => archivo.current?.click()} className="px-2 h-7 rounded-lg border border-[#DADDE0] text-[11px] font-semibold hover:bg-[#F3F4F6]">📷 Otra foto</button>
+            {fotoCatalogo && foto !== fotoCatalogo && <button onClick={() => setFoto(fotoCatalogo)} className="px-2 h-7 rounded-lg border border-[#DADDE0] text-[11px] font-semibold hover:bg-[#F3F4F6]">🗂️ Catálogo</button>}
+            {fotoChat && foto !== fotoChat && <button onClick={() => setFoto(fotoChat)} className="px-2 h-7 rounded-lg border border-[#DADDE0] text-[11px] font-semibold hover:bg-[#F3F4F6]">💬 Chat</button>}
+          </div>
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start gap-2">
+            <div className="flex-1 min-w-0">
+              <p className="text-[15px] font-extrabold leading-tight text-[#0D0D0D] uppercase">{producto ? `${producto.catalogo}${variante?.color ? ` ${variante.color}` : color ? ` ${color}` : ''}` : 'Elige el producto'}</p>
+              <div className="mt-1 flex flex-wrap gap-1">
+                <Chip>ID: <b className="ml-1">{variante ? `#${variante.id}` : '—'}</b></Chip>
+                <Chip>SKU: <b className="ml-1">{variante?.sku ?? '—'}</b></Chip>
+                <Chip>Ref: <b className="ml-1">{variante?.referencia ?? producto?.referencia ?? '—'}</b></Chip>
+                {variante?.genero && <Chip>{variante.genero}</Chip>}
+              </div>
+              {inicial.texto && <p className="mt-1 text-[11px] text-[#6B7280]">Del chat: <i>{[inicial.texto, inicial.color, inicial.talla, inicial.genero].filter(Boolean).join(' · ')}</i></p>}
+            </div>
+            <button onClick={() => setBuscando(b => !b)} className="h-8 px-2.5 rounded-lg border text-[12px] font-bold shrink-0" style={{ borderColor: VERDE, color: VERDE }}>⇄ Cambiar</button>
+            {onQuitar && <button onClick={onQuitar} title="Quitar prenda" className="w-8 h-8 rounded-lg border border-[#FCA5A5] text-[#DC2626] hover:bg-[#FEF2F2] shrink-0">🗑</button>}
+          </div>
+
+          {buscando && (
+            <div className="mt-2 rounded-xl border border-[#E5E7EB] p-2">
+              <input autoFocus className={input} value={q} placeholder="Buscar en el catálogo KLIXMANT…" onChange={e => buscar(e.target.value)} />
+              <div className="mt-2 max-h-[200px] overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {lista.map(p => (
+                  <button key={p.id_item} onClick={() => elegirProducto(p)} className={`flex items-center gap-2 p-1.5 rounded-lg border text-left hover:bg-[#F0FAF8] ${producto?.id_item === p.id_item ? 'border-[#0E8A7E]' : 'border-[#EEE]'}`}>
+                    {p.foto ? <img src={p.foto} alt="" className="w-10 h-10 rounded object-cover shrink-0" /> : <div className="w-10 h-10 rounded bg-[#F3F4F6] shrink-0" />}
+                    <span className="text-[11.5px] leading-tight"><b>{p.catalogo}</b><br /><span className="text-[#6B7280]">{p.genero} · {(p.colores ?? []).join(', ')}</span></span>
+                  </button>
+                ))}
+                {!lista.length && <p className="col-span-2 text-[12px] text-[#9CA3AF] px-1">Escribe el nombre del diseño (ej. «camiseta america»).</p>}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div>
+              <label className={etq}>Color <span className="text-[#DC2626]">*</span></label>
+              <select className={`${input} h-9`} value={color} onChange={e => cambiarColor(e.target.value)} disabled={!producto}>
+                {colores.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={etq}>Talla · género <span className="text-[#DC2626]">*</span></label>
+              <select className={`${input} h-9 ${producto && !variante ? 'border-[#F59E0B] bg-[#FFFBEB]' : ''}`} value={varId ?? ''} onChange={e => cambiarTalla(Number(e.target.value) || null)} disabled={!producto}>
+                <option value="">— Elige —</option>
+                {opcionesTalla.map(v => <option key={v.id} value={v.id}>{v.talla}{v.genero ? ` - ${v.genero}` : ''}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={etq}>Cantidad <span className="text-[#DC2626]">*</span></label>
+              <div className="flex items-center h-9 rounded-xl border border-[#DADDE0]">
+                <button onClick={() => onCantidad(Math.max(1, cantidad - 1))} className="w-8 h-full">−</button>
+                <span className="flex-1 text-center font-bold">{cantidad}</span>
+                <button onClick={() => onCantidad(Math.min(50, cantidad + 1))} className="w-8 h-full">+</button>
+              </div>
+            </div>
+            <div>
+              <label className={etq}>Precio unitario <span className="text-[#DC2626]">*</span></label>
+              <div className="flex items-center h-9 rounded-xl border border-[#DADDE0] bg-[#F0FAF8] px-2">
+                <span className="text-[#6B7280] text-[13px]">$</span>
+                <input className="flex-1 min-w-0 bg-transparent px-1 text-[13.5px] font-semibold focus:outline-none" value={precio ? precio.toLocaleString('es-CO') : ''} placeholder="0"
+                  onChange={e => onPrecio(Number(e.target.value.replace(/\D/g, '')) || 0)} />
+              </div>
+            </div>
+          </div>
+          <input className={`${input} h-9 mt-2`} value={notas} placeholder="Notas de esta prenda (opcional)" onChange={e => setNotas(e.target.value)} />
+          {!producto && <p className="mt-1 text-[12px] text-[#B45309]">⚠️ Elige el producto con «⇄ Cambiar».</p>}
+          {producto && !variante && <p className="mt-1 text-[12px] text-[#B45309]">⚠️ Elige la talla: así sale el ID, el SKU y la referencia exactos.</p>}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -31,45 +226,20 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
   const [cargando, setCargando] = useState(true);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [datos, setDatos] = useState<Record<string, any>>({});
-  const [candidatos, setCandidatos] = useState<Producto[]>([]);
-  const [producto, setProducto] = useState<Producto | null>(null);
-  const [color, setColor] = useState('');
-  const [varId, setVarId] = useState<number | null>(null);
-  const [cantidad, setCantidad] = useState(1);
-  const [precio, setPrecio] = useState<number>(0);
-  const [notas, setNotas] = useState('');
-  const [foto, setFoto] = useState<string | null>(null);
+  const [filas, setFilas] = useState<Fila[]>([]);
+  const [elegidas, setElegidas] = useState<Record<number, PrendaElegida | null>>({});
+  const [cantidades, setCantidades] = useState<Record<number, number>>({});
+  const [precios, setPrecios] = useState<Record<number, { valor: number; manual: boolean }>>({});
+  const [totalPedido, setTotalPedido] = useState(0);
   const [fotoChat, setFotoChat] = useState<string | null>(null);
   const [existente, setExistente] = useState<any>(null);
   const [vendedor, setVendedor] = useState('');
   const [forzar, setForzar] = useState(false);
-  const [buscando, setBuscando] = useState(false);
-  const [q, setQ] = useState('');
-  const [resultados, setResultados] = useState<Producto[]>([]);
-  const [subiendo, setSubiendo] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [aviso, setAviso] = useState<{ ok: boolean; t: string; lista?: string[] } | null>(null);
-  const archivo = useRef<HTMLInputElement>(null);
+  const llave = useRef(0);
 
   const set = (k: string, v: any) => setDatos(d => ({ ...d, [k]: v }));
-
-  // Carga del producto con sus variantes
-  const cargarProducto = async (idItem: number, colorPref = '', tallaPref = '', mantenerFoto = false) => {
-    const r = await fetch(`/api/ventas-vendedores/desde-chat?producto=${idItem}`, { cache: 'no-store' });
-    if (!r.ok) return;
-    const p: Producto = await r.json();
-    setProducto(p);
-    const vs = p.variantes ?? [];
-    const propias = vs.filter(v => v.id_item === idItem);
-    const colores = [...new Set(vs.map(v => v.color).filter(Boolean))] as string[];
-    const c = colores.find(x => x.toLowerCase() === colorPref.toLowerCase()) ?? propias[0]?.color ?? colores[0] ?? '';
-    setColor(c);
-    const t = tallaPref.toLowerCase().replace(/\s+/g, '');
-    const deColor = vs.filter(v => v.color === c && (v.talla ?? '').toLowerCase().replace(/\s+/g, '') === t);
-    const v = deColor.find(x => x.id_item === idItem) ?? deColor[0] ?? null;
-    setVarId(v?.id ?? null);
-    if (!mantenerFoto) setFoto(v?.foto ?? vs.find(x => x.color === c)?.foto ?? p.foto);
-  };
 
   useEffect(() => {
     let vivo = true;
@@ -80,15 +250,15 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
         if (!vivo) return;
         if (!r.ok) { setErrorCarga(j.error || 'No se pudieron leer los datos del chat'); return; }
         setDatos(j.datos ?? {});
-        setCandidatos(j.candidatos ?? []);
         setExistente(j.existente ?? null);
         setVendedor(j.vendedor ?? '');
-        setCantidad(j.prenda?.cantidad ?? 1);
-        setPrecio(j.prenda?.precio ?? 0);
-        setFotoChat(j.prenda?.foto_chat ?? null);
-        setQ(j.prenda?.texto ?? '');
-        if (j.prenda?.id_item) await cargarProducto(j.prenda.id_item, j.prenda.color ?? '', j.prenda.talla ?? '');
-        else setBuscando(true);
+        setFotoChat(j.foto_chat ?? null);
+        setTotalPedido(Number(j.total) || 0);
+        const ps: PrendaInicial[] = Array.isArray(j.prendas) && j.prendas.length ? j.prendas : [{ texto: '', color: '', talla: '', genero: '', cantidad: 1, precio: 0, id_item: null, candidatos: [] }];
+        const fs = ps.map(p => ({ ...p, key: ++llave.current }));
+        setFilas(fs);
+        setCantidades(Object.fromEntries(fs.map(f => [f.key, Math.max(1, f.cantidad || 1)])));
+        setPrecios(Object.fromEntries(fs.map(f => [f.key, { valor: f.precio || 0, manual: false }])));
       } catch (e: any) {
         if (vivo) setErrorCarga(e?.message ?? 'Error');
       } finally { if (vivo) setCargando(false); }
@@ -98,52 +268,54 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
     return () => { vivo = false; window.removeEventListener('keydown', esc); };
   }, [conv]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const colores = useMemo(() => [...new Set((producto?.variantes ?? []).map(v => v.color).filter(Boolean))] as string[], [producto]);
-  const opcionesTalla = useMemo(() => (producto?.variantes ?? []).filter(v => !color || v.color === color), [producto, color]);
-  const variante = useMemo(() => (producto?.variantes ?? []).find(v => v.id === varId) ?? null, [producto, varId]);
-  const fotoCatalogo = variante?.foto ?? (producto?.variantes ?? []).find(v => v.color === color)?.foto ?? producto?.foto ?? null;
-  const cambiarColor = (c: string) => {
-    const fotoAntes = fotoCatalogo;
-    setColor(c);
-    // Misma talla y género en el color nuevo, si existe
-    const nueva = (producto?.variantes ?? []).find(v => v.color === c && v.talla === variante?.talla && v.genero === variante?.genero) ?? null;
-    setVarId(nueva?.id ?? null);
-    // Si la foto era la del catálogo, pasa a la del color nuevo
-    if (!foto || foto === fotoAntes) setFoto(nueva?.foto ?? (producto?.variantes ?? []).find(v => v.color === c)?.foto ?? foto);
+  // Reparto automático del total del pedido entre las unidades (solo precios no editados a mano).
+  const unidades = filas.reduce((t, f) => t + (cantidades[f.key] ?? 1), 0);
+  useEffect(() => {
+    if (!totalPedido || !filas.length) return;
+    const manualKeys = filas.filter(f => precios[f.key]?.manual);
+    const fijo = manualKeys.reduce((t, f) => t + (precios[f.key]?.valor ?? 0) * (cantidades[f.key] ?? 1), 0);
+    const unidadesAuto = filas.filter(f => !precios[f.key]?.manual).reduce((t, f) => t + (cantidades[f.key] ?? 1), 0);
+    if (!unidadesAuto) return;
+    const unit = Math.max(0, Math.round((totalPedido - fijo) / unidadesAuto));
+    setPrecios(prev => {
+      let cambio = false;
+      const nx = { ...prev };
+      for (const f of filas) if (!prev[f.key]?.manual && prev[f.key]?.valor !== unit) { nx[f.key] = { valor: unit, manual: false }; cambio = true; }
+      return cambio ? nx : prev;
+    });
+  }, [unidades, filas.length, totalPedido]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const agregarPrenda = () => {
+    const base = filas[0];
+    const key = ++llave.current;
+    setFilas(l => [...l, { texto: base?.texto ?? '', color: '', talla: '', genero: '', cantidad: 1, precio: 0, id_item: null, candidatos: base?.candidatos ?? [], key }]);
+    setCantidades(c => ({ ...c, [key]: 1 }));
+    setPrecios(p => ({ ...p, [key]: { valor: p[filas[0]?.key]?.valor ?? 0, manual: false } }));
+  };
+  const quitarPrenda = (key: number) => {
+    setFilas(l => l.filter(p => p.key !== key));
+    setElegidas(f => { const c = { ...f }; delete c[key]; return c; });
   };
 
-  const buscar = async (texto: string) => {
-    setQ(texto);
-    if (texto.trim().length < 2) { setResultados([]); return; }
-    const r = await fetch(`/api/ventas-vendedores/desde-chat?q=${encodeURIComponent(texto)}`, { cache: 'no-store' });
-    const j = await r.json().catch(() => ({}));
-    setResultados(j.resultados ?? []);
-  };
-
-  const elegirProducto = async (p: Producto) => {
-    setBuscando(false); setResultados([]);
-    await cargarProducto(p.id_item, color, variante?.talla ?? '');
-  };
-
-  const subirFoto = async (f: File) => {
-    setSubiendo(true);
-    try {
-      const liviana = await comprimirImagen(f).catch(() => f);
-      const fd = new FormData(); fd.append('file', liviana);
-      const r = await fetch('/api/catalogos/upload-imagen', { method: 'POST', body: fd });
-      const j = await r.json().catch(() => ({}));
-      if (j.url) setFoto(j.url); else setAviso({ ok: false, t: j.error || 'No se pudo subir la foto' });
-    } finally { setSubiendo(false); }
-  };
+  const subtotal = filas.reduce((t, f) => t + (precios[f.key]?.valor ?? 0) * (cantidades[f.key] ?? 1), 0);
+  const listas = filas.filter(f => elegidas[f.key]).length;
+  const catalogos = [...new Set(filas.map(f => elegidas[f.key]?.catalogo).filter(Boolean))] as string[];
+  const generos = [...new Set(filas.map(f => elegidas[f.key]?.genero).filter(Boolean))] as string[];
+  const tipos = [...new Set(filas.map(f => elegidas[f.key]?.tipo).filter(Boolean))] as string[];
 
   const confirmar = async () => {
     setAviso(null);
-    if (!producto || !variante) { setAviso({ ok: false, t: 'Elige el producto, el color y la talla del catálogo.' }); return; }
+    if (!filas.length || filas.some(f => !elegidas[f.key])) { setAviso({ ok: false, t: 'Cada prenda necesita producto, color y talla del catálogo.' }); return; }
+    if (filas.some(f => !(precios[f.key]?.valor > 0))) { setAviso({ ok: false, t: 'Cada prenda necesita su precio unitario.' }); return; }
+    const prendas = filas.map(f => {
+      const e = elegidas[f.key]!;
+      return { id_item: e.id_item, color: e.color, talla: e.talla, cantidad: cantidades[f.key] ?? 1, precio: precios[f.key].valor, foto: e.foto, notas: e.notas };
+    });
     setGuardando(true);
     try {
       const r = await fetch('/api/ventas-vendedores/desde-chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conv, forzar, datos, prendas: [{ id_item: variante.id_item, color: variante.color, talla: variante.talla, cantidad, precio, foto, notas }] }),
+        body: JSON.stringify({ conv, forzar, datos, prendas }),
       });
       const j = await r.json().catch(() => ({}));
       if (j.ok) { setAviso({ ok: true, t: j.mensaje }); onListo?.(j.codigo); setTimeout(onCerrar, 1400); }
@@ -151,8 +323,6 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
     } finally { setGuardando(false); }
   };
 
-  const input = 'w-full h-10 px-3 rounded-xl border border-[#DADDE0] bg-white text-[13.5px] text-[#0D0D0D] focus:outline-none focus:border-[#0E8A7E] focus:ring-2 focus:ring-[#0E8A7E]/15';
-  const etq = 'block text-[12px] font-medium text-[#4B5563] mb-1';
   const Campo = ({ l, k, req, ph, full }: { l: string; k: string; req?: boolean; ph?: string; full?: boolean }) => (
     <div className={full ? 'col-span-2' : ''}>
       <label className={etq}>{l}{req && <span className="text-[#DC2626]"> *</span>}</label>
@@ -161,17 +331,16 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
   );
   return (
     <div className="fixed inset-0 z-[80] bg-black/40 flex items-center justify-center p-3" onClick={onCerrar}>
-      <div className="w-full max-w-[1080px] max-h-[94vh] bg-white rounded-3xl shadow-[0_24px_80px_rgba(0,0,0,.25)] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-        {/* Encabezado */}
+      <div className="w-full max-w-[1180px] max-h-[95vh] bg-white rounded-3xl shadow-[0_24px_80px_rgba(0,0,0,.25)] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
         <header className="flex items-start gap-3 px-6 pt-5 pb-3">
           <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white text-[22px] shrink-0" style={{ background: VERDE }}>📋</div>
           <div className="flex-1 min-w-0">
             <h2 className="text-[22px] font-extrabold text-[#0D0D0D] leading-tight">Confirmar datos antes de pasar al panel</h2>
-            <p className="text-[14px] text-[#6B7280]">Revisa y corrige cualquier dato antes de enviarlo al panel de Effi.</p>
+            <p className="text-[14px] text-[#6B7280]">Revisa, edita y valida la información del pedido antes de enviarlo al panel de Effi.</p>
           </div>
           <button onClick={onCerrar} className="w-10 h-10 rounded-xl border border-[#E5E7EB] hover:bg-[#F3F4F6] text-[18px]" aria-label="Cerrar">✕</button>
         </header>
-        <div className="mx-6 mb-3 rounded-xl px-4 py-2.5 flex items-center gap-3 text-[13.5px]" style={{ background: '#E6F5F2' }}>
+        <div className="mx-6 mb-3 rounded-xl px-4 py-2.5 flex items-center gap-3 text-[13.5px] flex-wrap" style={{ background: '#E6F5F2' }}>
           <span className="font-bold" style={{ color: VERDE }}>⚡ Datos detectados en vivo desde el chat</span>
           <span className="text-[#9CA3AF]">|</span>
           <span className="italic text-[#4B5563]">Puedes corregir cualquier dato antes de continuar.</span>
@@ -180,17 +349,19 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
 
         <div className="flex-1 overflow-y-auto px-6 pb-4">
           {cargando ? (
-            <div className="grid grid-cols-2 gap-4">{[0, 1, 2, 3].map(i => <div key={i} className="h-44 rounded-2xl bg-[#F3F4F6] animate-pulse" />)}</div>
+            <div className="grid grid-cols-2 gap-4">{[0, 1, 2, 3].map(i => <div key={i} className="h-40 rounded-2xl bg-[#F3F4F6] animate-pulse" />)}</div>
           ) : errorCarga ? (
             <div className="rounded-xl bg-[#FEE2E2] text-[#B91C1C] px-4 py-3 text-[14px]">{errorCarga}</div>
           ) : (
-            <>
+            <div className="space-y-4">
               {existente && (
-                <div className="mb-3 rounded-xl bg-[#FEF3C7] text-[#92400E] px-4 py-2.5 text-[13px] flex items-center gap-3 flex-wrap">
+                <div className="rounded-xl bg-[#FEF3C7] text-[#92400E] px-4 py-2.5 text-[13px] flex items-center gap-3 flex-wrap">
                   <span>⚠️ Este chat ya tiene la preventa <b>{existente.codigo}</b> ({existente.estado}{existente.effi_remision ? ` · remisión ${existente.effi_remision}` : ''}).</span>
                   <label className="flex items-center gap-1.5 font-semibold"><input type="checkbox" checked={forzar} onChange={e => setForzar(e.target.checked)} /> Es otra compra: crear otra</label>
                 </div>
               )}
+
+              {/* Arriba: cliente y dirección */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <Tarjeta icono="👤" titulo="Datos del cliente">
                   <div className="grid grid-cols-2 gap-3">
@@ -208,8 +379,7 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
                     {Campo({ l: 'Abono recibido', k: 'abono', ph: '0' })}
                   </div>
                 </Tarjeta>
-
-                <Tarjeta icono="📍" titulo="Dirección">
+                <Tarjeta icono="📍" titulo="Dirección de envío">
                   <div className="grid grid-cols-2 gap-3">
                     {Campo({ l: 'Departamento', k: 'departamento', req: true })}
                     {Campo({ l: 'Municipio', k: 'municipio', req: true })}
@@ -220,103 +390,65 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
                     <div>
                       <label className={etq}>Transportadora</label>
                       <select className={input} value={datos.transportadora ?? ''} onChange={e => set('transportadora', e.target.value)}>
-                        {TRANSPORTADORAS.map(t => <option key={t} value={t}>{t || '— Automática por ciudad —'}</option>)}
+                        {TRANSPORTADORAS.map(t => <option key={t} value={t}>{t || '🚚 Automática por ciudad'}</option>)}
                       </select>
                     </div>
                   </div>
                 </Tarjeta>
-
-                <Tarjeta icono="🛒" titulo="Datos del pedido">
-                  <div className="flex gap-4">
-                    <div className="w-[170px] shrink-0">
-                      <div className="relative w-[170px] h-[170px] rounded-2xl overflow-hidden bg-[#F3F4F6] border border-[#E5E7EB]">
-                        {foto ? <img src={foto} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[#9CA3AF] text-[12px]">Sin foto</div>}
-                        {subiendo && <div className="absolute inset-0 bg-white/70 flex items-center justify-center text-[12px] font-semibold">Subiendo…</div>}
-                      </div>
-                      <input ref={archivo} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) subirFoto(f); e.target.value = ''; }} />
-                      <div className="mt-2 flex flex-col gap-1">
-                        <button onClick={() => archivo.current?.click()} className="h-8 rounded-lg border border-[#DADDE0] text-[12px] font-semibold hover:bg-[#F3F4F6]">📷 Subir otra foto</button>
-                        {fotoCatalogo && foto !== fotoCatalogo && <button onClick={() => setFoto(fotoCatalogo)} className="h-8 rounded-lg border border-[#DADDE0] text-[12px] font-semibold hover:bg-[#F3F4F6]">🗂️ Foto del catálogo</button>}
-                        {fotoChat && foto !== fotoChat && <button onClick={() => setFoto(fotoChat)} className="h-8 rounded-lg border border-[#DADDE0] text-[12px] font-semibold hover:bg-[#F3F4F6]">💬 Foto del chat</button>}
-                      </div>
-                    </div>
-                    <div className="flex-1 min-w-0 space-y-2">
-                      <div className="flex items-start gap-2">
-                        <p className="flex-1 text-[16px] font-extrabold leading-tight text-[#0D0D0D]">{producto?.catalogo ?? 'Elige el producto'}</p>
-                        <button onClick={() => setBuscando(b => !b)} className="h-8 px-2.5 rounded-lg border text-[12px] font-bold shrink-0" style={{ borderColor: VERDE, color: VERDE }}>🔎 Cambiar</button>
-                      </div>
-                      {buscando && (
-                        <div className="rounded-xl border border-[#E5E7EB] p-2">
-                          <input autoFocus className={input} value={q} placeholder="Buscar en el catálogo KLIXMANT…" onChange={e => buscar(e.target.value)} />
-                          <div className="mt-2 max-h-[220px] overflow-y-auto grid grid-cols-2 gap-1.5">
-                            {(resultados.length ? resultados : candidatos).map(p => (
-                              <button key={p.id_item} onClick={() => elegirProducto(p)} className={`flex items-center gap-2 p-1.5 rounded-lg border text-left hover:bg-[#F0FAF8] ${producto?.id_item === p.id_item ? 'border-[#0E8A7E]' : 'border-[#EEE]'}`}>
-                                {p.foto ? <img src={p.foto} alt="" className="w-10 h-10 rounded object-cover shrink-0" /> : <div className="w-10 h-10 rounded bg-[#F3F4F6] shrink-0" />}
-                                <span className="text-[11.5px] leading-tight"><b>{p.catalogo}</b><br /><span className="text-[#6B7280]">{p.genero} · {(p.colores ?? []).join(', ')}</span></span>
-                              </button>
-                            ))}
-                            {!resultados.length && !candidatos.length && <p className="col-span-2 text-[12px] text-[#9CA3AF] px-1">Escribe el nombre del diseño (ej. «bmw reflectivo»).</p>}
-                          </div>
-                        </div>
-                      )}
-                      <div className="grid grid-cols-[70px_1fr] items-center gap-y-2 text-[13px]">
-                        <span className="text-[#4B5563]">🎨 Color:</span>
-                        <select className={`${input} h-9`} value={color} onChange={e => cambiarColor(e.target.value)} disabled={!producto}>
-                          {colores.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                        <span className="text-[#4B5563]">👕 Talla:</span>
-                        <select className={`${input} h-9`} value={varId ?? ''} onChange={e => setVarId(Number(e.target.value) || null)} disabled={!producto}>
-                          <option value="">— Elige —</option>
-                          {opcionesTalla.map(v => <option key={v.id} value={v.id}>{v.talla}{v.genero ? ` - ${v.genero}` : ''}</option>)}
-                        </select>
-                        <span className="text-[#4B5563]">🏷️ Precio:</span>
-                        <input className={`${input} h-9`} value={precio ? String(precio) : ''} placeholder="129900" onChange={e => setPrecio(Number(e.target.value.replace(/\D/g, '')) || 0)} />
-                        <span className="text-[#4B5563]">📦 Cant.:</span>
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => setCantidad(c => Math.max(1, c - 1))} className="w-8 h-8 rounded-lg border border-[#DADDE0]">−</button>
-                          <span className="w-6 text-center font-bold">{cantidad}</span>
-                          <button onClick={() => setCantidad(c => Math.min(50, c + 1))} className="w-8 h-8 rounded-lg border border-[#DADDE0]">+</button>
-                          <span className="ml-auto text-[12.5px] text-[#4B5563]">Total <b className="text-[#0D0D0D]">{pesos(precio * cantidad)}</b></span>
-                        </div>
-                        <span className="text-[#4B5563]">💬 Notas:</span>
-                        <input className={`${input} h-9`} value={notas} placeholder="—" onChange={e => setNotas(e.target.value)} />
-                      </div>
-                      {Campo({ l: 'Observaciones para el despacho', k: 'observaciones', full: true })}
-                    </div>
-                  </div>
-                </Tarjeta>
-
-                <Tarjeta icono="🧬" titulo="Datos traídos del catálogo KLIXMANT">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-2xl p-4 text-center" style={{ background: '#E6F5F2' }}>
-                      <p className="text-[13px] text-[#374151]">ID de la variante</p>
-                      <p className="text-[34px] font-black tracking-tight text-[#0D0D0D]">{variante ? `#${variante.id}` : '—'}</p>
-                    </div>
-                    <div className="rounded-2xl p-4 text-center" style={{ background: '#E6F5F2' }}>
-                      <p className="text-[13px] text-[#374151]">Talla (catálogo)</p>
-                      <p className="mt-1 inline-block px-4 py-1 rounded-xl text-[26px] font-black" style={{ background: '#B9E6DE', color: '#0B5E56' }}>{variante?.talla ? `Talla ${variante.talla}` : '—'}</p>
-                    </div>
-                  </div>
-                  <dl className="mt-3 divide-y divide-[#F1F1F1] text-[13.5px]">
-                    {[
-                      ['||||', 'SKU', variante?.sku ?? '—'],
-                      ['🏷️', 'Referencia', variante?.referencia ?? producto?.referencia ?? '—'],
-                      ['🚻', 'Género', variante?.genero || '—'],
-                      ['🗂️', 'Catálogo', producto?.catalogo ?? '—'],
-                      ['🎨', 'Color catálogo', variante?.color ?? '—'],
-                      ['📐', 'Talla catálogo', variante?.talla ?? '—'],
-                    ].map(([i, t, v]) => (
-                      <div key={t} className="flex items-center gap-3 py-2"><span className="w-6 text-[#6B7280] text-[12px]">{i}</span><dt className="w-[130px] text-[#4B5563]">{t}:</dt><dd className="font-semibold text-[#0D0D0D] break-all">{v}</dd></div>
-                    ))}
-                  </dl>
-                  {producto && !variante && <p className="mt-2 text-[12.5px] text-[#B45309]">⚠️ Elige color y talla: así sale el ID y el SKU exactos.</p>}
-                </Tarjeta>
               </div>
-            </>
+
+              {/* Centro: prendas · Derecha: resumen */}
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_290px] gap-4 items-start">
+                <div className="space-y-3">
+                  <Tarjeta icono="👕" titulo={<>Prendas del pedido <span style={{ color: VERDE }}>({filas.length})</span></>}
+                    accion={<button onClick={agregarPrenda} className="h-8 px-3 rounded-lg border text-[12px] font-bold" style={{ borderColor: VERDE, color: VERDE }}>+ Agregar prenda</button>}>
+                    <div className="space-y-3">
+                      {filas.map((f, i) => (
+                        <TarjetaPrenda key={f.key} n={i + 1} inicial={f} fotoChat={fotoChat}
+                          cantidad={cantidades[f.key] ?? 1} precio={precios[f.key]?.valor ?? 0}
+                          onCantidad={c => setCantidades(prev => ({ ...prev, [f.key]: c }))}
+                          onPrecio={p => setPrecios(prev => ({ ...prev, [f.key]: { valor: p, manual: true } }))}
+                          onCambio={e => setElegidas(prev => ({ ...prev, [f.key]: e }))}
+                          onQuitar={filas.length > 1 ? () => quitarPrenda(f.key) : undefined} />
+                      ))}
+                    </div>
+                  </Tarjeta>
+                  <div>
+                    <label className="flex items-center gap-2 text-[14px] font-bold text-[#0D0D0D] mb-1.5">🧾 Observaciones del pedido</label>
+                    <input className={input} value={datos.observaciones ?? ''} placeholder="Ej. Retirar en oficina Interrapidísimo." onChange={e => set('observaciones', e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="space-y-3 lg:sticky lg:top-0">
+                  <section className="rounded-2xl border border-[#E5E7EB] bg-[#F7FBFA] p-4">
+                    <h3 className="flex items-center gap-2 text-[15px] font-bold mb-3">🛒 Resumen del pedido</h3>
+                    <dl className="space-y-1.5 text-[13.5px]">
+                      <div className="flex justify-between"><dt className="text-[#4B5563]">Total prendas:</dt><dd className="font-bold">{unidades}</dd></div>
+                      <div className="flex justify-between"><dt className="text-[#4B5563]">Subtotal:</dt><dd className="font-bold">{pesos(subtotal)}</dd></div>
+                      <div className="flex justify-between"><dt className="text-[#4B5563]">Envío:</dt><dd className="font-bold">$0</dd></div>
+                    </dl>
+                    <div className="mt-3 rounded-xl px-3 py-2.5 flex justify-between items-center text-white" style={{ background: VERDE }}>
+                      <span className="font-bold text-[14px]">Total a pagar:</span><span className="font-black text-[20px]">{pesos(subtotal)}</span>
+                    </div>
+                    {totalPedido > 0 && Math.round(subtotal) !== Math.round(totalPedido) && (
+                      <p className="mt-2 text-[11.5px] text-[#B45309]">El pedido del chat era {pesos(totalPedido)}.</p>
+                    )}
+                  </section>
+                  <section className="rounded-2xl border border-[#E5E7EB] bg-white p-4">
+                    <h3 className="flex items-center gap-2 text-[14px] font-bold mb-2">🏷️ Datos del catálogo KLIXMANT</h3>
+                    <dl className="divide-y divide-[#F1F1F1] text-[12.5px]">
+                      <div className="flex justify-between gap-2 py-1.5"><dt className="text-[#4B5563]">Catálogo:</dt><dd className="font-semibold text-right">{catalogos.join(', ') || '—'}</dd></div>
+                      <div className="flex justify-between gap-2 py-1.5"><dt className="text-[#4B5563]">Género:</dt><dd className="font-semibold text-right">{generos.join(', ') || '—'}</dd></div>
+                      <div className="flex justify-between gap-2 py-1.5"><dt className="text-[#4B5563]">Tipo:</dt><dd className="font-semibold text-right">{tipos.join(', ') || '—'}</dd></div>
+                      <div className="flex justify-between gap-2 py-1.5"><dt className="text-[#4B5563]">Variantes:</dt><dd className="font-semibold">{listas} de {filas.length} {listas === filas.length && filas.length ? '✅' : '⚠️'}</dd></div>
+                    </dl>
+                  </section>
+                </div>
+              </div>
+            </div>
           )}
         </div>
 
-        {/* Pie */}
         <footer className="px-6 py-4 border-t border-[#F1F1F1] flex items-center gap-3 flex-wrap">
           <div className="flex-1 min-w-[200px] text-[13px]">
             {aviso && (
@@ -327,7 +459,7 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
             )}
           </div>
           <button onClick={onCerrar} className="h-11 px-5 rounded-xl border border-[#D1D5DB] text-[14px] font-semibold hover:bg-[#F9FAFB]">Cancelar</button>
-          <button disabled={guardando || cargando || !!errorCarga || subiendo || (!!existente && !forzar)} onClick={confirmar}
+          <button disabled={guardando || cargando || !!errorCarga || (!!existente && !forzar)} onClick={confirmar}
             className="h-11 px-5 rounded-xl text-white text-[14px] font-bold disabled:opacity-50 flex items-center gap-2" style={{ background: VERDE }}>
             {guardando ? 'Guardando…' : '→ Confirmar y pasar al panel'}
           </button>

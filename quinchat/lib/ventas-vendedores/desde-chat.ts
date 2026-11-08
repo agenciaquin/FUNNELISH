@@ -2,7 +2,7 @@ import { chat } from '@/lib/quinchat/claude';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { EVIDENCIA_CATALOGO_ID } from '@/lib/sin-evidencia';
 import { buscarCandidatos, resolverVariante, nombreGenero, type Candidato } from './ia';
-import { sinTildes, limpiarTalla } from './catalogo';
+import { sinTildes, limpiarTalla, ultimaSync, sincronizarCatalogo } from './catalogo';
 
 /**
  * «ENVIAR AL PANEL DE EFFI» desde un chat de cliente (07-nov-2026).
@@ -60,16 +60,28 @@ const SISTEMA =
   `Te doy los DATOS DEL PEDIDO (pueden estar vacíos) y la CONVERSACIÓN con el cliente. ` +
   `Devuelve SOLO un JSON con los datos FINALES para despachar:\n` +
   `{"nombre":"","celular":"","cedula":"","correo":"","departamento":"","municipio":"","direccion":"","barrio":"","complemento":"","referencia":"",` +
-  `"producto":"","color":"","talla":"","genero":"","cantidad":1,"valor_total":null,"observaciones":""}\n` +
-  `REGLAS: usa el pedido como base y aplica lo que el CLIENTE agregó o corrigió en el chat (el último valor manda). ` +
-  `No inventes: si no aparece, "" o null. celular 10 dígitos. cedula solo si el cliente la escribió (nunca el celular). ` +
-  `barrio sin la palabra "barrio". complemento = apto, torre, casa, conjunto, interior. referencia = indicaciones para llegar. ` +
-  `producto = nombre del producto (diseño, marca, tipo de prenda). talla tal cual (S, M, L, XL, 2XL…). ` +
-  `valor_total en pesos, solo número. observaciones: algo útil para el despacho (horario, quién recibe), corto.`;
+  `"prendas":[{"producto":"","color":"","talla":"","genero":"","cantidad":1}],"valor_total":null,"observaciones":""}\n` +
+  `REGLAS: usa el pedido como base y aplica lo que el CLIENTE o el ASESOR acordaron después en el chat (el último valor manda: ` +
+  `si cambiaron un color, una talla o la dirección, usa lo nuevo). No inventes: si no aparece, "" o null. ` +
+  `celular 10 dígitos. cedula solo si el cliente la escribió (nunca el celular). ` +
+  `Si acordaron RECLAMAR EN OFICINA de la transportadora, direccion = "Oficina <transportadora>" y referencia = "Reclama en oficina".\n` +
+  `barrio sin la palabra "barrio". complemento = apto, torre, casa, conjunto, interior. referencia = indicaciones para llegar.\n` +
+  `prendas: UNA por cada prenda distinta del pedido (un pack de 2 con tallas o colores distintos = 2 prendas, cada una cantidad 1). ` +
+  `producto = tipo de prenda + diseño tal como lo nombran (ej. "CAMISETA AMERICA", "BUZO AMERICA LINEA", "CUELLO ALTO MERCEDES"); ` +
+  `NUNCA cambies camiseta por buzo ni al revés. color en una palabra (Blanco, Negro…). talla sola (S, M, L, XL, XXL, 2XL…). ` +
+  `genero "Hombre" o "Dama" si aparece.\n` +
+  `valor_total = total del pedido en pesos, solo número. observaciones: algo útil para el despacho (oficina, horario, quién recibe), corto.`;
 
 export async function prellenarDesdeChat(conv: string) {
   const supabase = createServerSupabaseClient();
   const tel = tel10De(conv);
+
+  // La copia del catálogo KlixmSoft no tiene cron: si tiene más de 24 h, se actualiza aquí
+  // (el 08-nov-2026 llevaba 6 días vieja y no tenía CAMISETA AMERICA ni BUCARO LEOPARDO).
+  try {
+    const { ultimaOk } = await ultimaSync();
+    if (!ultimaOk || Date.now() - new Date(ultimaOk).getTime() > 24 * 3600_000) await sincronizarCatalogo('cron');
+  } catch { /* si falla, se sigue con la copia que hay */ }
 
   const [{ data: pedidos }, { data: msgs }, { data: existentes }] = await Promise.all([
     supabase.from('clientes_funnelish')
@@ -104,7 +116,6 @@ export async function prellenarDesdeChat(conv: string) {
   const x = ia ?? {};
 
   const valorPedido = num(pedido?.valor);
-  const cantidad = Math.max(1, Math.min(50, Number(x.cantidad) || Number(pedido?.cantidad) || 1));
   const total = num(x.valor_total) ?? valorPedido ?? 130000;
   const datos = {
     cliente_nombre: s(x.nombre) || s(pedido?.nombre),
@@ -120,19 +131,47 @@ export async function prellenarDesdeChat(conv: string) {
     abono: pedido?.abono_recibido ? Number(pedido?.abono) || 0 : 0,
     observaciones: s(x.observaciones),
   };
-  const producto = s(x.producto) || s(pedido?.producto);
-  const color = s(x.color);
-  const talla = limpiarTalla(s(x.talla) || s(pedido?.talla).split('-')[0]);
-  const genero = s(x.genero) || (/dama|mujer/i.test(String(pedido?.talla ?? '')) ? 'Dama' : '');
+  // Prendas: las de la IA; si no trajo, una sola con lo del pedido.
+  let prendasIA: any[] = Array.isArray(x.prendas) ? x.prendas.filter((p: any) => s(p?.producto) || s(p?.talla) || s(p?.color)) : [];
+  if (!prendasIA.length) prendasIA = [{ producto: s(pedido?.producto), color: '', talla: s(pedido?.talla).split('-')[0], genero: /dama|mujer/i.test(String(pedido?.talla ?? '')) ? 'Dama' : '', cantidad: Number(pedido?.cantidad) || 1 }];
+  const unidades = prendasIA.reduce((t, p) => t + Math.max(1, Math.min(50, Number(p?.cantidad) || 1)), 0) || 1;
+  const precioUnidad = Math.round(total / unidades);
 
-  // Producto del catálogo: candidatos por texto; el primero queda propuesto.
-  let candidatos: Candidato[] = [];
-  try { candidatos = producto ? await buscarCandidatos(`${producto} ${color}`, color, genero, 8) : []; } catch { /* sin candidatos */ }
-  const elegido = candidatos[0] ?? null;
-  let variante: any = null;
-  if (elegido) {
-    const r = await resolverVariante(elegido.id_item, color, talla);
-    variante = r.variante;
+  const prendas = [];
+  for (const p of prendasIA.slice(0, 6)) {
+    const producto = s(p.producto) || s(pedido?.producto);
+    const color = s(p.color);
+    const talla = limpiarTalla(s(p.talla).split(/\s+-\s+/)[0]);
+    const genero = s(p.genero);
+    const cantidad = Math.max(1, Math.min(50, Number(p.cantidad) || 1));
+    let candidatos: Candidato[] = [];
+    // 1) Cruce EXACTO por el nombre del producto: catálogo de QuinChat (patrón) → su «Nombre en KlixmSoft».
+    const enlazados = await candidatosPorCatalogoQuin(supabase, producto, color, genero);
+    // 2) Si el catálogo de QuinChat no está enlazado, búsqueda aproximada en la copia de KlixmSoft.
+    try { candidatos = producto ? await buscarCandidatos(`${producto} ${color}`, color, genero, 10) : []; } catch { /* sin candidatos */ }
+    if (enlazados.length) {
+      const ids = new Set(enlazados.map(c => c.id_item));
+      candidatos = [...enlazados, ...candidatos.filter(c => !ids.has(c.id_item))];
+    }
+    // El TIPO de prenda manda: una camiseta nunca se propone como buzo.
+    const tipoTxt = tipoDePrenda(producto);
+    if (tipoTxt) {
+      const mismos = candidatos.filter(c => tipoDePrenda(`${c.catalogo} ${c.tipo ?? ''}`) === tipoTxt);
+      candidatos = [...mismos, ...candidatos.filter(c => !mismos.includes(c))];
+    }
+    // Nombre exacto del catálogo dentro del texto → ese primero (los enlazados ya van adelante)
+    const pTxt = sinTildes(producto);
+    if (!enlazados.length) candidatos.sort((a, b) => Number(pTxt.includes(sinTildes(b.catalogo))) - Number(pTxt.includes(sinTildes(a.catalogo))));
+    const primero = candidatos[0] ?? null;
+    const confiable = !!primero && (enlazados.length > 0 || !tipoTxt || tipoDePrenda(`${primero.catalogo} ${primero.tipo ?? ''}`) === tipoTxt);
+    prendas.push({
+      texto: producto, color, talla, genero, cantidad, precio: precioUnidad,
+      id_item: confiable ? primero!.id_item : null,
+      candidatos: candidatos.map(c => ({
+        id_item: c.id_item, catalogo: c.catalogo, nombre: c.nombre, referencia: c.referencia, tipo: c.tipo,
+        genero: nombreGenero(c.genero_id), foto: c.foto_card || c.foto_main || c.foto_thumb || null, colores: c.colores, tallas: c.tallas,
+      })),
+    });
   }
 
   const fotoChat = pedido?.foto_producto || (await fotoDelChat(supabase, conv));
@@ -140,18 +179,54 @@ export async function prellenarDesdeChat(conv: string) {
   return {
     vendedor: vendedor.nombre,
     datos,
-    prenda: {
-      texto: producto, color: variante?.color ?? color, talla: variante?.talla ?? talla, cantidad,
-      precio: Math.round(total / cantidad), foto_chat: fotoChat ?? null,
-      id_item: elegido?.id_item ?? null,
-    },
-    candidatos: candidatos.map(c => ({
-      id_item: c.id_item, catalogo: c.catalogo, nombre: c.nombre, referencia: c.referencia, tipo: c.tipo,
-      genero: nombreGenero(c.genero_id), foto: c.foto_card || c.foto_main || c.foto_thumb || null, colores: c.colores, tallas: c.tallas,
-    })),
+    prendas,
+    foto_chat: fotoChat ?? null,
+    total,
     pedido_id: pedido?.id ?? null,
     existente: (existentes ?? [])[0] ?? null,
   };
+}
+
+/**
+ * Cruce exacto: el nombre del producto del pedido/chat (ej. «CAMISETA AMERICA BLANCO XXL - HOMBRE»)
+ * contiene el PATRÓN de un catálogo de QuinChat («CAMISETA AMERICA»); ese catálogo tiene su
+ * «Nombre en KlixmSoft» / id de catálogo → productos de ese catálogo en la copia de KlixmSoft,
+ * ordenados por color y género pedidos. Sin adivinar.
+ */
+async function candidatosPorCatalogoQuin(supabase: any, producto: string, color: string, genero: string): Promise<Candidato[]> {
+  const txt = ` ${sinTildes(producto).toUpperCase().replace(/[^A-Z0-9Ñ ]/g, ' ').replace(/\s+/g, ' ')} `;
+  if (txt.trim().length < 3) return [];
+  const { data: cats } = await supabase.from('catalogos_bot')
+    .select('patron, familia, nombre_klixmsoft, id_catalogo').eq('activo', true).is('eliminado_at', null)
+    .or('nombre_klixmsoft.not.is.null,id_catalogo.not.is.null');
+  const norm = (s: unknown) => sinTildes(s).toUpperCase().replace(/[^A-Z0-9Ñ ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const cat = (cats ?? [])
+    .filter((c: any) => { const p = norm(c.patron || c.familia); return p.length >= 3 && txt.includes(` ${p} `); })
+    .sort((a: any, b: any) => norm(b.patron || b.familia).length - norm(a.patron || a.familia).length)[0] as any;
+  if (!cat) return [];
+  let q = supabase.from('vv_cat_productos')
+    .select('id_item, id_catalogo, catalogo, nombre, referencia, tipo, genero_id, foto_card, foto_main, foto_thumb, colores, tallas')
+    .eq('activo', true);
+  q = cat.id_catalogo ? q.eq('id_catalogo', cat.id_catalogo) : q.ilike('catalogo', String(cat.nombre_klixmsoft));
+  const { data: prods } = await q.limit(40);
+  const col = sinTildes(color).replace(/\s+/g, '');
+  const gen = /dama|mujer/i.test(genero) ? 2 : /nin/i.test(sinTildes(genero)) ? 4 : 1;
+  const puntaje = (p: any) => {
+    const cs = (p.colores ?? []).map((c: string) => sinTildes(c).replace(/\s+/g, ''));
+    return (col && cs.some((c: string) => c === col || c.includes(col) || col.includes(c)) ? 10 : 0) + (p.genero_id === gen ? 3 : 0);
+  };
+  return [...(prods ?? [])].sort((a, b) => puntaje(b) - puntaje(a)).map((p: any) => ({ ...p, puntaje: 100 + puntaje(p) }));
+}
+
+/** Tipo de prenda de un texto (para no confundir camiseta con buzo). */
+function tipoDePrenda(t: string): string {
+  const x = sinTildes(t);
+  if (/camiseta|camisa|t-?shirt/.test(x)) return 'camiseta';
+  if (/\bpolo\b/.test(x)) return 'polo';
+  if (/cuello alto/.test(x)) return 'cuello';
+  if (/chaqueta/.test(x)) return 'chaqueta';
+  if (/buzo|hoodie|saco/.test(x)) return 'buzo';
+  return '';
 }
 
 /**
