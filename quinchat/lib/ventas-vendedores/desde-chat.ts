@@ -140,10 +140,10 @@ export async function prellenarDesdeChat(conv: string) {
     abono: (pedido?.abono_recibido ? Number(pedido?.abono) || 0 : 0) || (num(x.abono_recibido) ?? 0),
     observaciones: s(x.observaciones),
   };
-  if (esOficinaInter([x.transportadora, x.direccion, x.referencia, x.observaciones, x.reclama_en_oficina ? 'oficina' : ''].join(' '))
-      || (x.reclama_en_oficina && /inter/i.test(String(x.transportadora ?? '')))) {
-    datos.transportadora = 'INTER RAPIDISIMO';
-  }
+  // Oficina de Interrapidísimo (aunque venga mal escrito) → dirección estándar + transportadora Inter
+  const oficinaInter = esOficinaInter([x.transportadora, x.direccion, x.referencia, x.observaciones, x.reclama_en_oficina ? 'oficina' : ''].join(' '))
+    || (x.reclama_en_oficina && /inter/i.test(String(x.transportadora ?? '')));
+  if (oficinaInter) Object.assign(datos, normalizarOficinaInter({ ...datos }, 'reclama oficina interrapidisimo'));
   // Prendas: las de la IA; si no trajo, una sola con lo del pedido.
   let prendasIA: any[] = Array.isArray(x.prendas) ? x.prendas.filter((p: any) => s(p?.producto) || s(p?.talla) || s(p?.color)) : [];
   if (!prendasIA.length) prendasIA = [{ producto: s(pedido?.producto), color: '', talla: s(pedido?.talla).split('-')[0], genero: /dama|mujer/i.test(String(pedido?.talla ?? '')) ? 'Dama' : '', cantidad: Number(pedido?.cantidad) || 1 }];
@@ -231,10 +231,24 @@ async function candidatosPorCatalogoQuin(supabase: any, producto: string, color:
   return [...(prods ?? [])].sort((a, b) => puntaje(b) - puntaje(a)).map((p: any) => ({ ...p, puntaje: 100 + puntaje(p) }));
 }
 
-/** ¿El texto dice que se reclama en una oficina de Interrapidísimo? */
+/** Texto ÚNICO para las entregas en oficina de Interrapidísimo (regla del dueño, 08-nov-2026). */
+export const DIR_OFICINA_INTER = 'RECLAMA EN LA OFICINA DE INTERRAPIDISIMO';
+
+/**
+ * ¿El texto dice que se reclama en una oficina de Interrapidísimo? Tolera errores de escritura
+ * («Inter rapidisimob», «interapidisimo», «oficina de inter», «RECLAMA OFICINA DE INTERRAPIDISIMO»).
+ */
 export function esOficinaInter(t: string): boolean {
   const x = String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  return /oficina/.test(x) && /inter\s*-?\s*rap/.test(x);
+  const oficina = /ofi[cs]?i?na|reclam|recog/.test(x);
+  const inter = /inter\s*-?\s*r+a*p+i*d|interap+i*d|\binter\b|interrap/.test(x);
+  return oficina && inter;
+}
+
+/** Si la dirección es «oficina de Interrapidísimo», la deja SIEMPRE con el mismo texto y sin referencia de calle. */
+export function normalizarOficinaInter<T extends Record<string, any>>(d: T, extra = ''): T {
+  if (!esOficinaInter([d.direccion, d.referencia_dir, d.complemento, d.observaciones, extra].filter(Boolean).join(' '))) return d;
+  return { ...d, direccion: DIR_OFICINA_INTER, referencia_dir: '', complemento: '', barrio: '', transportadora: 'INTER RAPIDISIMO' };
 }
 
 /** Tipo de prenda de un texto (para no confundir camiseta con buzo). */
@@ -303,7 +317,8 @@ export interface EntradaPanel {
 export async function crearDesdeChat(e: EntradaPanel, quien: string): Promise<{ ok: boolean; mensaje: string; codigo?: string; id?: string; errores?: string[] }> {
   const supabase = createServerSupabaseClient();
   const errores: string[] = [];
-  const d = e.datos ?? {};
+  // Al guardar también se estandariza la oficina de Interrapidísimo (por si la escribieron a mano)
+  const d = normalizarOficinaInter({ ...(e.datos ?? {}) });
   const conv = String(e.conv ?? '').replace(/\D/g, '');
   if (!/^57\d{10}$/.test(conv)) return { ok: false, mensaje: 'Chat inválido' };
 

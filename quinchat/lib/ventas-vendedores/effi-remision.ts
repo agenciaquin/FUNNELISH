@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { effiGet } from '@/lib/effi-api';
 import { sinTildes } from './catalogo';
+import { esOficinaInter, DIR_OFICINA_INTER } from './desde-chat';
 
 /**
  * Arma la REMISIÓN DE VENTA de Effi (POST api/remision_v) para una preventa del
@@ -159,10 +160,8 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
   // Orden: la que escribió el asesor → ajuste manual por municipio → tabla de transportadoras (kls-app)
   let transp = normalizarTransportadora(String(venta.transportadora ?? '')) ?? (cfg.transportadoras[muni] ? normalizarTransportadora(cfg.transportadoras[muni]) : null);
   // Regla del dueño (08-nov-2026): reclama en OFICINA de Interrapidísimo → Interrapidísimo, sin importar la ciudad.
-  if (!transp) {
-    const txtDir = sinTildes([venta.direccion, venta.referencia_dir, venta.complemento, venta.observaciones].filter(Boolean).join(' '));
-    if (/oficina/.test(txtDir) && /inter\s*-?\s*rap/.test(txtDir)) transp = 'INTER RAPIDISIMO';
-  }
+  const oficinaInter = esOficinaInter([venta.direccion, venta.referencia_dir, venta.complemento, venta.observaciones].filter(Boolean).join(' '));
+  if (!transp && oficinaInter) transp = 'INTER RAPIDISIMO';
   if (!transp && !String(venta.transportadora ?? '').trim()) {
     const rec = await transportadoraDeMunicipio(String(venta.departamento ?? ''), String(venta.municipio ?? '')).catch(() => null);
     if (rec) {
@@ -247,8 +246,9 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
 
   // ── Cliente nuevo ─────────────────────────────────────────────────────
   const identificacion = String(venta.cliente_identificacion ?? '').replace(/\D/g, '') || String(venta.cliente_celular ?? '').replace(/\D/g, '').slice(-10);
-  const direccionTxt = [venta.direccion, venta.barrio].filter(Boolean).join(' ').trim();
-  const referenciaTxt = [venta.complemento, venta.referencia_dir].filter(Boolean).join(' · ').trim();
+  // Oficina de Interrapidísimo → siempre el mismo texto, sin barrio ni referencia de calle
+  const direccionTxt = oficinaInter ? DIR_OFICINA_INTER : [venta.direccion, venta.barrio].filter(Boolean).join(' ').trim();
+  const referenciaTxt = oficinaInter ? '' : [venta.complemento, venta.referencia_dir].filter(Boolean).join(' · ').trim();
   let crear_cliente: Record<string, any> | null = null;
   if (!cliente) {
     if (!venta.cliente_nombre) errores.push('Falta el nombre del cliente');
