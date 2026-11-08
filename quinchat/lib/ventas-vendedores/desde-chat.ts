@@ -140,13 +140,18 @@ export async function prellenarDesdeChat(conv: string) {
     abono: (pedido?.abono_recibido ? Number(pedido?.abono) || 0 : 0) || (num(x.abono_recibido) ?? 0),
     observaciones: s(x.observaciones),
   };
+  // El cliente a veces escribe la ciudad en «departamento» y al revés (Departamento: Cartagena,
+  // Ciudad: Bolívar). Si lo de «departamento» no es un departamento y lo de «municipio» sí, se cruzan.
+  if (!esDepartamento(datos.departamento) && esDepartamento(datos.municipio)) {
+    [datos.departamento, datos.municipio] = [datos.municipio, datos.departamento];
+  }
   // Oficina de Interrapidísimo (aunque venga mal escrito) → dirección estándar + transportadora Inter
   const oficinaInter = esOficinaInter([x.transportadora, x.direccion, x.referencia, x.observaciones, x.reclama_en_oficina ? 'oficina' : ''].join(' '))
     || (x.reclama_en_oficina && /inter/i.test(String(x.transportadora ?? '')));
   if (oficinaInter) Object.assign(datos, normalizarOficinaInter({ ...datos }, 'reclama oficina interrapidisimo'));
   // Prendas: las de la IA; si no trajo, una sola con lo del pedido.
   let prendasIA: any[] = Array.isArray(x.prendas) ? x.prendas.filter((p: any) => s(p?.producto) || s(p?.talla) || s(p?.color)) : [];
-  if (!prendasIA.length) prendasIA = [{ producto: s(pedido?.producto), color: '', talla: s(pedido?.talla).split('-')[0], genero: /dama|mujer/i.test(String(pedido?.talla ?? '')) ? 'Dama' : '', cantidad: Number(pedido?.cantidad) || 1 }];
+  if (!prendasIA.length) prendasIA = [{ producto: s(pedido?.producto), color: s(pedido?.producto).split(/\s+-\s+/)[1] ?? '', talla: s(pedido?.talla).split('-')[0], genero: /dama|mujer/i.test(String(pedido?.talla ?? '')) ? 'Dama' : '', cantidad: Number(pedido?.cantidad) || 1 }];
   const unidades = prendasIA.reduce((t, p) => t + Math.max(1, Math.min(50, Number(p?.cantidad) || 1)), 0) || 1;
   const precioUnidad = Math.round(total / unidades);
 
@@ -251,6 +256,17 @@ function puntajeColor(colores: string[], color: string, producto: string): numbe
   if (col && cs.some(c => c === col || c.includes(col) || col.includes(c))) p = Math.max(p, 10);
   if (col && cs.some(c => (TONOS[col] ?? []).includes(c))) p = Math.max(p, 5);
   return p;
+}
+
+/** Los 32 departamentos de Colombia + Bogotá D.C. (con los nombres cortos que usa la gente). */
+const DEPARTAMENTOS = ['amazonas', 'antioquia', 'arauca', 'atlantico', 'bolivar', 'boyaca', 'caldas', 'caqueta', 'casanare',
+  'cauca', 'cesar', 'choco', 'cordoba', 'cundinamarca', 'guainia', 'guaviare', 'huila', 'la guajira', 'guajira', 'magdalena',
+  'meta', 'narino', 'norte de santander', 'putumayo', 'quindio', 'risaralda', 'san andres', 'san andres y providencia',
+  'archipielago de san andres', 'santander', 'sucre', 'tolima', 'valle del cauca', 'valle', 'vaupes', 'vichada',
+  'bogota', 'bogota d.c.', 'bogota dc', 'distrito capital'];
+function esDepartamento(t: string): boolean {
+  const x = sinTildes(t).replace(/[^a-z. ]/g, ' ').replace(/\s+/g, ' ').trim();
+  return !!x && DEPARTAMENTOS.includes(x);
 }
 
 /** Texto ÚNICO para las entregas en oficina de Interrapidísimo (regla del dueño, 08-nov-2026). */

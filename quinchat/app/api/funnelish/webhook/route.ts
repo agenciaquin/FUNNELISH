@@ -187,10 +187,17 @@ const normCat = (s: string) => String(s ?? '').toUpperCase().replace(/REFLECTIVA
 // Palabras que nunca aparecen en los nombres del catálogo de colores: no deben decidir.
 const NO_DECIDEN = ['CHAQUETA', 'CHAQUETAS', 'CAMISETA', 'CAMISETAS', 'COLORES', 'COLOR', 'TALLA', 'TALLAS', 'PRENDA', 'PRENDAS'];
 
+// Fotos del catálogo con el estado de su catálogo (activo / en papelera) para preferir las vigentes.
+const SEL_FOTO = 'color, nombre_producto, url_imagen, klixmsoft_item_id, catalogos_bot(activo, eliminado_at)';
+const catalogoVivo = (r: any): number => {
+  const c = Array.isArray(r?.catalogos_bot) ? r.catalogos_bot[0] : r?.catalogos_bot;
+  return c && c.activo !== false && !c.eliminado_at ? 1 : 0;
+};
+
 async function buscarImagenColor(supabase: any, color: string, familia: string): Promise<string | null> {
   familia = normCat(familia);
   const { data } = await supabase
-    .from('catalogo_colores').select('color, nombre_producto, url_imagen')
+    .from('catalogo_colores').select(SEL_FOTO)
     .not('url_imagen', 'is', null);
   if (!data || !data.length) return null;
   const colU     = color.toUpperCase();
@@ -210,16 +217,22 @@ async function buscarImagenColor(supabase: any, color: string, familia: string):
   // "HONDA REFLECTIVO" (misma marca, foto distinta).
   const wantReflex = /REFLECTIVO/.test(familia.toUpperCase());
   // Ranking: 1º marca (distintiva), 2º que coincida reflectivo/no-reflectivo, 3º palabras totales.
-  let best: { url: string; dist: number; reflex: number; all: number; name: string } | null = null;
+  let best: { url: string; dist: number; act: number; reflex: number; all: number; klx: number; name: string } | null = null;
   for (const r of cands) {
     const nU    = (r.nombre_producto ?? '').toUpperCase();
     const dist  = distintivas.filter((w: string) => nU.includes(w)).length;
+    const act   = catalogoVivo(r);
     const reflex = (/REFLECTIVO/.test(nU) === wantReflex) ? 1 : 0;
     const all   = famWords.filter((w: string) => nU.includes(w)).length;
+    const klx   = r.klixmsoft_item_id ? 1 : 0;
+    // A igual marca, gana la foto de un catálogo ACTIVO (y luego la rotulada de KlixmSoft):
+    // el 08-nov-2026 un pedido de RED BULL NEGRO tomó la foto vieja de un catálogo apagado.
     const mejor = !best || dist > best.dist
-      || (dist === best.dist && reflex > best.reflex)
-      || (dist === best.dist && reflex === best.reflex && all > best.all);
-    if (mejor) best = { url: r.url_imagen as string, dist, reflex, all, name: nU };
+      || (dist === best.dist && act > best.act)
+      || (dist === best.dist && act === best.act && reflex > best.reflex)
+      || (dist === best.dist && act === best.act && reflex === best.reflex && all > best.all)
+      || (dist === best.dist && act === best.act && reflex === best.reflex && all === best.all && klx > best.klx);
+    if (mejor) best = { url: r.url_imagen as string, dist, act, reflex, all, klx, name: nU };
   }
   // El match DEBE incluir la palabra distintiva de la familia; si no, es de otra
   // familia (foto equivocada) → mejor null y que caiga a la imagen del embudo.
@@ -258,14 +271,15 @@ async function buscarImagenProducto(supabase: any, nombre: string): Promise<stri
   if (nombre) {
     const nombreOriginal = nombre;
     nombre = normCat(nombre);
-    const { data: exactMatch } = await supabase
-      .from('catalogo_colores').select('url_imagen')
+    const { data: exactos } = await supabase
+      .from('catalogo_colores').select(SEL_FOTO)
       .ilike('nombre_producto', nombreOriginal).not('url_imagen', 'is', null)
-      .limit(1).maybeSingle();
+      .limit(10);
+    const exactMatch = [...(exactos ?? [])].sort((a: any, b: any) => catalogoVivo(b) - catalogoVivo(a))[0];
     if (exactMatch?.url_imagen) return exactMatch.url_imagen as string;
 
     const { data: allColors } = await supabase
-      .from('catalogo_colores').select('nombre_producto, url_imagen')
+      .from('catalogo_colores').select(SEL_FOTO)
       .not('url_imagen', 'is', null);
     if (allColors && allColors.length > 0) {
       const words = nombre.toUpperCase().split(/\s+/)
@@ -282,7 +296,7 @@ async function buscarImagenProducto(supabase: any, nombre: string): Promise<stri
       // NACIONAL LIBERTADORES" nunca agarra "PAREJA STITCH" (comparten solo PAREJA).
       // Luego desempata por reflectivo/no-reflectivo (HONDA vs HONDA REFLECTIVO)
       // y por último por todas las palabras (incluye color).
-      let best: { url: string; d: number; reflex: number; c: number; name: string } | null = null;
+      let best: { url: string; d: number; act: number; reflex: number; c: number; name: string } | null = null;
       for (const row of allColors) {
         if (!row.nombre_producto || !row.url_imagen) continue;
         const name = (row.nombre_producto as string).toUpperCase();
@@ -292,10 +306,12 @@ async function buscarImagenProducto(supabase: any, nombre: string): Promise<stri
         // Si el producto tiene palabras distintivas, la foto DEBE compartir al menos una.
         if (distintivas.length > 0 && d === 0) continue;
         if (distintivas.length === 0 && c === 0) continue;
+        const act = catalogoVivo(row);
         const mejor = !best || d > best.d
-          || (d === best.d && reflex > best.reflex)
-          || (d === best.d && reflex === best.reflex && c > best.c);
-        if (mejor) best = { url: row.url_imagen as string, d, reflex, c, name };
+          || (d === best.d && act > best.act)
+          || (d === best.d && act === best.act && reflex > best.reflex)
+          || (d === best.d && act === best.act && reflex === best.reflex && c > best.c);
+        if (mejor) best = { url: row.url_imagen as string, d, act, reflex, c, name };
       }
       if (best) return best.url;
     }
