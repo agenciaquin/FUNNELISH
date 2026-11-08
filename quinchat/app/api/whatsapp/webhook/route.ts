@@ -1876,6 +1876,47 @@ export async function POST(req: NextRequest) {
 
         const PROMO_PRICES_CONF: Record<number, string> = { 1: '$129.900', 2: '$219.900', 3: '$325.000' };
 
+        // ── 2.b El cliente pide OTRO producto del catálogo (07-nov-2026) ───────
+        // Antes, con un pedido ya confirmado, "fotos del buzo de Bucaramanga" le
+        // reenviaba la foto de SU pedido, y la IA llegó a decir que ese diseño no
+        // existía. Ahora: si nombra una familia del catálogo distinta a la de su
+        // pedido, se le envían las fotos de esa familia y se pasa a un asesor
+        // (para agregarla o cambiarla bien), sin tocar el pedido.
+        {
+          const tUp = ` ${text.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9Ñ ]/g, ' ')} `;
+          const prodUp = confirmedPedido.producto.toUpperCase();
+          const { data: cats } = await supabase.from('catalogos_bot')
+            .select('familia, patron, catalogo_colores(color, nombre_producto, url_imagen, orden)')
+            .eq('activo', true).is('eliminado_at', null);
+          const pedida = (cats ?? [])
+            .filter((c: any) => {
+              const p = String(c.patron ?? '').toUpperCase().trim();
+              return p.length >= 3 && tUp.includes(` ${p} `) && !prodUp.includes(p);
+            })
+            .sort((a: any, b: any) => String(b.patron).length - String(a.patron).length)[0] as any;
+          if (pedida) {
+            const fotos = [...(pedida.catalogo_colores ?? [])]
+              .filter((c: any) => c.url_imagen && c.url_imagen !== FALLBACK_IMAGE)
+              .sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
+              .slice(0, 6);
+            for (const f of fotos) {
+              const imgWamid = await sendImageByUrl(from, f.url_imagen, f.nombre_producto);
+              await saveAndSend(supabase, from, f.url_imagen, 'image', imgWamid);
+            }
+            const colores = fotos.map((f: any) => f.color).filter(Boolean).join(', ');
+            const msgOtro = fotos.length
+              ? `¡Claro! 😊 Aquí tienes *${pedida.familia}*${colores ? ` en ${colores}` : ''} 👆\n\n` +
+                `Tu pedido de *${confirmedPedido.producto}* sigue confirmado. Si quieres agregar uno de estos o cambiarlo, ` +
+                `dime cuál color y talla y un asesor te lo deja listo enseguida.`
+              : `¡Claro! 😊 Sí tenemos *${pedida.familia}*. Un asesor te envía las fotos en un momento. ` +
+                `Tu pedido de *${confirmedPedido.producto}* sigue confirmado.`;
+            const wamid = await sendTextMessage(from, msgOtro);
+            await saveAndSend(supabase, from, msgOtro, 'text', wamid);
+            await marcarHumanoYNotificar(supabase, from);
+            continue;
+          }
+        }
+
         // ── 3. AGREGAR prenda a la promo ──────────────────────────────────────
         // Frases que claramente significan "quiero otro buzo además del que ya tengo"
         const wantsAddPromoConf = [
@@ -2115,6 +2156,7 @@ export async function POST(req: NextRequest) {
           `📍 DIRECCIÓN POR PARTES — OBLIGATORIO: si el cliente completa o corrige su dirección (aunque sea por pedazos: torre, apartamento, casa, barrio, conjunto, ciudadela…), ARMA la dirección COMPLETA juntando lo que ya tenía + lo nuevo, y ponla en "direccion" del [[ACTUALIZAR]]. Si en tu mensaje le muestras al cliente la dirección final (ej. "Recibirás tu pedido en: ..."), esa MISMA dirección completa DEBE ir en [[ACTUALIZAR]] "direccion". NUNCA le muestres una dirección corregida sin guardarla con [[ACTUALIZAR]].\n` +
           `Si el cliente pide la foto de su producto: responde "En un momento te la enviamos 📸" — NUNCA digas que no puedes enviar fotos.\n` +
           `Si el cliente quiere ver catálogo de otros productos completamente diferentes: dile que lo pasarás con un asesor.\n` +
+          `NUNCA digas que un diseño, equipo o producto "no existe", "no está disponible" o "no lo tenemos": no conoces todo el catálogo. Di que un asesor le confirma y le envía las fotos.\n` +
           `Sé amable, breve y tranquilizador.\n\n` +
           EMPRESA_FAQ + memoriaBot;
 
