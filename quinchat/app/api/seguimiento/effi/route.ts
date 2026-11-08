@@ -4,7 +4,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
+let ultimaRapida = 0; // última sincronización rápida de remisiones (por instancia)
 const ESTADOS_VALIDOS = ['entregada', 'en_camino', 'devuelta', 'novedad', 'anulada'];
 
 /** Devuelve TODAS las guías de Effi guardadas (teléfono → estado + flete).
@@ -28,6 +30,16 @@ export async function GET() {
   // Remisiones de venta (subidas a Effi, con o sin guía) de los últimos 45 días.
   // Si la tabla aún no existe o falla, se devuelve vacío y el panel sigue como antes.
   const remisiones: any[] = [];
+  // Las ventas que se acaban de subir a mano no salían hasta la sincronización de cada hora (08-nov-2026):
+  // al abrir «Estado en Effi» se traen las remisiones de los últimos 2 días (liviano, solo lectura, máx. 1 vez cada 5 min).
+  try {
+    if (Date.now() - ultimaRapida > 5 * 60_000) {
+      ultimaRapida = Date.now();
+      const { sincronizarRemisionesEffi } = await import('@/lib/effi-api');
+      const manana = new Date(Date.now() - 5 * 3600_000 + 86400_000).toISOString().slice(0, 10);
+      await sincronizarRemisionesEffi(manana, 2);
+    }
+  } catch { /* si Effi no responde, se usa la copia que hay */ }
   try {
     const desdeR = new Date(Date.now() - 45 * 86400_000).toISOString();
     for (let d = 0; d < 20000; d += PAGE) {
@@ -40,6 +52,14 @@ export async function GET() {
       if (data.length < PAGE) break;
     }
   } catch { /* sin remisiones */ }
+  // Marcadas a mano con «Ya está en Effi» (venta subida con otro número): cuentan como subidas
+  try {
+    const { data: vinc } = await supabase.from('effi_vinculos').select('conversacion_id, telefono_effi, remision');
+    for (const v of (vinc ?? []) as any[]) {
+      const tel = String(v.conversacion_id ?? '').replace(/\D/g, '').slice(-10);
+      if (tel.length === 10) remisiones.push({ telefono: tel, estado: 'vinculada', id_transaccion: v.remision, guia: null });
+    }
+  } catch { /* sin vínculos */ }
   return NextResponse.json({ guias: todas, remisiones });
 }
 

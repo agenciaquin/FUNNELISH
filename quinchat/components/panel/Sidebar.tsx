@@ -6,7 +6,7 @@ import { signOut } from 'next-auth/react';
 import { confirmarSalida } from '@/lib/panel/cambios';
 import BotonAvisos from './BotonAvisos';
 
-export type PanelSection = 'chat' | 'chat_ventas' | 'metas' | 'estadisticas' | 'embudos' | 'pedidos' | 'ventas' | 'vendedores' | 'ventas_vendedores' | 'seguimiento' | 'objeciones' | 'remarketing' | 'promociones' | 'vendedores_links' | 'colecciones' | 'live_shopping' | 'supervisor' | 'memoria' | 'faq' | 'entrenamiento' | 'plantillas' | 'disparadores' | 'contactos' | 'etiquetas' | 'catalogos' | 'integraciones' | 'ajustes' | 'manual';
+export type PanelSection = 'chat' | 'chat_ventas' | 'metas' | 'estadisticas' | 'embudos' | 'pedidos' | 'ventas' | 'vendedores' | 'ventas_vendedores' | 'master_vendedores' | 'seguimiento' | 'objeciones' | 'remarketing' | 'promociones' | 'vendedores_links' | 'colecciones' | 'live_shopping' | 'supervisor' | 'memoria' | 'faq' | 'entrenamiento' | 'plantillas' | 'disparadores' | 'contactos' | 'etiquetas' | 'catalogos' | 'integraciones' | 'ajustes' | 'manual';
 
 // Íconos SVG personalizados (embudo de ventas y WhatsApp)
 const IconoEmbudo = ({ color }: { color: string }) => (
@@ -27,6 +27,7 @@ const NAV_MAIN: NavItem[] = [
   { key: 'chat',              label: 'Chat Funnel',          svg: 'embudo',   color: '#3B82F6' },
   { key: 'chat_ventas',       label: 'Chat WhatsApp',        svg: 'whatsapp', color: '#25D366' },
   { key: 'ventas_vendedores', label: 'Centro Maestro EFFI',  icon: '👑' },
+  { key: 'master_vendedores', label: 'Master Vendedores',    icon: '👥' },
   { key: 'pedidos',           label: 'Pedidos',              icon: '🛒' },
   { key: 'ventas',            label: 'Estado en EFFI',       icon: '✅' },
   { key: 'embudos',           label: 'Embudos',              icon: '🚀' },

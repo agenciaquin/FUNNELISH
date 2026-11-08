@@ -17,10 +17,12 @@ export interface AjustesVV {
   todos_vendedores: boolean;
   /** 'simulacion' arma la solicitud a Effi y la guarda, sin enviarla. 'real' la envía. */
   envio_effi: 'simulacion' | 'real';
+  /** Vendedores REALES activados uno por uno desde «Master Vendedores» (sus ventas NO son de prueba). */
+  numeros_reales: string[];
 }
 
 export const AJUSTES_VV_DEFECTO: AjustesVV = {
-  activo: false, numeros_prueba: [], todos_vendedores: false, envio_effi: 'simulacion',
+  activo: false, numeros_prueba: [], todos_vendedores: false, envio_effi: 'simulacion', numeros_reales: [],
 };
 
 let cache: { valor: AjustesVV; leido: number } | null = null;
@@ -37,6 +39,7 @@ export async function ajustesVV(fresco = false): Promise<AjustesVV> {
       numeros_prueba: Array.isArray(v.numeros_prueba) ? v.numeros_prueba.map(n => normalizarTel(String(n))).filter(Boolean) : [],
       todos_vendedores: v.todos_vendedores === true,
       envio_effi: v.envio_effi === 'real' ? 'real' : 'simulacion',
+      numeros_reales: Array.isArray(v.numeros_reales) ? v.numeros_reales.map(n => normalizarTel(String(n))).filter(Boolean) : [],
     };
   } catch { /* si falla, el módulo queda apagado */ }
   cache = { valor, leido: Date.now() };
@@ -47,6 +50,7 @@ export async function guardarAjustesVV(parcial: Partial<AjustesVV>): Promise<Aju
   const actual = await ajustesVV(true);
   const nuevo: AjustesVV = { ...actual, ...parcial };
   nuevo.numeros_prueba = (nuevo.numeros_prueba ?? []).map(n => normalizarTel(String(n))).filter(n => /^57\d{10}$/.test(n));
+  nuevo.numeros_reales = [...new Set((nuevo.numeros_reales ?? []).map(n => normalizarTel(String(n))).filter(n => /^57\d{10}$/.test(n)))];
   const supabase = createServerSupabaseClient();
   await supabase.from('ajustes_bot').upsert(
     { clave: 'ventas_vendedores', valor: nuevo, actualizado_at: new Date().toISOString() },
@@ -64,6 +68,7 @@ export async function moduloAtiende(telefono: string | null | undefined): Promis
   if (!a.activo) return { si: false, esPrueba: false };
   const esPrueba = a.numeros_prueba.includes(tel);
   if (esPrueba) return { si: true, esPrueba: true };
+  if (a.numeros_reales.includes(tel)) return { si: true, esPrueba: false }; // activado en Master Vendedores
   if (a.todos_vendedores && esVendedor(tel)) return { si: true, esPrueba: false };
   return { si: false, esPrueba: false };
 }

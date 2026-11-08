@@ -165,6 +165,15 @@ pública en `pedido.klixmant.shop/web/<slug>` → `app/p/web/[slug]` (sin tocar 
 catálogos, embudos y promociones. Comprar = embudo enlazado al catálogo; sin embudo = WhatsApp.
 Cifras de las tarjetas: `app/api/funnels/resumen` (solo lectura, 30 días, caché 10 min).
 
+### 10 · Master Vendedores (08-nov-2026), módulo independiente
+
+Menú «Master Vendedores» → `components/panel/master-vendedores/MasterVendedoresPanel.tsx` + `app/api/master-vendedores`.
+Tabla propia `mv_vendedores` (13 vendedores de Effi: tercero, nombre, nombre_effi, teléfono principal de Effi +
+teléfonos extra; el número viejo del bot quedó como extra). Lee `vv_ventas` por teléfono y `effi_remisiones_api` por
+`nombre_effi`. Ver/editar/enviar reusa `DetalleVenta` del Centro Maestro. La recepción de ventas por WhatsApp se
+enciende POR VENDEDOR (botón en el módulo) y queda en `ajustes_bot.ventas_vendedores.numeros_reales` (vacío = nada
+cambia para los vendedores). Effi: si el vendedor no está en `effi_remision.vendedores`, se toma su tercero de `mv_vendedores`.
+
 ### 5 · No todas las subidas comprimen
 
 Comprimen: `funnels/imagen`, `plantillas-wa/imagen`, `catalogos/upload-imagen`.
