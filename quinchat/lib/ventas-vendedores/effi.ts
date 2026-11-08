@@ -1,7 +1,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { armarRemision } from './effi-remision';
 import { ajustesVV } from './config';
-import { effiPost, effiEscrituraConfigurada } from '@/lib/effi-api';
+import { effiGet, effiPost, effiEscrituraConfigurada } from '@/lib/effi-api';
 
 /**
  * Subida de una preventa a Effi (módulo Ventas Vendedores).
@@ -60,7 +60,8 @@ export function armarSolicitud(venta: any, items: any[]) {
  *     o el módulo está en envio_effi = 'real' (uso diario, Fase 4).
  *  3. Bloqueo atómico: solo una petición puede pasar la venta a 'enviando_effi'.
  *  4. idempotency_key qc-<código>: si se repite, Effi responde 409 y no crea otra.
- *  5. Clientes nuevos: todavía NO se crean por API (Fase 3 = cliente ya existente).
+ *  5. Cliente nuevo: se crea con POST api/cliente (cédula o, si no dio, el celular) justo antes
+ *     de la remisión; se busca primero para no duplicarlo. (Activado 08-nov-2026 por el dueño.)
  */
 async function enviarReal(venta: any, payload: any, rem: Awaited<ReturnType<typeof armarRemision>>, quien: string) {
   const supabase = createServerSupabaseClient();
@@ -78,9 +79,37 @@ async function enviarReal(venta: any, payload: any, rem: Awaited<ReturnType<type
     await guardarVista();
     return { ok: false, mensaje: 'Esta venta no está autorizada para subir a Effi todavía. No se envió nada.' };
   }
-  if (!rem.solicitud?.cliente || rem.crear_cliente) {
+  // Cliente nuevo: se crea en Effi (POST api/cliente) y se vuelve a buscar para sacar su tercero.
+  // Si ya existía (400 por identificación repetida) igual se encuentra con la búsqueda.
+  if (rem.solicitud && !rem.solicitud.cliente && rem.crear_cliente) {
+    const numero = String(rem.crear_cliente.numero ?? '');
+    const buscar = async () => {
+      const r = await effiGet('cliente', { numero, por_pagina: 5 }).catch(() => null);
+      const x = (r?.data ?? []).find((c: any) => String(c.numero ?? c.identificacion ?? '').replace(/\D/g, '') === numero) ?? (r?.data ?? [])[0];
+      return x?.tercero ? Number(x.tercero) : null;
+    };
+    let tercero = await buscar();
+    let detalle: any = null;
+    if (!tercero) {
+      try {
+        const { status, json } = await effiPost('cliente', rem.crear_cliente);
+        detalle = { status, json };
+        tercero = Number(json?.data?.tercero) || null;
+        if (!tercero) tercero = await buscar();
+      } catch (e: any) { detalle = { falla: e?.message ?? String(e) }; }
+    }
+    await supabase.from('vv_eventos').insert({ venta_id: venta.id, tipo: 'effi_cliente', quien, detalle: { numero, tercero, respuesta: detalle } });
+    if (!tercero) {
+      await guardarVista();
+      const r = detalle?.json;
+      return { ok: false, mensaje: `No se pudo crear el cliente en Effi${detalle?.status ? ` (${detalle.status})` : ''}: ${r?.mensaje ?? detalle?.falla ?? ''} ${JSON.stringify(r?.errores ?? r?.errors ?? '')}`.trim() + ' — No se creó la remisión.' };
+    }
+    rem.solicitud.cliente = tercero;
+    payload.solicitud = rem.solicitud;
+  }
+  if (!rem.solicitud?.cliente) {
     await guardarVista();
-    return { ok: false, mensaje: 'El cliente no existe en Effi y la creación de clientes por API aún no está habilitada. Créalo en Effi y vuelve a intentar.' };
+    return { ok: false, mensaje: 'No se encontró el cliente en Effi. No se envió nada.' };
   }
 
   // Bloqueo atómico

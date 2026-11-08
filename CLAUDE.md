@@ -131,7 +131,10 @@ Todo junto y aislado: `quinchat/lib/ventas-vendedores/`, `quinchat/app/api/venta
 Único punto de entrada en el webhook: el bloque «MÓDULO VENTAS VENDEDORES» antes de `esVendedor`.
 **Apagar:** `ajustes_bot` clave `ventas_vendedores` → `activo: false` (o botón Apagar en ⚙️ Ajustes del panel).
 Cuando el dueño diga «apaga esta parte», se apaga y se deja apagado; no tocar nada más de QuinChat.
-Decisión del dueño (01-nov-2026): QuinChat sube a Effi directo. Hoy en **simulación**: falta la doc/credenciales de la API de Effi.
+Decisión del dueño (01-nov-2026): QuinChat sube a Effi directo. Desde el 08-nov-2026 `envio_effi: 'real'`
+(lo pidió el dueño): «Enviar a Effi» crea remisiones de verdad tras vista previa + confirmación.
+Abonos/pagos por transferencia → cuenta Effi id 6 (KLIXMANT SAS Bancolombia), en `ajustes_bot.effi_remision.cuenta_transferencia`.
+Volver a simulación: `ajustes_bot` clave `ventas_vendedores` → `envio_effi: 'simulacion'`.
 
 ### 7 · Organizador de pedidos (Yamile León) — aislado con interruptor
 

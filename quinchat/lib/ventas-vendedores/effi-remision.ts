@@ -64,7 +64,7 @@ const CONFIG_DEFECTO: ConfigRemision = {
     'panel-whatsapp': { tercero: 46502, nombre: 'QUINO AGENCIA' },      // Chat WhatsApp
   },
   transportadoras: { bucaramanga: 'CIUDAD BONITA' },
-  cuenta_transferencia: null,
+  cuenta_transferencia: 6,   // KLIXMANT SAS · Bancolombia ahorros (elegida por el dueño, 08-nov-2026)
 };
 
 async function configRemision(): Promise<ConfigRemision> {

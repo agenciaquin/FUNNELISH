@@ -77,7 +77,7 @@ export default function AjustesVV({ onCerrar }: { onCerrar: () => void }) {
 
             <div className="rounded-xl border border-[#E7E6E1] p-3">
               <p className="font-semibold">Subida a Effi</p>
-              <p className="text-[12px] text-[#5E5E5A]">Modo actual: <b>{a.envio_effi === 'real' ? 'real' : 'simulación'}</b>. En simulación la solicitud se arma y se guarda, pero no se envía. El envío real necesita la documentación y las credenciales de la API de Effi.</p>
+              <p className="text-[12px] text-[#5E5E5A]">Modo actual: <b>{a.envio_effi === 'real' ? 'real' : 'simulación'}</b>. En simulación la solicitud se arma y se guarda, pero no se envía. En real, «Enviar a Effi» crea la remisión (siempre tras la vista previa y tu confirmación).</p>
             </div>
 
             <div className="rounded-xl border border-[#E7E6E1] p-3">
