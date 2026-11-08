@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exigirSesion } from '@/lib/ventas-vendedores/auth';
 import { prellenarDesdeChat, productoConVariantes, buscarEnCatalogo, crearDesdeChat } from '@/lib/ventas-vendedores/desde-chat';
+import { createServerSupabaseClient } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -22,6 +23,14 @@ export async function GET(req: NextRequest) {
       return p ? NextResponse.json(p) : NextResponse.json({ error: 'Producto no encontrado' }, { status: 404 });
     }
     if (sp.get('q') != null) return NextResponse.json({ resultados: await buscarEnCatalogo(String(sp.get('q'))) });
+    // ¿Este chat ya tiene una preventa en el panel? (para pintar el botón en azul). Consulta liviana, sin IA.
+    if (sp.get('existe')) {
+      const c = String(sp.get('existe')).replace(/\D/g, '');
+      const supabase = createServerSupabaseClient();
+      const { data } = await supabase.from('vv_ventas').select('codigo, estado, effi_remision, creado_at')
+        .eq('conversacion_id', c).neq('estado', 'cancelada').order('creado_at', { ascending: false }).limit(1).maybeSingle();
+      return NextResponse.json({ existente: data ?? null });
+    }
     const conv = String(sp.get('conv') ?? '').replace(/\D/g, '');
     if (!/^57\d{10}$/.test(conv)) return NextResponse.json({ error: 'Chat inválido' }, { status: 400 });
     return NextResponse.json(await prellenarDesdeChat(conv));

@@ -193,7 +193,7 @@ export default function VentasVendedoresPanel({ onAbrirChat }: { onAbrirChat?: (
               </div>
             ) : (
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                {ventas.map(v => <Tarjeta key={v.id} v={v} onVer={() => setAbierta(v.id)} onChat={() => onAbrirChat?.(v.vendedor_tel === 'panel' && v.conversacion_id ? v.conversacion_id : v.vendedor_tel)} />)}
+                {ventas.map(v => <Tarjeta key={v.id} v={v} onVer={() => setAbierta(v.id)} onChat={() => onAbrirChat?.(v.vendedor_tel.startsWith('panel') && v.conversacion_id ? v.conversacion_id : v.vendedor_tel)} />)}
               </div>
             )}
           </div>

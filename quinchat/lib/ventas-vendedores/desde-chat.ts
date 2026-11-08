@@ -26,6 +26,18 @@ const s = (v: unknown) => String(v ?? '').trim();
 const num = (v: unknown) => { const x = Number(String(v ?? '').replace(/[^\d]/g, '')); return x > 0 ? x : null; };
 export const tel10De = (v: unknown) => String(v ?? '').replace(/\D/g, '').slice(-10);
 
+/**
+ * Vendedor en Effi según el chat de donde sale la venta (regla del dueño, 08-nov-2026):
+ * Chat Funnel → FUNNELISTH LANDING · Chat WhatsApp (línea «ventas») → QUINO AGENCIA.
+ * La clave va en vv_ventas.vendedor_tel y effi-remision.ts la traduce al tercero de Effi.
+ */
+export async function vendedorDelChat(supabase: any, conv: string): Promise<{ clave: string; nombre: string }> {
+  const { data } = await supabase.from('conversations').select('linea').eq('id', conv).maybeSingle();
+  return data?.linea === 'ventas'
+    ? { clave: 'panel-whatsapp', nombre: 'QUINO AGENCIA' }
+    : { clave: 'panel-funnel', nombre: 'FUNNELISTH LANDING' };
+}
+
 function codigoNuevo(): string {
   const d = new Date(Date.now() - 5 * 3600_000).toISOString(); // hora Colombia
   return `PV-${d.slice(0, 10).replace(/-/g, '')}-${d.slice(11, 19).replace(/:/g, '')}-${Math.random().toString(36).slice(2, 4).toUpperCase()}`;
@@ -124,7 +136,9 @@ export async function prellenarDesdeChat(conv: string) {
   }
 
   const fotoChat = pedido?.foto_producto || (await fotoDelChat(supabase, conv));
+  const vendedor = await vendedorDelChat(supabase, conv);
   return {
+    vendedor: vendedor.nombre,
     datos,
     prenda: {
       texto: producto, color: variante?.color ?? color, talla: variante?.talla ?? talla, cantidad,
@@ -240,8 +254,9 @@ export async function crearDesdeChat(e: EntradaPanel, quien: string): Promise<{ 
   const ahora = new Date().toISOString();
   const codigo = codigoNuevo();
   const fotos = filas.map(f => f.foto_vendedor).filter(Boolean);
+  const vend = await vendedorDelChat(supabase, conv);
   const { data: venta, error } = await supabase.from('vv_ventas').insert({
-    codigo, vendedor_tel: 'panel', vendedor_nombre: quien, estado: 'confirmada',
+    codigo, vendedor_tel: vend.clave, vendedor_nombre: vend.nombre, estado: 'confirmada',
     cliente_nombre: s(d.cliente_nombre), cliente_celular: cel,
     cliente_identificacion: s(d.cliente_identificacion).replace(/[^\dA-Za-z-]/g, '') || null,
     cliente_correo: s(d.cliente_correo) || null,
@@ -261,6 +276,6 @@ export async function crearDesdeChat(e: EntradaPanel, quien: string): Promise<{ 
     await supabase.from('vv_ventas').update({ estado: 'cancelada', motivo_revision: `Error guardando prendas: ${eItems.message}` }).eq('id', venta.id);
     return { ok: false, mensaje: `No se pudieron guardar las prendas: ${eItems.message}` };
   }
-  await supabase.from('vv_eventos').insert({ venta_id: venta.id, tipo: 'desde_chat', quien, detalle: { conv, prendas: filas.map(f => ({ id_variante: f.id_variante, sku: f.sku })) } });
+  await supabase.from('vv_eventos').insert({ venta_id: venta.id, tipo: 'desde_chat', quien, detalle: { conv, vendedor: vend.nombre, prendas: filas.map(f => ({ id_variante: f.id_variante, sku: f.sku })) } });
   return { ok: true, mensaje: `Preventa ${venta.codigo} creada en el panel de Effi.`, codigo: venta.codigo, id: venta.id };
 }

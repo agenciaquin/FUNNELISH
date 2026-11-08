@@ -359,6 +359,19 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
   ];
   const [labelOpen, setLabelOpen]       = useState(false);
   const [panelEffiOpen, setPanelEffiOpen] = useState(false);
+  // Preventa ya enviada al panel de Effi desde este chat → el botón se pinta azul
+  const [enPanelEffi, setEnPanelEffi] = useState<{ codigo: string; estado: string; effi_remision: string | null } | null>(null);
+  const revisarPanelEffi = async (convId: string) => {
+    try {
+      const r = await fetch(`/api/ventas-vendedores/desde-chat?existe=${encodeURIComponent(convId)}`, { cache: 'no-store' });
+      const j = await r.json().catch(() => ({}));
+      setEnPanelEffi(prev => (convId === conversation?.id ? (j.existente ?? null) : prev));
+    } catch { /* sin estado: el botón queda verde */ }
+  };
+  useEffect(() => {
+    setEnPanelEffi(null);
+    if (conversation?.id) revisarPanelEffi(conversation.id);
+  }, [conversation?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [currentLabel, setCurrentLabel] = useState<string | null>(null);
 
   // Revisión de la venta antes de registrarla a mano (corregir producto/talla/valor)
@@ -1076,14 +1089,26 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
           {/* Enviar al panel de Effi (Ventas Vendedores): abre la ventana de confirmación; nada se guarda sin confirmar */}
           <button
             onClick={e => { e.stopPropagation(); setMenuOpen(false); setPanelEffiOpen(true); }}
-            title="Revisar los datos del pedido y pasarlo al panel de Effi"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all bg-[#0E8A7E] text-white border-[#0E8A7E] hover:bg-[#0B7368]"
-          >🧾 Enviar al panel de Effi</button>
+            title={enPanelEffi
+              ? `Ya está en el panel de Effi: preventa ${enPanelEffi.codigo}${enPanelEffi.effi_remision ? ` · remisión ${enPanelEffi.effi_remision}` : ''}`
+              : 'Revisar los datos del pedido y pasarlo al panel de Effi'}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all text-white ${
+              enPanelEffi
+                ? 'bg-[#2563EB] border-[#2563EB] hover:bg-[#1D4ED8]'
+                : 'bg-[#0E8A7E] border-[#0E8A7E] hover:bg-[#0B7368]'
+            }`}
+          >{enPanelEffi
+            ? (enPanelEffi.effi_remision ? `✅ En Effi · remisión ${enPanelEffi.effi_remision}` : '✅ Venta enviada al panel de Effi')
+            : '🧾 Enviar al panel de Effi'}</button>
           </div>
         </div>
       </div>
       {panelEffiOpen && (
-        <EnviarPanelEffiModal conv={conversation.id} onCerrar={() => setPanelEffiOpen(false)} />
+        <EnviarPanelEffiModal
+          conv={conversation.id}
+          onCerrar={() => { setPanelEffiOpen(false); revisarPanelEffi(conversation.id); }}
+          onListo={() => revisarPanelEffi(conversation.id)}
+        />
       )}
 
       {/* ── Messages ── */}

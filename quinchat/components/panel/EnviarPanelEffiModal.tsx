@@ -41,6 +41,7 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
   const [foto, setFoto] = useState<string | null>(null);
   const [fotoChat, setFotoChat] = useState<string | null>(null);
   const [existente, setExistente] = useState<any>(null);
+  const [vendedor, setVendedor] = useState('');
   const [forzar, setForzar] = useState(false);
   const [buscando, setBuscando] = useState(false);
   const [q, setQ] = useState('');
@@ -81,6 +82,7 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
         setDatos(j.datos ?? {});
         setCandidatos(j.candidatos ?? []);
         setExistente(j.existente ?? null);
+        setVendedor(j.vendedor ?? '');
         setCantidad(j.prenda?.cantidad ?? 1);
         setPrecio(j.prenda?.precio ?? 0);
         setFotoChat(j.prenda?.foto_chat ?? null);
@@ -173,6 +175,7 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
           <span className="font-bold" style={{ color: VERDE }}>⚡ Datos detectados en vivo desde el chat</span>
           <span className="text-[#9CA3AF]">|</span>
           <span className="italic text-[#4B5563]">Puedes corregir cualquier dato antes de continuar.</span>
+          {vendedor && <span className="ml-auto text-[12.5px] text-[#374151]">Vendedor en Effi: <b>{vendedor}</b></span>}
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 pb-4">

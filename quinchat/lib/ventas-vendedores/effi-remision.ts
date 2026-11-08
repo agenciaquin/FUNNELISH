@@ -56,7 +56,12 @@ interface ConfigRemision {
   cuenta_transferencia: number | null;
 }
 const CONFIG_DEFECTO: ConfigRemision = {
-  vendedores: { '573143534918': { tercero: 46502, nombre: 'QUINO AGENCIA' } },
+  vendedores: {
+    '573143534918': { tercero: 46502, nombre: 'QUINO AGENCIA' },
+    // Ventas pasadas desde el chat con «Enviar al panel de Effi» (08-nov-2026, dueño):
+    'panel-funnel': { tercero: 26524, nombre: 'FUNNELISTH LANDING' },   // Chat Funnel
+    'panel-whatsapp': { tercero: 46502, nombre: 'QUINO AGENCIA' },      // Chat WhatsApp
+  },
   transportadoras: { bucaramanga: 'CIUDAD BONITA' },
   cuenta_transferencia: null,
 };
