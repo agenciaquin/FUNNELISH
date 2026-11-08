@@ -74,7 +74,7 @@ const SISTEMA =
   `barrio sin la palabra "barrio". complemento = apto, torre, casa, conjunto, interior. referencia = indicaciones para llegar.\n` +
   `prendas: UNA por cada prenda distinta del pedido (un pack de 2 con tallas o colores distintos = 2 prendas, cada una cantidad 1). ` +
   `producto = tipo de prenda + diseño tal como lo nombran (ej. "CAMISETA AMERICA", "BUZO AMERICA LINEA", "CUELLO ALTO MERCEDES"); ` +
-  `NUNCA cambies camiseta por buzo ni al revés. color en una palabra (Blanco, Negro…). talla sola (S, M, L, XL, XXL, 2XL…). ` +
+  `NUNCA cambies camiseta por buzo ni al revés. color COMPLETO como lo dice el producto o el cliente (ej. «Blanco Marfil», «Azul Navy», «Negro»), no lo recortes. talla sola (S, M, L, XL, XXL, 2XL…). ` +
   `genero "Hombre" o "Dama" si aparece.\n` +
   `valor_total = total del pedido en pesos, solo número. observaciones: algo útil para el despacho (oficina, horario, quién recibe), corto.`;
 
@@ -222,13 +222,35 @@ async function candidatosPorCatalogoQuin(supabase: any, producto: string, color:
     .eq('activo', true);
   q = cat.id_catalogo ? q.eq('id_catalogo', cat.id_catalogo) : q.ilike('catalogo', String(cat.nombre_klixmsoft));
   const { data: prods } = await q.limit(40);
-  const col = sinTildes(color).replace(/\s+/g, '');
   const gen = /dama|mujer/i.test(genero) ? 2 : /nin/i.test(sinTildes(genero)) ? 4 : 1;
-  const puntaje = (p: any) => {
-    const cs = (p.colores ?? []).map((c: string) => sinTildes(c).replace(/\s+/g, ''));
-    return (col && cs.some((c: string) => c === col || c.includes(col) || col.includes(c)) ? 10 : 0) + (p.genero_id === gen ? 3 : 0);
-  };
+  const puntaje = (p: any) => puntajeColor(p.colores ?? [], color, producto) + (p.genero_id === gen ? 3 : 0);
   return [...(prods ?? [])].sort((a, b) => puntaje(b) - puntaje(a)).map((p: any) => ({ ...p, puntaje: 100 + puntaje(p) }));
+}
+
+/**
+ * ¿Qué tanto coincide el color de un producto del catálogo con lo pedido?
+ *  · 20 si el color del catálogo aparece TAL CUAL en el nombre del producto del chat
+ *    («BLANCO MARFIL REAL MADRID» → Marfil, aunque la IA haya dicho solo «Blanco»).
+ *  · 10 si coincide con el color que dio la IA.
+ *  · 5 si es un tono equivalente (Blanco ≈ Marfil/Hueso/Crema) y no hay mejor.
+ */
+const TONOS: Record<string, string[]> = {
+  blanco: ['marfil', 'hueso', 'crema', 'perla'], marfil: ['blanco', 'hueso', 'crema'],
+  azul: ['azulnavy', 'azuloscuro', 'navy', 'azulrey'], navy: ['azulnavy', 'azuloscuro'],
+  beige: ['cocoa', 'arena', 'camel'], cafe: ['cocoa', 'chocolate', 'marron'], gris: ['grisjaspe', 'gris'],
+};
+function puntajeColor(colores: string[], color: string, producto: string): number {
+  const n = (t: unknown) => sinTildes(t).replace(/[^a-z0-9]/g, '');
+  const cs = colores.map(n).filter(Boolean);
+  const col = n(color);
+  const txt = ` ${sinTildes(producto).replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ')} `;
+  const txtJunto = n(producto);
+  let p = 0;
+  // Color del catálogo dentro del nombre del producto (palabra completa o compuesto tipo AzulNavy)
+  if (cs.some(c => c.length >= 3 && (txt.includes(` ${c} `) || (c.length >= 6 && txtJunto.includes(c))))) p = Math.max(p, 20);
+  if (col && cs.some(c => c === col || c.includes(col) || col.includes(c))) p = Math.max(p, 10);
+  if (col && cs.some(c => (TONOS[col] ?? []).includes(c))) p = Math.max(p, 5);
+  return p;
 }
 
 /** Texto ÚNICO para las entregas en oficina de Interrapidísimo (regla del dueño, 08-nov-2026). */
