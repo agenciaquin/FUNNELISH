@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { signOut } from 'next-auth/react';
 import { confirmarSalida } from '@/lib/panel/cambios';
@@ -22,39 +22,40 @@ const IconoWhatsApp = ({ color }: { color: string }) => (
 
 // Botones principales del menú
 type NavItem = { key: PanelSection; label: string; icon?: string; svg?: 'embudo' | 'whatsapp'; color?: string };
+// Menú principal (orden del dueño, 08-nov-2026). Las claves (rutas) no cambian.
 const NAV_MAIN: NavItem[] = [
-  { key: 'chat',         label: 'Chat Funnel',   svg: 'embudo',   color: '#3B82F6' },
-  { key: 'chat_ventas',  label: 'Chat WhatsApp', svg: 'whatsapp', color: '#25D366' },
-  { key: 'metas',        label: 'Tus metas',    icon: '🏅' },
-  { key: 'estadisticas', label: 'Estadísticas', icon: '📊' },
-  { key: 'embudos',      label: 'Embudos',      icon: '🚀' },
-  { key: 'pedidos',      label: 'Pedidos',      icon: '🛒' },
-  { key: 'ventas',       label: 'Estado en Effi', icon: '🔵' },
-  { key: 'vendedores',   label: 'Vendedores',   icon: '🏆' },
-  { key: 'ventas_vendedores', label: 'Centro Maestro EFFI', icon: '👑' },
-  { key: 'seguimiento',  label: 'META ADS',     icon: '🎯' },
-  { key: 'objeciones',   label: 'Objeciones',   icon: '🔎' },
-  { key: 'supervisor',   label: 'Supervisor del bot', icon: '🧑‍🏫' },
-  { key: 'remarketing',  label: 'Remarketing',  icon: '📣' },
-  { key: 'promociones',  label: 'Promociones',  icon: '🔥' },
-  { key: 'vendedores_links', label: 'Links vendedores', icon: '🔗' },
-  { key: 'colecciones',   label: 'Colecciones',   icon: '🗂️' },
-  { key: 'live_shopping', label: 'QUIN LIVE SHOPPING', icon: '🎬' },
+  { key: 'chat',              label: 'Chat Funnel',          svg: 'embudo',   color: '#3B82F6' },
+  { key: 'chat_ventas',       label: 'Chat WhatsApp',        svg: 'whatsapp', color: '#25D366' },
+  { key: 'ventas_vendedores', label: 'Centro Maestro EFFI',  icon: '👑' },
+  { key: 'pedidos',           label: 'Pedidos',              icon: '🛒' },
+  { key: 'ventas',            label: 'Estado en EFFI',       icon: '✅' },
+  { key: 'embudos',           label: 'Embudos',              icon: '🚀' },
+  { key: 'catalogos',         label: 'Catálogo',             icon: '📦' },
+  { key: 'seguimiento',       label: 'Meta Ads',             icon: '♾️' },
+  { key: 'live_shopping',     label: 'QUIN LIVE SHOPPING',   icon: '🎬' },
 ];
 
-// Todo lo demás vive dentro de "Herramientas"
+// Todo lo demás vive dentro de "Herramientas" (ningún módulo se quita)
 const NAV_HERRAMIENTAS: { key: PanelSection; label: string; icon: string }[] = [
-  { key: 'memoria',       label: 'Memoria del bot', icon: '🧠' },
-  { key: 'faq',           label: 'Preguntas frecuentes', icon: '💬' },
-  { key: 'entrenamiento', label: 'Entrenamiento', icon: '🎓' },
-  { key: 'plantillas',    label: 'Plantillas',    icon: '📋' },
-  { key: 'disparadores',  label: 'Disparadores',  icon: '⚡' },
-  { key: 'contactos',     label: 'Contactos',     icon: '👥' },
-  { key: 'etiquetas',     label: 'Etiquetas',     icon: '🏷️' },
-  { key: 'catalogos',     label: 'Catálogos',     icon: '📦' },
-  { key: 'integraciones', label: 'Integraciones', icon: '🔗' },
-  { key: 'ajustes',       label: 'Ajustes',       icon: '⚙️' },
-  { key: 'manual',        label: 'Manual',        icon: '📖' },
+  { key: 'metas',            label: 'Tus metas',            icon: '🎯' },
+  { key: 'estadisticas',     label: 'Estadísticas',         icon: '📊' },
+  { key: 'vendedores',       label: 'Vendedores',           icon: '👥' },
+  { key: 'supervisor',       label: 'Supervisor de ventas', icon: '🧑‍🏫' },
+  { key: 'objeciones',       label: 'Objeciones',           icon: '🔎' },
+  { key: 'remarketing',      label: 'Remarketing',          icon: '📣' },
+  { key: 'promociones',      label: 'Promociones',          icon: '🔥' },
+  { key: 'vendedores_links', label: 'Links vendedores',     icon: '🔗' },
+  { key: 'colecciones',      label: 'Colecciones',          icon: '🗂️' },
+  { key: 'memoria',          label: 'Memoria del chat',     icon: '🧠' },
+  { key: 'faq',              label: 'Preguntas frecuentes', icon: '💬' },
+  { key: 'entrenamiento',    label: 'Entrenamientos',       icon: '🎓' },
+  { key: 'plantillas',       label: 'Plantillas',           icon: '📋' },
+  { key: 'disparadores',     label: 'Disparadores',         icon: '⚡' },
+  { key: 'contactos',        label: 'Contactos',            icon: '📇' },
+  { key: 'etiquetas',        label: 'Etiquetas',            icon: '🏷️' },
+  { key: 'integraciones',    label: 'Integraciones',        icon: '🧩' },
+  { key: 'ajustes',          label: 'Ajustes',              icon: '⚙️' },
+  { key: 'manual',           label: 'Manual',               icon: '📖' },
 ];
 
 interface Props {
@@ -69,9 +70,11 @@ export default function Sidebar({ userName, activeSection, onSectionChange }: Pr
   const enHerramientas = NAV_HERRAMIENTAS.some(i => i.key === activeSection);
   // Si estás dentro de una herramienta, el submenú arranca abierto
   const [herramientasAbierto, setHerramientasAbierto] = useState(enHerramientas);
+  // Si se navega a una herramienta desde otro lado (ej. un enlace), el submenú se abre solo
+  useEffect(() => { if (enHerramientas) setHerramientasAbierto(true); }, [enHerramientas]);
 
   return (
-    <aside className="w-[190px] h-full min-h-0 flex flex-col shrink-0 text-white bg-gradient-to-b from-[#00B5A6] via-[#00A89D] to-[#00847A] shadow-xl shadow-[#00847A]/20">
+    <aside className="w-[200px] h-full min-h-0 flex flex-col shrink-0 text-white bg-gradient-to-b from-[#00B5A6] via-[#00A89D] to-[#00847A] shadow-xl shadow-[#00847A]/20">
 
       {/* Brand — logo QuinChat */}
       <div className="px-4 py-4 border-b border-white/15 flex flex-col items-center">
@@ -101,17 +104,17 @@ export default function Sidebar({ userName, activeSection, onSectionChange }: Pr
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-2 py-3 flex flex-col gap-1 overflow-y-auto">
+      <nav className="flex-1 px-2 py-3 flex flex-col gap-0.5 overflow-y-auto [scrollbar-width:thin]">
         {NAV_MAIN.map(item => {
           const active = activeSection === item.key;
           return (
             <button
               key={item.key}
               onClick={() => onSectionChange(item.key)}
-              className={`group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left transition-all duration-200 ease-out ${
+              className={`group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium text-left transition-all duration-200 ease-out ${
                 active
-                  ? 'bg-white text-[#00847A] font-semibold shadow-md shadow-black/10 scale-[1.03]'
-                  : 'text-white/85 hover:text-white hover:bg-white/15 hover:translate-x-1'
+                  ? 'bg-white text-[#00847A] font-semibold shadow-md shadow-black/10'
+                  : 'text-white/90 hover:text-white hover:bg-white/15 hover:translate-x-0.5'
               }`}
             >
               <span className={`text-base shrink-0 flex items-center transition-transform duration-200 ${active ? '' : 'group-hover:scale-110'}`}>
@@ -127,38 +130,43 @@ export default function Sidebar({ userName, activeSection, onSectionChange }: Pr
           );
         })}
 
-        {/* Herramientas — agrupa el resto de secciones */}
+        {/* Herramientas — desplegable que agrupa el resto de secciones */}
+        <div className="my-1.5 border-t border-white/15" />
         <button
           onClick={() => setHerramientasAbierto(prev => !prev)}
-          className={`group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left transition-all duration-200 ease-out ${
+          aria-expanded={herramientasAbierto}
+          className={`group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold text-left transition-all duration-200 ease-out border ${
             enHerramientas && !herramientasAbierto
-              ? 'bg-white text-[#00847A] font-semibold shadow-md shadow-black/10'
-              : 'text-white/85 hover:text-white hover:bg-white/15'
+              ? 'bg-white text-[#00847A] border-white shadow-md shadow-black/10'
+              : herramientasAbierto
+                ? 'bg-white/15 border-white/30 text-white'
+                : 'border-transparent text-white/90 hover:text-white hover:bg-white/15'
           }`}
         >
           <span className="text-base shrink-0">🧰</span>
           <span className="truncate">Herramientas</span>
-          <span className={`ml-auto text-[10px] opacity-70 transition-transform duration-200 ${herramientasAbierto ? 'rotate-180' : ''}`}>
+          <span className={`ml-auto text-[11px] opacity-80 transition-transform duration-200 ${herramientasAbierto ? 'rotate-180' : ''}`}>
             ▾
           </span>
         </button>
 
         {herramientasAbierto && (
-          <div className="pl-2 flex flex-col gap-0.5 border-l border-white/20 ml-3 mt-0.5 mb-1">
+          <div className="ml-4 pl-2 mt-1 mb-1 flex flex-col gap-px border-l border-white/25">
             {NAV_HERRAMIENTAS.map(item => {
               const active = activeSection === item.key;
               return (
                 <button
                   key={item.key}
                   onClick={() => onSectionChange(item.key)}
-                  className={`group w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] text-left transition-all duration-200 ease-out ${
+                  className={`group w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[12.5px] text-left transition-all duration-200 ease-out ${
                     active
                       ? 'bg-white text-[#00847A] font-semibold shadow-sm'
-                      : 'text-white/80 hover:text-white hover:bg-white/15 hover:translate-x-1'
+                      : 'text-white/85 hover:text-white hover:bg-white/15 hover:translate-x-0.5'
                   }`}
                 >
-                  <span className="text-sm shrink-0">{item.icon}</span>
+                  <span className="text-[13px] shrink-0 w-4 text-center">{item.icon}</span>
                   <span className="truncate">{item.label}</span>
+                  {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[#00A89D] shrink-0" />}
                 </button>
               );
             })}
