@@ -23,7 +23,7 @@ export async function GET() {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const lista = data ?? [];
   const cuenta = (e: string) => lista.filter((n: any) => n.estado === e).length;
-  const { data: sync } = await supabase.from('novedades_effi_sync').select('origen, inicio, fin, ok, error').not('fin', 'is', null).order('inicio', { ascending: false }).limit(1).maybeSingle();
+  const { data: sync } = await supabase.from('novedades_effi_sync').select('origen, inicio, fin, ok, error, novedades_effi, error_novedades').not('fin', 'is', null).order('inicio', { ascending: false }).limit(1).maybeSingle();
   const { data: syncEffi } = await supabase.from('novedades_effi_sync').select('inicio, ok').like('origen', '%:effi').eq('ok', true).order('inicio', { ascending: false }).limit(1).maybeSingle();
   return NextResponse.json({
     novedades: lista,

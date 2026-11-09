@@ -244,8 +244,13 @@ lógica `lib/novedades-effi.ts`. Tablas propias `novedades_effi` (una fila por g
 (misma API key) o la copia `effi_guias_api`/`effi_remisiones_api`; no escribe en ellas ni en Effi.
 Novedad = guía vigente con estado Effi «Novedad» / «Disponible para retiro en oficina» o transportadora con novedad,
 incidencia, siniestro, intento de entrega, telemercadeo, reclame en oficina — y no entregada/devuelta/anulada.
-Solo vendedores de Effi **FUNNELISTH LANDING** y **QUINO AGENCIA** (por la remisión de la guía). Effi no manda push ni
-el texto de la novedad: el motivo es el estado de la transportadora; con el panel abierto se revisa Effi cada 10 min
+Solo vendedores de Effi **FUNNELISTH LANDING** y **QUINO AGENCIA** (por la remisión de la guía).
+EL PORQUÉ (09-nov-2026, dueño): Effi → Logística → «Novedades de guías» (app/novedad_guia_transporte). Se pide a
+`GET api/novedad_guia_transporte` (ruta SUPUESTA por el patrón de las otras; sin confirmar con datos reales) y se guarda
+CRUDA en `effi_novedades_api` (id_novedad, id_guia, datos). `leerNovedadEffi` lee los campos con tolerancia; si la ruta
+falla queda en `novedades_effi_sync.error_novedades` y se usa el estado de la transportadora. Una novedad «Pendiente de
+solución» también abre tarjeta aunque la guía no diga novedad. Tras el primer uso: revisar `effi_novedades_api.datos` y
+fijar los nombres reales de los campos. Effi no manda push: con el panel abierto se revisa Effi; con el panel abierto se revisa Effi cada 10 min
 (copia cada 2 min); el servidor lo frena para que varios paneles no golpeen a Effi.
 Estados del EQUIPO: nueva → pendiente (al abrirla) → en_gestion → solucionada. Si Effi la marca entregada/devuelta/
 anulada pasa sola a solucionada (`resultado`); si vuelve a novedad se reabre la MISMA tarjeta.

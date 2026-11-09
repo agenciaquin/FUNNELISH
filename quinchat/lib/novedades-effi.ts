@@ -1,5 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { effiConfigurado, listarGuias, listarRemisiones } from '@/lib/effi-api';
+import { effiConfigurado, effiGet, listarGuias, listarRemisiones } from '@/lib/effi-api';
 
 /**
  * PANEL DE NOVEDADES (09-nov-2026) — módulo independiente, SOLO LECTURA en Effi.
@@ -97,6 +97,53 @@ function desdeCopia(g: any): GuiaN {
   };
 }
 
+// ── «Logística → Novedades de guías» de Effi (GET novedad_guia_transporte) ─────────────────────
+// El nombre de la ruta sigue el patrón de la app (app/guia_transporte ↔ api/guia_transporte). Los nombres de los
+// campos se leen con tolerancia hasta confirmar la respuesta real (se guarda cruda en effi_novedades_api).
+export interface NovedadEffi {
+  id: string; id_guia: string | null; codigo: string | null; texto: string | null; aclaracion: string | null;
+  estado: string | null; vigente: boolean; soluciones: number | null; fecha: string | null;
+}
+const valor = (v: unknown) => (v == null ? '' : String(v).trim());
+function campo(o: any, claves: RegExp[], soloTexto = false): string | null {
+  for (const re of claves) for (const [k, v] of Object.entries(o ?? {})) {
+    const t = valor(v);
+    if (re.test(k) && t && typeof v !== 'object' && (!soloTexto || !/^\d+([.,]\d+)?$/.test(t))) return t;
+  }
+  return null;
+}
+export function leerNovedadEffi(d: any): NovedadEffi {
+  const texto = campo(d, [/^nombre_novedad$/, /^nombre_t_novedad/, /^nombre_tipo_novedad/, /^descripcion_novedad/, /^novedad$/, /^nombre_causal/, /descripcion/], true);
+  const codigo = campo(d, [/^(id_)?t_novedad$/, /^id_tipo_novedad$/, /^codigo_novedad$/, /^novedad$/, /^causal$/]);
+  return {
+    id: valor(d?.id ?? d?.id_novedad ?? d?.id_novedad_guia_transporte ?? d?.id_transaccion),
+    id_guia: campo(d, [/^id_guia_transporte$/, /^guia_transporte$/, /^id_guia$/]),
+    codigo: codigo && /^\d+$/.test(codigo) ? codigo : null,
+    texto, aclaracion: campo(d, [/aclaraci/], true),
+    estado: campo(d, [/^nombre_estado_novedad$/, /^nombre_estado$/, /^estado_novedad$/, /^estado$/], true) ?? campo(d, [/^est_novedad$/, /^estado$/]),
+    vigente: valor(d?.vigente ?? '1') !== '0',
+    soluciones: (() => { const n = Number(campo(d, [/cant.*soluc/, /^soluciones$/, /^n_soluciones$/])); return Number.isFinite(n) ? n : null; })(),
+    fecha: fechaIso(campo(d, [/^fecha_transportadora$/, /^fecha_novedad$/, /^fecha_trans$/, /^fecha_creacion$/])),
+  };
+}
+/** ¿La novedad de Effi sigue esperando solución? («1 - Pendiente de solución») */
+export const novedadPendiente = (n: NovedadEffi) =>
+  n.vigente && (!n.estado || /pendiente/i.test(n.estado) || n.estado === '1') && !/solucionad|cerrad|resuelt/i.test(n.estado ?? '');
+export const textoNovedad = (n: NovedadEffi | null | undefined) =>
+  n ? [[n.codigo, n.texto].filter(Boolean).join(' - '), n.aclaracion ? `Aclaración: ${n.aclaracion}` : ''].filter(Boolean).join(' · ') || null : null;
+
+/** Todas las novedades de guías de Effi entre dos fechas (paginando de a 100). */
+export async function listarNovedadesEffi(desde: string, hasta: string, maxPaginas = 20): Promise<any[]> {
+  const todas: any[] = [];
+  for (let pagina = 1; pagina <= maxPaginas; pagina++) {
+    const j = await effiGet('novedad_guia_transporte', { desde, hasta, pagina, por_pagina: 100 });
+    todas.push(...(Array.isArray(j.data) ? j.data : []));
+    const total = Number(j?.paginacion?.total_paginas) || 1;
+    if (pagina >= total) break;
+  }
+  return todas;
+}
+
 const DIAS = 30;
 const hoyCol = () => new Date(Date.now() - 5 * 3600_000);
 
@@ -104,9 +151,10 @@ const hoyCol = () => new Date(Date.now() - 5 * 3600_000);
 export async function sincronizarNovedades(fuente: 'effi' | 'copia', origen: string) {
   const supabase = createServerSupabaseClient();
   const { data: log } = await supabase.from('novedades_effi_sync').insert({ origen: `${origen}:${fuente}` }).select('id').single();
+  let nNovEffi: number | null = null, errNovEffi: string | null = null;
   const cerrar = async (r: { ok: boolean; guias?: number; nuevas?: number; cambios?: number; error?: string }) => {
-    if (log?.id) await supabase.from('novedades_effi_sync').update({ fin: new Date().toISOString(), ok: r.ok, guias: r.guias ?? 0, nuevas: r.nuevas ?? 0, cambios: r.cambios ?? 0, error: r.error ?? null }).eq('id', log.id);
-    return { ...r, fuente };
+    if (log?.id) await supabase.from('novedades_effi_sync').update({ fin: new Date().toISOString(), ok: r.ok, guias: r.guias ?? 0, nuevas: r.nuevas ?? 0, cambios: r.cambios ?? 0, error: r.error ?? null, novedades_effi: nNovEffi, error_novedades: errNovEffi }).eq('id', log.id);
+    return { ...r, fuente, novedades_effi: nNovEffi, error_novedades: errNovEffi };
   };
 
   try {
@@ -129,6 +177,32 @@ export async function sincronizarNovedades(fuente: 'effi' | 'copia', origen: str
       }
     }
 
+    // 1b) «Novedades de guías» de Effi (el PORQUÉ). Si la ruta falla, sigue con el estado de la guía.
+    if (fuente === 'effi') {
+      try {
+        const crudas = await listarNovedadesEffi(desde, hasta);
+        const filasN = crudas.map(d => ({ d, n: leerNovedadEffi(d) })).filter(x => x.n.id).map(x => ({
+          id_novedad: x.n.id, id_guia: x.n.id_guia, datos: x.d, actualizado_at: new Date().toISOString(),
+        }));
+        for (let i = 0; i < filasN.length; i += 200) {
+          const { error } = await supabase.from('effi_novedades_api').upsert(filasN.slice(i, i + 200), { onConflict: 'id_novedad' });
+          if (error) throw new Error(error.message);
+        }
+        nNovEffi = filasN.length;
+      } catch (e: any) { errNovEffi = e?.message ?? String(e); }
+    }
+    const novPorGuia = new Map<string, NovedadEffi>();
+    {
+      const { data } = await supabase.from('effi_novedades_api').select('datos').order('id_novedad').limit(5000);
+      for (const r of data ?? []) {
+        const n = leerNovedadEffi((r as any).datos); if (!n.id_guia) continue;
+        const prev = novPorGuia.get(n.id_guia);
+        // por guía gana la más reciente (fecha; si no, el id más alto)
+        if (!prev || (Date.parse(n.fecha ?? '') || Number(n.id)) >= (Date.parse(prev.fecha ?? '') || Number(prev.id))) novPorGuia.set(n.id_guia, n);
+      }
+    }
+    const activaDe = (g: GuiaN) => esNovedadActiva(g) || (!!novPorGuia.get(g.id) && novedadPendiente(novPorGuia.get(g.id)!) && !g.anulada);
+
     // 2) Remisión de cada guía → vendedor (copia; lo que falte se pide a Effi si la fuente es Effi)
     const refs = [...new Set(guias.map(g => g.id_ref).filter(Boolean))] as string[];
     const rem = new Map<string, { id: string; vendedor: string; obs: string | null }>();
@@ -140,12 +214,12 @@ export async function sincronizarNovedades(fuente: 'effi' | 'copia', origen: str
     const { data: abiertas } = await supabase.from('novedades_effi').select('*').or('activa_en_effi.eq.true,estado.neq.solucionada');
     const previas = new Map<string, any>((abiertas ?? []).map((n: any) => [String(n.id_guia_effi), n]));
     // Guías en novedad que ya tuvieron tarjeta (aunque esté solucionada): se reabre la misma, nunca se duplica
-    const activasIds = guias.filter(g => esNovedadActiva(g) && !previas.has(g.id)).map(g => g.id);
+    const activasIds = guias.filter(g => activaDe(g) && !previas.has(g.id)).map(g => g.id);
     for (let i = 0; i < activasIds.length; i += 300) {
       const { data } = await supabase.from('novedades_effi').select('*').in('id_guia_effi', activasIds.slice(i, i + 300));
       for (const n of data ?? []) previas.set(String((n as any).id_guia_effi), n);
     }
-    const interesan = guias.filter(g => esNovedadActiva(g) || previas.has(g.id));
+    const interesan = guias.filter(g => activaDe(g) || previas.has(g.id));
     const faltan = interesan.filter(g => g.id_ref && !rem.has(g.id_ref));
     if (faltan.length && fuente === 'effi') {
       try {
@@ -160,7 +234,7 @@ export async function sincronizarNovedades(fuente: 'effi' | 'copia', origen: str
     let nuevas = 0, cambios = 0;
 
     // 3) Producto y foto (del pedido en QuinChat: clientes_funnelish; si no, venta del módulo de vendedores)
-    const nuevasGuias = objetivo.filter(g => !previas.has(g.id) && esNovedadActiva(g));
+    const nuevasGuias = objetivo.filter(g => !previas.has(g.id) && activaDe(g));
     const telDe = new Map(nuevasGuias.map(g => [g.id, telefonoValido(g.tel_raw)]));
     const tels = [...new Set([...telDe.values()].filter(Boolean))] as string[];
     const pedidos = new Map<string, any[]>();
@@ -196,6 +270,7 @@ export async function sincronizarNovedades(fuente: 'effi' | 'copia', origen: str
     if (nuevasGuias.length) {
       const filas = nuevasGuias.map(g => {
         const tel = telDe.get(g.id) ?? null, p = pedidoDe(tel, g.fecha), r = g.id_ref ? rem.get(g.id_ref) : undefined;
+        const ne = novPorGuia.get(g.id);
         return {
           id_guia_effi: g.id, guia: g.guia, transportadora: g.transportadora,
           id_remision: r?.id ?? g.id_ref, vendedor: r?.vendedor ?? null,
@@ -203,7 +278,10 @@ export async function sincronizarNovedades(fuente: 'effi' | 'copia', origen: str
           ciudad: g.ciudad, departamento: g.depto, direccion: g.direccion,
           producto: p?.producto ?? null, talla: p?.talla ?? null, foto: p?.foto_producto ?? null, contenido_effi: g.contenido,
           valor_recaudo: g.recaudo, estado_effi: g.estado || null, estado_effi_comercio: g.estado_com || null,
-          motivo: g.estado || g.estado_com || null, observacion_effi: r?.obs ?? null, url_guia: g.url, fecha_guia: g.fecha,
+          motivo: textoNovedad(ne) || g.estado || g.estado_com || null,
+          id_novedad_effi: ne?.id ?? null, novedad_texto: textoNovedad(ne), aclaracion: ne?.aclaracion ?? null,
+          estado_novedad_effi: ne?.estado ?? null, soluciones: ne?.soluciones ?? null, fecha_novedad: ne?.fecha ?? null,
+          observacion_effi: r?.obs ?? null, url_guia: g.url, fecha_guia: g.fecha,
           estado: 'nueva', activa_en_effi: true,
         };
       });
@@ -216,14 +294,22 @@ export async function sincronizarNovedades(fuente: 'effi' | 'copia', origen: str
     // 5) Cambios de estado de las que ya estaban
     for (const g of objetivo) {
       const n = previas.get(g.id); if (!n) continue;
-      const activa = esNovedadActiva(g);
+      const activa = activaDe(g);
       const estadoTxt = g.estado || g.estado_com || null;
-      const cambioEffi = (n.estado_effi ?? null) !== (g.estado || null) || (n.estado_effi_comercio ?? null) !== (g.estado_com || null);
+      const ne = novPorGuia.get(g.id);
+      const cambioGuia = (n.estado_effi ?? null) !== (g.estado || null) || (n.estado_effi_comercio ?? null) !== (g.estado_com || null);
+      const cambioNov = !!ne && ((n.id_novedad_effi ?? null) !== ne.id || (n.estado_novedad_effi ?? null) !== (ne.estado ?? null) || (n.soluciones ?? null) !== (ne.soluciones ?? null));
+      const cambioEffi = cambioGuia || cambioNov;
       if (!cambioEffi && activa === n.activa_en_effi) continue;
       const upd: Record<string, any> = { estado_effi: g.estado || null, estado_effi_comercio: g.estado_com || null, activa_en_effi: activa, actualizado_at: ahora };
-      const hist: { tipo: string; detalle: string }[] = [{ tipo: 'effi', detalle: `Effi: ${n.estado_effi || n.estado_effi_comercio || '—'} → ${estadoTxt ?? '—'}` }];
+      const hist: { tipo: string; detalle: string }[] = [];
+      if (cambioGuia) hist.push({ tipo: 'effi', detalle: `Guía en Effi: ${n.estado_effi || n.estado_effi_comercio || '—'} → ${estadoTxt ?? '—'}` });
+      if (cambioNov && ne) {
+        Object.assign(upd, { id_novedad_effi: ne.id, novedad_texto: textoNovedad(ne), aclaracion: ne.aclaracion, estado_novedad_effi: ne.estado, soluciones: ne.soluciones, fecha_novedad: ne.fecha });
+        hist.push({ tipo: 'effi', detalle: `Novedad Effi #${ne.id}: ${textoNovedad(ne) ?? '—'}${ne.estado ? ` · ${ne.estado}` : ''}${ne.soluciones != null ? ` · ${ne.soluciones} solución(es)` : ''}` });
+      }
       if (activa) {
-        upd.motivo = estadoTxt;
+        upd.motivo = textoNovedad(ne) || estadoTxt;
         if (n.estado === 'solucionada') {           // volvió a caer en novedad → se reabre la MISMA tarjeta
           Object.assign(upd, { estado: 'nueva', resultado: null, solucionada_at: null, visto_at: null, estado_cambio_at: ahora });
           hist.push({ tipo: 'estado', detalle: 'Reabierta: la guía volvió a quedar en novedad' });

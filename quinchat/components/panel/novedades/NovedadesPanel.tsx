@@ -17,6 +17,7 @@ interface Novedad {
   estado: Estado; resultado: string | null; activa_en_effi: boolean;
   fecha_guia: string | null; detectada_at: string; visto_at: string | null; estado_cambio_at: string; solucionada_at: string | null;
   direccion?: string | null; contenido_effi?: string | null; observacion_effi?: string | null; url_guia?: string | null;
+  id_novedad_effi?: string | null; novedad_texto?: string | null; aclaracion?: string | null; estado_novedad_effi?: string | null; soluciones?: number | null; fecha_novedad?: string | null;
 }
 interface Hist { id: number; at: string; tipo: string; detalle: string | null; por: string | null }
 type Filtro = 'todas' | Estado;
@@ -140,6 +141,7 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
             </div>
             <div className="text-right">
               <p className="text-[12px] text-[#5B6B68]">Effi revisado {hace(ultEffi)}</p>
+              {ultSync?.error_novedades && <p className="text-[11px] text-[#B54708] max-w-[260px] truncate" title={ultSync.error_novedades}>«Novedades de guías» de Effi no respondió</p>}
               {ultSync && ultSync.ok === false && <p className="text-[11px] text-[#B42318] max-w-[260px] truncate" title={ultSync.error}>Último intento falló: {ultSync.error}</p>}
               <button onClick={() => sincronizar(true)} disabled={sincronizando} className="mt-1 px-4 py-2 rounded-xl text-white text-sm font-bold disabled:opacity-50" style={{ background: VERDE }}>
                 {sincronizando ? 'Revisando Effi…' : '🔄 Traer de Effi ahora'}
@@ -314,6 +316,9 @@ function Detalle({ n, onCerrar, onCambio, onChat }: { n: Novedad; onCerrar: () =
             {fila('Valor a cobrar', pesos(d.valor_recaudo))}
             {fila('Remisión / Guía', `${d.id_remision ?? '—'} · ${d.guia ?? '—'} (${d.transportadora ?? '—'})`)}
             {fila('Vendedor Effi', d.vendedor)}
+            {fila('Novedad en Effi', d.novedad_texto ? <b className="text-[#B54708]">{d.novedad_texto}</b> : <span className="text-[#5B6B68]">Sin registro en «Novedades de guías» (se usa el estado de la transportadora)</span>)}
+            {d.id_novedad_effi && fila('ID novedad / estado', `${d.id_novedad_effi} · ${d.estado_novedad_effi ?? '—'}${d.soluciones != null ? ` · ${d.soluciones} solución(es)` : ''}`)}
+            {d.fecha_novedad && fila('F. transportadora', fecha(d.fecha_novedad))}
             {fila('Estado transportadora', d.estado_effi)}
             {fila('Estado Effi', d.estado_effi_comercio)}
             {fila('Observación Effi', d.observacion_effi)}
