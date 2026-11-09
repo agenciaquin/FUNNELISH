@@ -1,7 +1,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { listarPlantillas, subirImagenEjemplo } from '@/lib/whatsapp-templates';
 import { destinoWA } from '@/lib/whatsapp';
-import { lineaDeVendedor, phoneIdDeLinea, ocultarHastaRespuesta, type LineaAviso } from '@/lib/aviso-linea';
+import { lineaDeVendedor, phoneIdDeLinea, ocultarHastaRespuesta, motivoErrorMeta, type LineaAviso } from '@/lib/aviso-linea';
 import { recortar } from '@/lib/recortar';
 import { frenoMeta, esperarTurno } from '@/lib/ritmo-marketing';
 import { telefonoValido } from '@/lib/novedades-effi';
@@ -113,8 +113,8 @@ async function enviarPlantillaOficina(to: string, idioma: string, variables: str
   };
   try {
     const res = await fetch(`${WA_API}/${phone}/messages`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!res.ok) return { ok: false, error: await motivoErrorMeta(res) } as const;
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) return { ok: false, error: String(data?.error?.error_user_msg ?? data?.error?.message ?? 'No se pudo enviar') } as const;
     return { ok: true, wamid: data.messages?.[0]?.id as string | undefined } as const;
   } catch (e: any) { return { ok: false, error: e?.message ?? 'Error de red' } as const; }
 }
@@ -212,7 +212,8 @@ export async function procesarAvisosOficina(supabase?: any, manual?: string[], t
     const variables = [primerNombre(g.nombre), String(g.guia ?? id)];
     const linea = lineaDeVendedor(g.vendedor);   // por el chat donde compró
     const r = await enviarPlantillaOficina(conv, tpl.idioma, variables, { url: cfg.media_url, tipo: cfg.media_tipo }, linea);
-    if (!r.ok) { await marcar('error', { motivo: r.error }); res.errores++; continue; }
+    // Si Meta lo rechaza también se espera antes del siguiente (antes los errores salían en ráfaga, uno tras otro)
+    if (!r.ok) { await marcar('error', { motivo: r.error }); res.errores++; await esperarTurno(); continue; }
     const ahora = new Date().toISOString();
     await marcar('enviado', { wamid: r.wamid ?? null, enviado_at: ahora, motivo: null });
     res.enviados++; n++;

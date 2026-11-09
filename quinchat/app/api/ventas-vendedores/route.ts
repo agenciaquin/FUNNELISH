@@ -27,6 +27,13 @@ export async function GET(req: NextRequest) {
   const supabase = createServerSupabaseClient();
   // Centro Maestro EFFI = SOLO lo que se pasa desde los chats de Funnelish y Quino (vendedor «panel…»).
   // Las ventas de los VENDEDORES (su teléfono) van cada una en su ficha de «Master Vendedores» (dueño, 08-nov-2026).
+  // Papelera del Centro Maestro (solo lo pasado desde los chats: vendedor_tel panel…)
+  if (req.nextUrl.searchParams.get('papelera') === '1') {
+    const { data: pap } = await supabase.from('vv_ventas')
+      .select('id, codigo, cliente_nombre, cliente_celular, municipio, total, creado_at, papelera_at, papelera_motivo, papelera_por, estado_previo, effi_remision, vendedor_nombre')
+      .like('vendedor_tel', 'panel%').not('papelera_at', 'is', null).order('papelera_at', { ascending: false }).limit(300);
+    return NextResponse.json({ papelera: pap ?? [] });
+  }
   let consulta = supabase.from('vv_ventas').select('*').like('vendedor_tel', 'panel%').is('papelera_at', null).order('creado_at', { ascending: orden }).limit(1500);
   if (desde) consulta = consulta.gte('creado_at', `${desde}T05:00:00Z`);            // 00:00 Colombia
   if (hasta) consulta = consulta.lt('creado_at', new Date(new Date(`${hasta}T05:00:00Z`).getTime() + 86400000).toISOString());

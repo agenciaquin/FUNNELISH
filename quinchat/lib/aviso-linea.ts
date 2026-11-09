@@ -23,3 +23,17 @@ export async function ocultarHastaRespuesta(supabase: any, conv: string, linea: 
   const activo = data?.created_at && Date.now() - Date.parse(data.created_at) < 24 * 3600_000;
   if (!activo) await supabase.from('conversations').update({ oculto: true, linea }).eq('id', conv);
 }
+
+/**
+ * Motivo legible de un envío rechazado por Meta: mensaje + código + detalle; si Meta no manda JSON, el estado HTTP y el
+ * inicio de la respuesta. (Antes quedaba solo «No se pudo enviar» y no se sabía la causa — 09-nov-2026.)
+ */
+export async function motivoErrorMeta(res: Response): Promise<string> {
+  const texto = await res.text().catch(() => '');
+  let e: any = null;
+  try { e = JSON.parse(texto)?.error ?? null; } catch { /* no es JSON */ }
+  if (!e) return `Meta respondió HTTP ${res.status}${texto ? `: ${texto.slice(0, 200)}` : ''}`;
+  const det = e.error_data?.details ? ` — ${e.error_data.details}` : '';
+  const msg = e.error_user_msg || e.message || 'sin mensaje';
+  return `${msg} (código ${e.code ?? '?'}${e.error_subcode ? `/${e.error_subcode}` : ''})${det}`.slice(0, 400);
+}

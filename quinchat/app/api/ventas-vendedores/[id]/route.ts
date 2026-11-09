@@ -45,20 +45,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const supabase = createServerSupabaseClient();
   const { data: venta } = await supabase.from('vv_ventas').select('*').eq('id', id).maybeSingle();
   if (!venta) return NextResponse.json({ error: 'no encontrada' }, { status: 404 });
-  if (ESTADOS_BLOQUEADOS.includes(venta.estado) || venta.effi_remision) {
-    return NextResponse.json({ error: 'Esta venta ya está en Effi. Los cambios van por Novedades.' }, { status: 409 });
-  }
   const ahora = new Date().toISOString();
+  const bloqueadaEffi = ESTADOS_BLOQUEADOS.includes(venta.estado) || !!venta.effi_remision;
 
   // PAPELERA (09-nov-2026, dueño): eliminar una venta antes de subirla (prueba, duplicada…) con MOTIVO obligatorio.
   // No se borra: queda en la papelera con motivo, fecha y quién; se puede restaurar.
+  // Desde el Centro Maestro (09-nov-2026, dueño) también se puede mandar a la papelera una venta YA subida a Effi: se quita
+  // del panel con su motivo, pero en Effi NO se anula nada (eso se hace en Effi). Solo mientras no se esté subiendo.
   if (b.accion === 'papelera') {
     if (motivo.length < 3) return NextResponse.json({ error: 'Escribe el motivo por el que se elimina.' }, { status: 400 });
+    if (venta.estado === 'enviando_effi') return NextResponse.json({ error: 'Se está subiendo a Effi en este momento; espera a que termine.' }, { status: 409 });
     await supabase.from('vv_ventas').update({
       estado: 'cancelada', estado_previo: venta.estado, papelera_at: ahora, papelera_motivo: motivo, papelera_por: quien, actualizado_at: ahora,
     }).eq('id', id);
-    await supabase.from('vv_eventos').insert({ venta_id: id, tipo: 'papelera', quien, detalle: { motivo, antes: venta.estado } });
-    return NextResponse.json({ ok: true });
+    await supabase.from('vv_eventos').insert({ venta_id: id, tipo: 'papelera', quien, detalle: { motivo, antes: venta.estado, effi_remision: venta.effi_remision ?? null } });
+    return NextResponse.json({ ok: true, en_effi: !!venta.effi_remision });
   }
   if (b.accion === 'restaurar') {
     if (!venta.papelera_at) return NextResponse.json({ error: 'La venta no está en la papelera.' }, { status: 400 });
@@ -67,6 +68,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (errR) return NextResponse.json({ error: /duplicate|unique/i.test(errR.message) ? 'El vendedor ya tiene otra venta abierta; termínala antes de restaurar esta.' : errR.message }, { status: 409 });
     await supabase.from('vv_eventos').insert({ venta_id: id, tipo: 'restaurada', quien, detalle: { motivo_eliminacion: venta.papelera_motivo, vuelve } });
     return NextResponse.json({ ok: true });
+  }
+  if (bloqueadaEffi) {
+    return NextResponse.json({ error: 'Esta venta ya está en Effi. Los cambios van por Novedades.' }, { status: 409 });
   }
 
   // Acciones de estado

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { listarPlantillas } from '@/lib/whatsapp-templates';
 import { destinoWA } from '@/lib/whatsapp';
-import { lineaDeVendedor, phoneIdDeLinea, ocultarHastaRespuesta, type LineaAviso } from '@/lib/aviso-linea';
+import { lineaDeVendedor, phoneIdDeLinea, ocultarHastaRespuesta, motivoErrorMeta, type LineaAviso } from '@/lib/aviso-linea';
 import { recortar } from '@/lib/recortar';
 import { frenoMeta, esperarTurno } from '@/lib/ritmo-marketing';
 import { exigirSesion } from '@/lib/ventas-vendedores/auth';
@@ -90,8 +90,8 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
         body: JSON.stringify({ messaging_product: 'whatsapp', ...destinoWA(to), type: 'template',
           template: { name: cfg.plantilla, language: { code: idioma }, components: [{ type: 'body', parameters: variables.map(v => ({ type: 'text', text: v || '—' })) }] } }),
       });
+      if (!res.ok) return { ok: false, error: await motivoErrorMeta(res) } as const;
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return { ok: false, error: String(data?.error?.error_user_msg ?? data?.error?.message ?? 'No se pudo enviar') } as const;
       return { ok: true, wamid: data.messages?.[0]?.id as string | undefined } as const;
     } catch (e: any) { return { ok: false, error: e?.message ?? 'Error de red' } as const; }
   }
@@ -164,7 +164,7 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
       const variables = (cfg.variables ?? VARS_BASICAS)(n).map(textoVariable);   // datos reales de Effi
       const linea = lineaDeVendedor(n.vendedor);                                              // por el chat donde compró
       const r = await enviar(conv, tpl.idioma, variables, linea);
-      if (!r.ok) { await marcar('error', { detalle: r.error }); res.errores++; continue; }
+      if (!r.ok) { await marcar('error', { detalle: r.error }); res.errores++; await esperarTurno(); continue; }
       const ahora = new Date().toISOString();
       await marcar('enviado', { wamid: r.wamid ?? null, enviado_at: ahora, detalle: null });
       res.enviados++; k++;
