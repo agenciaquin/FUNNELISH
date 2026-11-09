@@ -15,7 +15,11 @@ export type TipoSeccion = 'banner' | 'productos' | 'catalogos' | 'nuevos' | 'pro
 
 export interface Seccion { id: string; tipo: TipoSeccion; visible: boolean; titulo: string; texto?: string }
 /** Un embudo en la tienda. visible=false → oculto (sigue en la lista). quitado=true → fuera de la tienda (se puede volver a agregar). */
-export interface ProdSel { slug: string; visible: boolean; quitado?: boolean; foto?: string | null }
+export interface ProdSel {
+  slug: string; visible: boolean; quitado?: boolean; foto?: string | null;
+  /** Fotos del CARRUSEL de la tarjeta (cambian solas cada segundo). Vacío = solo la foto principal. */
+  fotos?: string[];
+}
 export interface CatSel {
   id: string; visible: boolean; embudo: string | null; grupo: string; portada?: string | null;
 }

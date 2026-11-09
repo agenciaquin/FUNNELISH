@@ -336,31 +336,53 @@ export default function MiPaginaPanel() {
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         {(p.foto || e!.foto) ? <img src={(p.foto || e!.foto)!} alt="" className={`w-11 h-11 rounded-lg object-cover bg-[#F1F5F4] ${p.visible ? '' : 'grayscale opacity-50'}`} />
                           : <div className="w-11 h-11 rounded-lg bg-[#F1F5F4] flex items-center justify-center">🛍️</div>}
-                        <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white shadow text-[10px] flex items-center justify-center">📷</span>
+                        <span className="absolute -bottom-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-white shadow text-[10px] font-bold flex items-center justify-center">{(p.fotos ?? []).length > 1 ? (p.fotos ?? []).length : '📷'}</span>
                       </button>
                       <div className="flex-1 min-w-0">
                         <p className={`text-sm font-semibold truncate ${p.visible ? 'text-[#1F2A28]' : 'text-[#A0ACAA]'}`}>{nombreBonito(e!.producto)}</p>
-                        <p className="text-[11px] text-[#7A8A87]">{pesosCOP(e!.precio)}{p.visible ? '' : ' · oculto'}</p>
+                        <p className="text-[11px] text-[#7A8A87]">{pesosCOP(e!.precio)}{p.visible ? '' : ' · oculto'}
+                          <button onClick={() => setFotoDe(fotoDe === p.slug ? null : p.slug)} className="ml-2 font-bold text-[#00847A] hover:underline">
+                            🖼 {(p.fotos ?? []).length > 1 ? `Carrusel (${(p.fotos ?? []).length})` : '+ Fotos'}
+                          </button>
+                        </p>
                       </div>
                       <Interruptor activo={p.visible} onClick={() => cambiar(c => { c.productos[i].visible = !c.productos[i].visible; })} />
                       <button onClick={() => cambiar(c => { c.productos[i].quitado = true; })} title="Quitar de la tienda (no borra el embudo)"
                         className="w-8 h-8 rounded-lg hover:bg-[#FEE2E2] text-[#DC2626]">🗑</button>
                       {fotoDe === p.slug && (
                         <div className="basis-full mt-2 p-2 rounded-xl bg-[#F7FAF9] border border-[#E8ECEB]">
-                          <p className="text-[11px] font-bold mb-1.5">Foto del producto en la tienda</p>
+                          <p className="text-[11px] font-bold">Fotos del producto en la tienda</p>
+                          <p className="text-[10.5px] text-[#7A8A87] mb-1.5">Toca para escoger. Con 2 o más, la tarjeta pasa las fotos sola cada segundo (carrusel). El n.º 1 es la principal.</p>
                           <div className="flex gap-1.5 flex-wrap">
-                            {e!.fotos.map(f => (
-                              <button key={f} onClick={() => { cambiar(c => { c.productos[i].foto = f === e!.foto ? null : f; }); }}
-                                className={`w-12 h-12 rounded-lg overflow-hidden border-2 ${(p.foto || e!.foto) === f ? 'border-[#00A895]' : 'border-transparent'}`}>
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={f} alt="" loading="lazy" className="w-full h-full object-cover" />
-                              </button>
-                            ))}
-                            <label className="w-12 h-12 rounded-lg border-2 border-dashed border-[#CBD5D3] flex items-center justify-center text-lg cursor-pointer hover:bg-white" title="Subir otra foto">
-                              ⬆<input type="file" accept="image/*" className="hidden" onChange={async ev => { const f = ev.target.files?.[0]; if (f) { const u = await subir(f); if (u) cambiar(c => { c.productos[i].foto = u; }); } }} />
+                            {[...new Set([...(p.fotos ?? []), ...e!.fotos])].map(f => {
+                              const lista = p.fotos ?? [];
+                              const pos = lista.indexOf(f);
+                              const principal = !lista.length && (p.foto || e!.foto) === f;
+                              return (
+                                <button key={f} onClick={() => cambiar(c => {
+                                  const act = c.productos[i].fotos ?? [];
+                                  const nueva = act.includes(f) ? act.filter(x => x !== f) : [...act, f];
+                                  c.productos[i].fotos = nueva;
+                                  c.productos[i].foto = nueva[0] ?? null;
+                                })}
+                                  className={`relative w-12 h-12 rounded-lg overflow-hidden border-2 ${pos >= 0 || principal ? 'border-[#00A895]' : 'border-transparent'}`}>
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={f} alt="" loading="lazy" className="w-full h-full object-cover" />
+                                  {pos >= 0 && <span className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full text-[9px] font-black text-white flex items-center justify-center" style={{ background: VERDE }}>{pos + 1}</span>}
+                                </button>
+                              );
+                            })}
+                            <label className="w-12 h-12 rounded-lg border-2 border-dashed border-[#CBD5D3] flex items-center justify-center text-lg cursor-pointer hover:bg-white" title="Subir más fotos">
+                              ⬆<input type="file" accept="image/*" multiple className="hidden" onChange={async ev => {
+                                const archivos = Array.from(ev.target.files ?? []); ev.target.value = '';
+                                for (const f of archivos) {
+                                  const u = await subir(f);
+                                  if (u) cambiar(c => { const act = c.productos[i].fotos ?? []; c.productos[i].fotos = [...act, u]; c.productos[i].foto = (c.productos[i].fotos ?? [])[0] ?? u; });
+                                }
+                              }} />
                             </label>
                           </div>
-                          {p.foto && <button onClick={() => cambiar(c => { c.productos[i].foto = null; })} className="mt-1.5 text-[11px] text-[#7A8A87]">Volver a la foto del embudo</button>}
+                          {((p.fotos ?? []).length > 0 || p.foto) && <button onClick={() => cambiar(c => { c.productos[i].fotos = []; c.productos[i].foto = null; })} className="mt-1.5 text-[11px] text-[#7A8A87]">Volver a la foto del embudo</button>}
                         </div>
                       )}
                     </li>

@@ -38,7 +38,11 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
   // Embudos en la tienda, en el orden del editor
   const productos = useMemo(() => config.productos
     .filter(p => p.visible && !p.quitado && datos.embudos[p.slug])
-    .map(p => { const e = datos.embudos[p.slug]; return { ...e, foto: p.foto || e.foto, grupo: grupoSugerido(e.producto) }; }),
+    .map(p => {
+      const e = datos.embudos[p.slug];
+      const carrusel = (p.fotos ?? []).filter(Boolean);
+      return { ...e, foto: carrusel[0] || p.foto || e.foto, carrusel, grupo: grupoSugerido(e.producto) };
+    }),
   [config.productos, datos.embudos]);
   const grupos = useMemo(() => ['Todos', ...new Set(productos.map(p => p.grupo))], [productos]);
   const visibles = filtro === 'Todos' ? productos : productos.filter(p => p.grupo === filtro);
@@ -135,9 +139,11 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 md:gap-5">
                 {visibles.map(p => (
                   <article key={p.slug} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-[#ECEEED] flex flex-col hover:shadow-lg transition">
-                    <a href={enlaceEmbudo(p.slug)} className="block aspect-square bg-[#EEF1F0] overflow-hidden">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      {p.foto && <img src={p.foto} alt={p.producto} loading="lazy" className="w-full h-full object-cover hover:scale-105 transition duration-300" />}
+                    <a href={enlaceEmbudo(p.slug)} className="block aspect-square bg-[#EEF1F0] overflow-hidden relative">
+                      {p.carrusel.length > 1
+                        ? <FotosCarrusel fotos={p.carrusel} alt={p.producto} />
+                        // eslint-disable-next-line @next/next/no-img-element
+                        : p.foto && <img src={p.foto} alt={p.producto} loading="lazy" className="w-full h-full object-cover hover:scale-105 transition duration-300" />}
                     </a>
                     <div className="p-2.5 md:p-3 flex-1 flex flex-col">
                       <h3 className="text-[13px] md:text-[15px] font-bold leading-tight">{nombreBonito(p.producto)}</h3>
@@ -500,5 +506,27 @@ function EmbudoFlotante({ url, onCerrar }: { url: string; onCerrar: () => void }
         <a href={url} className="absolute top-2 left-2 z-10 px-3 h-8 rounded-full bg-black/60 text-white text-[11px] font-semibold flex items-center shadow" title="Abrir en pantalla completa">⤢ Pantalla completa</a>
       </div>
     </div>
+  );
+}
+
+/** Fotos de la tarjeta que cambian solas cada segundo (con desvanecido suave) + puntitos. */
+function FotosCarrusel({ fotos, alt }: { fotos: string[]; alt: string }) {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setI(x => (x + 1) % fotos.length), 1000);
+    return () => clearInterval(t);
+  }, [fotos.length]);
+  return (
+    <>
+      {fotos.map((f, k) => (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img key={f + k} src={f} alt={alt} loading={k === 0 ? 'lazy' : undefined}
+          className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
+          style={{ opacity: k === i ? 1 : 0 }} />
+      ))}
+      <span className="absolute bottom-1.5 inset-x-0 flex justify-center gap-1">
+        {fotos.map((_, k) => <span key={k} className={`h-1.5 rounded-full transition-all ${k === i ? 'w-3.5 bg-white' : 'w-1.5 bg-white/60'}`} />)}
+      </span>
+    </>
   );
 }

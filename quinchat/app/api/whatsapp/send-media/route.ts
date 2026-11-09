@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
+import { transcribirAudio } from '@/lib/transcribir';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { uploadWhatsAppMedia, sendMediaMessage, sendTextMessage } from '@/lib/whatsapp';
@@ -150,6 +151,21 @@ export async function POST(req: NextRequest) {
     last_message:      lastMsgText,
     last_message_time: new Date().toISOString(),
   }).eq('id', to);
+
+  // Audio del ASESOR → se transcribe (después de responder, para no demorar el panel) y se guarda como texto
+  // junto al audio. Así el bot sabe qué se le dijo al cliente por voz y sigue el hilo (dueño, 09-nov-2026).
+  if (waType === 'audio') {
+    after(async () => {
+      try {
+        const texto = (await transcribirAudio(buffer, mimeType))?.trim();
+        if (!texto) return;
+        await supabase.from('messages').insert({
+          id: `${msgId}-txt`, conversation_id: to, content: `🎙️ (audio del asesor) ${texto}`,
+          role: 'agent', type: 'text', created_at: new Date(Date.now() + 1000).toISOString(),
+        });
+      } catch (e) { console.error('[send-media] transcribir audio del asesor:', e); }
+    });
+  }
 
   return NextResponse.json({ success: true, id: msgId, type: waType, media_url: permanentUrl });
 }
