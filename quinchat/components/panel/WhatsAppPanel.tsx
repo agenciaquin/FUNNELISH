@@ -39,6 +39,7 @@ const ObjecionesPanel    = dynamic(() => import('./ObjecionesPanel'),     { ssr:
 const SupervisorPanel    = dynamic(() => import('./SupervisorPanel'),     { ssr: false });
 const VentasVendedoresPanel = dynamic(() => import('./ventas-vendedores/VentasVendedoresPanel'), { ssr: false });
 const MasterVendedoresPanel = dynamic(() => import('./master-vendedores/MasterVendedoresPanel'), { ssr: false });
+const CollagesPanel = dynamic(() => import('./collages/CollagesPanel'), { ssr: false });
 
 interface Props {
   userName: string;
@@ -456,6 +457,7 @@ export default function WhatsAppPanel({ userName }: Props) {
         />
       )}
       {activeSection === 'vendedores'    && <VendedoresPanel />}
+      {activeSection === 'collages' && <CollagesPanel />}
       {activeSection === 'master_vendedores' && (
         <MasterVendedoresPanel onAbrirChat={id => { abrirChatDesde(id); }} />
       )}

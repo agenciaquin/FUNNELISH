@@ -220,6 +220,15 @@ Ahora `clientes_funnelish.conversation_id` guarda el chat cuando no es `57+telef
 También se guarda el chat cuando el cliente da el celular de OTRA persona (quien recibe), y el teléfono que
 saca el modelo solo vale si el cliente lo escribió en el chat (el modelo puso 3124686638 a 4 clientes distintos).
 
+### 12 · Panel de Catálogos (collages) — 09-nov-2026, módulo independiente
+
+Menú «Panel de Catálogos» → `components/panel/collages/CollagesPanel.tsx`, API `app/api/collages` (+ `/foto` proxy de
+fotos de Supabase Storage para el canvas, `/imagen` sube el JPG a `chat-media/collages/`). Tabla `catalogos_collage`
+(nombre, familia, items, imagen_url, imagenes, firma). Solo LEE `vv_cat_productos`. El collage se arma EN EL NAVEGADOR
+(`lib/collage-canvas.ts`, sin binarios nativos) con el formato aprobado: foto original cuadrada + franja con letrero
+«// NOMBRE //», filas sin huecos (5 = 2 grandes + 3). Fuente `public/fonts/Poppins-BoldItalic.ttf`. «Pendiente de
+actualizar» si cambió una foto o se apagó una prenda. No modificar el formato sin pedido del dueño.
+
 ### 5 · No todas las subidas comprimen
 
 Comprimen: `funnels/imagen`, `plantillas-wa/imagen`, `catalogos/upload-imagen`.
