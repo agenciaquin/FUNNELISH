@@ -173,14 +173,18 @@ export default function WhatsAppPanel({ userName }: Props) {
   // ── Load messages ─────────────────────────────────────────────────────────
   // `silencioso` evita parpadeos: solo reemplaza la lista si de verdad cambió.
   const loadMessages = useCallback(async (conversationId: string, silencioso = false) => {
+    // Los ÚLTIMOS 800 (más nuevos primero) y se voltean. Antes se pedía en orden ascendente sin límite y
+    // la base corta en 1.000 filas: en chats largos (vendedores con 1.300+ mensajes) se veían los más
+    // VIEJOS y lo de hoy quedaba oculto (08-nov-2026).
     const { data, error } = await supabase
       .from('messages')
       .select('*')
       .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: false })
+      .limit(800);
 
     if (error) return;
-    const nuevos = data ?? [];
+    const nuevos = [...(data ?? [])].reverse();
 
     if (!silencioso) { setMessages(nuevos); return; }
 
