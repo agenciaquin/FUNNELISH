@@ -50,6 +50,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   const ahora = new Date().toISOString();
 
+  // PAPELERA (09-nov-2026, dueño): eliminar una venta antes de subirla (prueba, duplicada…) con MOTIVO obligatorio.
+  // No se borra: queda en la papelera con motivo, fecha y quién; se puede restaurar.
+  if (b.accion === 'papelera') {
+    if (motivo.length < 3) return NextResponse.json({ error: 'Escribe el motivo por el que se elimina.' }, { status: 400 });
+    await supabase.from('vv_ventas').update({
+      estado: 'cancelada', estado_previo: venta.estado, papelera_at: ahora, papelera_motivo: motivo, papelera_por: quien, actualizado_at: ahora,
+    }).eq('id', id);
+    await supabase.from('vv_eventos').insert({ venta_id: id, tipo: 'papelera', quien, detalle: { motivo, antes: venta.estado } });
+    return NextResponse.json({ ok: true });
+  }
+  if (b.accion === 'restaurar') {
+    if (!venta.papelera_at) return NextResponse.json({ error: 'La venta no está en la papelera.' }, { status: 400 });
+    const vuelve = venta.estado_previo && venta.estado_previo !== 'cancelada' ? venta.estado_previo : 'incompleta';
+    const { error: errR } = await supabase.from('vv_ventas').update({ estado: vuelve, papelera_at: null, papelera_motivo: null, papelera_por: null, estado_previo: null, actualizado_at: ahora }).eq('id', id);
+    if (errR) return NextResponse.json({ error: /duplicate|unique/i.test(errR.message) ? 'El vendedor ya tiene otra venta abierta; termínala antes de restaurar esta.' : errR.message }, { status: 409 });
+    await supabase.from('vv_eventos').insert({ venta_id: id, tipo: 'restaurada', quien, detalle: { motivo_eliminacion: venta.papelera_motivo, vuelve } });
+    return NextResponse.json({ ok: true });
+  }
+
   // Acciones de estado
   const ACCIONES: Record<string, string> = { cancelar: 'cancelada', escalar: 'escalada', confirmar: 'confirmada', reabrir: 'confirmada' };
   if (b.accion && ACCIONES[b.accion]) {

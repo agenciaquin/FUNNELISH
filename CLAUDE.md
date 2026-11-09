@@ -160,6 +160,10 @@ la ficha de cada vendedor en «Master Vendedores».
 última remisión en `effi_remisiones_api` (dirección por números, ciudad, departamento) con la venta. Si difiere, AVISO
 arriba en la vista previa (`vista.cliente_diferencias`); no bloquea, la remisión sale con los datos de la venta.
 
+**Papelera de ventas (09-nov-2026):** 🗑 en las tarjetas de Master Vendedores (solo si NO está en Effi) pide MOTIVO y
+hace PATCH `accion:'papelera'` → `estado='cancelada'` + `papelera_at/motivo/por` + `estado_previo`. Pestaña «🗑 Papelera»
+con «Restaurar» (`accion:'restaurar'`). Nada se borra. El Centro Maestro excluye `papelera_at`.
+
 **Chat borrado = mensajes perdidos en silencio:** `messages.conversation_id` tiene llave foránea a `conversations`
 (ON DELETE CASCADE). Si se borra el chat desde el panel, todo insert de mensaje falla hasta que el chat exista.
 VV, `atenderVendedor` y el organizador crean el chat (upsert ignoreDuplicates) ANTES de guardar mensajes.

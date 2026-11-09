@@ -12,7 +12,7 @@ import { comprimirImagen } from '@/lib/imagen-comprimir';
  */
 const VERDE = '#00A89D';
 const tarjeta = 'bg-white rounded-2xl border border-[#E8ECEB] shadow-sm';
-type Pest = 'por_subir' | 'en_effi' | 'pendientes' | 'incidencias' | 'todas';
+type Pest = 'por_subir' | 'en_effi' | 'pendientes' | 'incidencias' | 'todas' | 'papelera';
 const POR_SUBIR = ['confirmada', 'lista_effi'];
 const PENDIENTES = ['recibida', 'incompleta', 'ambigua', 'esperando_confirmacion'];
 const INCIDENCIAS = ['error_effi', 'escalada'];
@@ -22,6 +22,7 @@ interface Vend {
   foto: string | null; meta_mes: number | null; recepcion: boolean;
   stats?: { por_subir: number; pendientes: number; incidencias: number; en_effi_mes: number; valor_mes: number; valor_por_subir: number; unidades_por_subir: number; ventas_mes: number };
 }
+interface EnPapelera { id: string; codigo: string; cliente_nombre: string | null; cliente_celular: string | null; municipio: string | null; total: number | null; creado_at: string; papelera_at: string; papelera_motivo: string | null; papelera_por: string | null; estado_previo: string | null; fotos_vendedor: string[] | null }
 interface Rem { id_effi: string; telefono: string | null; nombre: string | null; ciudad: string | null; departamento: string | null; direccion: string | null; estado: string | null; total: number | null; guia: string | null; fecha_trans: string }
 
 export default function MasterVendedoresPanel({ onAbrirChat }: { onAbrirChat?: (id: string) => void }) {
@@ -31,7 +32,8 @@ export default function MasterVendedoresPanel({ onAbrirChat }: { onAbrirChat?: (
   const [sync, setSync] = useState<any>(null);
   const [moduloActivo, setModuloActivo] = useState(false);
   const [sel, setSel] = useState<number | null>(null);
-  const [det, setDet] = useState<{ vendedor: Vend; ventas: VentaVV[]; remisiones: Rem[] } | null>(null);
+  const [det, setDet] = useState<{ vendedor: Vend; ventas: VentaVV[]; remisiones: Rem[]; papelera?: EnPapelera[] } | null>(null);
+  const [eliminar, setEliminar] = useState<VentaVV | null>(null);   // venta a mandar a la papelera (pide motivo)
   const [cargando, setCargando] = useState(true);
   const [buscarV, setBuscarV] = useState('');
   const [pest, setPest] = useState<Pest>('por_subir');
@@ -91,7 +93,13 @@ export default function MasterVendedoresPanel({ onAbrirChat }: { onAbrirChat?: (
     const b: Tarjeta[] = det.remisiones.map(r => ({ key: `r${r.id_effi}`, tipo: 'rem', grupo: 'en_effi', fecha: r.fecha_trans, rem: r }));
     return [...a, ...b].sort((x, y) => String(y.fecha).localeCompare(String(x.fecha)));
   }, [det]);
-  const cuenta = (g: Pest) => g === 'todas' ? tarjetas.length : tarjetas.filter(t => t.grupo === g).length;
+  const cuenta = (g: Pest) => g === 'papelera' ? (det?.papelera ?? []).length : g === 'todas' ? tarjetas.length : tarjetas.filter(t => t.grupo === g).length;
+  const restaurar = async (id: string) => {
+    const r = await fetch(`/api/ventas-vendedores/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accion: 'restaurar' }) });
+    const j = await r.json().catch(() => ({}));
+    setAviso(r.ok ? '♻️ Venta restaurada.' : `❌ ${j.error ?? 'No se pudo restaurar'}`);
+    cargar(); if (sel != null) cargarVendedor(sel);
+  };
   const sinT = (t: unknown) => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const visibles = tarjetas.filter(t => pest === 'todas' || t.grupo === pest).filter(t => {
     if (!q.trim()) return true;
@@ -235,7 +243,7 @@ export default function MasterVendedoresPanel({ onAbrirChat }: { onAbrirChat?: (
                   {/* Ventas */}
                   <div className={`${tarjeta} p-4`}>
                     <div className="flex gap-2 flex-wrap mb-3">
-                      {([['por_subir', 'Por subir', '#0B7F78'], ['en_effi', 'En EFFI', '#2563EB'], ['pendientes', 'Pendientes', '#B45309'], ['incidencias', 'Incidencias', '#B91C1C'], ['todas', 'Todas', '#374151']] as [Pest, string, string][]).map(([k, t, c]) => (
+                      {([['por_subir', 'Por subir', '#0B7F78'], ['en_effi', 'En EFFI', '#2563EB'], ['pendientes', 'Pendientes', '#B45309'], ['incidencias', 'Incidencias', '#B91C1C'], ['todas', 'Todas', '#374151'], ['papelera', '🗑 Papelera', '#6B7280']] as [Pest, string, string][]).map(([k, t, c]) => (
                         <button key={k} onClick={() => setPest(k)} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold border transition ${pest === k ? 'text-white border-transparent' : 'bg-white border-[#E1E5E4] text-[#1F2A28]'}`}
                           style={pest === k ? { background: c } : undefined}>
                           {t} <span className={`px-2 rounded-full text-xs ${pest === k ? 'bg-white/25' : 'bg-[#F1F5F4]'}`}>{cuenta(k)}</span>
@@ -249,14 +257,32 @@ export default function MasterVendedoresPanel({ onAbrirChat }: { onAbrirChat?: (
                         <button onClick={() => setVista('lista')} className={`px-2.5 rounded-lg ${vista === 'lista' ? 'bg-[#0B7F78] text-white' : ''}`}>☰</button>
                       </div>
                     </div>
-                    {visibles.length === 0 ? (
+                    {pest === 'papelera' ? (
+                      (det?.papelera ?? []).length === 0
+                        ? <p className="text-sm text-[#7A8A87] py-10 text-center">La papelera está vacía.</p>
+                        : <div className="space-y-2">
+                          {(det?.papelera ?? []).map(x => (
+                            <div key={x.id} className="rounded-2xl border border-[#E8ECEB] p-3 flex gap-3 bg-[#FAFAFA]">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              {x.fotos_vendedor?.[0] ? <img src={x.fotos_vendedor[0]} alt="" className="w-16 h-16 rounded-xl object-cover grayscale opacity-70 shrink-0" /> : <div className="w-16 h-16 rounded-xl bg-[#F1F5F4] flex items-center justify-center text-xl shrink-0">🗑</div>}
+                              <div className="flex-1 min-w-0">
+                                <p className="font-bold text-[14px] truncate">{x.cliente_nombre || 'Sin nombre'} <span className="text-[11px] font-normal text-[#7A8A87]">· {x.codigo}</span></p>
+                                <p className="text-[12px] text-[#5B6B68]">📞 {telBonito(x.cliente_celular)} · 📍 {x.municipio || '—'} · {pesos(x.total)}</p>
+                                <p className="text-[12px] mt-1 px-2 py-1 rounded-lg bg-[#FEF2F2] text-[#991B1B]"><b>Motivo:</b> {x.papelera_motivo || '—'}</p>
+                                <p className="text-[10.5px] text-[#9AA7A5] mt-1">Eliminada {fechaCorta(x.papelera_at)}{x.papelera_por ? ` por ${x.papelera_por}` : ''}</p>
+                              </div>
+                              <button onClick={() => restaurar(x.id)} className="self-center px-3 py-1.5 rounded-lg border border-[#0B7F78] text-[#0B7F78] text-xs font-bold hover:bg-[#E6F7F4]">♻️ Restaurar</button>
+                            </div>
+                          ))}
+                        </div>
+                    ) : visibles.length === 0 ? (
                       <p className="text-sm text-[#7A8A87] py-10 text-center">
                         {pest === 'por_subir' && !v.recepcion ? 'No hay ventas por subir. La recepción por WhatsApp de este vendedor está apagada.' : 'No hay ventas aquí.'}
                       </p>
                     ) : (
                       <div className={vista === 'grid' ? 'grid gap-3 md:grid-cols-2' : 'space-y-2'}>
                         {visibles.map(t => t.tipo === 'vv' ? (
-                          <TarjetaVenta key={t.key} venta={t.venta!} grupo={t.grupo} vendedor={v.nombre} onVer={() => setAbierta(t.venta!.id)} onChat={() => t.venta!.conversacion_id && onAbrirChat?.(t.venta!.conversacion_id)} />
+                          <TarjetaVenta key={t.key} venta={t.venta!} grupo={t.grupo} vendedor={v.nombre} onVer={() => setAbierta(t.venta!.id)} onChat={() => t.venta!.conversacion_id && onAbrirChat?.(t.venta!.conversacion_id)} onEliminar={() => setEliminar(t.venta!)} />
                         ) : (
                           <TarjetaRemision key={t.key} r={t.rem!} vendedor={v.nombre} onChat={() => t.rem!.telefono && onAbrirChat?.(`57${String(t.rem!.telefono).replace(/\D/g, '').slice(-10)}`)} />
                         ))}
@@ -329,6 +355,10 @@ export default function MasterVendedoresPanel({ onAbrirChat }: { onAbrirChat?: (
         </div>
       </div>
 
+      {eliminar && (
+        <ModalEliminar venta={eliminar} onCerrar={() => setEliminar(null)}
+          onListo={msg => { setEliminar(null); setAviso(msg); cargar(); if (sel != null) cargarVendedor(sel); }} />
+      )}
       {abierta && (
         <DetalleVenta id={abierta} onCerrar={() => setAbierta(null)} onCambio={() => { cargar(); if (sel != null) cargarVendedor(sel); }}
           onChat={tel => onAbrirChat?.(tel)} />
@@ -337,7 +367,7 @@ export default function MasterVendedoresPanel({ onAbrirChat }: { onAbrirChat?: (
   );
 }
 
-function TarjetaVenta({ venta, grupo, vendedor, onVer, onChat }: { venta: VentaVV; grupo: Pest; vendedor: string; onVer: () => void; onChat: () => void }) {
+function TarjetaVenta({ venta, grupo, vendedor, onVer, onChat, onEliminar }: { venta: VentaVV; grupo: Pest; vendedor: string; onVer: () => void; onChat: () => void; onEliminar: () => void }) {
   const it = venta.items[0];
   const foto = it?.foto_vendedor || it?.foto_oficial || venta.fotos_vendedor?.[0] || null;
   const chip = grupo === 'en_effi' ? ['En EFFI', '#DCFCE7', '#15803D'] : grupo === 'por_subir' ? ['Por subir', '#FEF3C7', '#B45309'] : grupo === 'incidencias' ? ['Incidencia', '#FEE2E2', '#B91C1C'] : ['Pendiente', '#FFF7ED', '#C2410C'];
@@ -349,7 +379,12 @@ function TarjetaVenta({ venta, grupo, vendedor, onVer, onChat }: { venta: VentaV
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full" style={{ background: chip[1], color: chip[2] }}>● {chip[0]}</span>
           <span className="text-[10.5px] text-[#5B6B68]">👤 {vendedor}</span>
-          {venta.conversacion_id && <button onClick={onChat} className="ml-auto w-7 h-7 rounded-full border border-[#25D366] text-[#25D366] text-sm" title="Ir al chat">💬</button>}
+          <span className="ml-auto flex items-center gap-1">
+            {grupo !== 'en_effi' && !venta.effi_remision && (
+              <button onClick={onEliminar} className="w-7 h-7 rounded-full border border-[#FCA5A5] text-[#DC2626] text-[13px] hover:bg-[#FEF2F2]" title="Eliminar venta (va a la papelera)">🗑</button>
+            )}
+            {venta.conversacion_id && <button onClick={onChat} className="w-7 h-7 rounded-full border border-[#25D366] text-[#25D366] text-sm" title="Ir al chat">💬</button>}
+          </span>
         </div>
         <p className="font-bold text-[15px] mt-1 truncate">{venta.cliente_nombre || 'Sin nombre aún'}</p>
         <p className="text-[12px] text-[#5B6B68]">📞 {telBonito(venta.cliente_celular)} · 📍 {venta.municipio || '—'}</p>
@@ -387,6 +422,44 @@ function TarjetaRemision({ r, vendedor, onChat }: { r: Rem; vendedor: string; on
           <span className="px-2.5 py-1 rounded-lg bg-[#FEF3C7] text-[#92400E] text-sm font-extrabold">{pesos(r.total)}</span>
           <span className="text-[10.5px] text-[#9AA7A5]">{fechaCorta(r.fecha_trans)}</span>
           <span className="ml-auto px-3 py-1.5 rounded-lg bg-[#2563EB] text-white text-xs font-bold">✓ En Effi</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Pide el MOTIVO antes de mandar la venta a la papelera (obligatorio). */
+function ModalEliminar({ venta, onCerrar, onListo }: { venta: VentaVV; onCerrar: () => void; onListo: (msg: string) => void }) {
+  const [motivo, setMotivo] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const rapidos = ['Venta de prueba', 'Venta duplicada', 'El cliente canceló', 'Datos equivocados, se vuelve a pasar'];
+  const confirmar = async () => {
+    if (motivo.trim().length < 3) { setError('Escribe el motivo por el que se elimina.'); return; }
+    setEnviando(true);
+    const r = await fetch(`/api/ventas-vendedores/${venta.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accion: 'papelera', motivo: motivo.trim() }) });
+    const j = await r.json().catch(() => ({}));
+    setEnviando(false);
+    if (!r.ok) { setError(j.error ?? 'No se pudo eliminar'); return; }
+    onListo(`🗑 Venta de ${venta.cliente_nombre || 'cliente'} enviada a la papelera.`);
+  };
+  return (
+    <div className="fixed inset-0 z-[80] bg-black/50 flex items-center justify-center p-4" onClick={onCerrar}>
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-5" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-extrabold text-[#0D1F1C]">🗑 Eliminar venta</h3>
+        <p className="text-[13px] text-[#5B6B68] mt-1">
+          <b>{venta.cliente_nombre || 'Sin nombre'}</b> · {venta.codigo} · {pesos(venta.total)}. No se sube a Effi y queda en la <b>papelera</b> (se puede restaurar).
+        </p>
+        <label className="block text-[12px] font-bold mt-4 mb-1">Motivo de la eliminación *</label>
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {rapidos.map(r => <button key={r} onClick={() => { setMotivo(r); setError(null); }} className={`px-2.5 py-1 rounded-full text-[11.5px] border ${motivo === r ? 'bg-[#0D1F1C] text-white border-transparent' : 'border-[#E1E5E4]'}`}>{r}</button>)}
+        </div>
+        <textarea value={motivo} onChange={e => { setMotivo(e.target.value); setError(null); }} rows={3} autoFocus
+          placeholder="Escribe por qué se elimina…" className="w-full px-3 py-2 rounded-xl border border-[#E1E5E4] text-sm" />
+        {error && <p className="text-[12px] text-[#DC2626] mt-1">{error}</p>}
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onCerrar} className="px-4 py-2 rounded-xl border border-[#E1E5E4] text-sm font-semibold">Cancelar</button>
+          <button onClick={confirmar} disabled={enviando} className="px-4 py-2 rounded-xl bg-[#DC2626] text-white text-sm font-bold disabled:opacity-50">{enviando ? 'Eliminando…' : 'Eliminar'}</button>
         </div>
       </div>
     </div>

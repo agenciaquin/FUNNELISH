@@ -55,11 +55,13 @@ export async function GET(req: NextRequest) {
     if (!v) return NextResponse.json({ error: 'Vendedor no encontrado' }, { status: 404 });
     const misTels = [v.telefono_principal, ...(v.telefonos_extra ?? [])].map(tel57).filter(Boolean);
     const desde = new Date(Date.now() - 45 * 86400_000).toISOString();
-    const [{ data: ventas }, { data: rems }] = await Promise.all([
+    const [{ data: ventas }, { data: rems }, { data: papelera }] = await Promise.all([
       supabase.from('vv_ventas').select('*').in('vendedor_tel', misTels.length ? misTels : ['-'])
         .neq('estado', 'cancelada').order('creado_at', { ascending: false }).limit(300),
       supabase.from('effi_remisiones_api').select('id_effi, id_transaccion, telefono, nombre, ciudad, departamento, direccion, estado, total, guia, fecha_trans, vendedor')
         .ilike('vendedor', v.nombre_effi).gte('fecha_trans', desde).order('fecha_trans', { ascending: false }).limit(300),
+      supabase.from('vv_ventas').select('id, codigo, cliente_nombre, cliente_celular, municipio, total, creado_at, papelera_at, papelera_motivo, papelera_por, estado_previo, fotos_vendedor')
+        .in('vendedor_tel', misTels.length ? misTels : ['-']).not('papelera_at', 'is', null).order('papelera_at', { ascending: false }).limit(100),
     ]);
     const ids = (ventas ?? []).map((x: any) => x.id);
     const { data: items } = ids.length ? await supabase.from('vv_items').select('*').in('venta_id', ids).order('id') : { data: [] as any[] };
@@ -71,6 +73,7 @@ export async function GET(req: NextRequest) {
       ventas: (ventas ?? []).map((x: any) => ({ ...x, items: porVenta.get(x.id) ?? [] })),
       // Remisiones en Effi de este vendedor que NO vienen de una venta del bot (subidas a mano)
       remisiones: ((rems ?? []) as any[]).filter(r => !/anulad/i.test(String(r.estado ?? '')) && !remDeVV.has(String(r.id_effi))),
+      papelera: papelera ?? [],
     });
   }
 

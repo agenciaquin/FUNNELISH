@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   const supabase = createServerSupabaseClient();
   // Centro Maestro EFFI = SOLO lo que se pasa desde los chats de Funnelish y Quino (vendedor «panel…»).
   // Las ventas de los VENDEDORES (su teléfono) van cada una en su ficha de «Master Vendedores» (dueño, 08-nov-2026).
-  let consulta = supabase.from('vv_ventas').select('*').like('vendedor_tel', 'panel%').order('creado_at', { ascending: orden }).limit(1500);
+  let consulta = supabase.from('vv_ventas').select('*').like('vendedor_tel', 'panel%').is('papelera_at', null).order('creado_at', { ascending: orden }).limit(1500);
   if (desde) consulta = consulta.gte('creado_at', `${desde}T05:00:00Z`);            // 00:00 Colombia
   if (hasta) consulta = consulta.lt('creado_at', new Date(new Date(`${hasta}T05:00:00Z`).getTime() + 86400000).toISOString());
   const { data: ventas, error } = await consulta;
