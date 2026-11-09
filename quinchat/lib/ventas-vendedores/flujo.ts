@@ -5,6 +5,7 @@ import { transcribirAudio } from '@/lib/transcribir';
 import { sinTildes } from './catalogo';
 import { enviarBotones } from './wa';
 import { tipoLineaActual } from '@/lib/whatsapp-contexto';
+import { esOficinaInter, normalizarOficinaInter } from './desde-chat';
 import { ESTADOS_ABIERTOS, type EstadoVV } from './estados';
 import {
   interpretarVenta, describirFoto, buscarCandidatos, elegirConFoto, resolverVariante,
@@ -300,6 +301,13 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
   }
   if (v.total) campos.total = v.total;
   if (v.abono) campos.abono = v.abono;
+  // Reclama en OFICINA de Interrapidísimo → dirección estándar, sin barrio ni calle, transportadora INTER
+  // (antes le pedía al vendedor «dirección» y «barrio» aunque dijera «reclama en oficina»).
+  {
+    const juntos = { direccion: venta.direccion, barrio: venta.barrio, complemento: venta.complemento, referencia_dir: venta.referencia_dir, observaciones: venta.observaciones, ...campos };
+    const norm = normalizarOficinaInter(juntos);
+    if (norm !== juntos) Object.assign(campos, { direccion: norm.direccion, barrio: '', complemento: '', referencia_dir: '', transportadora: norm.transportadora });
+  }
   await supabase.from('vv_ventas').update(campos).eq('id', venta.id);
 
   // ── 6) Prendas: conservar las ya resueltas si no cambió lo pedido ─────────────
@@ -420,8 +428,11 @@ async function evaluarYResponder(
   if (!/^3\d{9}$/.test(String(venta.cliente_celular ?? ''))) falta.push('celular del cliente (10 dígitos)');
   if (!venta.municipio) falta.push('ciudad o municipio');
   if (!venta.departamento) falta.push('departamento');
-  if (!venta.direccion) falta.push('dirección');
-  if (!venta.barrio) falta.push('barrio');
+  // Entrega en oficina de la transportadora: no lleva dirección de calle ni barrio
+  const enOficina = esOficinaInter([venta.direccion, venta.referencia_dir, venta.complemento, venta.observaciones].filter(Boolean).join(' '))
+    || /ofi[cs]?i?na|reclama/i.test(sinTildes([venta.direccion, venta.referencia_dir].filter(Boolean).join(' ')));
+  if (!enOficina && !venta.direccion) falta.push('dirección');
+  if (!enOficina && !venta.barrio) falta.push('barrio');
   if (!its.length) falta.push('qué prenda es (foto o nombre del diseño)');
   for (const it of its) {
     if (it.estado === 'sin_identificar') falta.push(`no encontré *${it.descripcion || 'la prenda'}* en el catálogo: mándame la foto o el nombre exacto del diseño`);
