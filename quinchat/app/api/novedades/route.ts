@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { exigirSesion } from '@/lib/ventas-vendedores/auth';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { sincronizarSiToca } from '@/lib/novedades-effi';
@@ -37,5 +37,10 @@ export async function POST(req: NextRequest) {
   if (auth.error) return auth.error;
   const b = await req.json().catch(() => ({}));
   const r = await sincronizarSiToca(`panel:${auth.quien}`.slice(0, 60), !!b?.forzar);
+  // Aviso «Intento de entrega»: si está encendido y hubo sincronización, se revisa DESPUÉS de responder (no frena el panel)
+  if (!(r as any).omitida) after(async () => {
+    try { const { procesarAvisosIntento } = await import('@/lib/aviso-intento'); await procesarAvisosIntento(undefined, undefined, 5); }
+    catch (e) { console.error('[Novedades] aviso intento:', e); }
+  });
   return NextResponse.json(r, { status: (r as any).ok === false ? 502 : 200 });
 }

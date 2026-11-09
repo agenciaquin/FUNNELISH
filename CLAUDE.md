@@ -270,6 +270,13 @@ de FUNNELISTH LANDING y QUINO AGENCIA. Tabla `avisos_oficina` (llave = id de la 
 estaban en oficina quedan «previo» (envío manual con confirmación). Corre en el paso 5 de `sincronizarGuiasEffi` (máx. 3 por
 pasada, cron de cada hora) y con «Revisar ahora». Freno de Meta + pausa + «NO ENVIAR RECORDATORIO». Chat: etiqueta «EN OFICINA»,
 nota, bot apagado (atiende un humano), mensajes `tpl-oficina-*`. Respuestas: primer mensaje del cliente tras el envío.
+**Aviso «Intento de entrega» (09-nov-2026, dueño):** `lib/aviso-intento.ts`, API `app/api/novedades/intento`, misma pantalla
+`AvisoOficina.tsx` con `config={AVISO_INTENTO}` (botón 🚗). Plantilla `novedad_intento_entrega` (UTILITY, es, solo texto EXACTO del
+dueño; {{1}} primer nombre, {{2}} ciudad, {{3}} guía, de Effi). Detecta tarjetas activas de `novedades_effi` con estado «Intento de
+entrega» o novedad «701 - Se visita, no se logra entrega». Tabla `avisos_intento` (llave guía:novedad → una vez por novedad; además
+máx. 1 por cliente cada 48 h). Interruptor `ajustes_bot.aviso_intento` APAGADO por defecto. Corre en el paso 6 de
+`sincronizarGuiasEffi` (pone al día las tarjetas con la copia y máx. 2 avisos) y tras cada sincronización del panel (`after`).
+Chat: etiqueta «NOVEDAD ENTREGA», nota, bot apagado; la tarjeta pasa a «En gestión»; la respuesta del cliente va al historial.
 **OJO tablas nuevas:** en este Supabase una tabla creada por migración NO trae permisos para `service_role`
 (salió «permission denied for table novedades_effi»). Siempre: `grant select, insert, update, delete on <tabla> to service_role`
 + `grant usage, select on sequence <tabla>_id_seq to service_role`.

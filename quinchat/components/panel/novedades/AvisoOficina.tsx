@@ -2,7 +2,22 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-/** Aviso «Pedido listo para reclamar» (Interrapidísimo → oficina). API: /api/novedades/oficina */
+/**
+ * Avisos automáticos del Panel de Novedades (misma pantalla para los dos):
+ *  · «Pedido listo para reclamar» (Interrapidísimo → oficina) — API /api/novedades/oficina, con imagen/video.
+ *  · «Intento de entrega» — API /api/novedades/intento, solo texto.
+ */
+export interface ConfigAviso { api: string; icono: string; titulo: string; descripcion: string; conMedia: boolean; ejemplos: string[]; ayudaVars: string; etiquetaHoy: string }
+export const AVISO_OFICINA: ConfigAviso = {
+  api: '/api/novedades/oficina', icono: '📲', titulo: 'Aviso «Pedido listo para reclamar»', conMedia: true,
+  descripcion: 'Cuando una guía de Interrapidísimo queda «en oficina» en Effi, se le avisa al cliente por WhatsApp una sola vez. Solo FUNNELISTH LANDING y QUINO AGENCIA.',
+  ejemplos: ['María', '240012345678'], ayudaVars: '{{1}} = primer nombre del cliente en Effi · {{2}} = número de guía', etiquetaHoy: 'Hoy en oficina',
+};
+export const AVISO_INTENTO: ConfigAviso = {
+  api: '/api/novedades/intento', icono: '🚗', titulo: 'Aviso «Intento de entrega»', conMedia: false,
+  descripcion: 'Cuando la transportadora reporta un intento de entrega fallido (Effi), se le escribe al cliente para saber por qué no recibió. Una sola vez por novedad. Solo FUNNELISTH LANDING y QUINO AGENCIA.',
+  ejemplos: ['María', 'Bucaramanga', '240065170587'], ayudaVars: '{{1}} = nombre · {{2}} = ciudad de destino · {{3}} = guía (todo desde Effi)', etiquetaHoy: 'Hoy en intento de entrega',
+};
 
 const VERDE = '#00A89D';
 const fecha = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }) : '—');
@@ -17,7 +32,7 @@ const ESTADO_AVISO: Record<string, { t: string; c: string }> = {
   omitido: { t: 'Omitido', c: '#B54708' }, reservado: { t: 'Enviando…', c: '#175CD3' },
 };
 
-export default function AvisoOficina({ onCerrar }: { onCerrar: () => void }) {
+export default function AvisoOficina({ onCerrar, config = AVISO_OFICINA }: { onCerrar: () => void; config?: ConfigAviso }) {
   const [d, setD] = useState<any>(null);
   const [archivo, setArchivo] = useState<File | null>(null);
   const [vista, setVista] = useState<string | null>(null);
@@ -26,9 +41,9 @@ export default function AvisoOficina({ onCerrar }: { onCerrar: () => void }) {
   const [sel, setSel] = useState<Set<string>>(new Set());
 
   const cargar = useCallback(async () => {
-    const r = await fetch('/api/novedades/oficina', { cache: 'no-store' }); const j = await r.json().catch(() => ({}));
+    const r = await fetch(config.api, { cache: 'no-store' }); const j = await r.json().catch(() => ({}));
     if (r.ok) setD(j); else setMsg(j.error ?? 'No se pudo cargar');
-  }, []);
+  }, [config.api]);
   useEffect(() => { cargar(); }, [cargar]);
 
   const elegir = (f: File | undefined) => {
@@ -38,11 +53,18 @@ export default function AvisoOficina({ onCerrar }: { onCerrar: () => void }) {
     if (f.size > 4 * 1024 * 1024) { setMsg('El archivo no puede pasar de 4 MB.'); return; }
     setMsg(null); setArchivo(f); setVista(URL.createObjectURL(f));
   };
+  const crearSoloTexto = async () => {
+    setTrabajando('Enviando a Meta…');
+    const r = await fetch(config.api, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); const j = await r.json().catch(() => ({}));
+    setTrabajando(null);
+    setMsg(r.ok ? `✅ Plantilla enviada a Meta (${j.status ?? 'en revisión'}). Cuando Meta la apruebe podrás activarla.` : `⚠️ ${j.error}`);
+    cargar();
+  };
   const subir = async (soloMedia: boolean) => {
     if (!archivo) return;
     setTrabajando(soloMedia ? 'Guardando el archivo…' : 'Enviando a Meta…');
     const fd = new FormData(); fd.append('file', archivo, archivo.name); if (soloMedia) fd.append('solo_media', '1');
-    const r = await fetch('/api/novedades/oficina', { method: 'POST', body: fd }); const j = await r.json().catch(() => ({}));
+    const r = await fetch(config.api, { method: 'POST', body: fd }); const j = await r.json().catch(() => ({}));
     setTrabajando(null);
     setMsg(r.ok ? (soloMedia ? '✅ Archivo guardado: los próximos avisos salen con él.' : `✅ Plantilla enviada a Meta (${j.status ?? 'en revisión'}).${j.sin_emoji ? ' Meta no aceptó emojis en los botones: quedaron sin emoji.' : ''} Cuando Meta la apruebe podrás activarla.`) : `⚠️ ${j.error}`);
     if (r.ok) { setArchivo(null); setVista(null); }
@@ -51,11 +73,11 @@ export default function AvisoOficina({ onCerrar }: { onCerrar: () => void }) {
   const accion = async (cuerpo: any, confirmar?: string) => {
     if (confirmar && !confirm(confirmar)) return;
     setTrabajando('Procesando…');
-    const r = await fetch('/api/novedades/oficina', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo) });
+    const r = await fetch(config.api, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo) });
     const j = await r.json().catch(() => ({}));
     setTrabajando(null);
     if (!r.ok) setMsg(`⚠️ ${j.error}`);
-    else if (cuerpo.accion === 'activar') setMsg(`✅ Aviso ACTIVADO. ${j.previos ?? 0} guías que ya estaban en oficina quedaron sin aviso automático (puedes mandárselo abajo).`);
+    else if (cuerpo.accion === 'activar') setMsg(`✅ Aviso ACTIVADO. ${j.previos ?? 0} casos que ya estaban quedaron sin aviso automático (puedes mandárselo abajo).`);
     else if (cuerpo.accion === 'desactivar') setMsg('Aviso desactivado: no sale ningún mensaje.');
     else setMsg(j.apagado ? 'El aviso está apagado.' : j.fuera_de_horario ? 'Fuera de horario (7 a. m. – 8 p. m.): sale en la siguiente pasada.' : j.error ? `⚠️ ${j.error}` : `✅ Enviados ${j.enviados ?? 0} · omitidos ${j.omitidos ?? 0} · errores ${j.errores ?? 0}${j.pendientes ? ` · quedan ${j.pendientes} para la siguiente pasada` : ''}`);
     setSel(new Set()); cargar();
@@ -63,18 +85,21 @@ export default function AvisoOficina({ onCerrar }: { onCerrar: () => void }) {
 
   const tpl = d?.plantilla; const cfg = d?.ajustes; const est = tpl?.status ? ESTADO_TPL[tpl.status] ?? { t: tpl.status, c: '#5B6B68', bg: '#F1F5F4' } : null;
   const aprobada = tpl?.status === 'APPROVED';
-  const media = vista ?? cfg?.media_url ?? null;
+  const media = config.conMedia ? (vista ?? cfg?.media_url ?? null) : null;
   const esVideo = archivo ? archivo.type === 'video/mp4' : cfg?.media_tipo === 'VIDEO';
   const seleccionables = (d?.avisos ?? []).filter((a: any) => ['previo', 'error'].includes(a.estado) && a.telefono);
+  const idDe = (a: any) => String(a.clave ?? a.id_guia_effi);
+  const enHoy = d?.en_oficina ?? d?.en_novedad ?? 0;
+  let ejemplo = String(tpl?.cuerpo ?? ''); config.ejemplos.forEach((v, i) => { ejemplo = ejemplo.replace(`{{${i + 1}}}`, v); });
 
   return (
     <div className="fixed inset-0 z-[85] bg-black/50 flex items-center justify-center p-3" onClick={onCerrar}>
       <div className="w-full max-w-5xl max-h-full overflow-auto bg-white rounded-2xl" onClick={e => e.stopPropagation()}>
         <div className="p-5 border-b border-[#E8ECEB] flex items-center gap-3">
-          <span className="text-3xl">📲</span>
+          <span className="text-3xl">{config.icono}</span>
           <div className="flex-1">
-            <p className="text-lg font-extrabold text-[#0D1F1C]">Aviso «Pedido listo para reclamar»</p>
-            <p className="text-[12.5px] text-[#5B6B68]">Cuando una guía de Interrapidísimo queda «en oficina» en Effi, se le avisa al cliente por WhatsApp una sola vez. Solo FUNNELISTH LANDING y QUINO AGENCIA.</p>
+            <p className="text-lg font-extrabold text-[#0D1F1C]">{config.titulo}</p>
+            <p className="text-[12.5px] text-[#5B6B68]">{config.descripcion}</p>
           </div>
           <button onClick={onCerrar} className="text-xl text-[#5B6B68] px-2">✕</button>
         </div>
@@ -83,16 +108,16 @@ export default function AvisoOficina({ onCerrar }: { onCerrar: () => void }) {
             {/* Vista previa tipo WhatsApp */}
             <div className="rounded-2xl p-3 bg-[#E7DDD3]">
               <div className="bg-white rounded-xl overflow-hidden shadow-sm">
-                <div className="aspect-square bg-[#F1F5F4] flex items-center justify-center text-[12px] text-[#5B6B68]">
+                {config.conMedia && <div className="aspect-square bg-[#F1F5F4] flex items-center justify-center text-[12px] text-[#5B6B68]">
                   {media ? (esVideo
                     ? <video src={media} className="w-full h-full object-cover" autoPlay loop muted playsInline />
                     // eslint-disable-next-line @next/next/no-img-element
                     : <img src={media} alt="" className="w-full h-full object-cover" />) : 'Imagen o video del encabezado'}
-                </div>
-                <p className="p-3 text-[13px] whitespace-pre-wrap text-[#111B21]">{String(tpl?.cuerpo ?? '').replace('{{1}}', 'María').replace('{{2}}', '240012345678')}</p>
+                </div>}
+                <p className="p-3 text-[13px] whitespace-pre-wrap text-[#111B21]">{ejemplo}</p>
                 {(tpl?.botones ?? []).map((b: string) => <div key={b} className="border-t border-[#E9EDEF] py-2 text-center text-[13px] font-semibold text-[#00A884]">{b}</div>)}
               </div>
-              <p className="text-[11px] text-[#5B6B68] mt-2 text-center">{'{{1}}'} = primer nombre del cliente en Effi · {'{{2}}'} = número de guía</p>
+              <p className="text-[11px] text-[#5B6B68] mt-2 text-center">{config.ayudaVars}</p>
             </div>
 
             <div className="flex flex-col gap-4 min-w-0">
@@ -104,7 +129,9 @@ export default function AvisoOficina({ onCerrar }: { onCerrar: () => void }) {
                     : <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-[#F1F5F4] text-[#5B6B68]">Aún no creada</span>}
                 </div>
                 {tpl?.error && <p className="text-[12px] text-[#B42318] mt-1">{tpl.error}</p>}
-                <div className="flex items-center gap-2 mt-3 flex-wrap">
+                {!config.conMedia ? (!tpl?.status && (
+                  <button disabled={!!trabajando} onClick={crearSoloTexto} className="mt-3 px-4 py-2 rounded-xl text-white text-sm font-bold disabled:opacity-40" style={{ background: VERDE }}>Crear y enviar a aprobación de Meta</button>
+                )) : <div className="flex items-center gap-2 mt-3 flex-wrap">
                   <label className="px-3 py-2 rounded-xl border border-dashed border-[#CBD5D3] text-sm font-bold cursor-pointer hover:bg-[#F7FAF9]">
                     ⬆ {archivo ? archivo.name : 'Elegir imagen (JPG/PNG) o video (MP4)'}
                     <input type="file" accept="image/jpeg,image/png,video/mp4,image/gif" className="hidden" onChange={e => elegir(e.target.files?.[0])} />
@@ -112,22 +139,22 @@ export default function AvisoOficina({ onCerrar }: { onCerrar: () => void }) {
                   {!tpl?.status
                     ? <button disabled={!archivo || !!trabajando} onClick={() => subir(false)} className="px-4 py-2 rounded-xl text-white text-sm font-bold disabled:opacity-40" style={{ background: VERDE }}>Crear y enviar a aprobación de Meta</button>
                     : <button disabled={!archivo || !!trabajando} onClick={() => subir(true)} className="px-4 py-2 rounded-xl border border-[#E1E5E4] text-sm font-bold disabled:opacity-40">Cambiar imagen de los envíos</button>}
-                </div>
-                <p className="text-[11px] text-[#5B6B68] mt-2">Meta no acepta GIF: un GIF animado se sube convertido a MP4. Máximo 4 MB. Categoría: Utilidad, español.</p>
+                </div>}
+                <p className="text-[11px] text-[#5B6B68] mt-2">{config.conMedia ? 'Meta no acepta GIF: un GIF animado se sube convertido a MP4. Máximo 4 MB. ' : 'Solo texto, sin encabezado ni botones. '}Categoría: Utilidad, español.</p>
               </div>
 
               {/* Interruptor */}
               <div className="rounded-xl border border-[#E8ECEB] p-4 flex items-center gap-3 flex-wrap">
                 <div className="flex-1 min-w-[200px]">
                   <p className="font-bold text-sm">Automatización {cfg?.activo ? <span className="text-[#067647]">● ACTIVA</span> : <span className="text-[#5B6B68]">● APAGADA</span>}</p>
-                  <p className="text-[12px] text-[#5B6B68]">{cfg?.activo ? `Desde ${fecha(cfg.desde)} · revisa cada hora con la sincronización de Effi · de ${cfg.horas?.[0]} a ${cfg.horas?.[1]} h` : aprobada ? 'Lista para activar.' : 'Se puede activar cuando Meta apruebe la plantilla.'} · Hoy en oficina: <b>{d.en_oficina}</b></p>
+                  <p className="text-[12px] text-[#5B6B68]">{cfg?.activo ? `Desde ${fecha(cfg.desde)} · revisa cada hora con la sincronización de Effi · de ${cfg.horas?.[0]} a ${cfg.horas?.[1]} h` : aprobada ? 'Lista para activar.' : 'Se puede activar cuando Meta apruebe la plantilla.'} · {config.etiquetaHoy}: <b>{enHoy}</b></p>
                 </div>
                 {cfg?.activo
                   ? <>
                     <button disabled={!!trabajando} onClick={() => accion({ accion: 'pasada' })} className="px-3 py-2 rounded-xl border border-[#E1E5E4] text-sm font-bold">🔄 Revisar ahora</button>
                     <button disabled={!!trabajando} onClick={() => accion({ accion: 'desactivar' }, '¿Desactivar el aviso? No saldrá ningún mensaje hasta que lo vuelvas a activar.')} className="px-4 py-2 rounded-xl bg-[#FEE4E2] text-[#B42318] text-sm font-bold">Desactivar</button>
                   </>
-                  : <button disabled={!aprobada || !cfg?.media_url || !!trabajando} onClick={() => accion({ accion: 'activar' }, `¿Activar el aviso automático?\n\nDesde ahora, cada guía de Interrapidísimo que quede en oficina recibirá la plantilla una sola vez.\nLas ${d.en_oficina} que YA están en oficina NO recibirán nada automático (podrás mandárselo abajo).`)}
+                  : <button disabled={!aprobada || (config.conMedia && !cfg?.media_url) || !!trabajando} onClick={() => accion({ accion: 'activar' }, `¿Activar el aviso automático?\n\nDesde ahora, cada caso nuevo recibirá la plantilla una sola vez.\nLos ${enHoy} que YA están en ese estado NO recibirán nada automático (podrás mandárselo abajo).`)}
                     className="px-4 py-2 rounded-xl text-white text-sm font-bold disabled:opacity-40" style={{ background: VERDE }}>Activar</button>}
               </div>
 
@@ -156,8 +183,8 @@ export default function AvisoOficina({ onCerrar }: { onCerrar: () => void }) {
                       const e = ESTADO_AVISO[a.estado] ?? { t: a.estado, c: '#5B6B68' };
                       const puede = ['previo', 'error'].includes(a.estado) && a.telefono;
                       return (
-                        <tr key={a.id_guia_effi} className="border-t border-[#F1F5F4] align-top">
-                          <td className="p-2">{puede && <input type="checkbox" checked={sel.has(a.id_guia_effi)} onChange={ev => setSel(p => { const s = new Set(p); ev.target.checked ? s.add(a.id_guia_effi) : s.delete(a.id_guia_effi); return s; })} />}</td>
+                        <tr key={idDe(a)} className="border-t border-[#F1F5F4] align-top">
+                          <td className="p-2">{puede && <input type="checkbox" checked={sel.has(idDe(a))} onChange={ev => setSel(p => { const s = new Set(p); ev.target.checked ? s.add(idDe(a)) : s.delete(idDe(a)); return s; })} />}</td>
                           <td className="p-2"><p className="font-semibold">{a.nombre ?? '—'}</p><p className="text-[#5B6B68]">{a.telefono ?? 'sin teléfono'}</p></td>
                           <td className="p-2">{a.guia ?? a.id_guia_effi}</td>
                           <td className="p-2"><span className="font-bold" style={{ color: e.c }}>{e.t}</span>{a.motivo && <p className="text-[#5B6B68]">{a.motivo}</p>}</td>

@@ -189,13 +189,23 @@ export async function sincronizarGuiasEffi(origen: 'cron' | 'boton', dias = 60) 
 
   // 5) Aviso «pedido listo para reclamar» (Panel de Novedades). Apagado por defecto; máx. 3 por pasada
   //    para no alargar esta sincronización. Si falla, no afecta nada de lo anterior.
-  let avisosOficina: any = null;
+  let avisosOficina: any = null, avisosIntento: any = null;
   try {
     const { procesarAvisosOficina } = await import('@/lib/aviso-oficina');
     avisosOficina = await procesarAvisosOficina(supabase, undefined, 3);
   } catch (e: any) { avisosOficina = { error: e?.message ?? String(e) }; }
+  // 6) Aviso «Intento de entrega» (Panel de Novedades). Apagado por defecto. Primero se ponen al día las tarjetas
+  //    del panel con la copia recién bajada (sin ir otra vez a Effi) y luego máx. 2 avisos por pasada.
+  try {
+    const { ajustesIntento, procesarAvisosIntento } = await import('@/lib/aviso-intento');
+    if ((await ajustesIntento(supabase)).activo) {
+      const { sincronizarNovedades } = await import('@/lib/novedades-effi');
+      await sincronizarNovedades('copia', 'cron');
+      avisosIntento = await procesarAvisosIntento(supabase, undefined, 2);
+    } else avisosIntento = { apagado: true };
+  } catch (e: any) { avisosIntento = { error: e?.message ?? String(e) }; }
 
-  return { ...(await cerrar({ ok: true, guias: filas.length, telefonos: telefonos.length })), remisiones: rem.n, error_remisiones: rem.error ?? null, descuentos, avisos_oficina: avisosOficina };
+  return { ...(await cerrar({ ok: true, guias: filas.length, telefonos: telefonos.length })), remisiones: rem.n, error_remisiones: rem.error ?? null, descuentos, avisos_oficina: avisosOficina, avisos_intento: avisosIntento };
 }
 
 /** Todas las remisiones de venta entre dos fechas (GET remision_v, paginando de a 100). */
