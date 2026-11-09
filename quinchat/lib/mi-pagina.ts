@@ -22,7 +22,7 @@ export interface CatSel {
 export interface Opinion { nombre: string; texto: string; estrellas: number; foto?: string | null }
 
 export interface ConfigPagina {
-  marca: { nombre: string; logo: string | null; color: string; eslogan: string };
+  marca: { nombre: string; logo: string | null; color: string; eslogan: string; pixel_meta?: string /* solo dígitos */ };
   banner: { titulo: string; titulo2: string; subtitulo: string; imagen: string | null; boton: string; beneficios: string[]; productos: string[] /* embudos de la portada (máx. 3) */; mostrar_textos?: boolean /* false = solo fotos */ };
   secciones: Seccion[];
   productos: ProdSel[];
@@ -122,6 +122,10 @@ export interface ProductoWeb { id: string; color: string; foto: string; creado: 
 export interface CatalogoWeb { id: string; familia: string; portada: string | null; productos: ProductoWeb[]; embudo: EmbudoWeb | null }
 export interface PromoWeb { id: string; nombre: string; foto: string | null; precio: number | null; precio_antes: number | null }
 export interface DatosPagina { embudos: Record<string, EmbudoWeb>; catalogos: CatalogoWeb[]; promociones: PromoWeb[] }
+
+/** Enlace a un embudo DESDE Mi Página: el mismo enlace + marca de origen (utm). Los enlaces de los anuncios no cambian. */
+export const enlaceEmbudo = (slug: string) =>
+  `${BASE_TIENDA}/${slug}?utm_source=mi-pagina&utm_medium=web&utm_campaign=tienda`;
 
 export const pesosCOP = (n: number | null | undefined) =>
   n == null || !Number.isFinite(Number(n)) ? '' : `$${Math.round(Number(n)).toLocaleString('es-CO')}`;

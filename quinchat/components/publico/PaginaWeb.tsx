@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { ConfigPagina, DatosPagina, CatalogoWeb, EmbudoWeb } from '@/lib/mi-pagina';
-import { BASE_TIENDA, pesosCOP, grupoSugerido, nombreBonito } from '@/lib/mi-pagina';
+import { BASE_TIENDA, pesosCOP, grupoSugerido, nombreBonito, enlaceEmbudo } from '@/lib/mi-pagina';
+import Pixeles from '@/components/publico/Pixeles';
 
 /**
  * Página pública de «Mi Página» (tienda hecha con los embudos). La misma pieza se usa:
@@ -56,7 +57,7 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
   const waNum = wa.length === 10 ? `57${wa}` : wa;
   const linkWa = (texto: string) => waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent(texto)}` : null;
   const linkCat = (c: { embudo: EmbudoWeb | null; familia: string }, colorTxt?: string) =>
-    c.embudo ? `${BASE_TIENDA}/${c.embudo.slug}` : linkWa(`Hola 👋 quiero el ${c.familia}${colorTxt ? ` color ${colorTxt}` : ''}`);
+    c.embudo ? enlaceEmbudo(c.embudo.slug) : linkWa(`Hola 👋 quiero el ${c.familia}${colorTxt ? ` color ${colorTxt}` : ''}`);
 
   const secciones = config.secciones.filter(s => s.visible);
   const hay = (t: string) => secciones.some(s => s.tipo === t);
@@ -65,6 +66,8 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
 
   return (
     <div className="min-h-screen bg-[#F6F7F6] text-[#111] font-sans overflow-x-hidden">
+      {/* Píxel de Meta de la página (visitas). No en la vista previa del panel. */}
+      {!preview && /^\d{8,20}$/.test(String(config.marca.pixel_meta ?? '')) && <Pixeles meta={config.marca.pixel_meta} />}
       {/* Encabezado */}
       <header className="sticky top-0 z-30 text-white shadow-md" style={{ background: oscuro }}>
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center gap-3">
@@ -119,7 +122,7 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-5">
                 {visibles.map(p => (
                   <article key={p.slug} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-[#ECEEED] flex flex-col hover:shadow-lg transition">
-                    <a href={`${BASE_TIENDA}/${p.slug}`} className="block aspect-square bg-[#EEF1F0] overflow-hidden">
+                    <a href={enlaceEmbudo(p.slug)} className="block aspect-square bg-[#EEF1F0] overflow-hidden">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       {p.foto && <img src={p.foto} alt={p.producto} loading="lazy" className="w-full h-full object-cover hover:scale-105 transition duration-300" />}
                     </a>
@@ -130,7 +133,7 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
                         {p.precio_antes && p.precio && p.precio_antes > p.precio
                           ? <span className="ml-1.5 text-[11px] text-[#9A9A9A] line-through font-normal">{pesosCOP(p.precio_antes)}</span> : null}
                       </p>
-                      <a href={`${BASE_TIENDA}/${p.slug}`} className="mt-auto pt-3">
+                      <a href={enlaceEmbudo(p.slug)} className="mt-auto pt-3">
                         <span className="block text-center px-2 py-2.5 rounded-xl text-white text-[13px] font-bold" style={{ background: color }}>🛒 Ver producto</span>
                       </a>
                     </div>

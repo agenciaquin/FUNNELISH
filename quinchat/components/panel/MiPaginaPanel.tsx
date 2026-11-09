@@ -383,6 +383,9 @@ export default function MiPaginaPanel() {
                     ))}
                   </div>
                 </div>
+                <div><label className={labelCls}>Píxel de Meta</label>
+                  <input value={cfg.marca.pixel_meta ?? ''} onChange={e => cambiar(c => { c.marca.pixel_meta = e.target.value.replace(/\D/g, ''); })} placeholder="1005280598535259" className={inputCls} />
+                  <p className="text-[10px] text-[#7A8A87] mt-1">Mide las visitas a la página. Las ventas las mide el píxel de cada embudo y quedan marcadas como «mi-pagina».</p></div>
                 <SubirImagen titulo="Logo" ayuda="PNG con fondo transparente ideal" url={cfg.marca.logo} onUrl={u => cambiar(c => { c.marca.logo = u; })} subir={subir} />
                 <div><label className={labelCls}>WhatsApp de la tienda</label>
                   <input value={cfg.contacto.whatsapp} onChange={e => cambiar(c => { c.contacto.whatsapp = e.target.value; })} placeholder="3001234567" className={inputCls} />
