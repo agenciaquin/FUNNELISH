@@ -64,7 +64,7 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
   const navGrupos = hay('productos') ? grupos.filter(g => g !== 'Todos').slice(0, 5) : [];
 
   return (
-    <div className="min-h-screen bg-[#F6F7F6] text-[#111] font-sans">
+    <div className="min-h-screen bg-[#F6F7F6] text-[#111] font-sans overflow-x-hidden">
       {/* Encabezado */}
       <header className="sticky top-0 z-30 text-white shadow-md" style={{ background: oscuro }}>
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center gap-3">
@@ -95,7 +95,12 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
 
       {secciones.map(s => {
         switch (s.tipo) {
-          case 'banner': return <Portada key={s.id} config={config} color={color} oscuro={oscuro} fotos={productos.map(p => p.foto).filter(Boolean).slice(0, 3) as string[]} onVer={() => ir('productos')} />;
+          case 'banner': {
+            // Portada armada con los productos que elige el dueño (máx. 3); si no eligió, los 3 primeros
+            const elegidos = (config.banner.productos ?? []).map(sl => productos.find(p => p.slug === sl)).filter(Boolean) as typeof productos;
+            const fotosPortada = (elegidos.length ? elegidos : productos).map(p => p.foto).filter(Boolean).slice(0, 3) as string[];
+            return <Portada key={s.id} config={config} color={color} oscuro={oscuro} fotos={fotosPortada} onVer={() => ir('productos')} />;
+          }
 
           case 'productos': return productos.length === 0 ? null : (
             <section key={s.id} id="productos" className="max-w-6xl mx-auto px-4 py-10">
@@ -312,20 +317,25 @@ function Portada({ config, color, oscuro, fotos, onVer }: { config: ConfigPagina
       </section>
     );
   }
+  // Orden del abanico: el 1.º elegido va al centro y adelante; el 2.º a la izquierda; el 3.º a la derecha
+  const abanico = fotos.length === 3 ? [fotos[1], fotos[0], fotos[2]] : fotos.length === 2 ? [fotos[1], fotos[0]] : fotos;
+  const centro = fotos.length === 3 ? 1 : fotos.length === 2 ? 1 : 0;
   return (
-    <section className="relative overflow-hidden text-white" style={{ background: `radial-gradient(circle at 75% 40%, ${mezclar(color, '#041716', 0.35)} 0%, ${oscuro} 60%)` }}>
-      <div className="max-w-6xl mx-auto px-5 py-10 md:py-16 grid md:grid-cols-2 gap-6 items-center">
-        {textos}
-        {fotos.length > 0 && (
-          <div className="relative h-56 md:h-80">
-            {fotos.map((f, i) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img key={f} src={f} alt="" className="absolute top-1/2 rounded-2xl shadow-2xl object-cover border-4 border-white/10"
-                style={{
-                  width: '46%', aspectRatio: '1 / 1', left: `${[27, 2, 52][i] ?? 27}%`,
-                  transform: `translateY(-50%) rotate(${[0, -7, 7][i] ?? 0}deg) scale(${i === 0 ? 1.08 : 0.92})`, zIndex: i === 0 ? 3 : 1,
-                }} />
-            ))}
+    <section className="relative overflow-hidden text-white" style={{ background: `radial-gradient(circle at 70% 35%, ${mezclar(color, '#041716', 0.35)} 0%, ${oscuro} 62%)` }}>
+      <div className="max-w-6xl mx-auto px-4 md:px-5 pt-6 pb-8 md:py-16 grid md:grid-cols-2 gap-5 md:gap-6 items-center">
+        <div className="text-center md:text-left [&_.flex]:justify-center md:[&_.flex]:justify-start">{textos}</div>
+        {abanico.length > 0 && (
+          <div className="order-first md:order-none flex items-center justify-center py-2 md:py-0">
+            {abanico.map((f, i) => {
+              const esCentro = i === centro;
+              const lado = i < centro ? -1 : i > centro ? 1 : 0;
+              return (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={`${f}-${i}`} src={f} alt=""
+                  className={`rounded-2xl shadow-2xl object-cover border-4 border-white/10 aspect-square ${esCentro ? 'w-[46%] md:w-[48%] relative z-20' : 'w-[34%] md:w-[36%] relative z-10 opacity-95'}`}
+                  style={{ marginLeft: i === 0 ? 0 : '-9%', transform: `rotate(${lado * 7}deg) ${esCentro ? 'scale(1.04)' : 'translateY(6%)'}` }} />
+              );
+            })}
           </div>
         )}
       </div>

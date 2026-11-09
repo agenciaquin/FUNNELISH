@@ -163,7 +163,19 @@ export default function MiPaginaPanel() {
 
   const urlVista = slugGuardado ? `/p/web/${slugGuardado}?borrador=1` : null;
   const portadaFoto = cfg.banner.imagen;
-  const fotosDefecto = enTienda.filter(x => x.p.visible).map(x => x.p.foto || x.e!.foto).filter(Boolean).slice(0, 3) as string[];
+  // Productos que arman la portada automática (los elige el dueño; si no eligió, los 3 primeros visibles)
+  const visiblesTienda = enTienda.filter(x => x.p.visible);
+  const elegidosPortada = (cfg.banner.productos ?? []).filter(sl => visiblesTienda.some(x => x.p.slug === sl));
+  const fotoPortadaDe = (x: (typeof enTienda)[number]) => x.p.foto || x.e!.foto;
+  const fotosDefecto = (elegidosPortada.length
+    ? elegidosPortada.map(sl => visiblesTienda.find(x => x.p.slug === sl)!)
+    : visiblesTienda).map(fotoPortadaDe).filter(Boolean).slice(0, 3) as string[];
+  const abanicoMini = fotosDefecto.length === 3 ? [fotosDefecto[1], fotosDefecto[0], fotosDefecto[2]] : fotosDefecto.length === 2 ? [fotosDefecto[1], fotosDefecto[0]] : fotosDefecto;
+  const centroMini = fotosDefecto.length >= 2 ? 1 : 0;
+  const alternarPortada = (slug: string) => cambiar(c => {
+    const act = (c.banner.productos ?? []).filter(sl => visiblesTienda.some(x => x.p.slug === sl));
+    c.banner.productos = act.includes(slug) ? act.filter(s => s !== slug) : act.length >= 3 ? act : [...act, slug];
+  });
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 md:px-6 pb-8">
@@ -215,11 +227,18 @@ export default function MiPaginaPanel() {
                   {portadaFoto
                     // eslint-disable-next-line @next/next/no-img-element
                     ? <img src={portadaFoto} alt="" className="absolute inset-0 w-full h-full object-cover" />
-                    : fotosDefecto.map((f, i) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img key={f} src={f} alt="" className="absolute top-1/2 w-[30%] aspect-square object-cover rounded-lg shadow-lg"
-                        style={{ left: `${[62, 48, 76][i]}%`, transform: `translateY(-50%) translateX(-20%) rotate(${[0, -7, 7][i]}deg)`, zIndex: i === 0 ? 3 : 1 }} />
-                    ))}
+                    : (
+                      <div className="absolute inset-y-0 right-2 w-[52%] flex items-center justify-center">
+                        {abanicoMini.map((f, i) => {
+                          const lado = i < centroMini ? -1 : i > centroMini ? 1 : 0;
+                          return (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img key={`${f}-${i}`} src={f} alt="" className={`aspect-square object-cover rounded-lg shadow-lg border-2 border-white/10 relative ${i === centroMini ? 'w-[46%] z-20' : 'w-[34%] z-10'}`}
+                              style={{ marginLeft: i === 0 ? 0 : '-9%', transform: `rotate(${lado * 7}deg) ${i === centroMini ? 'scale(1.04)' : 'translateY(6%)'}` }} />
+                          );
+                        })}
+                      </div>
+                    )}
                   <div className="absolute inset-0 p-3 flex flex-col justify-center" style={portadaFoto ? { background: 'linear-gradient(90deg,#062523cc,transparent 70%)' } : undefined}>
                     <p className="text-lg font-black italic uppercase leading-[0.95] max-w-[55%]">{cfg.banner.titulo}<br /><span className="text-[#5EEAD4]">{cfg.banner.titulo2}</span></p>
                   </div>
@@ -240,6 +259,31 @@ export default function MiPaginaPanel() {
                   <button onClick={() => setTextosPortada(t => !t)} className="text-xs font-bold text-[#00847A]">✏️ {textosPortada ? 'Ocultar textos' : 'Editar textos de la portada'}</button>
                   {portadaFoto && <button onClick={() => cambiar(c => { c.banner.imagen = null; })} className="text-xs text-[#9AA7A5] hover:text-[#DC2626]">Usar portada automática</button>}
                 </div>
+                {!portadaFoto && visiblesTienda.length > 0 && (
+                  <div className="mt-3 rounded-xl border border-[#E3EAE8] p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-bold text-[#1F2A28]">Productos de la portada <span className="font-normal text-[#7A8A87]">({elegidosPortada.length}/3)</span></p>
+                      {elegidosPortada.length > 0 && <button onClick={() => cambiar(c => { c.banner.productos = []; })} className="text-[11px] text-[#9AA7A5] hover:text-[#DC2626]">Automático</button>}
+                    </div>
+                    <p className="text-[11px] text-[#7A8A87] mb-2">Toca hasta 3. El primero queda en el centro, adelante.{elegidosPortada.length === 0 ? ' Sin elegir se usan los 3 primeros.' : ''}</p>
+                    <div className="grid grid-cols-4 gap-2 max-h-56 overflow-y-auto pr-1">
+                      {visiblesTienda.map(x => {
+                        const pos = elegidosPortada.indexOf(x.p.slug);
+                        const f = fotoPortadaDe(x);
+                        const lleno = pos < 0 && elegidosPortada.length >= 3;
+                        return (
+                          <button key={x.p.slug} onClick={() => alternarPortada(x.p.slug)} disabled={lleno} title={nombreBonito(x.e!.producto)}
+                            className={`relative rounded-lg overflow-hidden aspect-square border-2 transition ${pos >= 0 ? 'border-[#00A895] ring-2 ring-[#00A895]/30' : 'border-transparent'} ${lleno ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-90'}`}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            {f ? <img src={f} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-[#F1F4F3]" />}
+                            {pos >= 0 && <span className="absolute top-1 left-1 w-5 h-5 rounded-full text-[11px] font-black text-white flex items-center justify-center" style={{ background: VERDE }}>{pos + 1}</span>}
+                            <span className="absolute bottom-0 inset-x-0 bg-black/55 text-white text-[9px] font-semibold px-1 py-0.5 truncate">{nombreBonito(x.e!.producto)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {textosPortada && (
                   <div className="mt-2 space-y-2">
                     <div className="grid grid-cols-2 gap-2">

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import VolverTienda from '@/components/publico/VolverTienda';
 
 /**
  * Las páginas de venta heredan el diseño general, pero NO la identidad de la
@@ -12,5 +13,5 @@ export const metadata: Metadata = {
 };
 
 export default function LayoutTienda({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return <><VolverTienda />{children}</>;
 }

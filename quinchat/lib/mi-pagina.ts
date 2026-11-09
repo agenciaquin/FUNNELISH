@@ -23,7 +23,7 @@ export interface Opinion { nombre: string; texto: string; estrellas: number; fot
 
 export interface ConfigPagina {
   marca: { nombre: string; logo: string | null; color: string; eslogan: string };
-  banner: { titulo: string; titulo2: string; subtitulo: string; imagen: string | null; boton: string; beneficios: string[] };
+  banner: { titulo: string; titulo2: string; subtitulo: string; imagen: string | null; boton: string; beneficios: string[]; productos: string[] /* embudos de la portada (máx. 3) */ };
   secciones: Seccion[];
   productos: ProdSel[];
   catalogos: CatSel[];
@@ -48,6 +48,7 @@ export function configInicial(): ConfigPagina {
     banner: {
       titulo: 'Buzos y Camisetas', titulo2: 'Premium', subtitulo: '', imagen: null, boton: 'Ver productos',
       beneficios: ['Diseños exclusivos', 'Alta calidad', 'Envío nacional'],
+      productos: [],
     },
     secciones: (['banner', 'productos', 'contacto'] as TipoSeccion[])
       .map(tipo => ({ id: nuevoId(), tipo, visible: true, titulo: tipo === 'banner' ? '' : NOMBRE_SECCION[tipo] })),
@@ -72,7 +73,8 @@ export function normalizarConfig(c: any): ConfigPagina {
   }
   return {
     marca: { ...d.marca, ...(x.marca ?? {}) },
-    banner: { ...d.banner, ...(x.banner ?? {}), beneficios: Array.isArray(x.banner?.beneficios) ? x.banner.beneficios : d.banner.beneficios },
+    banner: { ...d.banner, ...(x.banner ?? {}), beneficios: Array.isArray(x.banner?.beneficios) ? x.banner.beneficios : d.banner.beneficios,
+      productos: Array.isArray(x.banner?.productos) ? x.banner.productos.filter((v: any) => typeof v === 'string').slice(0, 3) : [] },
     secciones,
     productos: Array.isArray(x.productos) ? x.productos.filter((p: any) => p && typeof p.slug === 'string') : [],
     catalogos: Array.isArray(x.catalogos) ? x.catalogos : [],
