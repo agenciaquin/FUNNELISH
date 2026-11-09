@@ -174,6 +174,13 @@ teléfonos extra; el número viejo del bot quedó como extra). Lee `vv_ventas` p
 enciende POR VENDEDOR (botón en el módulo) y queda en `ajustes_bot.ventas_vendedores.numeros_reales` (vacío = nada
 cambia para los vendedores). Effi: si el vendedor no está en `effi_remision.vendedores`, se toma su tercero de `mv_vendedores`.
 
+### 11 · Chats sin número (CO.xxxx) y ventas (08-nov-2026)
+
+Los chats de usuario de WhatsApp tienen id `CO.<dígitos>`: esos dígitos NO son un teléfono. Antes el bot
+guardaba la venta con los últimos 10 dígitos como «teléfono» y «Ir al chat» no encontraba nada.
+Ahora `clientes_funnelish.conversation_id` guarda el chat cuando no es `57+telefono` (nulo = 57+telefono);
+`lib/quinchat/ventas.ts` no inventa teléfono y `api/ventas/lista` usa ese chat. `api/ventas/registrar` aún no.
+
 ### 5 · No todas las subidas comprimen
 
 Comprimen: `funnels/imagen`, `plantillas-wa/imagen`, `catalogos/upload-imagen`.

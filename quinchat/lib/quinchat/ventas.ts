@@ -1246,7 +1246,9 @@ async function guardarYPasarPedido(supabase: any, from: string, datos: any): Pro
     // Teléfono del pedido: lo que diga el bot; si no lo capturó (ya no pedimos
     // "Celular" porque es el número de WhatsApp), se toma del número del chat (from).
     let tel10 = String(datos.telefono ?? '').replace(/\D/g, '').slice(-10);
-    if (tel10.length !== 10) tel10 = String(from ?? '').replace(/\D/g, '').replace(/^57/, '').slice(-10);
+    // Chat de usuario de WhatsApp (CO.xxxx): NO tiene número; sus dígitos no son un teléfono.
+    const chatSinNumero = !/^\d+$/.test(String(from ?? ''));
+    if (tel10.length !== 10) tel10 = chatSinNumero ? '' : String(from ?? '').replace(/\D/g, '').replace(/^57/, '').slice(-10);
     const valor = Number(datos.precio ?? 0);
     const producto = `${String(datos.producto ?? '').trim()}${datos.color ? ` - ${String(datos.color).trim()}` : ''}`;
     const direccion = unirDireccionBarrio(datos.direccion, datos.barrio);
@@ -1262,7 +1264,7 @@ async function guardarYPasarPedido(supabase: any, from: string, datos: any): Pro
     const hace = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const { data: reciente } = await supabase.from('clientes_funnelish')
       .select('id')
-      .eq('telefono', tel10)
+      .eq(chatSinNumero && !tel10 ? 'conversation_id' : 'telefono', chatSinNumero && !tel10 ? from : tel10)
       .not('estado', 'in', '("cancelado","duplicado")')
       .gte('created_at', hace)
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
@@ -1281,6 +1283,8 @@ async function guardarYPasarPedido(supabase: any, from: string, datos: any): Pro
 
     const camposPedido = {
       nombre, telefono: tel10, direccion,
+      // Chat de origen solo cuando no es 57+teléfono (para «Ir al chat» y la etiqueta)
+      ...(chatSinNumero ? { conversation_id: String(from) } : {}),
       ciudad:       String(datos.municipio ?? '').trim(),
       departamento: String(datos.departamento ?? '').trim(),
       correo:       String(datos.correo ?? '').trim(),
@@ -1387,7 +1391,9 @@ export async function mandarFichaVentaWA(supabase: any, pedido: any) {
 async function actualizarYAvisarCambio(supabase: any, from: string, datos: any): Promise<boolean> {
   try {
     let tel10 = String(datos.telefono ?? '').replace(/\D/g, '').slice(-10);
-    if (tel10.length !== 10) tel10 = String(from ?? '').replace(/\D/g, '').replace(/^57/, '').slice(-10);
+    // Chat de usuario de WhatsApp (CO.xxxx): NO tiene número; sus dígitos no son un teléfono.
+    const chatSinNumero = !/^\d+$/.test(String(from ?? ''));
+    if (tel10.length !== 10) tel10 = chatSinNumero ? '' : String(from ?? '').replace(/\D/g, '').replace(/^57/, '').slice(-10);
     const valor = Number(datos.precio ?? 0);
     const producto = `${String(datos.producto ?? '').trim()}${datos.color ? ` - ${String(datos.color).trim()}` : ''}`;
     const direccion = unirDireccionBarrio(datos.direccion, datos.barrio);
@@ -1395,7 +1401,7 @@ async function actualizarYAvisarCambio(supabase: any, from: string, datos: any):
 
     const { data: previo } = await supabase.from('clientes_funnelish')
       .select('id, producto, talla, direccion, ciudad, departamento, registro_enviado')
-      .eq('telefono', tel10)
+      .eq(chatSinNumero && !tel10 ? 'conversation_id' : 'telefono', chatSinNumero && !tel10 ? from : tel10)
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (!previo?.id) return false;
 

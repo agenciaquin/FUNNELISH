@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
 
   let q = supabase
     .from('clientes_funnelish')
-    .select('id, nombre, telefono, producto, talla, valor, direccion, ciudad, departamento, correo, confirmado_at, abono, abono_recibido, referencia, papelera_at, contacto_at')
+    .select('id, nombre, telefono, producto, talla, valor, direccion, ciudad, departamento, correo, confirmado_at, abono, abono_recibido, referencia, papelera_at, contacto_at, conversation_id')
     .eq('confirmado', true)
     .order('confirmado_at', { ascending: false })
     .limit(2000);
@@ -47,7 +47,9 @@ export async function GET(req: NextRequest) {
 
   let lista = ventas ?? [];
 
-  const convIds = lista.map((v: any) => `57${String(v.telefono ?? '').replace(/^57/, '')}`);
+  // Chat de la venta: el guardado (chats CO.xxxx sin número) o 57 + teléfono
+  const convDe = (v: any) => v.conversation_id ? String(v.conversation_id) : `57${String(v.telefono ?? '').replace(/^57/, '')}`;
+  const convIds = lista.map(convDe);
 
   // ── Estado ACTUAL según la etiqueta de la conversación ──────────────────────
   // El usuario cambia estados por la etiqueta del chat. Si una venta que estaba
@@ -62,7 +64,7 @@ export async function GET(req: NextRequest) {
         for (const c of convs ?? []) labelPorConv.set(String((c as any).id), String((c as any).label ?? '').toUpperCase());
       }
       lista = lista.filter((v: any) => {
-        const lab = labelPorConv.get(`57${String(v.telefono ?? '').replace(/^57/, '')}`);
+        const lab = labelPorConv.get(convDe(v));
         if (lab == null) return true; // sin conversación → se mantiene
         // Si la etiqueta actual la sacó de "venta realizada", se excluye
         return !/CANCELAD|PENDIENTE|PROGRAMAD|ABONO POR VERIFIC/.test(lab);
@@ -94,7 +96,7 @@ export async function GET(req: NextRequest) {
   const pesos = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
 
   const ventasSalida = lista.map((v: any) => {
-    const conv = `57${String(v.telefono ?? '').replace(/^57/, '')}`;
+    const conv = convDe(v);
     const valorNum = Number(String(v.valor ?? '').replace(/[^\d]/g, '')) || 0;
     const abono = Number(v.abono ?? 0);
     return {
