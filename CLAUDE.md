@@ -164,6 +164,10 @@ Mi Página: tabla propia `mi_pagina` (borrador / publicado), `lib/mi-pagina.ts`,
 pública en `pedido.klixmant.shop/web/<slug>` → `app/p/web/[slug]` (sin tocar el middleware). Solo LEE
 catálogos, embudos y promociones. Comprar = embudo enlazado al catálogo; sin embudo = WhatsApp.
 Cifras de las tarjetas: `app/api/funnels/resumen` (solo lectura, 30 días, caché 10 min).
+Píxeles: `marca.pixel_meta` / `marca.pixel_tiktok` van en la config (públicos). Los TOKENS van en columnas
+`mi_pagina.meta_token` / `tiktok_token` (PATCH `/api/mi-pagina`), nunca en borrador/publicado. Visita a Meta por
+servidor: `app/api/mi-pagina/evento` (público, mismo event_id que el navegador). El token de TikTok solo se guarda
+(los embudos tampoco lo usan aún). «Ver producto» abre el embudo con `?utm_source=mi-pagina…`; los enlaces de anuncios no cambian.
 
 ### 10 · Master Vendedores (08-nov-2026), módulo independiente
 

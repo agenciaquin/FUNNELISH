@@ -46,7 +46,9 @@ export async function GET() {
   });
 
   return NextResponse.json({
-    pagina: p ? { slug: p.slug, nombre: p.nombre, publicada: p.publicada, publicado_at: p.publicado_at, actualizado_at: p.actualizado_at, borrador } : null,
+    pagina: p ? { slug: p.slug, nombre: p.nombre, publicada: p.publicada, publicado_at: p.publicado_at, actualizado_at: p.actualizado_at, borrador,
+      // Los tokens NUNCA se devuelven completos: solo si hay uno guardado y sus últimos 4
+      tokens: { meta: p.meta_token ? `••••${String(p.meta_token).slice(-4)}` : null, tiktok: p.tiktok_token ? `••••${String(p.tiktok_token).slice(-4)}` : null } } : null,
     embudos,
     catalogos,
   });
@@ -96,4 +98,22 @@ export async function POST(req: NextRequest) {
   const { error } = await supabase.from('mi_pagina').update({ ...cambio, actualizado_at: ahora }).eq('slug', slug);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true, ...cambio });
+}
+
+/** PATCH {slug, meta_token?, tiktok_token?} → guarda los tokens (texto vacío = borrar). Van en columnas aparte, fuera de la config pública. */
+export async function PATCH(req: NextRequest) {
+  const auth = await exigirSesion();
+  if (auth.error) return auth.error;
+  const b = await req.json().catch(() => null);
+  const slug = String(b?.slug ?? '').trim().toLowerCase();
+  if (!SLUG.test(slug)) return NextResponse.json({ error: 'Página no válida' }, { status: 400 });
+  const cambio: Record<string, string | null> = {};
+  for (const k of ['meta_token', 'tiktok_token'] as const) {
+    if (k in (b ?? {})) cambio[k] = String(b[k] ?? '').replace(/\s+/g, '').slice(0, 600) || null;
+  }
+  if (!Object.keys(cambio).length) return NextResponse.json({ ok: true });
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase.from('mi_pagina').update(cambio).eq('slug', slug);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
 }

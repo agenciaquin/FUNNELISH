@@ -22,7 +22,7 @@ export interface CatSel {
 export interface Opinion { nombre: string; texto: string; estrellas: number; foto?: string | null }
 
 export interface ConfigPagina {
-  marca: { nombre: string; logo: string | null; color: string; eslogan: string; pixel_meta?: string /* solo dígitos */ };
+  marca: { nombre: string; logo: string | null; color: string; eslogan: string; pixel_meta?: string /* solo dígitos */; pixel_tiktok?: string };
   banner: { titulo: string; titulo2: string; subtitulo: string; imagen: string | null; boton: string; beneficios: string[]; productos: string[] /* embudos de la portada (máx. 3) */; mostrar_textos?: boolean /* false = solo fotos */ };
   secciones: Seccion[];
   productos: ProdSel[];

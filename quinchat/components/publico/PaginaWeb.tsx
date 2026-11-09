@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ConfigPagina, DatosPagina, CatalogoWeb, EmbudoWeb } from '@/lib/mi-pagina';
 import { BASE_TIENDA, pesosCOP, grupoSugerido, nombreBonito, enlaceEmbudo } from '@/lib/mi-pagina';
-import Pixeles from '@/components/publico/Pixeles';
+import Script from 'next/script';
 
 /**
  * Página pública de «Mi Página» (tienda hecha con los embudos). La misma pieza se usa:
@@ -67,7 +67,7 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
   return (
     <div className="min-h-screen bg-[#F6F7F6] text-[#111] font-sans overflow-x-hidden">
       {/* Píxel de Meta de la página (visitas). No en la vista previa del panel. */}
-      {!preview && /^\d{8,20}$/.test(String(config.marca.pixel_meta ?? '')) && <Pixeles meta={config.marca.pixel_meta} />}
+      {!preview && <PixelesPagina meta={config.marca.pixel_meta} tiktok={config.marca.pixel_tiktok} />}
       {/* Encabezado */}
       <header className="sticky top-0 z-30 text-white shadow-md" style={{ background: oscuro }}>
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center gap-3">
@@ -403,4 +403,57 @@ function mezclar(a: string, b: string, p: number): string {
   const [r1, g1, b1] = h(a), [r2, g2, b2] = h(b);
   const m = (x: number, y: number) => Math.round(x * (1 - p) + y * p).toString(16).padStart(2, '0');
   return `#${m(r1, r2)}${m(g1, g2)}${m(b1, b2)}`;
+}
+
+/**
+ * Píxeles de Mi Página (Meta + TikTok). La visita de Meta lleva un event_id que también se manda al
+ * servidor (/api/mi-pagina/evento → API de conversiones con el token guardado): Meta la cuenta UNA vez.
+ */
+function PixelesPagina({ meta, tiktok }: { meta?: string; tiktok?: string }) {
+  const idMeta = /^\d{8,20}$/.test(String(meta ?? '')) ? String(meta) : null;
+  const idTiktok = /^[A-Z0-9]{10,30}$/i.test(String(tiktok ?? '')) ? String(tiktok) : null;
+  const [eventId, setEventId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!idMeta) return;
+    const id = `web-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    setEventId(id);
+    const slug = window.location.pathname.split('/').filter(Boolean).pop() ?? '';
+    const t = setTimeout(() => {
+      const ck = (n: string) => document.cookie.split('; ').find(c => c.startsWith(`${n}=`))?.split('=')[1];
+      fetch('/api/mi-pagina/evento', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true,
+        body: JSON.stringify({ slug, event_id: id, url: window.location.href, fbp: ck('_fbp'), fbc: ck('_fbc') }),
+      }).catch(() => {});
+    }, 1500); // da tiempo a que el píxel cree la cookie _fbp
+    return () => clearTimeout(t);
+  }, [idMeta]);
+  return (
+    <>
+      {idMeta && eventId && (
+        <Script id="px-meta-web" strategy="afterInteractive">{`
+          !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+          n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+          n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+          t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+          document,'script','https://connect.facebook.net/en_US/fbevents.js');
+          fbq('init','${idMeta}');fbq('track','PageView',{},{eventID:'${eventId}'});
+        `}</Script>
+      )}
+      {idTiktok && (
+        <Script id="px-tiktok-web" strategy="afterInteractive">{`
+          !function(w,d,t){w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];
+          ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie"];
+          ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};
+          for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);
+          ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e};
+          ttq.load=function(e,n){var r="https://analytics.tiktok.com/i18n/pixel/events.js";
+          ttq._i=ttq._i||{};ttq._i[e]=[];ttq._i[e]._u=r;ttq._t=ttq._t||{};ttq._t[e]=+new Date;
+          ttq._o=ttq._o||{};ttq._o[e]=n||{};var o=d.createElement("script");o.type="text/javascript";
+          o.async=!0;o.src=r+"?sdkid="+e+"&lib="+t;var a=d.getElementsByTagName("script")[0];
+          a.parentNode.insertBefore(o,a)};
+          ttq.load('${idTiktok}');ttq.page();}(window,document,'ttq');
+        `}</Script>
+      )}
+    </>
+  );
 }

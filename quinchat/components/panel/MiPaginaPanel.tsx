@@ -36,6 +36,11 @@ export default function MiPaginaPanel() {
   const [abiertoProductos, setAbiertoProductos] = useState(true);
   const [abiertoDiseno, setAbiertoDiseno] = useState(false);
   const [textosPortada, setTextosPortada] = useState(false);
+  // Tokens (secretos): solo se sabe si hay uno guardado (••••1234); se escriben aparte con PATCH
+  const [tokensGuardados, setTokensGuardados] = useState<{ meta: string | null; tiktok: string | null }>({ meta: null, tiktok: null });
+  const [tokenMeta, setTokenMeta] = useState('');
+  const [tokenTiktok, setTokenTiktok] = useState('');
+  const [guardandoTokens, setGuardandoTokens] = useState(false);
   const [agregando, setAgregando] = useState(false);
   const [fotoDe, setFotoDe] = useState<string | null>(null);
   const [arrastra, setArrastra] = useState<number | null>(null);
@@ -61,6 +66,7 @@ export default function MiPaginaPanel() {
           setSlug(j.pagina.slug); setSlugGuardado(j.pagina.slug);
           setCfg(normalizarConfig(j.pagina.borrador));
           setPublicada(!!j.pagina.publicada); setPublicadoAt(j.pagina.publicado_at ?? null);
+          setTokensGuardados(j.pagina.tokens ?? { meta: null, tiktok: null });
         }
       } catch (e: any) { setError(e?.message ?? String(e)); }
       finally { setCargando(false); }
@@ -383,9 +389,40 @@ export default function MiPaginaPanel() {
                     ))}
                   </div>
                 </div>
-                <div><label className={labelCls}>Píxel de Meta</label>
-                  <input value={cfg.marca.pixel_meta ?? ''} onChange={e => cambiar(c => { c.marca.pixel_meta = e.target.value.replace(/\D/g, ''); })} placeholder="1005280598535259" className={inputCls} />
-                  <p className="text-[10px] text-[#7A8A87] mt-1">Mide las visitas a la página. Las ventas las mide el píxel de cada embudo y quedan marcadas como «mi-pagina».</p></div>
+                <div className="rounded-xl border border-[#E3EAE8] p-3 space-y-2">
+                  <p className="text-xs font-extrabold text-[#1877F2]">📘 Meta (Facebook e Instagram)</p>
+                  <div><label className={labelCls}>Identificador del píxel</label>
+                    <input value={cfg.marca.pixel_meta ?? ''} onChange={e => cambiar(c => { c.marca.pixel_meta = e.target.value.replace(/\D/g, ''); })} placeholder="1005280598535259" className={inputCls} /></div>
+                  <div><label className={labelCls}>Token de la API de conversiones</label>
+                    <input type="password" autoComplete="off" value={tokenMeta} onChange={e => setTokenMeta(e.target.value)}
+                      placeholder={tokensGuardados.meta ? `Guardado ${tokensGuardados.meta} — escribe para cambiarlo` : 'Pega aquí el token'} className={inputCls} />
+                    <p className="text-[10px] text-[#7A8A87] mt-1">Con el token, las visitas también se le informan a Meta desde el servidor (llegan aunque el cliente bloquee cookies).</p></div>
+                  <p className="text-xs font-extrabold text-[#111] pt-1">🎵 TikTok</p>
+                  <div><label className={labelCls}>Identificador del píxel</label>
+                    <input value={cfg.marca.pixel_tiktok ?? ''} onChange={e => cambiar(c => { c.marca.pixel_tiktok = e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase(); })} placeholder="D7VNBURC77UDOFSGG36G" className={inputCls} /></div>
+                  <div><label className={labelCls}>Token de eventos (opcional)</label>
+                    <input type="password" autoComplete="off" value={tokenTiktok} onChange={e => setTokenTiktok(e.target.value)}
+                      placeholder={tokensGuardados.tiktok ? `Guardado ${tokensGuardados.tiktok} — escribe para cambiarlo` : '(opcional)'} className={inputCls} /></div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button disabled={guardandoTokens || (!tokenMeta.trim() && !tokenTiktok.trim()) || !slugGuardado}
+                      onClick={async () => {
+                        setGuardandoTokens(true);
+                        const cuerpo: Record<string, string> = { slug: slugGuardado ?? '' };
+                        if (tokenMeta.trim()) cuerpo.meta_token = tokenMeta.trim();
+                        if (tokenTiktok.trim()) cuerpo.tiktok_token = tokenTiktok.trim();
+                        const r = await fetch('/api/mi-pagina', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo) });
+                        setGuardandoTokens(false);
+                        if (r.ok) {
+                          setTokensGuardados(t => ({ meta: cuerpo.meta_token ? `••••${cuerpo.meta_token.slice(-4)}` : t.meta, tiktok: cuerpo.tiktok_token ? `••••${cuerpo.tiktok_token.slice(-4)}` : t.tiktok }));
+                          setTokenMeta(''); setTokenTiktok(''); setAviso('✅ Tokens guardados.');
+                        } else setAviso('No se pudieron guardar los tokens.');
+                      }}
+                      className="px-3 py-2 rounded-lg text-white text-xs font-bold disabled:opacity-40" style={{ background: VERDE }}>{guardandoTokens ? 'Guardando…' : 'Guardar tokens'}</button>
+                    {tokensGuardados.meta && <button onClick={async () => { await fetch('/api/mi-pagina', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slug: slugGuardado, meta_token: '' }) }); setTokensGuardados(t => ({ ...t, meta: null })); }} className="text-[11px] text-[#9AA7A5] hover:text-[#DC2626]">Quitar token Meta</button>}
+                    {tokensGuardados.tiktok && <button onClick={async () => { await fetch('/api/mi-pagina', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slug: slugGuardado, tiktok_token: '' }) }); setTokensGuardados(t => ({ ...t, tiktok: null })); }} className="text-[11px] text-[#9AA7A5] hover:text-[#DC2626]">Quitar token TikTok</button>}
+                  </div>
+                  <p className="text-[10px] text-[#7A8A87]">Los píxeles miden las visitas a la página. Las ventas las mide cada embudo y quedan marcadas «mi-pagina». Los píxeles se ven en la página al oprimir «Publicar página»; los tokens se guardan con su botón.</p>
+                </div>
                 <SubirImagen titulo="Logo" ayuda="PNG con fondo transparente ideal" url={cfg.marca.logo} onUrl={u => cambiar(c => { c.marca.logo = u; })} subir={subir} />
                 <div><label className={labelCls}>WhatsApp de la tienda</label>
                   <input value={cfg.contacto.whatsapp} onChange={e => cambiar(c => { c.contacto.whatsapp = e.target.value; })} placeholder="3001234567" className={inputCls} />
