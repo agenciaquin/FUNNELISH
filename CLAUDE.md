@@ -139,6 +139,14 @@ Línea de recepción (08-nov-2026, dueño): el MÓDULO (panel + Effi) recibe ven
 Por el número de VENTAS (chat WhatsApp) sigue lo de siempre: el bot le ORGANIZA la venta al vendedor (flujo viejo).
 `linea_recepcion: 'funnel'` (por defecto): en el número de ventas el módulo no entra, salvo para terminar una venta
 del módulo ya abierta allí (`tieneVentaAbiertaVV`). `'todas'` = el módulo atiende en ambos números.
+**El módulo es APARTE, solo para subir a Effi (dueño, 08-nov-2026):** sus ventas (`vv_ventas`) NO cuentan en las ventas
+de QuinChat, metas diarias ni ventas confirmadas (`clientes_funnelish`, etiqueta VENTA REALIZADA, reportes de vendedores).
+No escribir en esas tablas desde el módulo. Un número del módulo que no es vendedor de la lista y escribe al Funnel no cae
+al bot de clientes.
+
+**Seguimiento de ventas por hora a vendedores: APAGADO (08-nov-2026, dueño).** `ajustes_bot.seguimiento_vendedores.activo=false`:
+`/api/cron/vendedores` no envía nada y `atenderVendedor` ya no pide ni cuenta reportes (solo guarda; a un «Hola» le dice
+«mándame la venta»). En el Funnel, los números del módulo van al módulo y no al organizador.
 
 ### 7 · Organizador de pedidos (Yamile León) — aislado con interruptor
 

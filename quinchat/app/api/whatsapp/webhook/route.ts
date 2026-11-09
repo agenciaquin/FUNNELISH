@@ -142,6 +142,19 @@ function tiempoLegibleSeg(seg: number): string {
  * toma cuántas ventas reporta y actualiza el conteo del día (o de ayer si venía
  * de la pregunta de las 8am). Nunca le vende.
  */
+let cacheSeguimiento: { activo: boolean; leido: number } | null = null;
+/** ¿Sigue activo el seguimiento de ventas por hora a los vendedores? (por defecto NO, desde 08-nov-2026) */
+async function seguimientoVendedoresActivo(supabase: any): Promise<boolean> {
+  if (cacheSeguimiento && Date.now() - cacheSeguimiento.leido < 60_000) return cacheSeguimiento.activo;
+  let activo = false;
+  try {
+    const { data } = await supabase.from('ajustes_bot').select('valor').eq('clave', 'seguimiento_vendedores').maybeSingle();
+    activo = (data?.valor as any)?.activo === true;
+  } catch { /* apagado */ }
+  cacheSeguimiento = { activo, leido: Date.now() };
+  return activo;
+}
+
 async function atenderVendedor(supabase: any, value: any, from: string): Promise<void> {
   const vend = vendedorDe(from);
   if (!vend) return;
@@ -185,6 +198,16 @@ async function atenderVendedor(supabase: any, value: any, from: string): Promise
   } catch { /* ignorar */ }
 
   const texto = textos.join(' ').trim();
+
+  // SEGUIMIENTO DE VENTAS POR HORA APAGADO (dueño, 08-nov-2026: «déjalo solo para subir ventas»).
+  // Ya no se piden ni se cuentan reportes; el mensaje queda guardado en el panel. Interruptor:
+  // ajustes_bot clave 'seguimiento_vendedores' → { activo: true } para volver a encenderlo.
+  if (!(await seguimientoVendedoresActivo(supabase))) {
+    const esSaludo = /^\s*(hola|holi|buenas|buenos dias|buenos días|buenas tardes|buenas noches|hey|ey|quino|buen dia|buen día)[\s.!,👋🙌😊]*$/i.test(texto);
+    if (esSaludo) await responder(`👋 ¡Hola ${nombreChat(vend)}! Mándame la venta *directo* (foto de la prenda + datos del cliente) y te la organizo.`);
+    return;
+  }
+
   const ventas = extraerVentas(texto);
 
   // ── Pregunta pendiente: define si el número es de HOY o de AYER + tiempo resp.
@@ -746,7 +769,13 @@ export async function POST(req: NextRequest) {
     if (remite) {
       try {
         const { organizadorAtiende } = await import('@/lib/organizador-pedidos/config');
-        if (await organizadorAtiende(remite)) {
+        // En el número FUNNEL las ventas de los vendedores del módulo van al módulo (panel + Effi), no al organizador
+        let delModuloEnFunnel = false;
+        if (tipoLinea === 'funnel') {
+          const { moduloAtiende, ajustesVV } = await import('@/lib/ventas-vendedores/config');
+          delModuloEnFunnel = (await moduloAtiende(remite)).si && (await ajustesVV()).linea_recepcion === 'funnel';
+        }
+        if (!delModuloEnFunnel && await organizadorAtiende(remite)) {
           const { atenderOrganizador } = await import('@/lib/organizador-pedidos/flujo');
           if (await atenderOrganizador(supabase, value, remite)) return NextResponse.json({ status: 'ok' });
         }
@@ -777,6 +806,9 @@ export async function POST(req: NextRequest) {
             const { atenderModuloVV } = await import('@/lib/ventas-vendedores/flujo');
             if (await atenderModuloVV(supabase, value, remite, m.esPrueba)) return NextResponse.json({ status: 'ok' });
           }
+          // El módulo es APARTE (solo para subir a Effi): un número del módulo que escribe al Funnel y no es
+          // vendedor de la lista nunca cae al bot de clientes (no crea pedidos ni cuenta en ventas/metas).
+          if (tipoLinea === 'funnel' && !esVendedor(remite)) return NextResponse.json({ status: 'ok' });
         }
       } catch (e) { console.error('[VV] módulo ventas vendedores:', e); }
     }

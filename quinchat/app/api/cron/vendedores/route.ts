@@ -60,6 +60,13 @@ async function guardarMsgVendedor(supabase: any, v: { telefono: string; nombre: 
 export async function GET(req: NextRequest) {
   if (!autorizado(req)) return NextResponse.json({ error: 'no autorizado' }, { status: 401 });
 
+  // APAGADO desde 08-nov-2026 (dueño: «quita el seguimiento a los vendedores por hora; solo para subir ventas»).
+  // No se envían check-ins, tips ni resúmenes. Volver a encender: ajustes_bot 'seguimiento_vendedores' → { activo: true }.
+  try {
+    const { data } = await createServerSupabaseClient().from('ajustes_bot').select('valor').eq('clave', 'seguimiento_vendedores').maybeSingle();
+    if ((data?.valor as any)?.activo !== true) return NextResponse.json({ ok: true, apagado: true });
+  } catch { return NextResponse.json({ ok: true, apagado: true }); }
+
   // Los vendedores escriben al número de ventas: se responde por ese mismo número.
   entrarLinea({
     phoneId: process.env.WHATSAPP_PHONE_NUMBER_ID_VENTAS ?? process.env.WHATSAPP_PHONE_NUMBER_ID ?? '',

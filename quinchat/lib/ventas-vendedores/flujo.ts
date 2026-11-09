@@ -73,7 +73,9 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
   const esNumeroSuelto = /^\s*\d{1,2}\s*$/.test(textoLote);
   // Un vendedor del equipo (aunque esté como número de prueba) sigue reportando su número de ventas.
   const soloPrueba = esPrueba && !vendedorDe(from);
-  if (!abierta && !soloPrueba && !hayFoto && !pareceVenta(textoLote)) return false; // reporte del check-in → flujo de siempre
+  // Un saludo («Hola») también lo contesta el módulo: «mándame la venta directo» (antes caía al supervisor de reportes)
+  const esSaludoLote = /^\s*(hola|holi|buenas|buenos dias|buenos días|buenas tardes|buenas noches|hey|ey|quino|hola quino|buen dia|buen día)[\s.!,👋🙌😊]*$/i.test(textoLote);
+  if (!abierta && !soloPrueba && !hayFoto && !pareceVenta(textoLote) && !esSaludoLote) return false; // reporte del check-in → flujo de siempre
   if (esNumeroSuelto && !hayFoto && !soloPrueba && (!abierta || abierta.estado !== 'ambigua')) return false; // "5" = reporte de ventas
 
   const vend = vendedorDe(from);
