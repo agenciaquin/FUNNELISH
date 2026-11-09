@@ -4,7 +4,7 @@ import { createServerSupabaseClient } from '@/lib/supabase';
 import { sincronizarSiToca } from '@/lib/novedades-effi';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 /**
  * PANEL DE NOVEDADES (09-nov-2026) — módulo independiente.

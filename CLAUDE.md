@@ -257,6 +257,9 @@ anulada pasa sola a solucionada (`resultado`); si vuelve a novedad se reabre la 
 Producto/foto: pedido de `clientes_funnelish` por teléfono (el más reciente antes de la guía); si no, `vv_ventas`/`vv_items`.
 Chat: busca `57tel`, `tel`, `+57tel`, `…@funnel` y el `conversation_id` del pedido; NO crea chats. Si no hay: wa.me + copiar.
 Botón «← Volver a Novedades» en el chat (WhatsAppPanel, estado `volverNovedades`); los filtros quedan en memoria del módulo.
+**OJO tablas nuevas:** en este Supabase una tabla creada por migración NO trae permisos para `service_role`
+(salió «permission denied for table novedades_effi»). Siempre: `grant select, insert, update, delete on <tabla> to service_role`
++ `grant usage, select on sequence <tabla>_id_seq to service_role`.
 
 ### 5 · No todas las subidas comprimen
 
