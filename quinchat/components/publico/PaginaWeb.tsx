@@ -19,6 +19,7 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
   const [filtro, setFiltro] = useState('Todos');
   const [abierto, setAbierto] = useState<(CatalogoWeb & { embudo: EmbudoWeb | null }) | null>(null);
   const [menu, setMenu] = useState(false);
+  const [embudoFlotante, setEmbudoFlotante] = useState<string | null>(null);
 
   useEffect(() => {
     if (!preview) return;
@@ -64,8 +65,20 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
   const ir = (id: string, g?: string) => { setMenu(false); if (g) setFiltro(g); document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }); };
   const navGrupos = hay('productos') ? grupos.filter(g => g !== 'Todos').slice(0, 5) : [];
 
+  // Abrir el embudo FLOTANTE sobre la página (sin salir de ella). Toma cualquier enlace a un embudo de la tienda
+  // («Ver producto», imagen, «Comprar»). Ctrl/Cmd + clic o clic medio siguen abriendo en otra pestaña.
+  const abrirFlotante = (e: React.MouseEvent) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = (e.target as HTMLElement)?.closest?.('a') as HTMLAnchorElement | null;
+    const href = a?.getAttribute('href') ?? '';
+    if (!href.startsWith(BASE_TIENDA) || !href.includes('utm_source=mi-pagina')) return;
+    e.preventDefault();
+    setEmbudoFlotante(href);
+  };
+
   return (
-    <div className="min-h-screen bg-[#F6F7F6] text-[#111] font-sans overflow-x-hidden">
+    <div className="min-h-screen bg-[#F6F7F6] text-[#111] font-sans overflow-x-hidden" onClick={abrirFlotante}>
+      {embudoFlotante && <EmbudoFlotante url={embudoFlotante} onCerrar={() => setEmbudoFlotante(null)} />}
       {/* Píxel de Meta de la página (visitas). No en la vista previa del panel. */}
       {!preview && <PixelesPagina meta={config.marca.pixel_meta} tiktok={config.marca.pixel_tiktok} />}
       {/* Encabezado */}
@@ -455,5 +468,37 @@ function PixelesPagina({ meta, tiktok }: { meta?: string; tiktok?: string }) {
         `}</Script>
       )}
     </>
+  );
+}
+
+/**
+ * Embudo abierto en una ventana flotante encima de Mi Página (el cliente no sale de la tienda).
+ * Es el mismo embudo (iframe, mismo dominio): sus píxeles, el pedido y la página de gracias funcionan igual.
+ */
+function EmbudoFlotante({ url, onCerrar }: { url: string; onCerrar: () => void }) {
+  const [cargado, setCargado] = useState(false);
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';                 // la página de atrás no se mueve
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCerrar(); };
+    window.addEventListener('keydown', onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener('keydown', onKey); };
+  }, [onCerrar]);
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-[2px] flex items-center justify-center p-2 md:p-6" onClick={onCerrar}>
+      <div className="relative w-full max-w-[480px] h-full max-h-[94vh] bg-white rounded-2xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+        {!cargado && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-[#6B6B6B] text-sm">
+            <span className="w-9 h-9 rounded-full border-4 border-[#E5E7EB] border-t-[#00A895] animate-spin" />
+            Cargando producto…
+          </div>
+        )}
+        <iframe src={url} title="Producto" className="w-full h-full border-0" onLoad={() => setCargado(true)}
+          allow="payment; clipboard-write" />
+        <button onClick={onCerrar} aria-label="Cerrar"
+          className="absolute top-2 right-2 z-10 w-10 h-10 rounded-full bg-black/75 text-white text-xl leading-none flex items-center justify-center shadow-lg hover:bg-black">×</button>
+        <a href={url} className="absolute top-2 left-2 z-10 px-3 h-8 rounded-full bg-black/60 text-white text-[11px] font-semibold flex items-center shadow" title="Abrir en pantalla completa">⤢ Pantalla completa</a>
+      </div>
+    </div>
   );
 }

@@ -16,6 +16,8 @@ export default function VolverTienda() {
 
   useEffect(() => {
     try {
+      // Dentro de la ventana flotante de Mi Página no hace falta (ya se ve la tienda detrás y hay botón cerrar)
+      if (window.self !== window.top) return;
       const ruta = window.location.pathname;
       if (esPaginaWeb(ruta)) {
         // Está en Mi Página: se recuerda para mostrar el botón en los embudos que abra (no en la vista previa del panel)
