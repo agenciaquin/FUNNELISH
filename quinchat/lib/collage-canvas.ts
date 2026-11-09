@@ -54,13 +54,33 @@ function cargarFuente() {
   return fuenteLista;
 }
 
+const cache = new Map<string, Promise<HTMLImageElement>>();
 function cargarImagen(url: string): Promise<HTMLImageElement> {
+  if (!cache.has(url)) { const p = cargarImagenSinCache(url); p.catch(() => cache.delete(url)); cache.set(url, p); }
+  return cache.get(url)!;
+}
+function cargarImagenSinCache(url: string): Promise<HTMLImageElement> {
   return new Promise((ok, mal) => {
     const img = new Image();
     img.onload = () => ok(img);
     img.onerror = () => mal(new Error(`No se pudo cargar la foto: ${url}`));
     img.src = `/api/collages/foto?u=${encodeURIComponent(url)}`;   // mismo dominio → el canvas no queda «contaminado»
   });
+}
+
+/** ¿Es la foto de aviso «COLOR NO DISPONIBLE» (círculo rojo)? Esas variantes no van en el collage. */
+function esNoDisponible(img: HTMLImageElement): boolean {
+  const c = document.createElement('canvas'); c.width = 60; c.height = 60;
+  const g = c.getContext('2d', { willReadFrequently: true })!; g.drawImage(img, 0, 0, 60, 60);
+  const d = g.getImageData(0, 0, 60, 60).data; let rojos = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] < 70 && d[i + 2] < 70) rojos++;
+  return rojos / 3600 > 0.12;
+}
+
+/** Quita las prendas cuya foto es el aviso «COLOR NO DISPONIBLE» o que no cargan. */
+export async function soloDisponibles<T extends { foto: string }>(prendas: T[]): Promise<T[]> {
+  const ok = await Promise.all(prendas.map(async p => { try { return !esNoDisponible(await cargarImagen(p.foto)); } catch { return false; } }));
+  return prendas.filter((_, i) => ok[i]);
 }
 
 /** Recorte de lo que NO es foto: encabezado impreso (franja blanca con el título / banda oscura) y márgenes lisos. */

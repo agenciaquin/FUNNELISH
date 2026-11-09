@@ -228,6 +228,9 @@ fotos de Supabase Storage para el canvas, `/imagen` sube el JPG a `chat-media/co
 (`lib/collage-canvas.ts`, sin binarios nativos) con el formato aprobado: foto original cuadrada + franja con letrero
 «// NOMBRE //», filas sin huecos (5 = 2 grandes + 3). Fuente `public/fonts/Poppins-BoldItalic.ttf`. «Pendiente de
 actualizar» si cambió una foto o se apagó una prenda. No modificar el formato sin pedido del dueño.
+Tipos (`tipo`): `auto` = uno por catálogo KLIXMANT (`id_catalogo`, índice único; solo HOMBRE si existe, 1 por color,
+sin fotos «COLOR NO DISPONIBLE»), se generan solos al buscar una familia en «Por catálogo» (uno por uno, en el navegador);
+`familia` = varios collages unidos (`hijos`, en orden) → «Mis catálogos»; `personal` = mezcla manual de prendas.
 
 ### 5 · No todas las subidas comprimen
 
