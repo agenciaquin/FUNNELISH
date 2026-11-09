@@ -164,6 +164,11 @@ arriba en la vista previa (`vista.cliente_diferencias`); no bloquea, la remisió
 hace PATCH `accion:'papelera'` → `estado='cancelada'` + `papelera_at/motivo/por` + `estado_previo`. Pestaña «🗑 Papelera»
 con «Restaurar» (`accion:'restaurar'`). Nada se borra. El Centro Maestro excluye `papelera_at`.
 
+**Papelera en el Centro Maestro (09-nov-2026, dueño):** 🗑 en cada tarjeta/fila → `ModalAnular` pide el MOTIVO → PATCH
+`accion:'papelera'`. Ahora también para ventas YA subidas a Effi (aviso: QuinChat NO anula la remisión en Effi, se anula allá);
+no se permite mientras está `enviando_effi`. Botón «🗑 Papelera» (GET `/api/ventas-vendedores?papelera=1`, solo `panel%`) con
+«Restaurar». El resto de cambios sobre una venta en Effi sigue bloqueado (409).
+
 **BEIGE = COCOA (dueño, 09-nov-2026):** es el mismo color; en el catálogo KLIXMANT se llama «Cocoa». «Enviar al panel de Effi»
 (desde-chat.ts y EnviarPanelEffiModal.tsx) traduce Beige → Cocoa. La IA de desde-chat también lee las FOTOS con letrero que
 manda el asesor (`messages.caption`, ej. «REAL MADRID · BEIGE»): si cambió el color con una foto, ese color manda.

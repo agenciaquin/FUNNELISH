@@ -60,6 +60,8 @@ export default function VentasVendedoresPanel({ onAbrirChat }: { onAbrirChat?: (
   const [sincronizando, setSincronizando] = useState(false);
   const [aviso, setAviso] = useState<{ ok: boolean; t: string } | null>(null);
   const [trabajando, setTrabajando] = useState<string | null>(null);
+  const [anular, setAnular] = useState<VentaVV | null>(null);   // venta a mandar a la papelera (pide motivo)
+  const [verPapelera, setVerPapelera] = useState(false);
 
   const cargar = useCallback(async () => {
     const qs = new URLSearchParams({ pestana, orden, qa: qa ? '1' : '0', ordenar: ordenarPor });
@@ -233,6 +235,7 @@ export default function VentasVendedoresPanel({ onAbrirChat }: { onAbrirChat?: (
                     style={effi === 'sin_subir' ? { background: DORADO } : undefined}>
                     ☁ Sin subir a EFFI <span className={`min-w-[22px] h-5 px-1.5 rounded-full text-[11px] flex items-center justify-center ${effi === 'sin_subir' ? 'bg-white text-[#141414]' : 'bg-[#F7EEDA]'}`}>{datos?.contadores?.sin_subir ?? 0}</span>
                   </button>
+                  <button onClick={() => setVerPapelera(true)} className="h-11 px-3.5 rounded-xl border border-[#E6EAE8] bg-white text-[13px] font-bold text-[#6B7280] hover:bg-[#F1F4F3]">🗑 Papelera</button>
                   <div className="inline-flex p-1 rounded-xl border border-[#E6EAE8] bg-[#F1F4F3]">
                     {(['tarjetas', 'lista'] as const).map(m => (
                       <button key={m} onClick={() => setVista(m)} title={m === 'tarjetas' ? 'Tarjetas' : 'Lista'}
@@ -293,7 +296,7 @@ export default function VentasVendedoresPanel({ onAbrirChat }: { onAbrirChat?: (
                     {ventas.map(v => (
                       <Tarjeta key={v.id} v={v} seleccionada={v.id === seleccion} trabajando={trabajando === v.id}
                         onSeleccionar={() => setSeleccion(v.id)} onVer={() => setAbierta(v.id)}
-                        onEnviar={() => prepararEnvio(v)} onChat={() => onAbrirChat?.(chatDe(v))} />
+                        onEnviar={() => prepararEnvio(v)} onChat={() => onAbrirChat?.(chatDe(v))} onEliminar={() => setAnular(v)} />
                     ))}
                   </div>
                 ) : (
@@ -315,6 +318,7 @@ export default function VentasVendedoresPanel({ onAbrirChat }: { onAbrirChat?: (
                               <td className="py-2 pr-2"><PildoraEstado estado={v.estado} /></td>
                               <td className="py-2 pr-2 text-right font-mono font-bold">{pesos(v.total)}</td>
                               <td className="py-2 text-right whitespace-nowrap">
+                                <button onClick={e => { e.stopPropagation(); setAnular(v); }} disabled={v.estado === 'enviando_effi'} title="Eliminar (va a la papelera)" className="w-8 h-8 rounded-lg border border-[#FCA5A5] text-[#DC2626] text-[12px] mr-1 disabled:opacity-40">🗑</button>
                                 <button onClick={e => { e.stopPropagation(); setAbierta(v.id); }} className="px-2.5 h-8 rounded-lg border border-[#E6EAE8] text-[12px] font-semibold mr-1">Ver</button>
                                 <button onClick={e => { e.stopPropagation(); prepararEnvio(v); }} disabled={trabajando === v.id || v.estado === 'cancelada'}
                                   className="px-2.5 h-8 rounded-lg text-white text-[12px] font-bold disabled:opacity-50" style={{ background: v.effi_remision ? '#2563EB' : VERDE }}>
@@ -415,6 +419,9 @@ export default function VentasVendedoresPanel({ onAbrirChat }: { onAbrirChat?: (
         <DetalleVenta id={abierta} onCerrar={() => { setAbierta(null); cargar(); }} onCambio={cargar} onChat={tel => { setAbierta(null); onAbrirChat?.(tel); }} />
       )}
       {verAjustes && <AjustesVV onCerrar={() => { setVerAjustes(false); cargar(); }} />}
+      {anular && <ModalAnular venta={anular} onCerrar={() => setAnular(null)}
+        onListo={msg => { setAnular(null); setAviso({ ok: true, t: msg }); if (seleccion === anular.id) setSeleccion(null); cargar(); }} />}
+      {verPapelera && <PapeleraCM onCerrar={() => { setVerPapelera(false); cargar(); }} onAviso={(ok, t) => setAviso({ ok, t })} />}
     </div>
   );
 }
@@ -430,9 +437,9 @@ function Foto({ v, clase }: { v: VentaVV; clase: string }) {
   );
 }
 
-function Tarjeta({ v, seleccionada, trabajando, onSeleccionar, onVer, onEnviar, onChat }: {
+function Tarjeta({ v, seleccionada, trabajando, onSeleccionar, onVer, onEnviar, onChat, onEliminar }: {
   v: VentaVV; seleccionada: boolean; trabajando: boolean;
-  onSeleccionar: () => void; onVer: () => void; onEnviar: () => void; onChat: () => void;
+  onSeleccionar: () => void; onVer: () => void; onEnviar: () => void; onChat: () => void; onEliminar: () => void;
 }) {
   const it = v.items[0];
   const unidades = v.items.reduce((s, i) => s + (i.cantidad || 0), 0);
@@ -478,6 +485,8 @@ function Tarjeta({ v, seleccionada, trabajando, onSeleccionar, onVer, onEnviar, 
         <span className="px-3 py-1 rounded-xl bg-[#F7EEDA] text-[#7A5A12] font-extrabold text-[16px] font-mono">{pesos(v.total)}</span>
         <span className="text-[10.5px] text-[#8B8B86] leading-tight">{fechaCorta(v.creado_at)}<br />{v.vendedor_nombre || v.vendedor_tel}</span>
         <div className="ml-auto flex items-center gap-1.5">
+          <button onClick={e => { e.stopPropagation(); onEliminar(); }} disabled={v.estado === 'enviando_effi'} title="Eliminar venta (va a la papelera, pide el motivo)"
+            className="w-9 h-9 rounded-xl border border-[#FCA5A5] text-[#DC2626] text-[14px] hover:bg-[#FEF2F2] disabled:opacity-40">🗑</button>
           <button onClick={e => { e.stopPropagation(); onVer(); }} className="h-9 px-3 rounded-xl border border-[#E6EAE8] text-[12.5px] font-bold hover:bg-[#F1F4F3]">Ver detalle ›</button>
           <button onClick={e => { e.stopPropagation(); onVer(); }} disabled={enEffi} title={enEffi ? 'Ya está en Effi: los cambios van por Novedades' : 'Editar datos y prendas'}
             className="h-9 px-3 rounded-xl border border-[#E6EAE8] text-[12.5px] font-bold hover:bg-[#F1F4F3] disabled:opacity-40">✎ Editar</button>
@@ -488,5 +497,91 @@ function Tarjeta({ v, seleccionada, trabajando, onSeleccionar, onVer, onEnviar, 
         </div>
       </div>
     </article>
+  );
+}
+
+
+/** Pide el MOTIVO de la anulación antes de mandar la venta a la papelera. Si ya está en Effi, avisa que allá se anula a mano. */
+function ModalAnular({ venta, onCerrar, onListo }: { venta: VentaVV; onCerrar: () => void; onListo: (msg: string) => void }) {
+  const [motivo, setMotivo] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const enEffi = !!venta.effi_remision;
+  const rapidos = ['El cliente canceló', 'Venta duplicada', 'Venta de prueba', 'Datos equivocados, se vuelve a pasar', 'No contesta / no confirmó'];
+  const confirmar = async () => {
+    if (motivo.trim().length < 3) { setError('Escribe el motivo de la anulación.'); return; }
+    setEnviando(true);
+    const r = await fetch(`/api/ventas-vendedores/${venta.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accion: 'papelera', motivo: motivo.trim() }) });
+    const j = await r.json().catch(() => ({}));
+    setEnviando(false);
+    if (!r.ok) { setError(j.error ?? 'No se pudo eliminar'); return; }
+    onListo(`🗑 Venta de ${venta.cliente_nombre || 'cliente'} enviada a la papelera.${enEffi ? ` Recuerda anular la remisión #${venta.effi_remision} en Effi.` : ''}`);
+  };
+  return (
+    <div className="fixed inset-0 z-[80] bg-black/50 flex items-center justify-center p-4" onClick={onCerrar}>
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-5" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-extrabold">🗑 Eliminar venta</h3>
+        <p className="text-[13px] text-[#5E5E5A] mt-1"><b>{venta.cliente_nombre || 'Sin nombre'}</b> · {venta.codigo} · {pesos(venta.total)}. Queda en la <b>papelera</b> con el motivo (se puede restaurar).</p>
+        {enEffi && (
+          <p className="mt-3 text-[12.5px] rounded-xl bg-[#FFF7E6] border border-[#F5D28A] text-[#7A4B00] px-3 py-2">
+            ⚠️ Esta venta <b>ya está en Effi (remisión #{venta.effi_remision})</b>. QuinChat la quita del panel, pero <b>no la anula en Effi</b>: anúlala allá.
+          </p>
+        )}
+        <label className="block text-[12px] font-bold mt-4 mb-1">Motivo de la anulación *</label>
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {rapidos.map(r => <button key={r} onClick={() => { setMotivo(r); setError(null); }} className={`px-2.5 py-1 rounded-full text-[11.5px] border ${motivo === r ? 'bg-[#141414] text-white border-transparent' : 'border-[#E6EAE8]'}`}>{r}</button>)}
+        </div>
+        <textarea value={motivo} onChange={e => { setMotivo(e.target.value); setError(null); }} rows={3} autoFocus placeholder="¿Por qué se anula?" className="w-full px-3 py-2 rounded-xl border border-[#E6EAE8] text-sm" />
+        {error && <p className="text-[12px] text-[#DC2626] mt-1">{error}</p>}
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onCerrar} className="px-4 py-2 rounded-xl border border-[#E6EAE8] text-sm font-semibold">Cancelar</button>
+          <button onClick={confirmar} disabled={enviando} className="px-4 py-2 rounded-xl bg-[#DC2626] text-white text-sm font-bold disabled:opacity-50">{enviando ? 'Eliminando…' : 'Eliminar'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Papelera del Centro Maestro: ventas eliminadas con su motivo, quién y cuándo; se pueden restaurar. */
+function PapeleraCM({ onCerrar, onAviso }: { onCerrar: () => void; onAviso: (ok: boolean, t: string) => void }) {
+  const [lista, setLista] = useState<any[] | null>(null);
+  const cargar = useCallback(async () => {
+    const r = await fetch('/api/ventas-vendedores?papelera=1', { cache: 'no-store' });
+    const j = await r.json().catch(() => ({}));
+    setLista(j.papelera ?? []);
+  }, []);
+  useEffect(() => { cargar(); }, [cargar]);
+  const restaurar = async (x: any) => {
+    if (!confirm(`¿Restaurar la venta de ${x.cliente_nombre || 'cliente'}? Vuelve al panel como estaba.`)) return;
+    const r = await fetch(`/api/ventas-vendedores/${x.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accion: 'restaurar' }) });
+    const j = await r.json().catch(() => ({}));
+    onAviso(r.ok, r.ok ? `♻️ Venta de ${x.cliente_nombre || 'cliente'} restaurada.` : j.error ?? 'No se pudo restaurar');
+    cargar();
+  };
+  return (
+    <div className="fixed inset-0 z-[80] bg-black/50 flex items-center justify-center p-4" onClick={onCerrar}>
+      <div className="w-full max-w-2xl max-h-full overflow-auto bg-white rounded-2xl shadow-2xl p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-3">
+          <h3 className="text-lg font-extrabold flex-1">🗑 Papelera · Centro Maestro</h3>
+          <button onClick={onCerrar} className="text-xl text-[#8B8B86] px-2">✕</button>
+        </div>
+        {lista == null ? <p className="text-sm text-[#8B8B86] py-8 text-center">Cargando…</p>
+          : !lista.length ? <p className="text-sm text-[#8B8B86] py-8 text-center">La papelera está vacía.</p> : (
+            <div className="space-y-2">
+              {lista.map(x => (
+                <div key={x.id} className="rounded-xl border border-[#E6EAE8] p-3 flex gap-3 items-start">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[14px] font-extrabold">{x.cliente_nombre || 'Sin nombre'} <span className="text-[12px] font-normal text-[#8B8B86]">· {x.codigo} · {pesos(x.total)}</span></p>
+                    <p className="text-[12px] text-[#5E5E5A]">📞 {telBonito(x.cliente_celular) || '—'}{x.municipio ? ` · 📍 ${x.municipio}` : ''}{x.effi_remision ? ` · Effi #${x.effi_remision}` : ''}</p>
+                    <p className="text-[12px] mt-1 px-2 py-1 rounded-lg bg-[#FEF2F2] text-[#991B1B]"><b>Motivo:</b> {x.papelera_motivo || '—'}</p>
+                    <p className="text-[10.5px] text-[#9AA7A5] mt-1">Eliminada {fechaCorta(x.papelera_at)}{x.papelera_por ? ` por ${x.papelera_por}` : ''}</p>
+                  </div>
+                  <button onClick={() => restaurar(x)} className="shrink-0 px-3 h-9 rounded-xl border border-[#0E8A7E] text-[#0E8A7E] text-[12.5px] font-bold hover:bg-[#E6F5F2]">♻️ Restaurar</button>
+                </div>
+              ))}
+            </div>
+          )}
+      </div>
+    </div>
   );
 }
