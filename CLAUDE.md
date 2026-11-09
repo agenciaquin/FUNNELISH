@@ -257,6 +257,15 @@ anulada pasa sola a solucionada (`resultado`); si vuelve a novedad se reabre la 
 Producto/foto: pedido de `clientes_funnelish` por teléfono (el más reciente antes de la guía); si no, `vv_ventas`/`vv_items`.
 Chat: busca `57tel`, `tel`, `+57tel`, `…@funnel` y el `conversation_id` del pedido; NO crea chats. Si no hay: wa.me + copiar.
 Botón «← Volver a Novedades» en el chat (WhatsAppPanel, estado `volverNovedades`); los filtros quedan en memoria del módulo.
+**Aviso «Pedido listo para reclamar» (09-nov-2026, dueño):** `lib/aviso-oficina.ts`, API `app/api/novedades/oficina`,
+UI `components/panel/novedades/AvisoOficina.tsx` (botón 📲 en el Panel de Novedades). Plantilla Meta `pedido_listo_para_reclamar`
+(UTILITY, es, encabezado IMAGE o VIDEO — GIF no: convertir a MP4 —, {{1}} primer nombre y {{2}} guía de Effi, 3 botones rápidos).
+Interruptor `ajustes_bot.aviso_oficina` {activo, desde, vendedores, media_url, media_tipo, horas [7,20]}; APAGADO por defecto y
+solo se enciende con la plantilla APROBADA. Guías de Interrapidísimo «Reclame en oficina / Disponible para retiro en oficina»
+de FUNNELISTH LANDING y QUINO AGENCIA. Tabla `avisos_oficina` (llave = id de la guía → una sola vez). Al encender, las que ya
+estaban en oficina quedan «previo» (envío manual con confirmación). Corre en el paso 5 de `sincronizarGuiasEffi` (máx. 3 por
+pasada, cron de cada hora) y con «Revisar ahora». Freno de Meta + pausa + «NO ENVIAR RECORDATORIO». Chat: etiqueta «EN OFICINA»,
+nota, bot apagado (atiende un humano), mensajes `tpl-oficina-*`. Respuestas: primer mensaje del cliente tras el envío.
 **OJO tablas nuevas:** en este Supabase una tabla creada por migración NO trae permisos para `service_role`
 (salió «permission denied for table novedades_effi»). Siempre: `grant select, insert, update, delete on <tabla> to service_role`
 + `grant usage, select on sequence <tabla>_id_seq to service_role`.

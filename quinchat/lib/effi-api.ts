@@ -187,7 +187,15 @@ export async function sincronizarGuiasEffi(origen: 'cron' | 'boton', dias = 60) 
     descuentos = await procesarDescuentosEntrega(supabase);
   } catch (e: any) { descuentos = { error: e?.message ?? String(e) }; }
 
-  return { ...(await cerrar({ ok: true, guias: filas.length, telefonos: telefonos.length })), remisiones: rem.n, error_remisiones: rem.error ?? null, descuentos };
+  // 5) Aviso «pedido listo para reclamar» (Panel de Novedades). Apagado por defecto; máx. 3 por pasada
+  //    para no alargar esta sincronización. Si falla, no afecta nada de lo anterior.
+  let avisosOficina: any = null;
+  try {
+    const { procesarAvisosOficina } = await import('@/lib/aviso-oficina');
+    avisosOficina = await procesarAvisosOficina(supabase, undefined, 3);
+  } catch (e: any) { avisosOficina = { error: e?.message ?? String(e) }; }
+
+  return { ...(await cerrar({ ok: true, guias: filas.length, telefonos: telefonos.length })), remisiones: rem.n, error_remisiones: rem.error ?? null, descuentos, avisos_oficina: avisosOficina };
 }
 
 /** Todas las remisiones de venta entre dos fechas (GET remision_v, paginando de a 100). */

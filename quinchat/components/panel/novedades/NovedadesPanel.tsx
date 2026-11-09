@@ -1,6 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
+
+const AvisoOficina = dynamic(() => import('./AvisoOficina'), { ssr: false });
 
 /**
  * PANEL DE NOVEDADES (09-nov-2026) — módulo independiente.
@@ -60,6 +63,7 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
   const [recien, setRecien] = useState<Set<number>>(new Set());
   const [sinChat, setSinChat] = useState<{ tel: string; cliente: string | null } | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [verAvisoOficina, setVerAvisoOficina] = useState(false);
   const caja = useRef<HTMLDivElement>(null);
 
   useEffect(() => { memoria.filtro = filtro; }, [filtro]);
@@ -143,6 +147,7 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
               <p className="text-[12px] text-[#5B6B68]">Effi revisado {hace(ultEffi)}</p>
               {ultSync?.error_novedades && <p className="text-[11px] text-[#B54708] max-w-[260px] truncate" title={ultSync.error_novedades}>«Novedades de guías» de Effi no respondió</p>}
               {ultSync && ultSync.ok === false && <p className="text-[11px] text-[#B42318] max-w-[260px] truncate" title={ultSync.error}>Último intento falló: {ultSync.error}</p>}
+              <button onClick={() => setVerAvisoOficina(true)} className="mt-1 mr-2 px-4 py-2 rounded-xl border border-[#F97316] text-[#C2410C] text-sm font-bold bg-white hover:bg-[#FFF7ED]">📲 Aviso «Listo para reclamar»</button>
               <button onClick={() => sincronizar(true)} disabled={sincronizando} className="mt-1 px-4 py-2 rounded-xl text-white text-sm font-bold disabled:opacity-50" style={{ background: VERDE }}>
                 {sincronizando ? 'Revisando Effi…' : '🔄 Traer de Effi ahora'}
               </button>
@@ -223,6 +228,7 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
         </div>
       </div>
 
+      {verAvisoOficina && <AvisoOficina onCerrar={() => setVerAvisoOficina(false)} />}
       {sel && <Detalle n={sel} onCerrar={() => setAbierta(null)} onCambio={cargar} onChat={() => abrirChat(sel)} />}
 
       {sinChat && (
