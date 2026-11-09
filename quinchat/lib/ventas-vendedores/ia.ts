@@ -44,7 +44,10 @@ const SISTEMA_INTERPRETAR =
   `- prendas: una por cada producto distinto. descripcion = cómo lo nombró el vendedor (marca, equipo, diseño, tipo de prenda). ` +
   `talla tal cual (S, M, L, XL, 2XL, 4, 6…). genero: "Hombre", "Dama" o "Niño" si lo dijo, si no "". cantidad por defecto 1.\n` +
   `- total: el valor total que dijo el vendedor, en pesos, solo número (220000). precio: valor unitario si lo dijo.\n` +
-  `- tipo_pago: "contraentrega" por defecto; "contado" o "anticipado" solo si lo dijo.\n` +
+  `- ABONO: si el cliente pagó UNA PARTE antes (dicen "abono", "abonó", "anticipo", "anticipado", "adelanto", "pagó por adelantado X", ` +
+  `"consignó X", "transfirió X") y el resto se cobra al recibir, abono = ese valor en pesos y tipo_pago = "contraentrega". ` +
+  `Ej.: "Valor 155.000 · Pagó por adelantado 20.000 · Paga al recibir 135.000" → total 155000, abono 20000, tipo_pago "contraentrega".\n` +
+  `- tipo_pago: "contraentrega" por defecto. "anticipado" o "contado" SOLO si pagó el TOTAL completo antes y no se cobra nada al recibir.\n` +
   `- Ignora saludos y conversación que no sea de la venta.`;
 
 export async function interpretarVenta(textos: string[], descripcionFotos: string[]): Promise<VentaTexto | null> {
@@ -64,7 +67,9 @@ export async function interpretarVenta(textos: string[], descripcionFotos: strin
       cliente_correo: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s(j.cliente_correo)) ? s(j.cliente_correo).toLowerCase() : '',
       departamento: s(j.departamento), municipio: s(j.municipio), direccion: s(j.direccion), barrio: s(j.barrio),
       complemento: s(j.complemento), referencia_dir: s(j.referencia_dir),
-      tipo_pago: s(j.tipo_pago) || 'contraentrega',
+      // Si hay abono menor que el total, NO es pago anticipado completo: es contraentrega con abono
+      tipo_pago: (() => { const tp = s(j.tipo_pago).toLowerCase() || 'contraentrega'; const ab = n(j.abono), tt = n(j.total);
+        return ['anticipado', 'contado'].includes(tp) && ab && tt && ab < tt ? 'contraentrega' : tp; })(),
       total: n(j.total), abono: n(j.abono), observaciones: s(j.observaciones),
       prendas: (Array.isArray(j.prendas) ? j.prendas : []).map((p: any) => ({
         descripcion: s(p?.descripcion), color: s(p?.color), talla: limpiarTalla(p?.talla), genero: s(p?.genero),

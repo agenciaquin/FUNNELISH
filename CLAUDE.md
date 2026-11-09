@@ -148,6 +148,10 @@ al bot de clientes.
 `/api/cron/vendedores` no envía nada y `atenderVendedor` ya no pide ni cuenta reportes (solo guarda; a un «Hola» le dice
 «mándame la venta»). En el Funnel, los números del módulo van al módulo y no al organizador.
 
+**Abono vs. anticipado (08-nov-2026):** «abono / anticipo / anticipado / adelanto / pagó por adelantado X» con resto por
+cobrar = `contraentrega` + `abono`. `anticipado`/`contado` solo si pagó TODO; con abono < total el código lo baja a
+contraentrega (ia.ts, effi-remision.ts). El resumen al vendedor muestra VALOR TOTAL / ABONO / COBRAR.
+
 ### 7 · Organizador de pedidos (Yamile León) — aislado con interruptor
 
 `quinchat/lib/organizador-pedidos/` + un bloque «ORGANIZADOR DE PEDIDOS» en el webhook, antes de VV.

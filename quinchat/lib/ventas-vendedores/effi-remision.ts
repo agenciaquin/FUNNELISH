@@ -226,7 +226,9 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
 
   // ── Dinero ────────────────────────────────────────────────────────────
   const total = Number(venta.total) || 0;
-  const pagadoTodo = ['contado', 'anticipado'].includes(String(venta.tipo_pago ?? '').toLowerCase());
+  // «anticipado/contado» con un abono MENOR al total es un error de lectura: se cobra el resto contraentrega
+  const abonoParcial = (Number(venta.abono) || 0) > 0 && (Number(venta.abono) || 0) < total;
+  const pagadoTodo = ['contado', 'anticipado'].includes(String(venta.tipo_pago ?? '').toLowerCase()) && !abonoParcial;
   const pagado = pagadoTodo ? total : Math.min(total, Number(venta.abono) || 0);
   const porCobrar = Math.max(0, total - pagado);
   const sumaPrendas = items.reduce((s, it) => s + (Number(it.precio) || 0) * (Number(it.cantidad) || 0), 0);

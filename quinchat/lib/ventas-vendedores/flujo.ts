@@ -456,9 +456,13 @@ async function evaluarYResponder(
   const refCorta = (r: string | null) => String(r ?? '').replace(/\s+/g, '') || '—';
   const total = Number(venta.total) || 0;
   const abono = Number(venta.abono) || 0;
-  const pago = venta.tipo_pago === 'contraentrega' || !venta.tipo_pago
-    ? (abono ? `Contraentrega con abono de ${money(abono)} (cobrar ${money(total - abono)})` : `Contraentrega total (${money(total)})`)
-    : `${venta.tipo_pago} (${money(total)})`;
+  // Con abono parcial siempre se muestra TOTAL / ABONO / COBRAR (dueño, 08-nov-2026)
+  const pagadoTodo = ['anticipado', 'contado'].includes(String(venta.tipo_pago ?? '')) && !(abono > 0 && abono < total);
+  const pago = pagadoTodo
+    ? `Pagado completo (${venta.tipo_pago}) · *VALOR TOTAL ${money(total)}* · COBRAR $0`
+    : abono > 0
+      ? `Contraentrega con abono\n*VALOR TOTAL ${money(total)}*\n*ABONO ${money(abono)}*\n*COBRAR ${money(Math.max(0, total - abono))}*`
+      : `Contraentrega\n*VALOR TOTAL ${money(total)}*\n*COBRAR ${money(total)}*`;
   const resumen =
     `✅ Aquí tienes el resumen completo de la venta *${venta.codigo}*.\n\n` +
     `_Datos del cliente:_\n` +
