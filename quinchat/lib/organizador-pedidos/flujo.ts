@@ -76,6 +76,15 @@ export async function atenderOrganizador(supabase: any, value: any, from: string
     } catch (e) { console.error('[Organizador] foto:', e); }
     if (!contenido.startsWith('http')) tipo = 'text';
   }
+  // El chat debe existir antes del mensaje (llave foránea): si lo borraron del panel, se recrea (08-nov-2026)
+  try {
+    const { vendedorDe } = await import('@/lib/vendedores');
+    const { tipoLineaActual } = await import('@/lib/whatsapp-contexto');
+    await supabase.from('conversations').upsert({
+      id: from, contact_name: vendedorDe(from)?.nombre ?? from, label: 'VENDEDOR', linea: tipoLineaActual(),
+      last_message: '', last_message_time: new Date(ahora).toISOString(),
+    }, { onConflict: 'id', ignoreDuplicates: true });
+  } catch { /* ignorar */ }
   await supabase.from('messages').upsert({
     id: idPieza, conversation_id: from, role: 'user', type: tipo,
     content: contenido, caption: m.type === 'image' ? (texto || null) : null,

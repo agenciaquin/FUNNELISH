@@ -61,11 +61,26 @@ export async function tieneVentaAbiertaVV(supabase: any, from: string): Promise<
   return !!data;
 }
 
+/** Crea el chat del vendedor si no existe (no toca uno existente). */
+export async function asegurarChatVendedor(supabase: any, from: string): Promise<void> {
+  try {
+    const v = vendedorDe(from);
+    await supabase.from('conversations').upsert({
+      id: from, contact_name: v?.nombre ?? from, label: 'VENDEDOR', linea: tipoLineaActual(),
+      last_message: '', last_message_time: new Date().toISOString(),
+    }, { onConflict: 'id', ignoreDuplicates: true });
+  } catch { /* ignorar */ }
+}
+
 export async function atenderModuloVV(supabase: any, value: any, from: string, esPrueba: boolean): Promise<boolean> {
   const entrantes = leerEntrantes(value);
   if (!entrantes.length) return false;
   const textoLote = entrantes.map(e => e.texto).filter(Boolean).join('\n');
   const hayFoto = entrantes.some(e => e.tipo === 'image' && e.mediaId);
+
+  // El chat DEBE existir antes de guardar mensajes (messages → conversations tiene llave foránea). Si alguien
+  // borró el chat desde el panel, los mensajes fallaban en silencio y el vendedor no recibía respuesta (08-nov-2026).
+  await asegurarChatVendedor(supabase, from);
 
   // ¿Hay una venta abierta de este vendedor?
   const { data: abierta } = await supabase.from('vv_ventas').select('*')

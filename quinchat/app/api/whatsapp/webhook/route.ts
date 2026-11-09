@@ -172,6 +172,14 @@ async function atenderVendedor(supabase: any, value: any, from: string): Promise
     return wamid;
   };
 
+  // El chat debe existir antes de guardar mensajes (llave foránea): si lo borraron del panel, se recrea
+  try {
+    await supabase.from('conversations').upsert({
+      id: from, contact_name: vend.nombre, label: 'VENDEDOR', linea: tipoLineaActual(), bot_enabled: true,
+      last_message: '', last_message_time: new Date().toISOString(),
+    }, { onConflict: 'id', ignoreDuplicates: true });
+  } catch { /* ignorar */ }
+
   // Texto del lote (varios mensajes cortos seguidos)
   const textos: string[] = [];
   for (const m of value.messages ?? []) {

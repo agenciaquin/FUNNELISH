@@ -152,6 +152,10 @@ al bot de clientes.
 cobrar = `contraentrega` + `abono`. `anticipado`/`contado` solo si pagó TODO; con abono < total el código lo baja a
 contraentrega (ia.ts, effi-remision.ts). El resumen al vendedor muestra VALOR TOTAL / ABONO / COBRAR.
 
+**Chat borrado = mensajes perdidos en silencio:** `messages.conversation_id` tiene llave foránea a `conversations`
+(ON DELETE CASCADE). Si se borra el chat desde el panel, todo insert de mensaje falla hasta que el chat exista.
+VV, `atenderVendedor` y el organizador crean el chat (upsert ignoreDuplicates) ANTES de guardar mensajes.
+
 ### 7 · Organizador de pedidos (Yamile León) — aislado con interruptor
 
 `quinchat/lib/organizador-pedidos/` + un bloque «ORGANIZADOR DE PEDIDOS» en el webhook, antes de VV.
