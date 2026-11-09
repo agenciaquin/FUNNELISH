@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
     collages: (lista ?? []).map((c: any) => {
       if (c.tipo === 'familia') {
         const hs = ((c.hijos ?? []) as string[]).map(id => hijos.get(id)).filter(Boolean);
-        return { ...c, hijos_det: hs.map((h: any) => ({ id: h.id, nombre: h.nombre, imagenes: h.imagenes?.length ? h.imagenes : [h.imagen_url].filter(Boolean), prendas: (h.items ?? []).length })), desactualizado: false, cambios: 0 };
+        return { ...c, hijos_det: hs.map((h: any) => ({ id: h.id, nombre: h.nombre, imagenes: h.imagenes?.length ? h.imagenes : [h.imagen_url].filter(Boolean), prendas: (h.items ?? []).length, fotos: (h.items ?? []).map((i: any) => i.foto).filter(Boolean), prendas_det: (h.items ?? []).filter((i: any) => i.foto).map((i: any) => ({ foto: i.foto, nombre: i.nombre, color: i.color })) })), desactualizado: false, cambios: 0 };
       }
       const its = (c.items ?? []) as any[];
       const cambios = its.filter(i => { const v = vivos.get(i.id_item); return !v || !v.activo || v.foto !== i.foto; }).length;
@@ -162,6 +162,18 @@ export async function PATCH(req: NextRequest) {
   const auth = await exigirSesion();
   if (auth.error) return auth.error;
   const b = await req.json().catch(() => null);
+  // Portada del catálogo (plantilla KLIXMANT con la foto que elige el dueño)
+  if (b?.id && 'portada_url' in (b ?? {})) {
+    const url = String(b.portada_url ?? '');
+    if (url && !url.startsWith('https://')) return NextResponse.json({ error: 'Portada inválida' }, { status: 400 });
+    const sb = createServerSupabaseClient();
+    const { error } = await sb.from('catalogos_collage').update({
+      portada_url: url || null, portada_foto: String(b.portada_foto ?? '').slice(0, 600) || null,
+      portada_titulo: String(b.portada_titulo ?? '').slice(0, 80) || null, actualizado_at: new Date().toISOString(),
+    }).eq('id', b.id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
   const imagenes = (Array.isArray(b?.imagenes) ? b.imagenes : [b?.imagen_url]).map((u: any) => String(u ?? '')).filter((u: string) => u.startsWith('https://')).slice(0, 4);
   if (!b?.id || !imagenes.length) return NextResponse.json({ error: 'Datos incompletos' }, { status: 400 });
   const supabase = createServerSupabaseClient();

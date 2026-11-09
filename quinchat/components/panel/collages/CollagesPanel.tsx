@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { generarCollage, aJpg, partir, colorDe, soloDisponibles } from '@/lib/collage-canvas';
+import { generarCollage, generarPortada, aJpg, partir, colorDe, soloDisponibles } from '@/lib/collage-canvas';
 
 /**
  * PANEL DE CATÁLOGOS (collages) — 09-nov-2026. Módulo independiente: solo LEE el catálogo KLIXMANT.
@@ -13,12 +13,22 @@ interface Collage {
   id: string; nombre: string; familia: string | null; items: Item[]; imagen_url: string | null; imagenes: string[];
   ancho: number | null; alto: number | null; generado_at: string | null; actualizado_at: string; desactualizado: boolean; cambios: number;
   tipo?: 'auto' | 'personal' | 'familia'; hijos?: string[];
-  hijos_det?: { id: string; nombre: string; imagenes: string[]; prendas: number }[];
+  hijos_det?: { id: string; nombre: string; imagenes: string[]; prendas: number; fotos?: string[]; prendas_det?: { foto: string; nombre: string; color: string }[] }[];
+  portada_url?: string | null; portada_foto?: string | null; portada_titulo?: string | null;
 }
 /** Todas las imágenes de un catálogo (familia = las de sus collages, en orden). */
-const imagenesDe = (c: Collage) => c.tipo === 'familia'
-  ? (c.hijos_det ?? []).flatMap(h => h.imagenes)
-  : (c.imagenes?.length ? c.imagenes : [c.imagen_url]).filter(Boolean) as string[];
+const imagenesDe = (c: Collage) => [
+  ...(c.portada_url ? [c.portada_url] : []),            // la PORTADA va primero
+  ...(c.tipo === 'familia'
+    ? (c.hijos_det ?? []).flatMap(h => h.imagenes)
+    : (c.imagenes?.length ? c.imagenes : [c.imagen_url]).filter(Boolean) as string[]),
+];
+/** Fotos de prendas disponibles para elegir la portada. */
+const fotosDe = (c: Collage) => {
+  const todas = c.tipo === 'familia' ? (c.hijos_det ?? []).flatMap(h => h.prendas_det ?? (h.fotos ?? []).map(f => ({ foto: f, nombre: '', color: '' })))
+    : c.items.map(i => ({ foto: i.foto, nombre: i.nombre, color: i.color }));
+  const vistas = new Set<string>(); return todas.filter(p => p.foto && !vistas.has(p.foto) && vistas.add(p.foto));
+};
 interface Prenda { id_item: number; catalogo: string; referencia: string; tipo: string; genero: string; color: string; nombre: string; foto: string; miniatura: string }
 
 const VERDE = '#00A89D';
@@ -38,6 +48,7 @@ function MisCatalogos() {
   const [q, setQ] = useState('');
   const [editor, setEditor] = useState<{ id?: string; nombre: string; familia: string; items: Item[]; auto?: boolean } | null>(null);
   const [editFam, setEditFam] = useState<Collage | null>(null);
+  const [portada, setPortada] = useState<Collage | null>(null);
   const [ver, setVer] = useState<Collage | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
@@ -84,7 +95,10 @@ function MisCatalogos() {
               {visibles.map(c => (
                 <div key={c.id} className={`${tarjeta} overflow-hidden flex flex-col`}>
                   <button onClick={() => setVer(c)} className="relative aspect-[4/3] bg-[#0B1220] overflow-hidden">
-                    {c.tipo === 'familia' ? (
+                    {c.portada_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={c.portada_url} alt={c.nombre} className="w-full h-full object-contain" loading="lazy" />
+                    ) : c.tipo === 'familia' ? (
                       <div className="grid grid-cols-2 gap-0.5 w-full h-full">
                         {imagenesDe(c).slice(0, 4).map((u, i) => (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -104,6 +118,7 @@ function MisCatalogos() {
                     <div className="mt-auto pt-3 flex gap-1.5 flex-wrap">
                       {imagenesDe(c).length > 0 && <button onClick={() => descargarTodas(c)} className="px-2.5 py-1.5 rounded-lg border border-[#E1E5E4] text-xs font-semibold">⬇ Descargar</button>}
                       {imagenesDe(c).length > 0 && <button onClick={() => compartir(c)} className="px-2.5 py-1.5 rounded-lg bg-[#25D366] text-white text-xs font-bold">WhatsApp</button>}
+                      <button onClick={() => setPortada(c)} className="px-2.5 py-1.5 rounded-lg border border-[#A6F000] text-[#4D7C0F] text-xs font-bold">🖼 {c.portada_url ? 'Portada' : '+ Portada'}</button>
                       {c.tipo === 'familia'
                         ? <button onClick={() => setEditFam(c)} className="px-2.5 py-1.5 rounded-lg border border-[#E1E5E4] text-xs font-semibold">✎ Editar</button>
                         : <button onClick={() => setEditor({ id: c.id, nombre: c.nombre, familia: c.familia ?? '', items: c.items, auto: c.desactualizado })}
@@ -138,6 +153,7 @@ function MisCatalogos() {
       )}
 
       {editor && <Editor inicial={editor} onCerrar={() => setEditor(null)} onGuardado={msg => { setEditor(null); setAviso(msg); cargar(); }} />}
+      {portada && <EditorPortada cat={portada} onCerrar={() => setPortada(null)} onGuardado={msg => { setPortada(null); setAviso(msg); cargar(); }} />}
       {editFam && <EditorFamilia fam={editFam} onCerrar={() => setEditFam(null)} onGuardado={msg => { setEditFam(null); setAviso(msg); cargar(); }} />}
     </div>
   );
@@ -389,6 +405,9 @@ function PorCatalogo({ onUnido }: { onUnido: () => void }) {
   };
   const regenerar = async (c: CatK) => { await procesar([c]); await cargar(hecho); };
   const alternar = (id: string) => setSel(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+  // «Seleccionar todos»: todos los que tienen collage, en el orden en que se ven
+  const conCollage = cats.map(c => c.collage?.imagen_url ? c.collage.id : '').filter(Boolean);
+  const todosMarcados = conCollage.length > 0 && conCollage.every(id => sel.includes(id));
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto">
@@ -398,6 +417,11 @@ function PorCatalogo({ onUnido }: { onUnido: () => void }) {
             placeholder="Busca una familia o diseño (ej. nacional, ferrari, honda)…" className="flex-1 min-w-[240px] px-3 py-2.5 rounded-xl border border-[#E1E5E4] text-sm" />
           <button onClick={() => buscarYGenerar()} disabled={!!cola} className="px-4 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50" style={{ background: VERDE }}>Buscar y generar</button>
           <button onClick={() => { setBuscar(''); cargar(''); }} disabled={!!cola} className="px-3 py-2.5 rounded-xl border border-[#E1E5E4] text-sm font-semibold">Ver todos</button>
+          {conCollage.length > 0 && (
+            <button onClick={() => setSel(todosMarcados ? [] : conCollage)} className="px-3 py-2.5 rounded-xl border border-[#E1E5E4] text-sm font-semibold">
+              {todosMarcados ? '☐ Quitar todos' : `☑ Seleccionar todos (${conCollage.length})`}
+            </button>
+          )}
           {faltan.length > 0 && !cola && <button onClick={generarFaltantes} className="px-3 py-2.5 rounded-xl border border-[#0B7F78] text-[#0B7F78] text-sm font-bold">🖼 Generar los que faltan ({faltan.length})</button>}
         </div>
         {cola && (
@@ -533,6 +557,102 @@ function EditorFamilia({ fam, onCerrar, onGuardado }: { fam: Collage; onCerrar: 
         <div className="flex justify-end gap-2 mt-4">
           <button onClick={onCerrar} className="px-4 py-2 rounded-xl border border-[#E1E5E4] text-sm font-semibold">Cancelar</button>
           <button onClick={guardar} disabled={!hijos.length} className="px-4 py-2 rounded-xl text-white text-sm font-bold disabled:opacity-40" style={{ background: VERDE }}>Guardar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/** PORTADA: plantilla KLIXMANT + una foto que elige el dueño (de las prendas del catálogo o subida de su equipo). */
+function EditorPortada({ cat, onCerrar, onGuardado }: { cat: Collage; onCerrar: () => void; onGuardado: (msg: string) => void }) {
+  const opciones = fotosDe(cat);
+  const inicial = opciones.find(o => o.foto === cat.portada_foto) ?? (cat.portada_foto ? null : opciones[0]);
+  const [titulo, setTitulo] = useState(cat.portada_titulo || inicial?.nombre || cat.nombre.replace(/^CAT[ÁA]LOGO\s+/i, ''));
+  const [foto, setFoto] = useState<string>(cat.portada_foto || opciones[0]?.foto || '');
+  const [color, setColor] = useState<string>(inicial?.color ?? '');
+  const [subida, setSubida] = useState<File | null>(null);
+  const [vista, setVista] = useState<string | null>(null);
+  const [trabajando, setTrabajando] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Vista previa en vivo
+  useEffect(() => {
+    let vivo = true; if (!foto) { setVista(null); return; }
+    setTrabajando('Armando la portada…');
+    generarPortada({ titulo, foto, color }).then(cv => { if (vivo) { setVista(cv.toDataURL('image/jpeg', 0.85)); setTrabajando(null); } })
+      .catch(e => { if (vivo) { setError(e?.message ?? 'No se pudo armar'); setTrabajando(null); } });
+    return () => { vivo = false; };
+  }, [foto, titulo, color]);
+
+  const subirArchivo = (f: File | undefined) => { if (!f) return; setSubida(f); setFoto(URL.createObjectURL(f)); };
+
+  const guardar = async () => {
+    if (!foto) { setError('Elige una foto.'); return; }
+    setError(null); setTrabajando('Guardando portada…');
+    try {
+      // Si la foto se subió del equipo, se guarda primero (queda como la foto de la portada)
+      let fotoFinal = foto;
+      if (subida) {
+        const fd = new FormData(); fd.append('id', cat.id); fd.append('file', subida, subida.name);
+        const u = await fetch('/api/collages/imagen', { method: 'POST', body: fd }); const ju = await u.json();
+        if (!u.ok) throw new Error(ju.error ?? 'No se pudo subir la foto'); fotoFinal = ju.url;
+      }
+      const cv = await generarPortada({ titulo, foto, color });
+      const fd = new FormData(); fd.append('id', cat.id); fd.append('file', await aJpg(cv), 'portada.jpg');
+      const r = await fetch('/api/collages/imagen', { method: 'POST', body: fd }); const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? 'No se pudo subir la portada');
+      const p = await fetch('/api/collages', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: cat.id, portada_url: j.url, portada_foto: fotoFinal, portada_titulo: titulo }) });
+      if (!p.ok) throw new Error('No se pudo guardar');
+      onGuardado(`✅ Portada de «${cat.nombre}» guardada. Sale de primera al mandar el catálogo.`);
+    } catch (e: any) { setError(e?.message ?? 'Error'); setTrabajando(null); }
+  };
+  const quitar = async () => {
+    await fetch('/api/collages', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: cat.id, portada_url: '', portada_foto: '', portada_titulo: '' }) });
+    onGuardado('Portada quitada.');
+  };
+
+  return (
+    <div className="fixed inset-0 z-[85] bg-black/60 flex items-center justify-center p-3" onClick={onCerrar}>
+      <div className="w-full max-w-5xl max-h-full overflow-auto bg-white rounded-2xl grid md:grid-cols-[1fr_420px]" onClick={e => e.stopPropagation()}>
+        <div className="bg-[#0B1220] p-3 flex items-center justify-center min-h-[320px]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {vista ? <img src={vista} alt="" className={`w-full max-w-[560px] rounded-xl ${trabajando ? 'opacity-60' : ''}`} />
+            : <p className="text-white/60 text-sm">{trabajando ?? 'Elige una foto para ver la portada'}</p>}
+        </div>
+        <div className="p-5 flex flex-col gap-3">
+          <h3 className="text-lg font-extrabold">🖼 Portada del catálogo</h3>
+          <div>
+            <label className="text-[12px] font-bold">Nombre del producto (con color)</label>
+            <input value={titulo} onChange={e => setTitulo(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-xl border border-[#E1E5E4] text-sm uppercase" />
+          </div>
+          <div>
+            <p className="text-[12px] font-bold mb-1">Foto de la portada (toca una o sube la tuya)</p>
+            <div className="grid grid-cols-5 gap-1.5 max-h-56 overflow-y-auto pr-1">
+              <label className="aspect-square rounded-lg border-2 border-dashed border-[#CBD5D3] flex flex-col items-center justify-center text-[10px] font-bold text-[#5B6B68] cursor-pointer hover:bg-[#F7FAF9]">
+                ⬆<span>Subir</span>
+                <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => subirArchivo(e.target.files?.[0])} />
+              </label>
+              {subida && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={foto} alt="" className="aspect-square object-cover rounded-lg border-2 border-[#00A89D]" />
+              )}
+              {opciones.map(o => (
+                <button key={o.foto} title={o.nombre} onClick={() => { setSubida(null); setFoto(o.foto); setColor(o.color); if (o.nombre) setTitulo(o.nombre); }}
+                  className={`aspect-square rounded-lg overflow-hidden border-2 ${!subida && foto === o.foto ? 'border-[#00A89D] ring-2 ring-[#00A89D]/30' : 'border-transparent'}`}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={o.foto} alt="" loading="lazy" className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          </div>
+          {error && <p className="text-[12px] text-[#DC2626]">{error}</p>}
+          <div className="mt-auto flex gap-2 justify-end flex-wrap">
+            {cat.portada_url && <button onClick={quitar} className="px-3 py-2 rounded-xl text-sm text-[#DC2626] mr-auto">Quitar portada</button>}
+            <button onClick={onCerrar} className="px-4 py-2 rounded-xl border border-[#E1E5E4] text-sm font-semibold">Cancelar</button>
+            <button onClick={guardar} disabled={!foto || !!trabajando} className="px-4 py-2 rounded-xl text-white text-sm font-bold disabled:opacity-40" style={{ background: VERDE }}>Guardar portada</button>
+          </div>
         </div>
       </div>
     </div>

@@ -231,6 +231,10 @@ actualizar» si cambió una foto o se apagó una prenda. No modificar el formato
 Tipos (`tipo`): `auto` = uno por catálogo KLIXMANT (`id_catalogo`, índice único; solo HOMBRE si existe, 1 por color,
 sin fotos «COLOR NO DISPONIBLE»), se generan solos al buscar una familia en «Por catálogo» (uno por uno, en el navegador);
 `familia` = varios collages unidos (`hijos`, en orden) → «Mis catálogos»; `personal` = mezcla manual de prendas.
+**Portada** (🖼 en «Mis catálogos»): plantilla SOBRIA fija aprobada por el dueño (`generarPortada` en `lib/collage-canvas.ts`,
+1080×1160: fondo de estudio del mismo tono de la foto, prenda grande al centro, abajo el NOMBRE COMPLETO con color en blanco
+y una línea del color de la prenda). El dueño elige UNA foto (de las prendas, que llena el nombre y el color, o subida de su equipo). Se guarda en
+`portada_url` / `portada_foto` / `portada_titulo` y sale de PRIMERA al descargar o mandar por WhatsApp.
 
 ### 5 · No todas las subidas comprimen
 

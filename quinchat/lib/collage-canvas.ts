@@ -65,7 +65,9 @@ function cargarImagenSinCache(url: string): Promise<HTMLImageElement> {
     const img = new Image();
     img.onload = () => ok(img);
     img.onerror = () => mal(new Error(`No se pudo cargar la foto: ${url}`));
-    img.src = `/api/collages/foto?u=${encodeURIComponent(url)}`;   // mismo dominio → el canvas no queda «contaminado»
+    // Fotos subidas desde el equipo (blob:/data:) se usan directo; las de Supabase pasan por el proxy del mismo
+    // dominio para que el canvas no quede «contaminado»
+    img.src = /^(blob|data):/.test(url) ? url : `/api/collages/foto?u=${encodeURIComponent(url)}`;
   });
 }
 
@@ -195,3 +197,97 @@ export async function generarCollage(prendas: PrendaCollage[]): Promise<HTMLCanv
 
 export const aJpg = (cv: HTMLCanvasElement) =>
   new Promise<Blob>((ok, mal) => cv.toBlob(b => (b ? ok(b) : mal(new Error('No se pudo crear la imagen'))), 'image/jpeg', 0.9));
+
+
+// ════════════════════════════════════════════════════════════════════════════════
+// PORTADA del catálogo (plantilla KLIXMANT, 1080×1080). La foto la elige el dueño.
+// ════════════════════════════════════════════════════════════════════════════════
+let fuenteBold: Promise<void> | null = null;
+function cargarFuenteBold() {
+  if (!fuenteBold) {
+    fuenteBold = (async () => {
+      try { const f = new FontFace('PoppinsB', 'url(/fonts/Poppins-Bold.ttf)', { weight: '700' }); await f.load(); (document as any).fonts.add(f); } catch { /* sistema */ }
+    })();
+  }
+  return fuenteBold;
+}
+
+/** Color promedio del borde de la foto (arriba y lados), para que el fondo de la portada empate. */
+function colorBorde(img: HTMLImageElement, r: { x: number; y: number; w: number; h: number }): number[] {
+  const c = document.createElement('canvas'); c.width = 80; c.height = 80;
+  const g = c.getContext('2d', { willReadFrequently: true })!; g.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, 80, 80);
+  const d = g.getImageData(0, 0, 80, 80).data; const s = [0, 0, 0]; let n = 0;
+  for (let y = 0; y < 80; y++) for (let x = 0; x < 80; x++) {
+    if (y > 2 && x > 2 && x < 77) continue;
+    const i = (y * 80 + x) * 4; s[0] += d[i]; s[1] += d[i + 1]; s[2] += d[i + 2]; n++;
+  }
+  return s.map(v => v / n);
+}
+
+/** Portada sobria tipo estudio: fondo gris, la prenda grande al centro, abajo el nombre completo (con color) en
+ *  blanco y una línea del color de la prenda. 1080×1160. */
+export async function generarPortada(opc: { titulo: string; foto: string; color?: string }): Promise<HTMLCanvasElement> {
+  await cargarFuenteBold();
+  const W = 1080, H = 1160;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d')!;
+  // Prenda: completa (sin el encabezado impreso), grande y fundida con el fondo
+  const img = await cargarImagen(opc.foto);
+  const r = recorte(img);
+
+  // Fondo de estudio con el MISMO tono del fondo de la foto (así no se nota el recuadro), más oscuro hacia los bordes
+  const fondo = colorBorde(img, r);
+  const tono = (f: number) => `rgb(${fondo.map(v => Math.min(255, Math.round(v * f))).join(',')})`;
+  const rg = ctx.createRadialGradient(540, 400, 0, 540, 400, 900);
+  rg.addColorStop(0, tono(1.02)); rg.addColorStop(0.55, tono(0.72)); rg.addColorStop(1, tono(0.38));
+  ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+  const AW = 1040, AH = 930;                                  // zona de la foto
+  const e = Math.min(AW / r.w, AH / r.h), w = r.w * e, h = r.h * e;
+  const off = document.createElement('canvas'); off.width = Math.round(w); off.height = Math.round(h);
+  const o = off.getContext('2d')!;
+  o.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, off.width, off.height);
+  // bordes suaves para que no se vea el recuadro de la foto
+  o.globalCompositeOperation = 'destination-in';
+  const fx = o.createLinearGradient(0, 0, off.width, 0);
+  fx.addColorStop(0, 'rgba(0,0,0,0)'); fx.addColorStop(0.14, '#000'); fx.addColorStop(0.86, '#000'); fx.addColorStop(1, 'rgba(0,0,0,0)');
+  o.fillStyle = fx; o.fillRect(0, 0, off.width, off.height);
+  const fy = o.createLinearGradient(0, 0, 0, off.height);
+  fy.addColorStop(0, 'rgba(0,0,0,0)'); fy.addColorStop(0.08, '#000'); fy.addColorStop(0.9, '#000'); fy.addColorStop(1, 'rgba(0,0,0,0)');
+  o.fillStyle = fy; o.fillRect(0, 0, off.width, off.height);
+  ctx.drawImage(off, (W - off.width) / 2, 20 + (AH - off.height) / 2);
+
+  // Sombra abajo para que el texto se lea
+  const sb = ctx.createLinearGradient(0, 860, 0, H);
+  sb.addColorStop(0, 'rgba(20,20,22,0)'); sb.addColorStop(0.45, 'rgba(20,20,22,0.75)'); sb.addColorStop(1, 'rgba(20,20,22,0.95)');
+  ctx.fillStyle = sb; ctx.fillRect(0, 860, W, H - 860);
+
+  // Nombre completo: blanco, negrita, una línea (o dos si es muy largo)
+  const titulo = String(opc.titulo || '').toUpperCase().replace(/\s+/g, ' ').trim() || 'CATÁLOGO';
+  const fuente = (sz: number) => `700 ${sz}px PoppinsB, Poppins, Arial, sans-serif`;
+  const maxW = W - 110;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = '#FFFFFF';
+  ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 3;
+  let sz = 92; ctx.font = fuente(sz);
+  while (sz > 60 && ctx.measureText(titulo).width > maxW) { sz -= 2; ctx.font = fuente(sz); }
+  let lineas = [titulo];
+  if (ctx.measureText(titulo).width > maxW) {
+    // partir en dos líneas lo más parejas posible
+    const pal = titulo.split(' '); let mejor = [titulo, ''], dif = Infinity;
+    for (let k = 1; k < pal.length; k++) {
+      const a = pal.slice(0, k).join(' '), b = pal.slice(k).join(' ');
+      const d = Math.abs(ctx.measureText(a).width - ctx.measureText(b).width);
+      if (d < dif) { dif = d; mejor = [a, b]; }
+    }
+    lineas = mejor; sz = 80; ctx.font = fuente(sz);
+    while (sz > 40 && Math.max(...lineas.map(l => ctx.measureText(l).width)) > maxW) { sz -= 2; ctx.font = fuente(sz); }
+  }
+  const alto = sz * 1.08, base = 1072 - (lineas.length - 1) * alto;
+  lineas.forEach((l, k) => ctx.fillText(l, W / 2, base + k * alto));
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+
+  // Línea del color de la prenda
+  const acento = opc.color ? (opc.color.startsWith('#') ? opc.color : colorDe(opc.color)) : '#E53935';
+  const lw = 470; redondeado(ctx, (W - lw) / 2, 1106, lw, 9, 4.5); ctx.fillStyle = acento === '#C8C8C8' ? '#E53935' : acento; ctx.fill();
+  ctx.textAlign = 'start';
+  return cv;
+}

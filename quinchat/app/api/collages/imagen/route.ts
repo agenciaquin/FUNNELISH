@@ -14,8 +14,11 @@ export async function POST(req: NextRequest) {
   if (!(f instanceof Blob) || !id) return NextResponse.json({ error: 'Falta la imagen' }, { status: 400 });
   if (f.size > 4_000_000) return NextResponse.json({ error: 'La imagen pesa demasiado' }, { status: 413 });
   const supabase = createServerSupabaseClient();
-  const ruta = `collages/${id}/${Date.now()}.jpg`;
-  const { error } = await supabase.storage.from('chat-media').upload(ruta, Buffer.from(await f.arrayBuffer()), { contentType: 'image/jpeg', upsert: false, cacheControl: '31536000' });
+  // JPG del collage/portada, o una foto que el dueño sube para la portada (png/jpg/webp)
+  const tipo = /^image\/(png|jpeg|webp)$/.test(f.type) ? f.type : 'image/jpeg';
+  const ext = tipo === 'image/png' ? 'png' : tipo === 'image/webp' ? 'webp' : 'jpg';
+  const ruta = `collages/${id}/${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from('chat-media').upload(ruta, Buffer.from(await f.arrayBuffer()), { contentType: tipo, upsert: false, cacheControl: '31536000' });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ url: supabase.storage.from('chat-media').getPublicUrl(ruta).data.publicUrl });
 }
