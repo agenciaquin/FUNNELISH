@@ -40,6 +40,7 @@ const SupervisorPanel    = dynamic(() => import('./SupervisorPanel'),     { ssr:
 const VentasVendedoresPanel = dynamic(() => import('./ventas-vendedores/VentasVendedoresPanel'), { ssr: false });
 const MasterVendedoresPanel = dynamic(() => import('./master-vendedores/MasterVendedoresPanel'), { ssr: false });
 const CollagesPanel = dynamic(() => import('./collages/CollagesPanel'), { ssr: false });
+const NovedadesPanel = dynamic(() => import('./novedades/NovedadesPanel'), { ssr: false });
 
 interface Props {
   userName: string;
@@ -47,6 +48,11 @@ interface Props {
 
 export default function WhatsAppPanel({ userName }: Props) {
   const [activeSection, setActiveSection] = useState<PanelSection>('chat');
+  // Panel de Novedades → chat: botón «Volver a Novedades» (el panel guarda sus filtros)
+  const [volverNovedades, setVolverNovedades] = useState(false);
+  useEffect(() => {
+    if (volverNovedades && !['chat', 'chat_ventas', 'novedades'].includes(activeSection)) setVolverNovedades(false);
+  }, [activeSection, volverNovedades]);
   const [embudoAEditar, setEmbudoAEditar] = useState<string | null>(null); // abrir un embudo desde Pedidos
 
   // Al refrescar, vuelve a la MISMA sección donde estabas (no al inicio).
@@ -458,6 +464,15 @@ export default function WhatsAppPanel({ userName }: Props) {
       )}
       {activeSection === 'vendedores'    && <VendedoresPanel />}
       {activeSection === 'collages' && <CollagesPanel />}
+      {activeSection === 'novedades' && (
+        <NovedadesPanel onAbrirChat={id => { setVolverNovedades(true); abrirChatDesde(id); }} />
+      )}
+      {volverNovedades && (activeSection === 'chat' || activeSection === 'chat_ventas') && (
+        <button onClick={() => { setVolverNovedades(false); setActiveSection('novedades'); }}
+          className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[70] px-4 py-2.5 rounded-full bg-[#0D1F1C] text-white text-sm font-bold shadow-lg hover:bg-black">
+          ← Volver a Novedades
+        </button>
+      )}
       {activeSection === 'master_vendedores' && (
         <MasterVendedoresPanel onAbrirChat={id => { abrirChatDesde(id); }} />
       )}

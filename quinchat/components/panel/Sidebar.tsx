@@ -6,7 +6,7 @@ import { signOut } from 'next-auth/react';
 import { confirmarSalida } from '@/lib/panel/cambios';
 import BotonAvisos from './BotonAvisos';
 
-export type PanelSection = 'chat' | 'chat_ventas' | 'metas' | 'estadisticas' | 'embudos' | 'pedidos' | 'ventas' | 'vendedores' | 'ventas_vendedores' | 'master_vendedores' | 'collages' | 'seguimiento' | 'objeciones' | 'remarketing' | 'promociones' | 'vendedores_links' | 'colecciones' | 'live_shopping' | 'supervisor' | 'memoria' | 'faq' | 'entrenamiento' | 'plantillas' | 'disparadores' | 'contactos' | 'etiquetas' | 'catalogos' | 'integraciones' | 'ajustes' | 'manual';
+export type PanelSection = 'chat' | 'chat_ventas' | 'metas' | 'estadisticas' | 'embudos' | 'pedidos' | 'ventas' | 'vendedores' | 'ventas_vendedores' | 'master_vendedores' | 'collages' | 'novedades' | 'seguimiento' | 'objeciones' | 'remarketing' | 'promociones' | 'vendedores_links' | 'colecciones' | 'live_shopping' | 'supervisor' | 'memoria' | 'faq' | 'entrenamiento' | 'plantillas' | 'disparadores' | 'contactos' | 'etiquetas' | 'catalogos' | 'integraciones' | 'ajustes' | 'manual';
 
 // Íconos SVG personalizados (embudo de ventas y WhatsApp)
 const IconoEmbudo = ({ color }: { color: string }) => (
@@ -30,6 +30,7 @@ const NAV_MAIN: NavItem[] = [
   { key: 'master_vendedores', label: 'Master Vendedores',    icon: '👥' },
   { key: 'pedidos',           label: 'Pedidos',              icon: '🛒' },
   { key: 'ventas',            label: 'Estado en EFFI',       icon: '✅' },
+  { key: 'novedades',         label: 'Panel de Novedades',   icon: '📮' },
   { key: 'embudos',           label: 'Embudos',              icon: '🚀' },
   { key: 'catalogos',         label: 'Catálogo',             icon: '📦' },
   { key: 'collages',          label: 'Panel de Catálogos',   icon: '🖼️' },

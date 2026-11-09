@@ -236,6 +236,23 @@ sin fotos «COLOR NO DISPONIBLE»), se generan solos al buscar una familia en «
 y una línea del color de la prenda). El dueño elige UNA foto (de las prendas, que llena el nombre y el color, o subida de su equipo). Se guarda en
 `portada_url` / `portada_foto` / `portada_titulo` y sale de PRIMERA al descargar o mandar por WhatsApp.
 
+### 13 · Panel de Novedades (09-nov-2026), módulo independiente
+
+Menú «Panel de Novedades» → `components/panel/novedades/NovedadesPanel.tsx`, API `app/api/novedades` (+ `[id]`, `chat`),
+lógica `lib/novedades-effi.ts`. Tablas propias `novedades_effi` (una fila por guía: `id_guia_effi` único → sin duplicados),
+`novedades_effi_historial`, `novedades_effi_sync`. SOLO LEE Effi con `listarGuias`/`listarRemisiones` de `lib/effi-api.ts`
+(misma API key) o la copia `effi_guias_api`/`effi_remisiones_api`; no escribe en ellas ni en Effi.
+Novedad = guía vigente con estado Effi «Novedad» / «Disponible para retiro en oficina» o transportadora con novedad,
+incidencia, siniestro, intento de entrega, telemercadeo, reclame en oficina — y no entregada/devuelta/anulada.
+Solo vendedores de Effi **FUNNELISTH LANDING** y **QUINO AGENCIA** (por la remisión de la guía). Effi no manda push ni
+el texto de la novedad: el motivo es el estado de la transportadora; con el panel abierto se revisa Effi cada 10 min
+(copia cada 2 min); el servidor lo frena para que varios paneles no golpeen a Effi.
+Estados del EQUIPO: nueva → pendiente (al abrirla) → en_gestion → solucionada. Si Effi la marca entregada/devuelta/
+anulada pasa sola a solucionada (`resultado`); si vuelve a novedad se reabre la MISMA tarjeta.
+Producto/foto: pedido de `clientes_funnelish` por teléfono (el más reciente antes de la guía); si no, `vv_ventas`/`vv_items`.
+Chat: busca `57tel`, `tel`, `+57tel`, `…@funnel` y el `conversation_id` del pedido; NO crea chats. Si no hay: wa.me + copiar.
+Botón «← Volver a Novedades» en el chat (WhatsAppPanel, estado `volverNovedades`); los filtros quedan en memoria del módulo.
+
 ### 5 · No todas las subidas comprimen
 
 Comprimen: `funnels/imagen`, `plantillas-wa/imagen`, `catalogos/upload-imagen`.
