@@ -75,8 +75,28 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
   const soloPrueba = esPrueba && !vendedorDe(from);
   // Un saludo («Hola») también lo contesta el módulo: «mándame la venta directo» (antes caía al supervisor de reportes)
   const esSaludoLote = /^\s*(hola|holi|buenas|buenos dias|buenos días|buenas tardes|buenas noches|hey|ey|quino|hola quino|buen dia|buen día)[\s.!,👋🙌😊]*$/i.test(textoLote);
-  if (!abierta && !soloPrueba && !hayFoto && !pareceVenta(textoLote) && !esSaludoLote) return false; // reporte del check-in → flujo de siempre
   if (esNumeroSuelto && !hayFoto && !soloPrueba && (!abierta || abierta.estado !== 'ambigua')) return false; // "5" = reporte de ventas
+  // Mensaje suelto que no es venta («Hola pana», «???»): NO se deja al vendedor sin respuesta. Se guarda y se le
+  // recuerda cómo mandar la venta (máx. 1 vez cada 10 min para no llenarle el chat).
+  if (!abierta && !soloPrueba && !hayFoto && !pareceVenta(textoLote) && !esSaludoLote) {
+    const ahora = new Date();
+    try {
+      await supabase.from('messages').insert(entrantes.map(e => ({
+        id: `vv-${e.id}`, conversation_id: from, content: e.texto || `[${e.tipo}]`, role: 'user', type: 'text', whatsapp_id: e.id, created_at: ahora.toISOString(),
+      })));
+    } catch { /* duplicado de Meta */ }
+    const { data: reciente } = await supabase.from('messages').select('id').eq('conversation_id', from)
+      .like('id', 'vvayuda-%').gte('created_at', new Date(ahora.getTime() - 10 * 60_000).toISOString()).limit(1).maybeSingle();
+    if (!reciente) {
+      const v = vendedorDe(from);
+      const texto = `👋 ${v ? `${v.nombre.split(' ')[0]}, ` : ''}por aquí recibo tus *ventas*. Mándame la venta directo: *foto de la prenda* + datos del cliente (nombre, celular, dirección, ciudad, talla y valor) y la organizo para subirla a Effi.`;
+      const wamid = await sendTextMessage(from, texto);
+      try {
+        await supabase.from('messages').insert({ id: `vvayuda-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, conversation_id: from, content: texto, role: 'assistant', type: 'text', whatsapp_id: wamid, created_at: ahora.toISOString() });
+      } catch { /* ignorar */ }
+    }
+    return true;
+  }
 
   const vend = vendedorDe(from);
   const ahoraISO = () => new Date().toISOString();

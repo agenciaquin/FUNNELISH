@@ -203,8 +203,18 @@ async function atenderVendedor(supabase: any, value: any, from: string): Promise
   // Ya no se piden ni se cuentan reportes; el mensaje queda guardado en el panel. Interruptor:
   // ajustes_bot clave 'seguimiento_vendedores' → { activo: true } para volver a encenderlo.
   if (!(await seguimientoVendedoresActivo(supabase))) {
-    const esSaludo = /^\s*(hola|holi|buenas|buenos dias|buenos días|buenas tardes|buenas noches|hey|ey|quino|buen dia|buen día)[\s.!,👋🙌😊]*$/i.test(texto);
-    if (esSaludo) await responder(`👋 ¡Hola ${nombreChat(vend)}! Mándame la venta *directo* (foto de la prenda + datos del cliente) y te la organizo.`);
+    // No se deja al vendedor sin respuesta: se le recuerda cómo mandar la venta (máx. 1 vez cada 10 min).
+    if (!/^\s*\d{1,2}\s*$/.test(texto)) {
+      const { data: reciente } = await supabase.from('messages').select('id').eq('conversation_id', from)
+        .like('id', 'quino-ayuda-%').gte('created_at', new Date(Date.now() - 10 * 60_000).toISOString()).limit(1).maybeSingle();
+      if (!reciente) {
+        const msg = `👋 ¡Hola ${nombreChat(vend)}! Mándame la venta *directo* (foto de la prenda + datos del cliente) y te la organizo.`;
+        const wamid = await sendTextMessage(from, msg);
+        try {
+          await supabase.from('messages').insert({ id: `quino-ayuda-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, conversation_id: from, content: msg, role: 'assistant', type: 'text', whatsapp_id: wamid, created_at: new Date().toISOString() });
+        } catch { /* ignorar */ }
+      }
+    }
     return;
   }
 
