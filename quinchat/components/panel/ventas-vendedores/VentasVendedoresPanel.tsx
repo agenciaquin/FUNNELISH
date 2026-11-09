@@ -318,7 +318,7 @@ export default function VentasVendedoresPanel({ onAbrirChat }: { onAbrirChat?: (
                               <td className="py-2 pr-2"><PildoraEstado estado={v.estado} /></td>
                               <td className="py-2 pr-2 text-right font-mono font-bold">{pesos(v.total)}</td>
                               <td className="py-2 text-right whitespace-nowrap">
-                                <button onClick={e => { e.stopPropagation(); setAnular(v); }} disabled={v.estado === 'enviando_effi'} title="Eliminar (va a la papelera)" className="w-8 h-8 rounded-lg border border-[#FCA5A5] text-[#DC2626] text-[12px] mr-1 disabled:opacity-40">🗑</button>
+                                <button onClick={e => { e.stopPropagation(); setAnular(v); }} disabled={!sePuedeEliminar(v)} title={tituloEliminar(v)} className="w-8 h-8 rounded-lg border border-[#FCA5A5] text-[#DC2626] text-[12px] mr-1 disabled:opacity-30 disabled:cursor-not-allowed">🗑</button>
                                 <button onClick={e => { e.stopPropagation(); setAbierta(v.id); }} className="px-2.5 h-8 rounded-lg border border-[#E6EAE8] text-[12px] font-semibold mr-1">Ver</button>
                                 <button onClick={e => { e.stopPropagation(); prepararEnvio(v); }} disabled={trabajando === v.id || v.estado === 'cancelada'}
                                   className="px-2.5 h-8 rounded-lg text-white text-[12px] font-bold disabled:opacity-50" style={{ background: v.effi_remision ? '#2563EB' : VERDE }}>
@@ -475,7 +475,9 @@ function Tarjeta({ v, seleccionada, trabajando, onSeleccionar, onVer, onEnviar, 
         </div>
       </div>
       {enEffi ? (
-        <p className="px-4 -mt-1 pb-2 text-[12px] text-[#14804A] font-semibold">🧾 Remisión en Effi #{v.effi_remision}</p>
+        (v as any).effi_anulada
+          ? <p className="px-4 -mt-1 pb-2 text-[12px] text-[#B42318] font-semibold">⛔ Remisión #{v.effi_remision} ANULADA en Effi · ya se puede eliminar</p>
+          : <p className="px-4 -mt-1 pb-2 text-[12px] text-[#14804A] font-semibold">🧾 Remisión en Effi #{v.effi_remision}</p>
       ) : v.faltantes?.length > 0 && v.estado !== 'cancelada' ? (
         <p className="px-4 -mt-1 pb-2 text-[12px] text-[#B25E00] truncate">⚠️ Falta: {v.faltantes.join(' · ')}</p>
       ) : v.effi_estado === 'simulado' ? (
@@ -485,8 +487,8 @@ function Tarjeta({ v, seleccionada, trabajando, onSeleccionar, onVer, onEnviar, 
         <span className="px-3 py-1 rounded-xl bg-[#F7EEDA] text-[#7A5A12] font-extrabold text-[16px] font-mono">{pesos(v.total)}</span>
         <span className="text-[10.5px] text-[#8B8B86] leading-tight">{fechaCorta(v.creado_at)}<br />{v.vendedor_nombre || v.vendedor_tel}</span>
         <div className="ml-auto flex items-center gap-1.5">
-          <button onClick={e => { e.stopPropagation(); onEliminar(); }} disabled={v.estado === 'enviando_effi'} title="Eliminar venta (va a la papelera, pide el motivo)"
-            className="w-9 h-9 rounded-xl border border-[#FCA5A5] text-[#DC2626] text-[14px] hover:bg-[#FEF2F2] disabled:opacity-40">🗑</button>
+          <button onClick={e => { e.stopPropagation(); onEliminar(); }} disabled={!sePuedeEliminar(v)} title={tituloEliminar(v)}
+            className="w-9 h-9 rounded-xl border border-[#FCA5A5] text-[#DC2626] text-[14px] hover:bg-[#FEF2F2] disabled:opacity-30 disabled:cursor-not-allowed">🗑</button>
           <button onClick={e => { e.stopPropagation(); onVer(); }} className="h-9 px-3 rounded-xl border border-[#E6EAE8] text-[12.5px] font-bold hover:bg-[#F1F4F3]">Ver detalle ›</button>
           <button onClick={e => { e.stopPropagation(); onVer(); }} disabled={enEffi} title={enEffi ? 'Ya está en Effi: los cambios van por Novedades' : 'Editar datos y prendas'}
             className="h-9 px-3 rounded-xl border border-[#E6EAE8] text-[12.5px] font-bold hover:bg-[#F1F4F3] disabled:opacity-40">✎ Editar</button>
@@ -515,7 +517,7 @@ function ModalAnular({ venta, onCerrar, onListo }: { venta: VentaVV; onCerrar: (
     const j = await r.json().catch(() => ({}));
     setEnviando(false);
     if (!r.ok) { setError(j.error ?? 'No se pudo eliminar'); return; }
-    onListo(`🗑 Venta de ${venta.cliente_nombre || 'cliente'} enviada a la papelera.${enEffi ? ` Recuerda anular la remisión #${venta.effi_remision} en Effi.` : ''}`);
+    onListo(`🗑 Venta de ${venta.cliente_nombre || 'cliente'} enviada a la papelera.`);
   };
   return (
     <div className="fixed inset-0 z-[80] bg-black/50 flex items-center justify-center p-4" onClick={onCerrar}>
@@ -523,8 +525,8 @@ function ModalAnular({ venta, onCerrar, onListo }: { venta: VentaVV; onCerrar: (
         <h3 className="text-lg font-extrabold">🗑 Eliminar venta</h3>
         <p className="text-[13px] text-[#5E5E5A] mt-1"><b>{venta.cliente_nombre || 'Sin nombre'}</b> · {venta.codigo} · {pesos(venta.total)}. Queda en la <b>papelera</b> con el motivo (se puede restaurar).</p>
         {enEffi && (
-          <p className="mt-3 text-[12.5px] rounded-xl bg-[#FFF7E6] border border-[#F5D28A] text-[#7A4B00] px-3 py-2">
-            ⚠️ Esta venta <b>ya está en Effi (remisión #{venta.effi_remision})</b>. QuinChat la quita del panel, pero <b>no la anula en Effi</b>: anúlala allá.
+          <p className="mt-3 text-[12.5px] rounded-xl bg-[#FEF3F2] border border-[#FECDCA] text-[#912018] px-3 py-2">
+            ⛔ La remisión <b>#{venta.effi_remision}</b> está <b>anulada en Effi</b>, por eso se puede eliminar del panel.
           </p>
         )}
         <label className="block text-[12px] font-bold mt-4 mb-1">Motivo de la anulación *</label>
@@ -584,4 +586,16 @@ function PapeleraCM({ onCerrar, onAviso }: { onCerrar: () => void; onAviso: (ok:
       </div>
     </div>
   );
+}
+
+
+/** Regla del dueño: una venta ACTIVA en Effi no se elimina; solo si su remisión quedó anulada/cancelada en Effi. */
+function sePuedeEliminar(v: VentaVV) {
+  if (v.estado === 'enviando_effi') return false;
+  return !v.effi_remision || !!(v as any).effi_anulada;
+}
+function tituloEliminar(v: VentaVV) {
+  if (v.estado === 'enviando_effi') return 'Se está subiendo a Effi';
+  if (v.effi_remision && !(v as any).effi_anulada) return `Activa en Effi (remisión #${v.effi_remision}): para eliminarla, primero anúlala en Effi`;
+  return 'Eliminar venta (va a la papelera, pide el motivo)';
 }

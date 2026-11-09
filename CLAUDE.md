@@ -165,8 +165,10 @@ hace PATCH `accion:'papelera'` → `estado='cancelada'` + `papelera_at/motivo/po
 con «Restaurar» (`accion:'restaurar'`). Nada se borra. El Centro Maestro excluye `papelera_at`.
 
 **Papelera en el Centro Maestro (09-nov-2026, dueño):** 🗑 en cada tarjeta/fila → `ModalAnular` pide el MOTIVO → PATCH
-`accion:'papelera'`. Ahora también para ventas YA subidas a Effi (aviso: QuinChat NO anula la remisión en Effi, se anula allá);
-no se permite mientras está `enviando_effi`. Botón «🗑 Papelera» (GET `/api/ventas-vendedores?papelera=1`, solo `panel%`) con
+`accion:'papelera'`. Una venta ACTIVA en Effi NO se puede eliminar (dueño): solo si su remisión quedó ANULADA/CANCELADA en Effi
+(`lib/ventas-vendedores/effi-anulada.ts`: copia `effi_remisiones_api` con `vigente='0'` o estado anulad/cancelad; si no aparece
+anulada, se trae lo último de Effi y se vuelve a mirar). La lista trae `effi_anulada` (🗑 apagado si está activa, letrero «ANULADA
+en Effi» si ya se anuló). QuinChat nunca anula en Effi. No se permite mientras está `enviando_effi`. Botón «🗑 Papelera» (GET `/api/ventas-vendedores?papelera=1`, solo `panel%`) con
 «Restaurar». El resto de cambios sobre una venta en Effi sigue bloqueado (409).
 
 **BEIGE = COCOA (dueño, 09-nov-2026):** es el mismo color; en el catálogo KLIXMANT se llama «Cocoa». «Enviar al panel de Effi»

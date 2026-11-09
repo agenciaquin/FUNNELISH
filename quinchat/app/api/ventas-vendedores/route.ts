@@ -54,6 +54,12 @@ export async function GET(req: NextRequest) {
   const ciudades = [...new Set(lista.map(v => v.municipio).filter(Boolean))].sort();
   const tipos = [...new Set(items.map(i => i.tipo).filter(Boolean))].sort();
 
+  // ¿La remisión de Effi quedó anulada? (solo así se puede eliminar del panel una venta que ya estaba en Effi)
+  {
+    const { remisionesAnuladas } = await import('@/lib/ventas-vendedores/effi-anulada');
+    const anuladas = await remisionesAnuladas(supabase, lista.map((v: any) => v.effi_remision).filter(Boolean));
+    lista = lista.map((v: any) => ({ ...v, effi_anulada: !!v.effi_remision && anuladas.has(String(v.effi_remision)) }));
+  }
   if (!verQA) lista = lista.filter(v => !v.es_prueba);
   if (vendedor) lista = lista.filter(v => v.vendedor_tel === vendedor);
   if (ciudad) lista = lista.filter(v => sinTildes(v.municipio).includes(ciudad));

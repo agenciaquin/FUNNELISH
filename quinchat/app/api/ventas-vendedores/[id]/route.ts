@@ -50,11 +50,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   // PAPELERA (09-nov-2026, dueño): eliminar una venta antes de subirla (prueba, duplicada…) con MOTIVO obligatorio.
   // No se borra: queda en la papelera con motivo, fecha y quién; se puede restaurar.
-  // Desde el Centro Maestro (09-nov-2026, dueño) también se puede mandar a la papelera una venta YA subida a Effi: se quita
-  // del panel con su motivo, pero en Effi NO se anula nada (eso se hace en Effi). Solo mientras no se esté subiendo.
+  // Regla del dueño (09-nov-2026): una venta ACTIVA en Effi NO se puede eliminar. Solo si su remisión quedó ANULADA /
+  // CANCELADA en Effi (se revisa la copia y, si hace falta, se trae lo último de Effi). QuinChat nunca anula en Effi.
   if (b.accion === 'papelera') {
     if (motivo.length < 3) return NextResponse.json({ error: 'Escribe el motivo por el que se elimina.' }, { status: 400 });
     if (venta.estado === 'enviando_effi') return NextResponse.json({ error: 'Se está subiendo a Effi en este momento; espera a que termine.' }, { status: 409 });
+    if (venta.effi_remision) {
+      const { remisionAnuladaEnEffi } = await import('@/lib/ventas-vendedores/effi-anulada');
+      const r = await remisionAnuladaEnEffi(supabase, String(venta.effi_remision), venta.effi_enviado_at ?? venta.creado_at);
+      if (!r.anulada) return NextResponse.json({
+        error: `La remisión #${venta.effi_remision} está ACTIVA en Effi${r.estado ? ` (${r.estado.trim()})` : ''}. Para eliminarla, primero anúlala en Effi y vuelve a intentarlo.`,
+      }, { status: 409 });
+    }
     await supabase.from('vv_ventas').update({
       estado: 'cancelada', estado_previo: venta.estado, papelera_at: ahora, papelera_motivo: motivo, papelera_por: quien, actualizado_at: ahora,
     }).eq('id', id);
