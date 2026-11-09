@@ -331,7 +331,6 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
   const fotos: string[] = venta.fotos_vendedor ?? [];
   // Si mandó foto pero no escribió la prenda, la prenda sale de la foto
   if (!v.prendas.length && fotos.length) v.prendas = [{ descripcion: '', color: '', talla: '', genero: '', cantidad: 1, precio: null }];
-  const totalPrendas = v.prendas.reduce((s, p) => s + p.cantidad, 0) || 1;
   /** "TITULO: X | TIPO: Y | MARCAS: Z | COLOR: W" → campos. */
   const campoFoto = (desc: string, campo: string) =>
     (new RegExp(`${campo}:\\s*([^|\\n]*)`, 'i').exec(desc)?.[1] ?? '').replace(/["“”<>]/g, '').trim();
@@ -346,10 +345,19 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
     const fotoUrl = fotos[k] ?? ((v.prendas.length === 1 || sinNombre) ? fotos[fotos.length - 1] : null) ?? null;
     const descFoto = fotoUrl ? (evFotos ?? []).find((e: any) => e.detalle?.url === fotoUrl)?.detalle?.descripcion ?? '' : '';
     const colores = (descFoto ? campoFoto(descFoto, 'COLOR') : '').split(/\s*(?:\/|,|\+|\by\b)\s*/i).map(c => c.trim()).filter(Boolean);
-    if (colores.length > 1 && p.cantidad === colores.length) {
-      for (const c of colores) prendasExp.push({ p: { ...p, cantidad: 1 }, fotoUrl, descFoto, colorFijo: c });
+    const colorTexto = String(p.color ?? '').trim();
+    // Foto con varios colores: «los dos» (cantidad = n.º de colores) o sin cantidad ni color escrito → uno de cada color.
+    // Si el vendedor escribió UN color, se toma solo ese (09-nov-2026: collage Scania navy + rey salía 1 sola prenda).
+    if (colores.length > 1 && (p.cantidad === colores.length || (p.cantidad === 1 && !colorTexto))) {
+      // Si el «precio» leído es el total de la venta, se reparte (no se repite en cada prenda)
+      const precioUno = p.precio && v.total && p.precio * colores.length > v.total * 1.05 ? null : p.precio;
+      for (const c of colores) prendasExp.push({ p: { ...p, cantidad: 1, precio: precioUno }, fotoUrl, descFoto, colorFijo: c });
+    } else if (colores.length > 1 && colorTexto) {
+      const elegido = colores.find(c => sinTildes(c).replace(/\s+/g, '') === sinTildes(colorTexto).replace(/\s+/g, '')) ?? colorTexto;
+      prendasExp.push({ p, fotoUrl, descFoto, colorFijo: elegido });
     } else prendasExp.push({ p, fotoUrl, descFoto, colorFijo: null });
   }
+  const totalExp = prendasExp.reduce((s, x) => s + x.p.cantidad, 0) || 1;
   for (let i = 0; i < prendasExp.length; i++) {
     const { p, fotoUrl, descFoto, colorFijo } = prendasExp[i];
     // ⚠️ REGLA ÚNICA: si hay FOTO, el producto y el color salen SOLO de la foto (su título y lo que se ve).
@@ -361,7 +369,7 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
       ? { descripcion: tituloFoto || campoFoto(descFoto, 'MARCAS') || 'Prenda de la foto', color: colorFoto, talla: p.talla, genero: p.genero }
       : { descripcion: p.descripcion, color: p.color, talla: p.talla, genero: p.genero };
     const prev = previos[i];
-    const precio = p.precio ?? (v.total && prendasExp.length === 1 ? Math.round(v.total / p.cantidad) : (v.total ? Math.round(v.total / totalPrendas) : null));
+    const precio = p.precio ?? (v.total && prendasExp.length === 1 ? Math.round(v.total / p.cantidad) : (v.total ? Math.round(v.total / totalExp) : null));
     if (prev && JSON.stringify(prev.candidatos?.solicitud ?? {}) === JSON.stringify(sol) && prev.estado !== 'sin_identificar') {
       await supabase.from('vv_items').update({ cantidad: p.cantidad, precio }).eq('id', prev.id);
       continue;
