@@ -9,7 +9,7 @@ import { avisoTexto, primerNombre, ciudadBonita } from '@/lib/aviso-novedad-text
  */
 export const PLANTILLA_INCOMPLETA = 'novedad_direccion_incompleta';
 export const CUERPO_INCOMPLETA = [
-  '{{1}}! Tu pedido ya está en {{2}}.',
+  '¡{{1}}! Tu pedido ya está en {{2}}.',
   '🚚 La transportadora nos indica que tu dirección está incompleta. ¿Me regalas los datos que hacen falta, como torre, apartamento o algún detalle adicional?',
   '📍 Dirección registrada: {{3}}',
   '📋 Guía: {{4}}',
@@ -22,7 +22,7 @@ export const AVISO_INCOMPLETA_SRV = avisoTexto({
   nombreCorto: 'Dirección incompleta', etiqueta: 'DIRECCION INCOMPLETA',
   nota: g => `🏠 Dirección incompleta (guía ${g}). Se le pidieron torre, apartamento o detalle adicional.`,
   prefijoMsg: 'tpl-incompleta-',
-  filtroOr: 'novedad_texto.ilike.699 -%,novedad_texto.ilike.%direcci_n incompleta%',
+  filtroOr: 'novedad_texto.ilike.699%,novedad_texto.ilike.%direcci_n incompleta%',
   coincide: n => /^699 -|direcci[oó]n incompleta/i.test(String(n.novedad_texto ?? '')),
   variables: n => [primerNombre(n.cliente), ciudadBonita(n.ciudad), String(n.direccion ?? '').trim() || 'la que nos diste', String(n.guia)],
 });

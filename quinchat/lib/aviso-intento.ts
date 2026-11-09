@@ -7,7 +7,7 @@ import { avisoTexto } from '@/lib/aviso-novedad-texto';
  */
 export const PLANTILLA_INTENTO = 'novedad_intento_entrega';
 export const CUERPO_INTENTO = [
-  '{{1}}! Tu pedido ya está en {{2}}🚗',
+  '¡{{1}}! Tu pedido ya está en {{2}}🚗',
   'La transportadora nos indica que fueron a tu casa y no estabas',
   'Guía: {{3}}',
   'Nos preocupa que aún no hayas recibido',
@@ -19,7 +19,8 @@ export const AVISO_INTENTO_SRV = avisoTexto({
   ejemplo: ['María', 'Bucaramanga', '240065170587'], nombreCorto: 'Intento de entrega', etiqueta: 'NOVEDAD ENTREGA',
   nota: g => `🚚 Intento de entrega fallido (guía ${g}). Se le avisó por plantilla; gestionar con la transportadora.`,
   prefijoMsg: 'tpl-intento-',
-  filtroOr: 'estado_effi.ilike.%intento de entrega%,novedad_texto.ilike.701 -%,novedad_texto.ilike.%se visita, no se logra entrega%',
+  // Sin comas dentro de los valores: una coma rompe el filtro .or() de Supabase (el 09-nov salía «0 en intento»)
+  filtroOr: 'estado_effi.ilike.%intento de entrega%,novedad_texto.ilike.701%,novedad_texto.ilike.%se visita%',
   coincide: n => /intento de entrega/i.test(String(n.estado_effi ?? '')) || /^701 -|se visita, no se logra entrega/i.test(String(n.novedad_texto ?? '')),
 });
 

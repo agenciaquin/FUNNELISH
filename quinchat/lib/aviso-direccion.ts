@@ -10,7 +10,7 @@ import { avisoTexto } from '@/lib/aviso-novedad-texto';
  */
 export const PLANTILLA_DIRECCION = 'novedad_direccion_no_localizada';
 export const CUERPO_DIRECCION = [
-  '{{1}}! Tu pedido ya está en {{2}}.',
+  '¡{{1}}! Tu pedido ya está en {{2}}.',
   '🚚 La transportadora nos indica que no lograron localizar tu dirección.',
   '¿Me ayudas enviándome una fotico de un recibo de luz o agua donde aparezca tu dirección para compartírsela a la transportadora?',
   '📋 Guía: {{3}}',
