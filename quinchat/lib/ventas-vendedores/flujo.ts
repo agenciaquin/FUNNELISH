@@ -335,23 +335,33 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
   /** "TITULO: X | TIPO: Y | MARCAS: Z | COLOR: W" → campos. */
   const campoFoto = (desc: string, campo: string) =>
     (new RegExp(`${campo}:\\s*([^|\\n]*)`, 'i').exec(desc)?.[1] ?? '').replace(/["“”<>]/g, '').trim();
-  for (let i = 0; i < v.prendas.length; i++) {
-    const p = v.prendas[i];
-    // Prenda sin foto propia y sin nombre («Talla L / M … las dos») = la MISMA prenda de la última foto en otra
-    // talla. Antes quedaba sin descripción y salía «no encontré la prenda» (08-nov-2026).
+  // Cada prenda con su foto. Una FOTO con VARIOS colores (collage «rojo + marfil») y una cantidad igual al número
+  // de colores («los dos») se parte en una prenda por color (08-nov-2026: antes salían 2 del mismo color).
+  type PrendaExp = { p: typeof v.prendas[number]; fotoUrl: string | null; descFoto: string; colorFijo: string | null };
+  const prendasExp: PrendaExp[] = [];
+  for (let k = 0; k < v.prendas.length; k++) {
+    const p = v.prendas[k];
+    // Prenda sin foto propia y sin nombre («Talla L / M … las dos») = la MISMA prenda de la última foto en otra talla
     const sinNombre = !String(p.descripcion ?? '').trim();
-    const fotoUrl = fotos[i] ?? ((v.prendas.length === 1 || sinNombre) ? fotos[fotos.length - 1] : null) ?? null;
+    const fotoUrl = fotos[k] ?? ((v.prendas.length === 1 || sinNombre) ? fotos[fotos.length - 1] : null) ?? null;
     const descFoto = fotoUrl ? (evFotos ?? []).find((e: any) => e.detalle?.url === fotoUrl)?.detalle?.descripcion ?? '' : '';
+    const colores = (descFoto ? campoFoto(descFoto, 'COLOR') : '').split(/\s*(?:\/|,|\+|\by\b)\s*/i).map(c => c.trim()).filter(Boolean);
+    if (colores.length > 1 && p.cantidad === colores.length) {
+      for (const c of colores) prendasExp.push({ p: { ...p, cantidad: 1 }, fotoUrl, descFoto, colorFijo: c });
+    } else prendasExp.push({ p, fotoUrl, descFoto, colorFijo: null });
+  }
+  for (let i = 0; i < prendasExp.length; i++) {
+    const { p, fotoUrl, descFoto, colorFijo } = prendasExp[i];
     // ⚠️ REGLA ÚNICA: si hay FOTO, el producto y el color salen SOLO de la foto (su título y lo que se ve).
     // El nombre de producto que escribió el vendedor NO se usa para buscar. Del texto solo se toman talla, género, cantidad y precio.
     const conFoto = !!fotoUrl && !!descFoto;
     const tituloFoto = conFoto ? campoFoto(descFoto, 'TITULO') : '';
-    const colorFoto = conFoto ? campoFoto(descFoto, 'COLOR') : '';
+    const colorFoto = colorFijo ?? (conFoto ? campoFoto(descFoto, 'COLOR') : '');
     const sol = conFoto
       ? { descripcion: tituloFoto || campoFoto(descFoto, 'MARCAS') || 'Prenda de la foto', color: colorFoto, talla: p.talla, genero: p.genero }
       : { descripcion: p.descripcion, color: p.color, talla: p.talla, genero: p.genero };
     const prev = previos[i];
-    const precio = p.precio ?? (v.total && v.prendas.length === 1 ? Math.round(v.total / p.cantidad) : (v.total ? Math.round(v.total / totalPrendas) : null));
+    const precio = p.precio ?? (v.total && prendasExp.length === 1 ? Math.round(v.total / p.cantidad) : (v.total ? Math.round(v.total / totalPrendas) : null));
     if (prev && JSON.stringify(prev.candidatos?.solicitud ?? {}) === JSON.stringify(sol) && prev.estado !== 'sin_identificar') {
       await supabase.from('vv_items').update({ cantidad: p.cantidad, precio }).eq('id', prev.id);
       continue;
@@ -364,7 +374,7 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
     await reconocer(supabase, item, sol, conFoto ? descFoto : p.descripcion, fotoUrl);
   }
   // Prendas que el vendedor quitó
-  const sobran = previos.slice(v.prendas.length).map((x: any) => x.id);
+  const sobran = previos.slice(prendasExp.length).map((x: any) => x.id);
   if (sobran.length) await supabase.from('vv_items').delete().in('id', sobran);
 
   if (!esOrden && await hayMasNuevo()) return true; // llegó otro mensaje: responde esa llamada con todo junto

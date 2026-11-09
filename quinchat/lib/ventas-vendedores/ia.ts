@@ -93,7 +93,8 @@ export async function describirFoto(base64: string, mimeType: string): Promise<s
         'Describe la prenda de la foto para buscarla en un catálogo de buzos. Responde UNA línea así:\n' +
         'TITULO: <texto impreso en la imagen como encabezado o nombre del producto, p. ej. "CUELLO ALTO MERCEDES"; vacío si no hay> | ' +
         'TIPO: <cuello alto | buzo con capota | chaqueta | camiseta | polo> | MARCAS: <marcas, equipos, escuderías y textos de la prenda> | ' +
-        'COLOR: <si la imagen trae el color escrito en una etiqueta (p. ej. "BUZO COCOA" → Cocoa) usa ESE; si no, el color principal de la prenda>\n' +
+        'COLOR: <si la imagen trae el color escrito en una etiqueta (p. ej. "BUZO COCOA" → Cocoa) usa ESE; si no, el color principal de la prenda. ' +
+        'Si la imagen muestra VARIAS prendas del mismo diseño en colores distintos (collage), pon TODOS separados por " / " de izquierda a derecha, p. ej. "Rojo / Marfil">\n' +
         'Cómo distinguir el TIPO: "cuello alto" = cremallera completa al frente y cuello levantado, SIN capucha ni bolsillo canguro; ' +
         '"buzo con capota" = capucha y bolsillo canguro, sin cremallera completa. Fíjate bien en el cuello y la cremallera. Sin frases extra.',
       messages: [{ role: 'user', content: 'Describe esta prenda.' }],
