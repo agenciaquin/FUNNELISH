@@ -113,17 +113,19 @@ function campo(o: any, claves: RegExp[], soloTexto = false): string | null {
   return null;
 }
 export function leerNovedadEffi(d: any): NovedadEffi {
-  const texto = campo(d, [/^nombre_novedad$/, /^nombre_t_novedad/, /^nombre_tipo_novedad/, /^descripcion_novedad/, /^novedad$/, /^nombre_causal/, /descripcion/], true);
-  const codigo = campo(d, [/^(id_)?t_novedad$/, /^id_tipo_novedad$/, /^codigo_novedad$/, /^novedad$/, /^causal$/]);
+  // Campos reales de Effi (comprobado el 09-nov-2026): nombre_novedad, id_novedad (código), aclaracion, estado_novedad,
+  // tipo_novedad, cant_gestion, fecha_trans_transportadora, id_guia, url_foto, fecha_solucion
+  const texto = campo(d, [/^nombre_novedad$/, /^descripcion_novedad/, /^nombre_causal/], true);
+  const codigo = campo(d, [/^id_novedad$/, /^codigo_novedad$/]);
   return {
     id: valor(d?.id ?? d?.id_novedad ?? d?.id_novedad_guia_transporte ?? d?.id_transaccion),
     id_guia: campo(d, [/^id_guia_transporte$/, /^guia_transporte$/, /^id_guia$/]),
     codigo: codigo && /^\d+$/.test(codigo) ? codigo : null,
     texto, aclaracion: campo(d, [/aclaraci/], true),
-    estado: campo(d, [/^nombre_estado_novedad$/, /^nombre_estado$/, /^estado_novedad$/, /^estado$/], true) ?? campo(d, [/^est_novedad$/, /^estado$/]),
+    estado: campo(d, [/^estado_novedad$/, /^nombre_estado_novedad$/], true) ?? campo(d, [/^est_novedad$/]),
     vigente: valor(d?.vigente ?? '1') !== '0',
-    soluciones: (() => { const n = Number(campo(d, [/cant.*soluc/, /^soluciones$/, /^n_soluciones$/])); return Number.isFinite(n) ? n : null; })(),
-    fecha: fechaIso(campo(d, [/^fecha_transportadora$/, /^fecha_novedad$/, /^fecha_trans$/, /^fecha_creacion$/])),
+    soluciones: (() => { const v = campo(d, [/^cant_gestion$/, /cant.*soluc/, /^soluciones$/]); const n = Number(v); return v != null && Number.isFinite(n) ? n : null; })(),
+    fecha: fechaIso(campo(d, [/^fecha_trans$/, /^fecha_trans_transportadora$/, /^fecha_novedad$/])),
   };
 }
 /** ¿La novedad de Effi sigue esperando solución? («1 - Pendiente de solución») */

@@ -211,13 +211,15 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
                           <span className="shrink-0 px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: est.bg, color: est.c }}>{est.t.replace(/s$/, '')}</span>
                         </div>
                         <p className="text-[12.5px] text-[#0D1F1C] line-clamp-1" title={n.producto ?? ''}>👕 {n.producto ?? 'Producto no identificado'}{n.talla ? ` · ${n.talla}` : ''}</p>
-                        <p className="text-[12px] text-[#5B6B68]">🧾 Remisión {n.id_remision ?? '—'} · Guía {n.guia ?? '—'}</p>
+                        <p className="text-[12px] text-[#5B6B68] flex items-center gap-1">🧾 Remisión {n.id_remision ?? '—'} · Guía {n.guia ?? '—'}
+                          {n.guia && <button onClick={() => copiar(n.guia!, setAviso, `Guía ${n.guia}`)} title="Copiar guía" className="px-1 rounded hover:bg-[#F1F5F4]">📋</button>}</p>
                         <p className="text-[12.5px] font-bold text-[#B54708] line-clamp-1" title={n.motivo ?? ''}>⚠️ {n.motivo ?? 'Novedad'}</p>
                         {n.resultado && <p className="text-[11.5px] text-[#067647]">{RESULTADO[n.resultado] ?? n.resultado}</p>}
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           <span className="text-[11px] text-[#5B6B68]">🕒 {fecha(n.detectada_at)}</span>
                           <span className="text-[10.5px] px-1.5 py-0.5 rounded bg-[#F1F5F4] text-[#5B6B68] font-semibold">{/QUINO/i.test(n.vendedor ?? '') ? 'Quino Agencia' : 'Funnelish'}</span>
-                          <button onClick={() => abrirChat(n)} className="ml-auto px-2.5 py-1 rounded-lg border border-[#25D366] text-[#128C4B] text-[12px] font-bold hover:bg-[#25D366]/10">💬 Abrir chat del cliente</button>
+                          <button onClick={() => setAbierta(n.id)} className="ml-auto px-2.5 py-1 rounded-lg border border-[#E1E5E4] text-[#0D1F1C] text-[12px] font-bold hover:bg-[#F7FAF9]">📋 Ver detalle</button>
+                          <button onClick={() => abrirChat(n)} className="px-2.5 py-1 rounded-lg border border-[#25D366] text-[#128C4B] text-[12px] font-bold hover:bg-[#25D366]/10">💬 Abrir chat</button>
                         </div>
                       </div>
                     </div>
@@ -250,15 +252,36 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
   );
 }
 
+/** Copia al portapapeles y avisa. */
+async function copiar(texto: string, aviso: (m: string) => void, que: string) {
+  try { await navigator.clipboard.writeText(texto); aviso(`📋 ${que} copiado`); }
+  catch { aviso(`${que}: ${texto}`); }
+}
+/** Página de rastreo de la transportadora (la guía se copia antes, por si la página no la recibe sola). */
+function urlRastreo(transportadora: string | null | undefined, guia: string): string | null {
+  const t = String(transportadora ?? '').toUpperCase();
+  if (/COORDINADORA/.test(t)) return `https://coordinadora.com/rastreo/rastreo-de-guia/detalle-de-rastreo-de-guia/?guia=${encodeURIComponent(guia)}`;
+  if (/INTER/.test(t)) return 'https://www.interrapidisimo.com/sigue-tu-envio/';
+  if (/ENV[IÍ]A/.test(t)) return 'https://envia.co/';
+  return null;
+}
+const diasDesde = (iso: string | null | undefined) => {
+  const t = Date.parse(String(iso ?? '').replace(' ', 'T')); if (!t) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / 86400_000));
+};
+
 function Detalle({ n, onCerrar, onCambio, onChat }: { n: Novedad; onCerrar: () => void; onCambio: () => Promise<void>; onChat: () => void }) {
   const [full, setFull] = useState<Novedad | null>(null);
   const [hist, setHist] = useState<Hist[]>([]);
+  const [nEffi, setNEffi] = useState<any[]>([]);
   const [nota, setNota] = useState('');
   const [guardando, setGuardando] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const avisar = (m: string) => { setToast(m); setTimeout(() => setToast(t => (t === m ? null : t)), 2200); };
 
   const traer = useCallback(async () => {
     const r = await fetch(`/api/novedades/${n.id}`, { cache: 'no-store' }); const j = await r.json().catch(() => ({}));
-    if (j.novedad) { setFull(j.novedad); setHist(j.historial ?? []); }
+    if (j.novedad) { setFull(j.novedad); setHist(j.historial ?? []); setNEffi(j.novedades_effi ?? []); }
   }, [n.id]);
 
   // Al abrirla: queda vista (Nueva → Pendiente)
@@ -278,29 +301,56 @@ function Detalle({ n, onCerrar, onCambio, onChat }: { n: Novedad; onCerrar: () =
 
   const d = full ?? n;
   const est = estiloDe(d.estado);
-  const fila = (k: string, v: React.ReactNode) => (
-    <div className="flex gap-3 py-1.5 border-b border-[#F1F5F4] text-[13px]"><span className="w-36 shrink-0 text-[#5B6B68]">{k}</span><span className="flex-1 min-w-0 text-[#0D1F1C] break-words">{v ?? '—'}</span></div>
+  const ult = nEffi[0] ?? null;
+  const direccion = [d.direccion, d.ciudad, d.departamento].filter(Boolean).join(', ');
+  const ficha = [
+    `Cliente: ${d.cliente ?? ''}`, `Teléfono: ${d.telefono ?? d.telefono_original ?? ''}`, `Dirección: ${direccion}`,
+    `Producto: ${d.producto ?? ''}${d.talla ? ` · ${d.talla}` : ''}`, `Valor a cobrar: ${pesos(d.valor_recaudo)}`,
+    `Remisión: ${d.id_remision ?? ''} · Guía: ${d.guia ?? ''} (${d.transportadora ?? ''})`,
+    `Novedad: ${d.novedad_texto ?? d.motivo ?? ''}`, ult?.estado ? `Estado novedad: ${ult.estado}` : '',
+  ].filter(Boolean).join('\n');
+  const rastreo = d.guia ? urlRastreo(d.transportadora, d.guia) : null;
+  const antig = diasDesde(ult?.fecha_effi ?? d.fecha_novedad ?? d.detectada_at);
+
+  const fila = (k: string, v: React.ReactNode, copia?: string | null) => (
+    <div className="flex gap-3 py-1.5 border-b border-[#F1F5F4] text-[13px] items-start">
+      <span className="w-36 shrink-0 text-[#5B6B68]">{k}</span>
+      <span className="flex-1 min-w-0 text-[#0D1F1C] break-words">{v ?? '—'}</span>
+      {copia && <button onClick={() => copiar(copia, avisar, k)} title={`Copiar ${k.toLowerCase()}`} className="shrink-0 px-1.5 rounded text-[12px] text-[#5B6B68] hover:bg-[#F1F5F4]">📋</button>}
+    </div>
   );
+  const boton = 'px-3 py-2 rounded-xl border border-[#E1E5E4] text-[12.5px] font-bold hover:bg-[#F7FAF9] text-center';
 
   return (
     <div className="fixed inset-0 z-[85] bg-black/50 flex items-center justify-center p-3" onClick={onCerrar}>
-      <div className="w-full max-w-4xl max-h-full overflow-auto bg-white rounded-2xl" onClick={e => e.stopPropagation()}>
-        <div className="p-5 border-b border-[#E8ECEB] flex items-center gap-3">
+      <div className="relative w-full max-w-5xl max-h-full overflow-auto bg-white rounded-2xl" onClick={e => e.stopPropagation()}>
+        <div className="p-5 border-b border-[#E8ECEB] flex items-center gap-3 sticky top-0 bg-white z-10">
           <div className="flex-1 min-w-0">
             <p className="text-lg font-extrabold text-[#0D1F1C] truncate">{d.cliente ?? 'Sin nombre'}</p>
-            <p className="text-[13px] font-bold text-[#B54708]">⚠️ {d.motivo ?? 'Novedad'}</p>
+            <p className="text-[13px] font-bold text-[#B54708] line-clamp-2">⚠️ {d.motivo ?? 'Novedad'}</p>
           </div>
-          <span className="px-2.5 py-1 rounded-full text-xs font-bold" style={{ background: est.bg, color: est.c }}>{est.t}</span>
+          <span className="px-2.5 py-1 rounded-full text-xs font-bold" style={{ background: est.bg, color: est.c }}>{est.t.replace(/s$/, '')}</span>
           <button onClick={onCerrar} className="text-xl text-[#5B6B68] px-2">✕</button>
         </div>
-        <div className="grid md:grid-cols-[260px_1fr] gap-5 p-5">
+
+        {/* Acciones rápidas */}
+        <div className="px-5 pt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <button onClick={() => d.guia && copiar(d.guia, avisar, 'Guía')} disabled={!d.guia} className={boton}>📋 Copiar guía</button>
+          <button onClick={() => copiar(d.telefono ?? d.telefono_original ?? '', avisar, 'Teléfono')} className={boton}>📱 Copiar teléfono</button>
+          <button onClick={() => copiar(direccion, avisar, 'Dirección')} className={boton}>📍 Copiar dirección</button>
+          <button onClick={() => copiar(ficha, avisar, 'Ficha completa')} className={boton}>🗂 Copiar ficha</button>
+          {rastreo && <button onClick={async () => { if (d.guia) await copiar(d.guia, avisar, 'Guía'); window.open(rastreo, '_blank', 'noopener'); }} className={boton}>🔍 Rastrear en {String(d.transportadora ?? '').split(' ')[0].toLowerCase().replace(/^./, c => c.toUpperCase())}</button>}
+          {d.url_guia && <a href={d.url_guia} target="_blank" rel="noopener noreferrer" className={boton}>📄 Guía en PDF</a>}
+          {ult?.foto && <a href={ult.foto} target="_blank" rel="noopener noreferrer" className={boton}>📷 Foto de la novedad</a>}
+          <button onClick={onChat} className="px-3 py-2 rounded-xl bg-[#25D366] text-white text-[12.5px] font-bold">💬 Abrir chat</button>
+        </div>
+
+        <div className="grid md:grid-cols-[240px_1fr] gap-5 p-5">
           <div className="flex flex-col gap-3">
             <div className="aspect-square rounded-xl overflow-hidden bg-[#F1F5F4] flex items-center justify-center text-5xl">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               {d.foto ? <img src={d.foto} alt="" className="w-full h-full object-cover" /> : '📦'}
             </div>
-            <button onClick={onChat} className="px-4 py-2.5 rounded-xl bg-[#25D366] text-white font-bold text-sm">💬 Abrir chat del cliente</button>
-            {d.url_guia && <a href={d.url_guia} target="_blank" rel="noopener noreferrer" className="px-4 py-2 rounded-xl border border-[#E1E5E4] text-sm font-bold text-center">📄 Ver guía (PDF)</a>}
             <div>
               <p className="text-[12px] font-bold text-[#5B6B68] mb-1.5">Estado de gestión</p>
               <div className="grid grid-cols-2 gap-1.5">
@@ -314,25 +364,62 @@ function Detalle({ n, onCerrar, onCambio, onChat }: { n: Novedad; onCerrar: () =
               </div>
             </div>
           </div>
-          <div className="min-w-0">
-            {fila('Teléfono', d.telefono ? `${d.telefono}${d.telefono_original && d.telefono_original.replace(/\D/g, '') !== d.telefono ? ` (Effi: ${d.telefono_original})` : ''}` : <span className="text-[#B42318]">{d.telefono_original || 'vacío'} — verifícalo en Effi</span>)}
-            {fila('Dirección', [d.direccion, d.ciudad, d.departamento].filter(Boolean).join(', '))}
-            {fila('Producto', `${d.producto ?? 'No identificado'}${d.talla ? ` · ${d.talla}` : ''}`)}
-            {fila('Contenido en Effi', d.contenido_effi)}
-            {fila('Valor a cobrar', pesos(d.valor_recaudo))}
-            {fila('Remisión / Guía', `${d.id_remision ?? '—'} · ${d.guia ?? '—'} (${d.transportadora ?? '—'})`)}
-            {fila('Vendedor Effi', d.vendedor)}
-            {fila('Novedad en Effi', d.novedad_texto ? <b className="text-[#B54708]">{d.novedad_texto}</b> : <span className="text-[#5B6B68]">Sin registro en «Novedades de guías» (se usa el estado de la transportadora)</span>)}
-            {d.id_novedad_effi && fila('ID novedad / estado', `${d.id_novedad_effi} · ${d.estado_novedad_effi ?? '—'}${d.soluciones != null ? ` · ${d.soluciones} solución(es)` : ''}`)}
-            {d.fecha_novedad && fila('F. transportadora', fecha(d.fecha_novedad))}
-            {fila('Estado transportadora', d.estado_effi)}
-            {fila('Estado Effi', d.estado_effi_comercio)}
-            {fila('Observación Effi', d.observacion_effi)}
-            {fila('Guía creada', fecha(d.fecha_guia))}
-            {fila('Novedad detectada', fecha(d.detectada_at))}
-            {d.resultado && fila('Resultado', RESULTADO[d.resultado] ?? d.resultado)}
 
-            <div className="mt-4">
+          <div className="min-w-0 flex flex-col gap-4">
+            {/* La novedad según Effi */}
+            <div className="rounded-xl border border-[#FEDF89] bg-[#FFFAEB] p-3.5">
+              <p className="text-[12px] font-bold text-[#B54708] mb-1">NOVEDAD EN EFFI {ult?.id ? `· ID ${ult.id}` : ''}</p>
+              {ult ? (
+                <>
+                  <p className="text-[15px] font-extrabold text-[#0D1F1C]">{[ult.codigo, ult.nombre].filter(Boolean).join(' - ')}</p>
+                  {ult.aclaracion && <p className="text-[13px] text-[#0D1F1C] mt-1 whitespace-pre-wrap">💬 <b>Aclaración:</b> {ult.aclaracion}</p>}
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[12px] text-[#5B6B68]">
+                    {ult.estado && <span>Estado: <b className="text-[#B54708]">{ult.estado}</b></span>}
+                    {ult.tipo && <span>Tipo: <b>{ult.tipo}</b></span>}
+                    {ult.gestiones != null && <span>Gestiones: <b>{ult.gestiones}</b></span>}
+                    {antig != null && <span>Antigüedad: <b className={antig >= 3 ? 'text-[#B42318]' : ''}>{antig} día(s)</b></span>}
+                    {ult.fecha_transportadora && <span>F. transportadora: <b>{ult.fecha_transportadora}</b></span>}
+                    {ult.fecha_effi && <span>F. creación Effi: <b>{ult.fecha_effi}</b></span>}
+                    {ult.fecha_solucion && <span>Solucionada: <b>{ult.fecha_solucion}</b></span>}
+                  </div>
+                </>
+              ) : <p className="text-[13px] text-[#5B6B68]">Effi no tiene registro en «Novedades de guías» para esta guía. Estado de la transportadora: <b>{d.estado_effi ?? '—'}</b></p>}
+            </div>
+
+            <div>
+              {fila('Teléfono', d.telefono ? `${d.telefono}${d.telefono_original && d.telefono_original.replace(/\D/g, '') !== d.telefono ? ` (Effi: ${d.telefono_original})` : ''}` : <span className="text-[#B42318]">{d.telefono_original || 'vacío'} — verifícalo en Effi</span>, d.telefono ?? d.telefono_original)}
+              {fila('Dirección', direccion, direccion)}
+              {fila('Producto', `${d.producto ?? 'No identificado'}${d.talla ? ` · ${d.talla}` : ''}`)}
+              {fila('Contenido en Effi', d.contenido_effi)}
+              {fila('Valor a cobrar', pesos(d.valor_recaudo))}
+              {fila('Guía', d.guia ? `${d.guia} (${d.transportadora ?? '—'})` : null, d.guia)}
+              {fila('Remisión', d.id_remision, d.id_remision)}
+              {fila('Vendedor Effi', d.vendedor)}
+              {fila('Estado transportadora', d.estado_effi)}
+              {fila('Estado Effi', d.estado_effi_comercio)}
+              {ult?.servicio && fila('Servicio', ult.servicio)}
+              {ult?.flete && fila('Flete', pesos(Number(ult.flete)))}
+              {fila('Observación Effi', d.observacion_effi)}
+              {fila('Guía creada', fecha(d.fecha_guia))}
+              {fila('En QuinChat desde', fecha(d.detectada_at))}
+              {d.resultado && fila('Resultado', RESULTADO[d.resultado] ?? d.resultado)}
+            </div>
+
+            {nEffi.length > 1 && (
+              <div>
+                <p className="text-[12px] font-bold text-[#5B6B68] mb-1.5">Todas las novedades de esta guía en Effi ({nEffi.length})</p>
+                <div className="flex flex-col gap-1.5">
+                  {nEffi.map(x => (
+                    <div key={x.id} className="rounded-lg border border-[#E8ECEB] px-3 py-2 text-[12.5px]">
+                      <p className="font-bold">{[x.codigo, x.nombre].filter(Boolean).join(' - ')} <span className="font-normal text-[#5B6B68]">· {x.estado ?? ''} · {x.fecha_effi ?? ''}</span></p>
+                      {x.aclaracion && <p className="text-[#5B6B68]">{x.aclaracion}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
               <p className="text-[12px] font-bold text-[#5B6B68] mb-1">Agregar observación</p>
               <div className="flex gap-2">
                 <textarea value={nota} onChange={e => setNota(e.target.value)} rows={2} placeholder="Ej: cliente dice que recoge mañana en la oficina"
@@ -341,21 +428,24 @@ function Detalle({ n, onCerrar, onCambio, onChat }: { n: Novedad; onCerrar: () =
               </div>
             </div>
 
-            <p className="text-[12px] font-bold text-[#5B6B68] mt-5 mb-2">Historial</p>
-            <div className="flex flex-col gap-2">
-              {!hist.length && <p className="text-[12px] text-[#5B6B68]">Cargando…</p>}
-              {hist.map(h => (
-                <div key={h.id} className="flex gap-2.5 text-[12.5px]">
-                  <span className="mt-0.5">{h.tipo === 'nota' ? '📝' : h.tipo === 'effi' ? '🚚' : '🔁'}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[#0D1F1C] whitespace-pre-wrap break-words">{h.detalle}</p>
-                    <p className="text-[11px] text-[#5B6B68]">{fecha(h.at)} · {h.por ?? ''}</p>
+            <div>
+              <p className="text-[12px] font-bold text-[#5B6B68] mb-2">Historial</p>
+              <div className="flex flex-col gap-2">
+                {!hist.length && <p className="text-[12px] text-[#5B6B68]">Cargando…</p>}
+                {hist.map(h => (
+                  <div key={h.id} className="flex gap-2.5 text-[12.5px]">
+                    <span className="mt-0.5">{h.tipo === 'nota' ? '📝' : h.tipo === 'effi' ? '🚚' : '🔁'}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[#0D1F1C] whitespace-pre-wrap break-words">{h.detalle}</p>
+                      <p className="text-[11px] text-[#5B6B68]">{fecha(h.at)} · {h.por ?? ''}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
         </div>
+        {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[95] px-4 py-2 rounded-full bg-[#0D1F1C] text-white text-sm font-bold shadow-lg">{toast}</div>}
       </div>
     </div>
   );

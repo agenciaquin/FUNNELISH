@@ -16,7 +16,20 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const { data: n } = await supabase.from('novedades_effi').select('*').eq('id', Number(id)).maybeSingle();
   if (!n) return NextResponse.json({ error: 'No existe' }, { status: 404 });
   const { data: h } = await supabase.from('novedades_effi_historial').select('id, at, tipo, detalle, por').eq('novedad_id', n.id).order('at', { ascending: false }).limit(300);
-  return NextResponse.json({ novedad: n, historial: h ?? [] });
+  // Todas las novedades que Effi registró para esta guía («Logística → Novedades de guías»), la más reciente primero
+  const { data: ne } = await supabase.from('effi_novedades_api').select('id_novedad, datos').eq('id_guia', n.id_guia_effi).limit(30);
+  const novedadesEffi = (ne ?? []).map((r: any) => {
+    const d = r.datos ?? {};
+    return {
+      id: r.id_novedad, codigo: d.id_novedad ?? null, nombre: d.nombre_novedad ?? null, tipo: d.tipo_novedad ?? null,
+      aclaracion: d.aclaracion ?? null, estado: d.estado_novedad ?? null, gestiones: d.cant_gestion ?? null,
+      fecha_transportadora: d.fecha_trans_transportadora ?? null, fecha_effi: d.fecha_trans ?? null,
+      fecha_solucion: d.fecha_solucion ?? null, fecha_ultima_gestion: d.fecha_ultima_gestion ?? null,
+      guia_novedad: d.guia_novedad ?? d.guia ?? null, foto: d.url_foto ?? null, servicio: d.servicio ?? null,
+      flete: d.valor_flete ?? null, transportadora: d.nombre_transportadora_efficommerce ?? d.nombre_transportadora ?? null,
+    };
+  }).sort((a: any, b: any) => Number(b.id) - Number(a.id));
+  return NextResponse.json({ novedad: n, historial: h ?? [], novedades_effi: novedadesEffi });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
