@@ -19,8 +19,8 @@ export interface AjustesVV {
   envio_effi: 'simulacion' | 'real';
   /** Vendedores REALES activados uno por uno desde «Master Vendedores» (sus ventas NO son de prueba). */
   numeros_reales: string[];
-  /** Por qué número se reciben las ventas: 'funnel' (QuinChat Funnel 317 265 3897, dueño 08-nov-2026) o 'todas'.
-   *  Con 'funnel', una venta NUEVA que llegue al número de ventas recibe un aviso para mandarla al Funnel. */
+  /** Por qué número recibe ventas el MÓDULO: 'funnel' (QuinChat Funnel 317 265 3897, dueño 08-nov-2026) o 'todas'.
+   *  Con 'funnel', por el número de ventas sigue el flujo de siempre (el bot le organiza la venta al vendedor). */
   linea_recepcion: 'funnel' | 'todas';
 }
 

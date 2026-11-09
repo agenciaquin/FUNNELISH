@@ -765,14 +765,18 @@ export async function POST(req: NextRequest) {
         const { moduloAtiende, ajustesVV } = await import('@/lib/ventas-vendedores/config');
         const m = await moduloAtiende(remite);
         if (m.si) {
-          // Las ventas de vendedores se reciben por el número FUNNEL (dueño, 08-nov-2026). Venta nueva al
-          // número de ventas → aviso para reenviarla al Funnel (no se procesa aquí).
+          // El módulo (panel + Effi) recibe las ventas por el número FUNNEL 317 265 3897 (dueño, 08-nov-2026).
+          // Por el número de VENTAS sigue lo de siempre: el bot le ORGANIZA la venta al vendedor (flujo de abajo).
+          // Solo se termina allí una venta del módulo que ya estaba abierta en ese número.
+          let usarModulo = true;
           if (tipoLinea === 'ventas' && (await ajustesVV()).linea_recepcion === 'funnel') {
-            const { redirigirAlFunnel } = await import('@/lib/ventas-vendedores/flujo');
-            if (await redirigirAlFunnel(supabase, value, remite, m.esPrueba)) return NextResponse.json({ status: 'ok' });
+            const { tieneVentaAbiertaVV } = await import('@/lib/ventas-vendedores/flujo');
+            usarModulo = await tieneVentaAbiertaVV(supabase, remite);
           }
-          const { atenderModuloVV } = await import('@/lib/ventas-vendedores/flujo');
-          if (await atenderModuloVV(supabase, value, remite, m.esPrueba)) return NextResponse.json({ status: 'ok' });
+          if (usarModulo) {
+            const { atenderModuloVV } = await import('@/lib/ventas-vendedores/flujo');
+            if (await atenderModuloVV(supabase, value, remite, m.esPrueba)) return NextResponse.json({ status: 'ok' });
+          }
         }
       } catch (e) { console.error('[VV] módulo ventas vendedores:', e); }
     }
