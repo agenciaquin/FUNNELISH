@@ -25,7 +25,9 @@ export async function GET(req: NextRequest) {
   const ordenarPor = sp.get('ordenar') || 'fecha';  // 'fecha' | 'valor' | 'cliente'
 
   const supabase = createServerSupabaseClient();
-  let consulta = supabase.from('vv_ventas').select('*').order('creado_at', { ascending: orden }).limit(1500);
+  // Centro Maestro EFFI = SOLO lo que se pasa desde los chats de Funnelish y Quino (vendedor «panel…»).
+  // Las ventas de los VENDEDORES (su teléfono) van cada una en su ficha de «Master Vendedores» (dueño, 08-nov-2026).
+  let consulta = supabase.from('vv_ventas').select('*').like('vendedor_tel', 'panel%').order('creado_at', { ascending: orden }).limit(1500);
   if (desde) consulta = consulta.gte('creado_at', `${desde}T05:00:00Z`);            // 00:00 Colombia
   if (hasta) consulta = consulta.lt('creado_at', new Date(new Date(`${hasta}T05:00:00Z`).getTime() + 86400000).toISOString());
   const { data: ventas, error } = await consulta;
@@ -94,12 +96,12 @@ export async function GET(req: NextRequest) {
   try {
     const { data: ev } = await supabase.from('vv_eventos').select('venta_id, tipo, quien, detalle, creado_at')
       .in('tipo', ['effi_enviada', 'effi_error', 'effi_simulado', 'desde_chat', 'confirmada', 'creada'])
-      .order('creado_at', { ascending: false }).limit(8);
+      .order('creado_at', { ascending: false }).limit(40);
     const porId = new Map((ventas ?? []).map(v => [v.id, v]));
-    actividad = (ev ?? []).map((e: any) => {
+    actividad = (ev ?? []).filter((e: any) => porId.has(e.venta_id)).map((e: any) => {
       const v: any = porId.get(e.venta_id);
       return { tipo: e.tipo, creado_at: e.creado_at, codigo: v?.codigo ?? null, cliente: v?.cliente_nombre ?? null, remision: e.detalle?.remision ?? v?.effi_remision ?? null, venta_id: e.venta_id };
-    });
+    }).slice(0, 8);
   } catch { /* sin actividad */ }
 
   const pest = PESTANAS.find(p => p.key === pestana);

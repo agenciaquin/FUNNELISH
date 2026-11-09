@@ -152,6 +152,10 @@ al bot de clientes.
 cobrar = `contraentrega` + `abono`. `anticipado`/`contado` solo si pagó TODO; con abono < total el código lo baja a
 contraentrega (ia.ts, effi-remision.ts). El resumen al vendedor muestra VALOR TOTAL / ABONO / COBRAR.
 
+**Dos paneles separados (08-nov-2026, dueño):** «Centro Maestro EFFI» muestra SOLO `vendedor_tel like 'panel%'`
+(lo pasado desde los chats de Funnelish y Quino). Las ventas de VENDEDORES (vendedor_tel = su teléfono) salen solo en
+la ficha de cada vendedor en «Master Vendedores».
+
 **Chat borrado = mensajes perdidos en silencio:** `messages.conversation_id` tiene llave foránea a `conversations`
 (ON DELETE CASCADE). Si se borra el chat desde el panel, todo insert de mensaje falla hasta que el chat exista.
 VV, `atenderVendedor` y el organizador crean el chat (upsert ignoreDuplicates) ANTES de guardar mensajes.
