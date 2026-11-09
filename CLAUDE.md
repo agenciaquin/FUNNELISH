@@ -156,6 +156,10 @@ contraentrega (ia.ts, effi-remision.ts). El resumen al vendedor muestra VALOR TO
 (lo pasado desde los chats de Funnelish y Quino). Las ventas de VENDEDORES (vendedor_tel = su teléfono) salen solo en
 la ficha de cada vendedor en «Master Vendedores».
 
+**Cliente ya creado en Effi (08-nov-2026):** `armarRemision` compara la ficha de Effi (nombre, celular, correo) y su
+última remisión en `effi_remisiones_api` (dirección por números, ciudad, departamento) con la venta. Si difiere, AVISO
+arriba en la vista previa (`vista.cliente_diferencias`); no bloquea, la remisión sale con los datos de la venta.
+
 **Chat borrado = mensajes perdidos en silencio:** `messages.conversation_id` tiene llave foránea a `conversations`
 (ON DELETE CASCADE). Si se borra el chat desde el panel, todo insert de mensaje falla hasta que el chat exista.
 VV, `atenderVendedor` y el organizador crean el chat (upsert ignoreDuplicates) ANTES de guardar mensajes.

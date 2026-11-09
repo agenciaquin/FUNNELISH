@@ -291,6 +291,7 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
   // ── Consultas a Effi (solo lectura) ───────────────────────────────────
   let idProvincia: number | null = null, idCiudad: number | null = null;
   let cliente: { tercero: number; nombre: string; id: string } | null = null;
+  let clienteRaw: any = null; // ficha del cliente en Effi (para comparar datos)
   const articulos: ({ id: number; descripcion: string; referencia: string } | null)[] = [];
   try {
     // Departamento
@@ -347,17 +348,17 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
     if (ced) {
       const r = await effiGet('cliente', { numero: ced, por_pagina: 5 });
       const x = (r?.data ?? [])[0];
-      if (x) cliente = { tercero: Number(x.tercero), nombre: x.nombre, id: x.id };
+      if (x) { cliente = { tercero: Number(x.tercero), nombre: x.nombre, id: x.id }; clienteRaw = x; }
     }
     if (!cliente && cel) {
       const r = await effiGet('cliente', { numero: cel, por_pagina: 5 });
       const x = (r?.data ?? [])[0];
-      if (x) cliente = { tercero: Number(x.tercero), nombre: x.nombre, id: x.id };
+      if (x) { cliente = { tercero: Number(x.tercero), nombre: x.nombre, id: x.id }; clienteRaw = x; }
     }
     if (!cliente && cel && !ced) {
       const r = await effiGet('cliente', { celular: cel, por_pagina: 5 });
       const lista = (r?.data ?? []).filter((x: any) => String(x.celular ?? '').replace(/\D/g, '').endsWith(cel));
-      if (lista.length === 1) cliente = { tercero: Number(lista[0].tercero), nombre: lista[0].nombre, id: lista[0].id };
+      if (lista.length === 1) { cliente = { tercero: Number(lista[0].tercero), nombre: lista[0].nombre, id: lista[0].id }; clienteRaw = lista[0]; }
       else if (lista.length > 1) avisos.push(`Hay ${lista.length} clientes en Effi con el celular ${cel}; se creará/usará el de identificación ${cel}`);
     }
     // Artículos por referencia (SKU sin espacios)
@@ -396,6 +397,65 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
     if (crear_cliente.correo_por_defecto) avisos.push(`El cliente no dio correo: se usará ${crear_cliente.email} (se alternan los correos de la empresa).`);
   }
   if (!direccionTxt) errores.push('Falta la dirección');
+
+  // ── Cliente YA creado en Effi: ¿sus datos coinciden con los de esta venta? (dueño, 08-nov-2026) ──
+  // Si algo es distinto se AVISA en la vista previa, antes de subir. No bloquea: la remisión sale con los
+  // datos de esta venta (dirección y ciudad van en la propia remisión).
+  const diferencias: { campo: string; effi: string; venta: string }[] = [];
+  if (cliente) {
+    try {
+      const ced = String(venta.cliente_identificacion ?? '').replace(/\D/g, '');
+      const cel = String(venta.cliente_celular ?? '').replace(/\D/g, '').slice(-10);
+      // Dirección / ciudad / departamento con que Effi lo tiene: su última remisión (copia local de Effi)
+      let ultima: any = null;
+      const sb = createServerSupabaseClient();
+      if (ced) ultima = (await sb.from('effi_remisiones_api').select('nombre, ciudad, departamento, direccion, telefono, fecha_trans').eq('cedula', ced).order('fecha_trans', { ascending: false }).limit(1).maybeSingle()).data;
+      if (!ultima && cel) ultima = (await sb.from('effi_remisiones_api').select('nombre, ciudad, departamento, direccion, telefono, fecha_trans').eq('telefono', cel).order('fecha_trans', { ascending: false }).limit(1).maybeSingle()).data;
+      // Lo que traiga la ficha del cliente (los nombres de campo de Effi varían: se buscan por nombre)
+      const campoRaw = (re: RegExp) => {
+        const plano: Record<string, any> = { ...(clienteRaw ?? {}), ...((Array.isArray(clienteRaw?.direcciones) ? clienteRaw.direcciones[0] : null) ?? {}) };
+        const k = Object.keys(plano).find(x => re.test(x) && typeof plano[x] !== 'object' && String(plano[x] ?? '').trim());
+        return k ? String(plano[k]).trim() : '';
+      };
+      const effiDir = String(ultima?.direccion ?? '').trim() || campoRaw(/^direccion$/i);
+      const effiCiudad = String(ultima?.ciudad ?? '').trim() || campoRaw(/nombre_ciudad|^ciudad$/i);
+      const effiDepto = String(ultima?.departamento ?? '').trim() || campoRaw(/nombre_provincia|^provincia$|departamento/i);
+      const effiNombre = String(clienteRaw?.nombre ?? cliente.nombre ?? '').trim();
+      const effiCel = String(clienteRaw?.celular ?? clienteRaw?.whatsapp ?? '').replace(/\D/g, '').slice(-10);
+      const effiCorreo = String(clienteRaw?.email ?? clienteRaw?.correo ?? '').trim().toLowerCase();
+
+      const n = (t: unknown) => sinTildes(t).replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+      // Dirección: se comparan los NÚMEROS (calle 49 # 82-26 → 49 82 26); si no trae números, el texto
+      const firmaDir = (t: unknown) => { const nums = (String(t ?? '').match(/\d+/g) ?? []).join(' '); return nums || n(t); };
+      const dirVenta = venta.direccion ?? direccionTxt;
+      if (effiDir && dirVenta && !oficinaInter && !/oficina/i.test(effiDir) && firmaDir(effiDir) !== firmaDir(dirVenta)) {
+        diferencias.push({ campo: 'Dirección', effi: effiDir, venta: [venta.direccion, venta.barrio].filter(Boolean).join(' ') });
+      }
+      if (effiCiudad && venta.municipio && normLugar(effiCiudad) !== normLugar(venta.municipio)
+        && !normLugar(effiCiudad).includes(normLugar(venta.municipio)) && !normLugar(venta.municipio).includes(normLugar(effiCiudad))) {
+        diferencias.push({ campo: 'Ciudad', effi: effiCiudad, venta: String(venta.municipio) });
+      }
+      if (effiDepto && venta.departamento && normLugar(effiDepto) !== normLugar(venta.departamento)
+        && !(/bogota/.test(normLugar(effiDepto) + normLugar(venta.departamento)) && /cundinamarca|bogota/.test(normLugar(effiDepto)) && /cundinamarca|bogota/.test(normLugar(venta.departamento)))) {
+        diferencias.push({ campo: 'Departamento', effi: effiDepto, venta: String(venta.departamento) });
+      }
+      if (effiNombre && venta.cliente_nombre) {
+        const a = new Set(n(effiNombre).split(' ').filter(w => w.length >= 3));
+        const comunes = n(venta.cliente_nombre).split(' ').filter(w => w.length >= 3 && a.has(w)).length;
+        if (!comunes) diferencias.push({ campo: 'Nombre', effi: effiNombre, venta: String(venta.cliente_nombre) });
+      }
+      if (effiCel && cel && effiCel !== cel) diferencias.push({ campo: 'Celular', effi: effiCel, venta: cel });
+      if (effiCorreo && correoValido(venta.cliente_correo) && effiCorreo !== String(venta.cliente_correo).trim().toLowerCase()) {
+        diferencias.push({ campo: 'Correo', effi: effiCorreo, venta: String(venta.cliente_correo) });
+      }
+    } catch { /* si no se puede comparar, no se avisa */ }
+    if (diferencias.length) {
+      avisos.unshift(
+        `CLIENTE YA CREADO EN EFFI (tercero ${cliente.tercero}) CON DATOS DIFERENTES — revísalos antes de subir. La remisión saldrá con los datos de esta venta:`,
+        ...diferencias.map(d => `${d.campo}: en Effi «${d.effi}» → en la venta «${d.venta}»`),
+      );
+    }
+  }
 
   // ── Pagos ─────────────────────────────────────────────────────────────
   const t_forma_pago: number[] = [], valor_forma_pago: number[] = [];
@@ -458,6 +518,7 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
   for (const it of items) if (!it.id_variante) errores.push(`Prenda sin ID de variante: ${it.catalogo ?? '—'}`);
 
   const vista = {
+    cliente_diferencias: diferencias,
     cliente: cliente ? `${cliente.nombre} (ya existe en Effi · tercero ${cliente.tercero})` : `${venta.cliente_nombre} — NUEVO, identificación ${identificacion}`,
     direccion: `${direccionTxt}${referenciaTxt ? ` · ${referenciaTxt}` : ''} · ${venta.municipio}, ${venta.departamento}`,
     ciudad_ids: `ciudad ${idCiudad ?? '—'} · depto ${idProvincia ?? '—'}`,
