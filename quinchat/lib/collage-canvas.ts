@@ -3,7 +3,7 @@
  * Formato aprobado por el dueño (maquetas «rectangulares»):
  *  · Cada prenda: foto ORIGINAL cuadrada + franja oscura abajo con el letrero «// NOMBRE //»
  *    (borde del color de la prenda). El letrero nunca tapa el buzo.
- *  · Filas sin huecos: 2 → [2] · 3 → [3] · 4 → [2,2] · 5 → [2 grandes, 3] · 6 → [3,3] · 7 → [2,2,3] · 8 → [2,3,3] · 9 → [3,3,3].
+ *  · Filas: 2 → [2] · 3 → [2 arriba + 1 centrada abajo, mismo tamaño] (dueño, 09-nov-2026) · 4 → [2,2] · 5 → [2 grandes, 3] · 6 → [3,3] · 7 → [2,2,3] · 8 → [2,3,3] · 9 → [3,3,3].
  *    Las filas de 2 se agrandan para medir lo mismo que las de 3. Más de 9 → varias imágenes.
  *  · Fondo azul oscuro, bordes azul oscuro. Sin precios ni textos extra.
  * La foto no se altera: solo se quita el encabezado impreso de arriba y márgenes lisos vacíos.
@@ -26,7 +26,8 @@ export const colorDe = (c: string) =>
 
 /** Filas de cada imagen (sin casillas vacías). */
 export function filasDe(n: number): number[] {
-  if (n <= 3) return [n];
+  if (n === 3) return [2, 1];          // como el de Chimuela: 2 arriba y 1 centrada abajo
+  if (n <= 2) return [n];
   if (n % 3 === 0) return Array(n / 3).fill(3);
   if (n % 3 === 2) return [2, ...Array((n - 2) / 3).fill(3)];
   return [2, 2, ...Array((n - 4) / 3).fill(3)];
@@ -158,7 +159,8 @@ export async function generarCollage(prendas: PrendaCollage[]): Promise<HTMLCanv
   const filas = filasDe(n);
   const hayTres = filas.some(c => c === 3);
   const anchoInt = n === 1 ? 1048 : hayTres ? 3 * B + 2 * GAP : Math.max(...filas) * B + (Math.max(...filas) - 1) * GAP;
-  const ladoDe = (c: number) => (n === 1 ? 1048 : Math.floor((anchoInt - (c - 1) * GAP) / c));
+  // Con 3 prendas los tres cuadros miden igual (la de abajo va centrada); en lo demás las filas llenan el ancho
+  const ladoDe = (c: number) => (n === 1 ? 1048 : n === 3 ? B : Math.floor((anchoInt - (c - 1) * GAP) / c));
   const franjaDe = (lado: number) => Math.round(FRANJA * lado / B);
   const W = anchoInt + 2 * PAD;
   const H = 2 * PAD + filas.reduce((a, c) => a + ladoDe(c) + franjaDe(ladoDe(c)), 0) + (filas.length - 1) * GAP;
