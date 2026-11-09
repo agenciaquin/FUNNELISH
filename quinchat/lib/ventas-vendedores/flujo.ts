@@ -337,7 +337,10 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
     (new RegExp(`${campo}:\\s*([^|\\n]*)`, 'i').exec(desc)?.[1] ?? '').replace(/["“”<>]/g, '').trim();
   for (let i = 0; i < v.prendas.length; i++) {
     const p = v.prendas[i];
-    const fotoUrl = fotos[i] ?? (v.prendas.length === 1 ? fotos[fotos.length - 1] : null) ?? null;
+    // Prenda sin foto propia y sin nombre («Talla L / M … las dos») = la MISMA prenda de la última foto en otra
+    // talla. Antes quedaba sin descripción y salía «no encontré la prenda» (08-nov-2026).
+    const sinNombre = !String(p.descripcion ?? '').trim();
+    const fotoUrl = fotos[i] ?? ((v.prendas.length === 1 || sinNombre) ? fotos[fotos.length - 1] : null) ?? null;
     const descFoto = fotoUrl ? (evFotos ?? []).find((e: any) => e.detalle?.url === fotoUrl)?.detalle?.descripcion ?? '' : '';
     // ⚠️ REGLA ÚNICA: si hay FOTO, el producto y el color salen SOLO de la foto (su título y lo que se ve).
     // El nombre de producto que escribió el vendedor NO se usa para buscar. Del texto solo se toman talla, género, cantidad y precio.

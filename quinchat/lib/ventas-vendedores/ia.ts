@@ -43,6 +43,8 @@ const SISTEMA_INTERPRETAR =
   `- Los mensajes reenviados con fichas ("VENTA CONFIRMADA", "Nombre:", "Talla:", "Producto:", "Valor:") son datos de la venta: úsalos igual.\n` +
   `- prendas: una por cada producto distinto. descripcion = cómo lo nombró el vendedor (marca, equipo, diseño, tipo de prenda). ` +
   `talla tal cual (S, M, L, XL, 2XL, 4, 6…). genero: "Hombre", "Dama" o "Niño" si lo dijo, si no "". cantidad por defecto 1.\n` +
+  `- VARIAS TALLAS de la MISMA prenda ("Talla L / M las dos", "una L y una M", "2 buzos talla L y XL") = una prenda por talla, ` +
+  `cada una con la MISMA descripcion y color (repítelos), cantidad 1 cada una.\n` +
   `- total: el valor total que dijo el vendedor, en pesos, solo número (220000). precio: valor unitario si lo dijo.\n` +
   `- ABONO: si el cliente pagó UNA PARTE antes (dicen "abono", "abonó", "anticipo", "anticipado", "adelanto", "pagó por adelantado X", ` +
   `"consignó X", "transfirió X") y el resto se cobra al recibir, abono = ese valor en pesos y tipo_pago = "contraentrega". ` +
