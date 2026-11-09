@@ -164,6 +164,10 @@ arriba en la vista previa (`vista.cliente_diferencias`); no bloquea, la remisió
 hace PATCH `accion:'papelera'` → `estado='cancelada'` + `papelera_at/motivo/por` + `estado_previo`. Pestaña «🗑 Papelera»
 con «Restaurar» (`accion:'restaurar'`). Nada se borra. El Centro Maestro excluye `papelera_at`.
 
+**BEIGE = COCOA (dueño, 09-nov-2026):** es el mismo color; en el catálogo KLIXMANT se llama «Cocoa». «Enviar al panel de Effi»
+(desde-chat.ts y EnviarPanelEffiModal.tsx) traduce Beige → Cocoa. La IA de desde-chat también lee las FOTOS con letrero que
+manda el asesor (`messages.caption`, ej. «REAL MADRID · BEIGE»): si cambió el color con una foto, ese color manda.
+
 **Chat borrado = mensajes perdidos en silencio:** `messages.conversation_id` tiene llave foránea a `conversations`
 (ON DELETE CASCADE). Si se borra el chat desde el panel, todo insert de mensaje falla hasta que el chat exista.
 VV, `atenderVendedor` y el organizador crean el chat (upsert ignoreDuplicates) ANTES de guardar mensajes.

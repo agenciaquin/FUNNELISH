@@ -65,7 +65,8 @@ function TarjetaPrenda({ n, inicial, fotoChat, cantidad, precio, onCantidad, onP
     setProducto(p);
     const vs = p.variantes ?? [];
     const colores = [...new Set(vs.map(v => v.color).filter(Boolean))] as string[];
-    const cp = sinT(colorPref).replace(/\s+/g, '');
+    // BEIGE = COCOA (mismo color; en el catálogo se llama «Cocoa»)
+    const cp = sinT(colorPref).replace(/\s+/g, '').replace(/^beige$/, 'cocoa');
     const c = colores.find(x => sinT(x).replace(/\s+/g, '') === cp)
       ?? colores.find(x => cp && (sinT(x).replace(/\s+/g, '').includes(cp) || cp.includes(sinT(x).replace(/\s+/g, ''))))
       ?? vs.find(v => v.id_item === idItem)?.color ?? colores[0] ?? '';

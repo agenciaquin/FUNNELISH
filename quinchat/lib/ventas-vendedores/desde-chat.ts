@@ -212,7 +212,8 @@ export async function prellenarDesdeChat(conv: string) {
   const prendas = [];
   for (const [idx, p] of prendasIA.slice(0, 6).entries()) {
     const producto = s(p.producto) || s(pedido?.producto);
-    const color = s(p.color);
+    // BEIGE y COCOA son el MISMO color (dueño, 09-nov-2026): en el catálogo KLIXMANT se llama «Cocoa»
+    const color = /^beige$/i.test(sinTildes(s(p.color)).trim()) ? 'Cocoa' : s(p.color);
     const talla = limpiarTalla(s(p.talla).split(/\s+-\s+/)[0]);
     const genero = s(p.genero);
     const cantidad = Math.max(1, Math.min(50, Number(p.cantidad) || 1));
