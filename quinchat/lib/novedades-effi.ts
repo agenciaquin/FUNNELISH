@@ -28,6 +28,7 @@ interface GuiaN {
   estado: string; estado_com: string; tel_raw: string; nombre: string | null;
   ciudad: string | null; depto: string | null; direccion: string | null;
   recaudo: number | null; fecha: string | null; vigente: boolean; anulada: boolean;
+  copia_at?: string | null;   // cuándo se copió de Effi (solo fuente «copia»)
   url: string | null; id_ref: string | null; contenido: string | null;
 }
 
@@ -93,7 +94,7 @@ function desdeCopia(g: any): GuiaN {
     recaudo: num(g.valor_recaudo), fecha: g.fecha_trans ?? null,
     vigente: g.vigente !== false, anulada: !!g.fecha_anular, url: g.url_guia ?? null,
     id_ref: /REMISI/i.test(String(g.tipo_trans_ref ?? '')) && g.id_ref != null ? String(g.id_ref) : null,
-    contenido: g.contenido ?? null,
+    contenido: g.contenido ?? null, copia_at: g.actualizado_at ?? null,
   };
 }
 
@@ -171,7 +172,7 @@ export async function sincronizarNovedades(fuente: 'effi' | 'copia', origen: str
     } else {
       for (let d = 0; d < 20000; d += 1000) {
         const { data, error } = await supabase.from('effi_guias_api')
-          .select('id_effi, guia, transportadora, estado, estado_efficommerce, telefono, tel_raw:datos->>telefonos_destinatario, nombre, ciudad, departamento, direccion, valor_recaudo, fecha_trans, fecha_anular, vigente, url_guia, tipo_trans_ref, id_ref, contenido:datos->>contenido')
+          .select('id_effi, guia, transportadora, estado, estado_efficommerce, telefono, tel_raw:datos->>telefonos_destinatario, nombre, ciudad, departamento, direccion, valor_recaudo, fecha_trans, fecha_anular, vigente, url_guia, tipo_trans_ref, id_ref, actualizado_at, contenido:datos->>contenido')
           .gte('fecha_trans', `${desde}T00:00:00Z`).order('id_effi').range(d, d + 999);
         if (error) throw new Error(error.message);
         guias.push(...(data ?? []).map(desdeCopia));
@@ -183,7 +184,9 @@ export async function sincronizarNovedades(fuente: 'effi' | 'copia', origen: str
     if (fuente === 'effi') {
       try {
         const crudas = await listarNovedadesEffi(desde, hasta);
-        const filasN = crudas.map(d => ({ d, n: leerNovedadEffi(d) })).filter(x => x.n.id).map(x => ({
+        const unicas = new Map<string, any>();
+        for (const d of crudas) { const n = leerNovedadEffi(d); if (n.id) unicas.set(n.id, { d, n }); }
+        const filasN = [...unicas.values()].map(x => ({
           id_novedad: x.n.id, id_guia: x.n.id_guia, datos: x.d, actualizado_at: new Date().toISOString(),
         }));
         for (let i = 0; i < filasN.length; i += 200) {
@@ -296,6 +299,7 @@ export async function sincronizarNovedades(fuente: 'effi' | 'copia', origen: str
     // 5) Cambios de estado de las que ya estaban
     for (const g of objetivo) {
       const n = previas.get(g.id); if (!n) continue;
+      if (fuente === 'copia' && g.copia_at && n.actualizado_at && Date.parse(n.actualizado_at) > Date.parse(g.copia_at)) continue;
       const activa = activaDe(g);
       const estadoTxt = g.estado || g.estado_com || null;
       const ne = novPorGuia.get(g.id);
@@ -312,6 +316,7 @@ export async function sincronizarNovedades(fuente: 'effi' | 'copia', origen: str
       }
       if (activa) {
         upd.motivo = textoNovedad(ne) || estadoTxt;
+        if (n.resultado === 'en_ruta') upd.resultado = null;   // volvió a novedad: ya no está «en ruta»
         if (n.estado === 'solucionada') {           // volvió a caer en novedad → se reabre la MISMA tarjeta
           Object.assign(upd, { estado: 'nueva', resultado: null, solucionada_at: null, visto_at: null, estado_cambio_at: ahora });
           hist.push({ tipo: 'estado', detalle: 'Reabierta: la guía volvió a quedar en novedad' });

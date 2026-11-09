@@ -113,11 +113,12 @@ export async function marcarPreviosIntento(supabase: any) {
 }
 
 /** Pasada automática (cron de Effi cada hora y Panel de Novedades). `manual` = claves elegidas en el panel. */
-export async function procesarAvisosIntento(supabase?: any, manual?: string[], tope = TOPE) {
+export async function procesarAvisosIntento(supabase?: any, manual?: string[], tope = TOPE, opc: { ignorarInterruptor?: boolean } = {}) {
   supabase = supabase ?? createServerSupabaseClient();
   const cfg = await ajustesIntento(supabase);
   const res: Record<string, any> = { enviados: 0, omitidos: 0, errores: 0, pendientes: 0 };
-  if (!cfg.activo) return { ...res, apagado: true };
+  // El envío MANUAL desde una tarjeta no depende del interruptor de la automatización
+  if (!cfg.activo && !opc.ignorarInterruptor) return { ...res, apagado: true };
   const tpl = await estadoPlantillaIntento();
   if (tpl.status !== 'APPROVED') return { ...res, error: `La plantilla «${PLANTILLA_INTENTO}» no está aprobada (${tpl.status ?? 'no existe'})` };
   const horaCo = new Date(Date.now() - 5 * 3600_000).getUTCHours();
@@ -129,15 +130,15 @@ export async function procesarAvisosIntento(supabase?: any, manual?: string[], t
   const claves = ns.map((n: any) => n.clave);
   const { data: hechas } = claves.length ? await supabase.from('avisos_intento').select('clave, estado').in('clave', claves) : { data: [] as any[] };
   const ya = new Map<string, string>((hechas ?? []).map((h: any) => [String(h.clave), String(h.estado)]));
-  const candidatas = ns.filter((n: any) => manual ? manual.includes(n.clave) && ['previo', 'error'].includes(ya.get(n.clave) ?? '') : !ya.has(n.clave));
+  const candidatas = ns.filter((n: any) => manual ? manual.includes(n.clave) && !['enviado', 'reservado'].includes(ya.get(n.clave) ?? '') : !ya.has(n.clave));
   res.pendientes = Math.max(0, candidatas.length - tope);
 
   let k = 0;
   for (const n of candidatas) {
     if (k >= tope) break;
-    if (manual) {
+    if (manual && ya.has(n.clave)) {
       const { data: t } = await supabase.from('avisos_intento').update({ estado: 'reservado', actualizado_at: new Date().toISOString() })
-        .eq('clave', n.clave).in('estado', ['previo', 'error']).select('clave');
+        .eq('clave', n.clave).in('estado', ['previo', 'error', 'omitido']).select('clave');
       if (!t?.length) continue;
     } else {
       const { error: dup } = await supabase.from('avisos_intento').insert({

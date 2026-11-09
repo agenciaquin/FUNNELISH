@@ -66,3 +66,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (hist.length) await supabase.from('novedades_effi_historial').insert(hist.map(h => ({ novedad_id: n.id, tipo: h.tipo, detalle: h.detalle, por: auth.quien })));
   return NextResponse.json({ ok: true });
 }
+
+/** POST {tipo:'oficina'|'intento'} → manda YA el aviso a este cliente (con la plantilla aprobada; una sola vez). */
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await exigirSesion();
+  if (auth.error) return auth.error;
+  const { id } = await params;
+  const b = await req.json().catch(() => ({}));
+  const supabase = createServerSupabaseClient();
+  const { data: n } = await supabase.from('novedades_effi').select('id, id_guia_effi, id_novedad_effi').eq('id', Number(id)).maybeSingle();
+  if (!n) return NextResponse.json({ error: 'No existe' }, { status: 404 });
+  if (b?.tipo === 'oficina') {
+    const { procesarAvisosOficina } = await import('@/lib/aviso-oficina');
+    const r: any = await procesarAvisosOficina(supabase, [String(n.id_guia_effi)], 1, { ignorarInterruptor: true });
+    if (r.enviados) return NextResponse.json({ ok: true, mensaje: '✅ Aviso de oficina enviado.' });
+    const { data: f } = await supabase.from('avisos_oficina').select('estado, motivo').eq('id_guia_effi', n.id_guia_effi).maybeSingle();
+    return NextResponse.json({ ok: false, error: r.error ?? (f?.estado === 'enviado' ? 'Ya se le había enviado.' : f?.motivo) ?? 'Esta guía ya no está en oficina en Effi.' }, { status: 400 });
+  }
+  if (b?.tipo === 'intento') {
+    const { procesarAvisosIntento } = await import('@/lib/aviso-intento');
+    const clave = `${n.id_guia_effi}:${n.id_novedad_effi || 'intento'}`;
+    const r: any = await procesarAvisosIntento(supabase, [clave], 1, { ignorarInterruptor: true });
+    if (r.enviados) return NextResponse.json({ ok: true, mensaje: '✅ Aviso de intento de entrega enviado.' });
+    const { data: f } = await supabase.from('avisos_intento').select('estado, detalle').eq('clave', clave).maybeSingle();
+    return NextResponse.json({ ok: false, error: r.error ?? (f?.estado === 'enviado' ? 'Ya se le había enviado.' : f?.detalle) ?? 'La novedad ya no está en intento de entrega.' }, { status: 400 });
+  }
+  return NextResponse.json({ error: 'Tipo de aviso desconocido' }, { status: 400 });
+}

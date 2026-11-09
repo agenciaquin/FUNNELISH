@@ -277,6 +277,12 @@ entrega» o novedad «701 - Se visita, no se logra entrega». Tabla `avisos_inte
 máx. 1 por cliente cada 48 h). Interruptor `ajustes_bot.aviso_intento` APAGADO por defecto. Corre en el paso 6 de
 `sincronizarGuiasEffi` (pone al día las tarjetas con la copia y máx. 2 avisos) y tras cada sincronización del panel (`after`).
 Chat: etiqueta «NOVEDAD ENTREGA», nota, bot apagado; la tarjeta pasa a «En gestión»; la respuesta del cliente va al historial.
+**Avisos en cada tarjeta (09-nov-2026, dueño):** la lista trae `aplica_oficina`/`aplica_intento` y el último `aviso_oficina`/
+`aviso_intento`. La tarjeta muestra «enviado (automático) + respuesta», o «Sin aviso» con botón **Enviar** (POST
+`/api/novedades/[id]` {tipo}) que manda YA con la plantilla aprobada aunque la automatización esté apagada (`ignorarInterruptor`),
+nunca dos veces. Filtro «Avisos: con aviso enviado / sin enviar». Arreglos: novedades de Effi repetidas entre páginas se
+deduplican antes del upsert; la copia de cada hora ya no pisa lo traído de Effi más nuevo (`copia_at`), y al volver a novedad
+se borra «en_ruta».
 **OJO tablas nuevas:** en este Supabase una tabla creada por migración NO trae permisos para `service_role`
 (salió «permission denied for table novedades_effi»). Siempre: `grant select, insert, update, delete on <tabla> to service_role`
 + `grant usage, select on sequence <tabla>_id_seq to service_role`.

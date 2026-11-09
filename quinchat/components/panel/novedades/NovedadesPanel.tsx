@@ -14,7 +14,9 @@ const AvisoOficina = dynamic(() => import('./AvisoOficina'), { ssr: false });
  */
 
 type Estado = 'nueva' | 'pendiente' | 'en_gestion' | 'solucionada';
+interface AvisoEstado { estado: string; enviado_at: string | null; respuesta: string | null; respuesta_at?: string | null; motivo?: string | null; detalle?: string | null }
 interface Novedad {
+  aplica_oficina?: boolean; aplica_intento?: boolean; aviso_oficina?: AvisoEstado | null; aviso_intento?: AvisoEstado | null;
   id: number; id_guia_effi: string; guia: string | null; transportadora: string | null; id_remision: string | null; vendedor: string | null;
   cliente: string | null; telefono: string | null; telefono_original: string | null; ciudad: string | null; departamento: string | null;
   producto: string | null; talla: string | null; foto: string | null; valor_recaudo: number | null;
@@ -28,8 +30,8 @@ interface Hist { id: number; at: string; tipo: string; detalle: string | null; p
 type Filtro = 'todas' | Estado;
 
 // Se conserva al ir al chat y volver (el módulo queda cargado mientras el panel esté abierto)
-const memoria: { filtro: Filtro; q: string; abierta: number | null; scroll: number; conocidas: Set<number> | null } = {
-  filtro: 'todas', q: '', abierta: null, scroll: 0, conocidas: null,
+const memoria: { filtroAviso: 'todos' | 'enviado' | 'sin'; filtro: Filtro; q: string; abierta: number | null; scroll: number; conocidas: Set<number> | null } = {
+  filtroAviso: 'todos', filtro: 'todas', q: '', abierta: null, scroll: 0, conocidas: null,
 };
 
 const VERDE = '#00A89D';
@@ -60,6 +62,8 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
   const [sincronizando, setSincronizando] = useState(false);
   const [filtro, setFiltro] = useState<Filtro>(memoria.filtro);
   const [q, setQ] = useState(memoria.q);
+  const [filtroAviso, setFiltroAviso] = useState(memoria.filtroAviso);
+  useEffect(() => { memoria.filtroAviso = filtroAviso; }, [filtroAviso]);
   const [abierta, setAbierta] = useState<number | null>(memoria.abierta);
   const [alerta, setAlerta] = useState<Novedad[]>([]);
   const [recien, setRecien] = useState<Set<number>>(new Set());
@@ -112,11 +116,14 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
 
   const visibles = useMemo(() => {
     const t = q.trim().toLowerCase(); const d = t.replace(/\D/g, '');
-    return lista.filter(n => (filtro === 'todas' || n.estado === filtro) && (!t
+    const enviado = (n: Novedad) => n.aviso_oficina?.estado === 'enviado' || n.aviso_intento?.estado === 'enviado';
+    const pendiente = (n: Novedad) => (n.aplica_oficina && n.aviso_oficina?.estado !== 'enviado') || (n.aplica_intento && n.aviso_intento?.estado !== 'enviado');
+    return lista.filter(n => (filtro === 'todas' || n.estado === filtro)
+      && (filtroAviso === 'todos' || (filtroAviso === 'enviado' ? enviado(n) : pendiente(n))) && (!t
       || (n.cliente ?? '').toLowerCase().includes(t)
       || (d.length >= 3 && ((n.telefono ?? '').includes(d) || (n.telefono_original ?? '').replace(/\D/g, '').includes(d)
         || (n.guia ?? '').includes(d) || (n.id_remision ?? '').includes(d) || n.id_guia_effi.includes(d)))));
-  }, [lista, filtro, q]);
+  }, [lista, filtro, q, filtroAviso]);
 
   /** Abrir chat: busca la conversación por teléfono (con o sin +57) en Chat Funnel y Chat WhatsApp. */
   const abrirChat = async (n: Novedad) => {
@@ -186,8 +193,13 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
                 {e.t} <span className="ml-1 inline-flex min-w-[22px] justify-center px-1.5 rounded-full text-[11px] text-white" style={{ background: e.c }}>{contador(e.k)}</span>
               </button>
             ))}
+            <select value={filtroAviso} onChange={e => setFiltroAviso(e.target.value as any)} className="ml-auto px-3 py-2 rounded-xl border border-[#E1E5E4] bg-white text-sm font-semibold">
+              <option value="todos">📲 Avisos: todos</option>
+              <option value="enviado">✅ Con aviso enviado</option>
+              <option value="sin">⏳ Aviso sin enviar</option>
+            </select>
             <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 Cliente, teléfono, guía o remisión"
-              className="ml-auto w-full sm:w-80 px-3.5 py-2 rounded-xl border border-[#E1E5E4] bg-white text-sm" />
+              className="w-full sm:w-80 px-3.5 py-2 rounded-xl border border-[#E1E5E4] bg-white text-sm" />
           </div>
 
           {/* Tarjetas */}
@@ -219,6 +231,7 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
                           {n.guia && <button onClick={() => copiar(n.guia!, setAviso, `Guía ${n.guia}`)} title="Copiar guía" className="px-1 rounded hover:bg-[#F1F5F4]">📋</button>}</p>
                         <p className="text-[12.5px] font-bold text-[#B54708] line-clamp-1" title={n.motivo ?? ''}>⚠️ {n.motivo ?? 'Novedad'}</p>
                         {n.resultado && <p className="text-[11.5px] text-[#067647]">{RESULTADO[n.resultado] ?? n.resultado}</p>}
+                        <ZonaAvisos n={n} onListo={cargar} onAviso={setAviso} />
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           <span className="text-[11px] text-[#5B6B68]">🕒 {fecha(n.detectada_at)}</span>
                           <span className="text-[10.5px] px-1.5 py-0.5 rounded bg-[#F1F5F4] text-[#5B6B68] font-semibold">{/QUINO/i.test(n.vendedor ?? '') ? 'Quino Agencia' : 'Funnelish'}</span>
@@ -452,6 +465,50 @@ function Detalle({ n, onCerrar, onCambio, onChat }: { n: Novedad; onCerrar: () =
         </div>
         {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[95] px-4 py-2 rounded-full bg-[#0D1F1C] text-white text-sm font-bold shadow-lg">{toast}</div>}
       </div>
+    </div>
+  );
+}
+
+
+/** Avisos automáticos de la tarjeta: si ya se le mandó (y qué respondió) o el botón para mandarlo. */
+function ZonaAvisos({ n, onListo, onAviso }: { n: Novedad; onListo: () => void; onAviso: (m: string) => void }) {
+  const [enviando, setEnviando] = useState<string | null>(null);
+  const tipos = [
+    { k: 'oficina' as const, aplica: n.aplica_oficina, a: n.aviso_oficina, icono: '📲', nombre: 'aviso de oficina' },
+    { k: 'intento' as const, aplica: n.aplica_intento, a: n.aviso_intento, icono: '🚗', nombre: 'aviso de intento de entrega' },
+  ].filter(t => t.aplica || (t.a && t.a.estado !== 'previo'));
+  if (!tipos.length) return null;
+  const mandar = async (k: 'oficina' | 'intento', nombre: string) => {
+    if (!confirm(`¿Mandarle ahora el ${nombre} a ${n.cliente ?? 'este cliente'} por WhatsApp?`)) return;
+    setEnviando(k);
+    const r = await fetch(`/api/novedades/${n.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tipo: k }) });
+    const j = await r.json().catch(() => ({}));
+    setEnviando(null);
+    onAviso(r.ok ? j.mensaje : `⚠️ ${j.error ?? 'No se pudo enviar'}`);
+    onListo();
+  };
+  return (
+    <div className="flex flex-col gap-1 mt-0.5">
+      {tipos.map(t => {
+        const e = t.a?.estado;
+        if (e === 'enviado') return (
+          <div key={t.k} className="rounded-lg bg-[#ECFDF3] border border-[#ABEFC6] px-2 py-1 text-[11.5px] text-[#067647]">
+            <b>{t.icono} {t.k === 'oficina' ? 'Aviso de oficina' : 'Aviso de intento'} enviado</b> · {fecha(t.a!.enviado_at)} <span className="text-[#5B6B68]">(automático)</span>
+            {t.a!.respuesta ? <p className="text-[#175CD3] truncate" title={t.a!.respuesta}>💬 Respondió: {t.a!.respuesta}</p> : <p className="text-[#5B6B68]">Sin respuesta aún</p>}
+          </div>
+        );
+        if (e === 'reservado') return <p key={t.k} className="text-[11.5px] text-[#175CD3]">{t.icono} Enviando {t.nombre}…</p>;
+        return (
+          <div key={t.k} className="rounded-lg bg-[#FFFAEB] border border-[#FEDF89] px-2 py-1 text-[11.5px] flex items-center gap-2">
+            <span className="flex-1 min-w-0 text-[#B54708] truncate" title={t.a?.motivo ?? t.a?.detalle ?? ''}>
+              {t.icono} {e === 'error' ? `Falló el ${t.nombre}: ${t.a?.motivo ?? t.a?.detalle ?? ''}` : e === 'omitido' ? `No se envió: ${t.a?.motivo ?? t.a?.detalle ?? ''}` : `Sin ${t.nombre}`}
+            </span>
+            {t.aplica && <button disabled={!!enviando} onClick={() => mandar(t.k, t.nombre)} className="shrink-0 px-2 py-0.5 rounded-md bg-[#F79009] text-white font-bold disabled:opacity-50">
+              {enviando === t.k ? 'Enviando…' : e === 'error' || e === 'omitido' ? 'Reintentar' : 'Enviar'}
+            </button>}
+          </div>
+        );
+      })}
     </div>
   );
 }

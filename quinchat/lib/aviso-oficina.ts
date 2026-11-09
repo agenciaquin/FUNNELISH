@@ -161,11 +161,12 @@ export async function marcarPrevios(supabase: any, vendedores: string[]) {
  * Pasada automática (la llaman la sincronización de Effi de cada hora y el Panel de Novedades).
  * `manual`: ids de guías «previo» o con error que el dueño pidió mandar desde el panel (ignora el horario).
  */
-export async function procesarAvisosOficina(supabase?: any, manual?: string[], tope = TOPE_POR_PASADA) {
+export async function procesarAvisosOficina(supabase?: any, manual?: string[], tope = TOPE_POR_PASADA, opc: { ignorarInterruptor?: boolean } = {}) {
   supabase = supabase ?? createServerSupabaseClient();
   const cfg = await ajustesOficina(supabase);
   const res = { enviados: 0, omitidos: 0, errores: 0, pendientes: 0 } as Record<string, any>;
-  if (!cfg.activo) return { ...res, apagado: true };
+  // El envío MANUAL desde una tarjeta (botón «Enviar aviso») no depende del interruptor de la automatización
+  if (!cfg.activo && !opc.ignorarInterruptor) return { ...res, apagado: true };
   if (!cfg.media_url || !cfg.media_tipo) return { ...res, error: 'Falta la imagen o el video del encabezado' };
   const tpl = await estadoPlantillaOficina();
   if (tpl.status !== 'APPROVED') return { ...res, error: `La plantilla «${PLANTILLA_OFICINA}» no está aprobada (${tpl.status ?? 'no existe'})` };
@@ -179,7 +180,7 @@ export async function procesarAvisosOficina(supabase?: any, manual?: string[], t
   const { data: hechas } = ids.length ? await supabase.from('avisos_oficina').select('id_guia_effi, estado').in('id_guia_effi', ids) : { data: [] as any[] };
   const ya = new Map<string, string>((hechas ?? []).map((h: any) => [String(h.id_guia_effi), String(h.estado)]));
   const candidatas = guias.filter((g: any) => manual
-    ? manual.includes(String(g.id_effi)) && ['previo', 'error'].includes(ya.get(String(g.id_effi)) ?? '')
+    ? manual.includes(String(g.id_effi)) && !['enviado', 'reservado'].includes(ya.get(String(g.id_effi)) ?? '')
     : !ya.has(String(g.id_effi)));
   res.pendientes = Math.max(0, candidatas.length - tope);
 
@@ -189,9 +190,9 @@ export async function procesarAvisosOficina(supabase?: any, manual?: string[], t
     const id = String(g.id_effi);
     const tel = telefonoValido(g.tel_raw ?? g.telefono);
     // Reserva por guía: la llave única impide mandarle dos veces (aunque dos pasadas coincidan)
-    if (manual) {
+    if (manual && ya.has(id)) {
       const { data: tomada } = await supabase.from('avisos_oficina').update({ estado: 'reservado', actualizado_at: new Date().toISOString() })
-        .eq('id_guia_effi', id).in('estado', ['previo', 'error']).select('id_guia_effi');
+        .eq('id_guia_effi', id).in('estado', ['previo', 'error', 'omitido']).select('id_guia_effi');
       if (!tomada?.length) continue;
     } else {
       const { error: dup } = await supabase.from('avisos_oficina').insert({
