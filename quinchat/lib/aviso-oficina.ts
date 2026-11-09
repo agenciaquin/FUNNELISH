@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { listarPlantillas, subirImagenEjemplo } from '@/lib/whatsapp-templates';
 import { destinoWA } from '@/lib/whatsapp';
+import { lineaDeVendedor, phoneIdDeLinea, ocultarHastaRespuesta, type LineaAviso } from '@/lib/aviso-linea';
 import { recortar } from '@/lib/recortar';
 import { frenoMeta, esperarTurno } from '@/lib/ritmo-marketing';
 import { telefonoValido } from '@/lib/novedades-effi';
@@ -99,8 +100,8 @@ export async function crearPlantillaOficina(archivo: Buffer, mime: string): Prom
 }
 
 /** Envía la plantilla (encabezado imagen o video). */
-async function enviarPlantillaOficina(to: string, idioma: string, variables: string[], media: { url: string; tipo: 'IMAGE' | 'VIDEO' }) {
-  const token = process.env.WHATSAPP_ACCESS_TOKEN, phone = process.env.WHATSAPP_PHONE_NUMBER_ID;
+async function enviarPlantillaOficina(to: string, idioma: string, variables: string[], media: { url: string; tipo: 'IMAGE' | 'VIDEO' }, linea: LineaAviso = 'funnel') {
+  const token = process.env.WHATSAPP_ACCESS_TOKEN, phone = phoneIdDeLinea(linea);
   if (!token || !phone) return { ok: false, error: 'Falta configuración de WhatsApp.' } as const;
   const header = media.tipo === 'VIDEO' ? { type: 'video', video: { link: media.url } } : { type: 'image', image: { link: media.url } };
   const payload = {
@@ -209,7 +210,8 @@ export async function procesarAvisosOficina(supabase?: any, manual?: string[], t
     if (labels.some((l: string) => l.toUpperCase() === 'NO ENVIAR RECORDATORIO')) { await marcar('omitido', { motivo: 'Pidió no recibir mensajes' }); res.omitidos++; continue; }
 
     const variables = [primerNombre(g.nombre), String(g.guia ?? id)];
-    const r = await enviarPlantillaOficina(conv, tpl.idioma, variables, { url: cfg.media_url, tipo: cfg.media_tipo });
+    const linea = lineaDeVendedor(g.vendedor);   // por el chat donde compró
+    const r = await enviarPlantillaOficina(conv, tpl.idioma, variables, { url: cfg.media_url, tipo: cfg.media_tipo }, linea);
     if (!r.ok) { await marcar('error', { motivo: r.error }); res.errores++; continue; }
     const ahora = new Date().toISOString();
     await marcar('enviado', { wamid: r.wamid ?? null, enviado_at: ahora, motivo: null });
@@ -221,7 +223,7 @@ export async function procesarAvisosOficina(supabase?: any, manual?: string[], t
       texto += `\n\n[${BOTONES_OFICINA.join('] [')}]`;
       await supabase.from('conversations').upsert({
         id: conv, contact_name: String(g.nombre ?? tel), last_message: recortar(texto, 100), last_message_time: ahora,
-        unread_count: 0, linea: 'funnel', oculto: true, bot_enabled: false,
+        unread_count: 0, linea, oculto: true, bot_enabled: false,
       }, { onConflict: 'id', ignoreDuplicates: true });
       await supabase.from('messages').insert({
         id: `tpl-oficina-img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, conversation_id: conv,
@@ -237,6 +239,8 @@ export async function procesarAvisosOficina(supabase?: any, manual?: string[], t
       const notas = [String(c?.notas ?? '').trim(), `[${dia}] 📦 Pedido en oficina de Interrapidísimo (guía ${g.guia ?? id}). Se le avisó por plantilla.`].filter(Boolean).join('\n');
       // Responde un HUMANO (como el descuento por entrega): el bot no contesta los botones de este aviso
       await supabase.from('conversations').update({ label: nuevas.join(' | '), notas, bot_enabled: false }).eq('id', conv);
+      // No llena la bandeja: oculto hasta que el cliente responda (si el chat no está activo)
+      await ocultarHastaRespuesta(supabase, conv, linea);
       // Historial en el Panel de Novedades, si la guía tiene tarjeta
       const { data: nov } = await supabase.from('novedades_effi').select('id').eq('id_guia_effi', id).maybeSingle();
       if (nov?.id) await supabase.from('novedades_effi_historial').insert({ novedad_id: nov.id, tipo: 'nota', detalle: '📲 Se le envió el aviso «Pedido listo para reclamar» por WhatsApp', por: 'Automático' });

@@ -13,6 +13,11 @@ export const AVISO_OFICINA: ConfigAviso = {
   descripcion: 'Cuando una guía de Interrapidísimo queda «en oficina» en Effi, se le avisa al cliente por WhatsApp una sola vez. Solo FUNNELISTH LANDING y QUINO AGENCIA.',
   ejemplos: ['María', '240012345678'], ayudaVars: '{{1}} = primer nombre del cliente en Effi · {{2}} = número de guía', etiquetaHoy: 'Hoy en oficina',
 };
+export const AVISO_DIRECCION: ConfigAviso = {
+  api: '/api/novedades/direccion', icono: '📍', titulo: 'Aviso «Dirección no localizada»', conMedia: false,
+  descripcion: 'Cuando Effi registra que la transportadora no localizó la dirección (702 / dirección no existe), se le pide al cliente una foto de un recibo de luz o agua y un punto de referencia. Una sola vez por novedad. Solo FUNNELISTH LANDING y QUINO AGENCIA.',
+  ejemplos: ['María', 'Bucaramanga', '99053233278'], ayudaVars: '{{1}} = nombre · {{2}} = ciudad de destino · {{3}} = guía (todo desde Effi)', etiquetaHoy: 'Hoy con dirección no localizada',
+};
 export const AVISO_INTENTO: ConfigAviso = {
   api: '/api/novedades/intento', icono: '🚗', titulo: 'Aviso «Intento de entrega»', conMedia: false,
   descripcion: 'Cuando la transportadora reporta un intento de entrega fallido (Effi), se le escribe al cliente para saber por qué no recibió. Una sola vez por novedad. Solo FUNNELISTH LANDING y QUINO AGENCIA.',

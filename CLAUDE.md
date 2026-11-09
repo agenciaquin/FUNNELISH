@@ -283,6 +283,19 @@ Chat: etiqueta «NOVEDAD ENTREGA», nota, bot apagado; la tarjeta pasa a «En ge
 nunca dos veces. Filtro «Avisos: con aviso enviado / sin enviar». Arreglos: novedades de Effi repetidas entre páginas se
 deduplican antes del upsert; la copia de cada hora ya no pisa lo traído de Effi más nuevo (`copia_at`), y al volver a novedad
 se borra «en_ruta».
+**Línea y bandeja de los avisos (09-nov-2026, dueño):** `lib/aviso-linea.ts`. Cada aviso sale por el chat donde compró:
+QUINO AGENCIA → número de VENTAS (`WHATSAPP_PHONE_NUMBER_ID_VENTAS`), FUNNELISTH LANDING → número del FUNNEL. Tras enviar, si el
+cliente no escribió en 24 h, el chat queda `oculto` (y en la línea de la compra) hasta que responda; el webhook lo destapa
+(`oculto:false`, línea por la que respondió). Las plantillas son de la WABA (`WHATSAPP_WABA_ID`): si el número de ventas estuviera
+en otra WABA, Meta respondería «plantilla no existe» y el aviso queda en «Error» en la tarjeta.
+**Aviso «Dirección no localizada» + motor común (09-nov-2026, dueño):** los avisos SOLO TEXTO usan `lib/aviso-novedad-texto.ts`
+(`avisoTexto(config)` → ajustes, plantilla, procesar, completarRespuestas, rutas). `lib/aviso-intento.ts` y `lib/aviso-direccion.ts`
+son solo su configuración; rutas `app/api/novedades/intento` y `/direccion` = `srv.rutas()`. Dirección: plantilla
+`novedad_direccion_no_localizada` (UTILITY, texto EXACTO), dispara SOLO con novedad Effi «702 - No se localiza dirección…» o
+«Dirección destinatario no existe» (no 699 incompleta). Tabla `avisos_direccion`; interruptor `ajustes_bot.aviso_direccion`.
+Respuestas: `respuestas` jsonb guarda TODO lo que manda el cliente tras el aviso (texto, fotos, ubicación, audio) y cada una va al
+historial; el detalle de la novedad las muestra con fotos y «Copiar para la transportadora». Llave guía:novedad («estado» si no hay
+novedad de Effi).
 **OJO tablas nuevas:** en este Supabase una tabla creada por migración NO trae permisos para `service_role`
 (salió «permission denied for table novedades_effi»). Siempre: `grant select, insert, update, delete on <tabla> to service_role`
 + `grant usage, select on sequence <tabla>_id_seq to service_role`.

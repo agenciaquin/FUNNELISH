@@ -29,7 +29,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       flete: d.valor_flete ?? null, transportadora: d.nombre_transportadora_efficommerce ?? d.nombre_transportadora ?? null,
     };
   }).sort((a: any, b: any) => Number(b.id) - Number(a.id));
-  return NextResponse.json({ novedad: n, historial: h ?? [], novedades_effi: novedadesEffi });
+  // Avisos de texto enviados a este cliente con TODO lo que respondió (fotos de recibos, referencias…)
+  const { AVISO_INTENTO_SRV } = await import('@/lib/aviso-intento');
+  const { AVISO_DIRECCION_SRV } = await import('@/lib/aviso-direccion');
+  const avisos: any[] = [];
+  for (const srv of [AVISO_DIRECCION_SRV, AVISO_INTENTO_SRV]) {
+    const { data: fs } = await supabase.from(srv.cfg.tabla).select('*').eq('id_guia_effi', n.id_guia_effi).order('creado_at', { ascending: false }).limit(5);
+    for (const f of await srv.completarRespuestas(supabase, fs ?? [])) avisos.push({ ...f, tipo: srv.cfg.nombreCorto });
+  }
+  return NextResponse.json({ novedad: n, historial: h ?? [], novedades_effi: novedadesEffi, avisos });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -67,7 +75,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   return NextResponse.json({ ok: true });
 }
 
-/** POST {tipo:'oficina'|'intento'} → manda YA el aviso a este cliente (con la plantilla aprobada; una sola vez). */
+/** POST {tipo:'oficina'|'intento'|'direccion'} → manda YA el aviso a este cliente (con la plantilla aprobada; una sola vez). */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await exigirSesion();
   if (auth.error) return auth.error;
@@ -83,13 +91,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { data: f } = await supabase.from('avisos_oficina').select('estado, motivo').eq('id_guia_effi', n.id_guia_effi).maybeSingle();
     return NextResponse.json({ ok: false, error: r.error ?? (f?.estado === 'enviado' ? 'Ya se le había enviado.' : f?.motivo) ?? 'Esta guía ya no está en oficina en Effi.' }, { status: 400 });
   }
-  if (b?.tipo === 'intento') {
-    const { procesarAvisosIntento } = await import('@/lib/aviso-intento');
-    const clave = `${n.id_guia_effi}:${n.id_novedad_effi || 'intento'}`;
-    const r: any = await procesarAvisosIntento(supabase, [clave], 1, { ignorarInterruptor: true });
-    if (r.enviados) return NextResponse.json({ ok: true, mensaje: '✅ Aviso de intento de entrega enviado.' });
-    const { data: f } = await supabase.from('avisos_intento').select('estado, detalle').eq('clave', clave).maybeSingle();
-    return NextResponse.json({ ok: false, error: r.error ?? (f?.estado === 'enviado' ? 'Ya se le había enviado.' : f?.detalle) ?? 'La novedad ya no está en intento de entrega.' }, { status: 400 });
+  if (b?.tipo === 'intento' || b?.tipo === 'direccion') {
+    const srv = b.tipo === 'intento' ? (await import('@/lib/aviso-intento')).AVISO_INTENTO_SRV : (await import('@/lib/aviso-direccion')).AVISO_DIRECCION_SRV;
+    const caso = (await srv.novedadesEnCaso(supabase)).find((x: any) => x.id === n.id);
+    if (!caso) return NextResponse.json({ ok: false, error: b.tipo === 'intento' ? 'La novedad ya no está en intento de entrega.' : 'La novedad ya no es de dirección no localizada.' }, { status: 400 });
+    const r: any = await srv.procesar(supabase, [caso.clave], 1, { ignorarInterruptor: true });
+    if (r.enviados) return NextResponse.json({ ok: true, mensaje: `✅ Aviso de ${srv.cfg.nombreCorto.toLowerCase()} enviado.` });
+    const { data: f } = await supabase.from(srv.cfg.tabla).select('estado, detalle').eq('clave', caso.clave).maybeSingle();
+    return NextResponse.json({ ok: false, error: r.error ?? (f?.estado === 'enviado' ? 'Ya se le había enviado.' : f?.detalle) ?? 'No se pudo enviar.' }, { status: 400 });
   }
   return NextResponse.json({ error: 'Tipo de aviso desconocido' }, { status: 400 });
 }

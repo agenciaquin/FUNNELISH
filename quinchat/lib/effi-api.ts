@@ -198,10 +198,15 @@ export async function sincronizarGuiasEffi(origen: 'cron' | 'boton', dias = 60) 
   //    del panel con la copia recién bajada (sin ir otra vez a Effi) y luego máx. 2 avisos por pasada.
   try {
     const { ajustesIntento, procesarAvisosIntento } = await import('@/lib/aviso-intento');
-    if ((await ajustesIntento(supabase)).activo) {
+    const { AVISO_DIRECCION_SRV } = await import('@/lib/aviso-direccion');
+    const [onI, onD] = [(await ajustesIntento(supabase)).activo, (await AVISO_DIRECCION_SRV.ajustes(supabase)).activo];
+    if (onI || onD) {
       const { sincronizarNovedades } = await import('@/lib/novedades-effi');
       await sincronizarNovedades('copia', 'cron');
-      avisosIntento = await procesarAvisosIntento(supabase, undefined, 2);
+      avisosIntento = {
+        intento: onI ? await procesarAvisosIntento(supabase, undefined, 2) : { apagado: true },
+        direccion: onD ? await AVISO_DIRECCION_SRV.procesar(supabase, undefined, 2) : { apagado: true },
+      };
     } else avisosIntento = { apagado: true };
   } catch (e: any) { avisosIntento = { error: e?.message ?? String(e) }; }
 

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 
-import { AVISO_INTENTO } from './AvisoOficina';
+import { AVISO_INTENTO, AVISO_DIRECCION } from './AvisoOficina';
 
 const AvisoOficina = dynamic(() => import('./AvisoOficina'), { ssr: false });
 
@@ -16,7 +16,8 @@ const AvisoOficina = dynamic(() => import('./AvisoOficina'), { ssr: false });
 type Estado = 'nueva' | 'pendiente' | 'en_gestion' | 'solucionada';
 interface AvisoEstado { estado: string; enviado_at: string | null; respuesta: string | null; respuesta_at?: string | null; motivo?: string | null; detalle?: string | null }
 interface Novedad {
-  aplica_oficina?: boolean; aplica_intento?: boolean; aviso_oficina?: AvisoEstado | null; aviso_intento?: AvisoEstado | null;
+  aplica_oficina?: boolean; aplica_intento?: boolean; aplica_direccion?: boolean;
+  aviso_oficina?: AvisoEstado | null; aviso_intento?: AvisoEstado | null; aviso_direccion?: (AvisoEstado & { fotos?: number }) | null;
   id: number; id_guia_effi: string; guia: string | null; transportadora: string | null; id_remision: string | null; vendedor: string | null;
   cliente: string | null; telefono: string | null; telefono_original: string | null; ciudad: string | null; departamento: string | null;
   producto: string | null; talla: string | null; foto: string | null; valor_recaudo: number | null;
@@ -71,6 +72,7 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
   const [aviso, setAviso] = useState<string | null>(null);
   const [verAvisoOficina, setVerAvisoOficina] = useState(false);
   const [verAvisoIntento, setVerAvisoIntento] = useState(false);
+  const [verAvisoDireccion, setVerAvisoDireccion] = useState(false);
   const caja = useRef<HTMLDivElement>(null);
 
   useEffect(() => { memoria.filtro = filtro; }, [filtro]);
@@ -116,8 +118,9 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
 
   const visibles = useMemo(() => {
     const t = q.trim().toLowerCase(); const d = t.replace(/\D/g, '');
-    const enviado = (n: Novedad) => n.aviso_oficina?.estado === 'enviado' || n.aviso_intento?.estado === 'enviado';
-    const pendiente = (n: Novedad) => (n.aplica_oficina && n.aviso_oficina?.estado !== 'enviado') || (n.aplica_intento && n.aviso_intento?.estado !== 'enviado');
+    const enviado = (n: Novedad) => n.aviso_oficina?.estado === 'enviado' || n.aviso_intento?.estado === 'enviado' || n.aviso_direccion?.estado === 'enviado';
+    const pendiente = (n: Novedad) => (n.aplica_oficina && n.aviso_oficina?.estado !== 'enviado') || (n.aplica_intento && n.aviso_intento?.estado !== 'enviado')
+      || (n.aplica_direccion && n.aviso_direccion?.estado !== 'enviado');
     return lista.filter(n => (filtro === 'todas' || n.estado === filtro)
       && (filtroAviso === 'todos' || (filtroAviso === 'enviado' ? enviado(n) : pendiente(n))) && (!t
       || (n.cliente ?? '').toLowerCase().includes(t)
@@ -157,6 +160,7 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
               <p className="text-[12px] text-[#5B6B68]">Effi revisado {hace(ultEffi)}</p>
               {ultSync?.error_novedades && <p className="text-[11px] text-[#B54708] max-w-[260px] truncate" title={ultSync.error_novedades}>«Novedades de guías» de Effi no respondió</p>}
               {ultSync && ultSync.ok === false && <p className="text-[11px] text-[#B42318] max-w-[260px] truncate" title={ultSync.error}>Último intento falló: {ultSync.error}</p>}
+              <button onClick={() => setVerAvisoDireccion(true)} className="mt-1 mr-2 px-4 py-2 rounded-xl border border-[#7C3AED] text-[#6D28D9] text-sm font-bold bg-white hover:bg-[#F5F3FF]">📍 Aviso «Dirección no localizada»</button>
               <button onClick={() => setVerAvisoIntento(true)} className="mt-1 mr-2 px-4 py-2 rounded-xl border border-[#2563EB] text-[#1D4ED8] text-sm font-bold bg-white hover:bg-[#EFF6FF]">🚗 Aviso «Intento de entrega»</button>
               <button onClick={() => setVerAvisoOficina(true)} className="mt-1 mr-2 px-4 py-2 rounded-xl border border-[#F97316] text-[#C2410C] text-sm font-bold bg-white hover:bg-[#FFF7ED]">📲 Aviso «Listo para reclamar»</button>
               <button onClick={() => sincronizar(true)} disabled={sincronizando} className="mt-1 px-4 py-2 rounded-xl text-white text-sm font-bold disabled:opacity-50" style={{ background: VERDE }}>
@@ -249,6 +253,7 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
 
       {verAvisoOficina && <AvisoOficina onCerrar={() => setVerAvisoOficina(false)} />}
       {verAvisoIntento && <AvisoOficina config={AVISO_INTENTO} onCerrar={() => setVerAvisoIntento(false)} />}
+      {verAvisoDireccion && <AvisoOficina config={AVISO_DIRECCION} onCerrar={() => setVerAvisoDireccion(false)} />}
       {sel && <Detalle n={sel} onCerrar={() => setAbierta(null)} onCambio={cargar} onChat={() => abrirChat(sel)} />}
 
       {sinChat && (
@@ -292,6 +297,7 @@ function Detalle({ n, onCerrar, onCambio, onChat }: { n: Novedad; onCerrar: () =
   const [full, setFull] = useState<Novedad | null>(null);
   const [hist, setHist] = useState<Hist[]>([]);
   const [nEffi, setNEffi] = useState<any[]>([]);
+  const [avisosR, setAvisosR] = useState<any[]>([]);
   const [nota, setNota] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -299,7 +305,7 @@ function Detalle({ n, onCerrar, onCambio, onChat }: { n: Novedad; onCerrar: () =
 
   const traer = useCallback(async () => {
     const r = await fetch(`/api/novedades/${n.id}`, { cache: 'no-store' }); const j = await r.json().catch(() => ({}));
-    if (j.novedad) { setFull(j.novedad); setHist(j.historial ?? []); setNEffi(j.novedades_effi ?? []); }
+    if (j.novedad) { setFull(j.novedad); setHist(j.historial ?? []); setNEffi(j.novedades_effi ?? []); setAvisosR(j.avisos ?? []); }
   }, [n.id]);
 
   // Al abrirla: queda vista (Nueva → Pendiente)
@@ -423,6 +429,45 @@ function Detalle({ n, onCerrar, onCambio, onChat }: { n: Novedad; onCerrar: () =
               {d.resultado && fila('Resultado', RESULTADO[d.resultado] ?? d.resultado)}
             </div>
 
+            {avisosR.filter(a => a.estado === 'enviado').map(a => {
+              const rs: any[] = Array.isArray(a.respuestas) ? a.respuestas : [];
+              const fotos = rs.filter(r => r.tipo === 'image');
+              const textos = rs.filter(r => r.tipo !== 'image');
+              const paraTransportadora = [
+                `Guía: ${d.guia ?? ''} (${d.transportadora ?? ''})`, `Destinatario: ${d.cliente ?? ''} · Tel: ${d.telefono ?? ''}`,
+                `Dirección en la guía: ${direccion}`, ...textos.map(r => `Cliente: ${r.contenido}`), ...fotos.map(r => `Foto: ${r.contenido}`),
+              ].join('\n');
+              return (
+                <div key={a.clave} className="rounded-xl border border-[#D9D6FE] bg-[#F9F8FF] p-3.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-[12px] font-bold text-[#5925DC] flex-1">📲 AVISO «{String(a.tipo).toUpperCase()}» · enviado {fecha(a.enviado_at)}</p>
+                    {rs.length > 0 && <button onClick={() => copiar(paraTransportadora, avisar, 'Datos para la transportadora')} className="px-2.5 py-1 rounded-lg bg-[#6D28D9] text-white text-[11.5px] font-bold">📋 Copiar para la transportadora</button>}
+                  </div>
+                  {!rs.length ? <p className="text-[12.5px] text-[#5B6B68] mt-1">El cliente aún no responde.</p> : (
+                    <div className="mt-2 flex flex-col gap-2">
+                      {textos.map(r => (
+                        <div key={r.id} className="text-[13px] text-[#0D1F1C] bg-white rounded-lg border border-[#ECE9FE] px-2.5 py-1.5 flex gap-2">
+                          <span className="flex-1 whitespace-pre-wrap break-words">{r.tipo === 'location' ? '📍 ' : r.tipo === 'audio' ? '🎙️ ' : '💬 '}{r.tipo === 'text' ? r.contenido : <a href={r.contenido} target="_blank" rel="noopener noreferrer" className="underline">{r.tipo}</a>}</span>
+                          <span className="text-[11px] text-[#5B6B68] shrink-0">{fecha(r.at)}</span>
+                        </div>
+                      ))}
+                      {fotos.length > 0 && (
+                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                          {fotos.map(r => (
+                            <a key={r.id} href={r.contenido} target="_blank" rel="noopener noreferrer" className="block rounded-lg overflow-hidden border border-[#ECE9FE] bg-white" title={r.caption ?? 'Foto del cliente'}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={r.contenido} alt="" className="w-full aspect-square object-cover" />
+                              <p className="text-[10.5px] text-[#5B6B68] px-1.5 py-0.5 truncate">{r.caption || fecha(r.at)}</p>
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
             {nEffi.length > 1 && (
               <div>
                 <p className="text-[12px] font-bold text-[#5B6B68] mb-1.5">Todas las novedades de esta guía en Effi ({nEffi.length})</p>
@@ -476,9 +521,10 @@ function ZonaAvisos({ n, onListo, onAviso }: { n: Novedad; onListo: () => void; 
   const tipos = [
     { k: 'oficina' as const, aplica: n.aplica_oficina, a: n.aviso_oficina, icono: '📲', nombre: 'aviso de oficina' },
     { k: 'intento' as const, aplica: n.aplica_intento, a: n.aviso_intento, icono: '🚗', nombre: 'aviso de intento de entrega' },
+    { k: 'direccion' as const, aplica: n.aplica_direccion, a: n.aviso_direccion, icono: '📍', nombre: 'aviso de dirección no localizada' },
   ].filter(t => t.aplica || (t.a && t.a.estado !== 'previo'));
   if (!tipos.length) return null;
-  const mandar = async (k: 'oficina' | 'intento', nombre: string) => {
+  const mandar = async (k: 'oficina' | 'intento' | 'direccion', nombre: string) => {
     if (!confirm(`¿Mandarle ahora el ${nombre} a ${n.cliente ?? 'este cliente'} por WhatsApp?`)) return;
     setEnviando(k);
     const r = await fetch(`/api/novedades/${n.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tipo: k }) });
@@ -493,8 +539,8 @@ function ZonaAvisos({ n, onListo, onAviso }: { n: Novedad; onListo: () => void; 
         const e = t.a?.estado;
         if (e === 'enviado') return (
           <div key={t.k} className="rounded-lg bg-[#ECFDF3] border border-[#ABEFC6] px-2 py-1 text-[11.5px] text-[#067647]">
-            <b>{t.icono} {t.k === 'oficina' ? 'Aviso de oficina' : 'Aviso de intento'} enviado</b> · {fecha(t.a!.enviado_at)} <span className="text-[#5B6B68]">(automático)</span>
-            {t.a!.respuesta ? <p className="text-[#175CD3] truncate" title={t.a!.respuesta}>💬 Respondió: {t.a!.respuesta}</p> : <p className="text-[#5B6B68]">Sin respuesta aún</p>}
+            <b>{t.icono} {t.k === 'oficina' ? 'Aviso de oficina' : t.k === 'intento' ? 'Aviso de intento' : 'Aviso de dirección'} enviado</b> · {fecha(t.a!.enviado_at)} <span className="text-[#5B6B68]">(automático)</span>
+            {t.a!.respuesta ? <p className="text-[#175CD3] truncate" title={t.a!.respuesta}>💬 Respondió: {t.a!.respuesta}{(t.a as any).fotos ? ` · 📷 ${(t.a as any).fotos} foto(s)` : ''}</p> : <p className="text-[#5B6B68]">Sin respuesta aún</p>}
           </div>
         );
         if (e === 'reservado') return <p key={t.k} className="text-[11.5px] text-[#175CD3]">{t.icono} Enviando {t.nombre}…</p>;
