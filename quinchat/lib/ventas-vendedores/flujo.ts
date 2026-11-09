@@ -4,6 +4,7 @@ import { vendedorDe } from '@/lib/vendedores';
 import { transcribirAudio } from '@/lib/transcribir';
 import { sinTildes } from './catalogo';
 import { enviarBotones } from './wa';
+import { tipoLineaActual } from '@/lib/whatsapp-contexto';
 import { ESTADOS_ABIERTOS, type EstadoVV } from './estados';
 import {
   interpretarVenta, describirFoto, buscarCandidatos, elegirConFoto, resolverVariante,
@@ -173,7 +174,8 @@ export async function atenderModuloVV(supabase: any, value: any, from: string, e
 
   try {
     const upd: any = { id: from, last_message: recortar((textoLote || '📷 Foto'), 100), last_message_time: ahoraISO() };
-    if (vend) Object.assign(upd, { contact_name: vend.nombre, label: 'VENDEDOR', linea: 'ventas' });
+    // El chat queda en la bandeja del número por el que escribió (Funnel = recepción de ventas del módulo)
+    if (vend) Object.assign(upd, { contact_name: vend.nombre, label: 'VENDEDOR', linea: tipoLineaActual() });
     await supabase.from('conversations').upsert(upd, { onConflict: 'id' });
   } catch { /* ignorar */ }
 

@@ -13,7 +13,7 @@ import { isCompleteAddress, isDirOficina, getAddressQuestion } from '@/lib/addre
 import { validateAddressLupap, getLupapMessage } from '@/lib/lupap';
 import { enviarPushATodos } from '@/lib/push';
 import { bloqueDeMemoria } from '@/lib/memoria';
-import { entrarLinea, tipoDeLinea } from '@/lib/whatsapp-contexto';
+import { entrarLinea, tipoDeLinea, tipoLineaActual } from '@/lib/whatsapp-contexto';
 import { atenderVenta } from '@/lib/quinchat/ventas';
 import { esVendedor, vendedorDe, extraerVentas, nombreChat, generoDe, DIAS_NOMINA, LIMITE_INCENTIVO_SEG } from '@/lib/vendedores';
 import { etiquetarOficinaSinAbono, marcarOficinaAbonada, quitarEtiquetaOficina } from '@/lib/etiqueta-oficina';
@@ -186,14 +186,14 @@ async function atenderVendedor(supabase: any, value: any, from: string): Promise
     } catch { /* duplicado de Meta: ignorar */ }
   }
   // Marca la conversación como del equipo (para que salga aparte, no como cliente).
-  // Se agrupan TODOS en el inbox de Chat WhatsApp (linea 'ventas'), sin importar
-  // por cuál número hayan escrito, para no tenerlos repartidos.
+  // Queda en la bandeja del número por el que escribió (08-nov-2026: las ventas de vendedores
+  // entran por el Funnel, así que ahí deben verse).
   try {
     await supabase.from('conversations').upsert({
       id: from, contact_name: vend.nombre,
       last_message: recortar((textos.join(' ') || 'reporte'), 100),
       last_message_time: new Date().toISOString(),
-      bot_enabled: true, label: 'VENDEDOR', linea: 'ventas',
+      bot_enabled: true, label: 'VENDEDOR', linea: tipoLineaActual(),
     }, { onConflict: 'id' });
   } catch { /* ignorar */ }
 
