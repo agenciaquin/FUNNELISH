@@ -180,6 +180,8 @@ Los chats de usuario de WhatsApp tienen id `CO.<dígitos>`: esos dígitos NO son
 guardaba la venta con los últimos 10 dígitos como «teléfono» y «Ir al chat» no encontraba nada.
 Ahora `clientes_funnelish.conversation_id` guarda el chat cuando no es `57+telefono` (nulo = 57+telefono);
 `lib/quinchat/ventas.ts` no inventa teléfono y `api/ventas/lista` usa ese chat. `api/ventas/registrar` aún no.
+También se guarda el chat cuando el cliente da el celular de OTRA persona (quien recibe), y el teléfono que
+saca el modelo solo vale si el cliente lo escribió en el chat (el modelo puso 3124686638 a 4 clientes distintos).
 
 ### 5 · No todas las subidas comprimen
 

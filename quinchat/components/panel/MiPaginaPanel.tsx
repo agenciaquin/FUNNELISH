@@ -228,7 +228,7 @@ export default function MiPaginaPanel() {
                     // eslint-disable-next-line @next/next/no-img-element
                     ? <img src={portadaFoto} alt="" className="absolute inset-0 w-full h-full object-cover" />
                     : (
-                      <div className="absolute inset-y-0 right-2 w-[52%] flex items-center justify-center">
+                      <div className={`absolute inset-y-0 flex items-center justify-center ${cfg.banner.mostrar_textos === true ? 'right-2 w-[52%]' : 'inset-x-0 px-[22%]'}`}>
                         {abanicoMini.map((f, i) => {
                           const lado = i < centroMini ? -1 : i > centroMini ? 1 : 0;
                           return (
@@ -240,7 +240,7 @@ export default function MiPaginaPanel() {
                       </div>
                     )}
                   <div className="absolute inset-0 p-3 flex flex-col justify-center" style={portadaFoto ? { background: 'linear-gradient(90deg,#062523cc,transparent 70%)' } : undefined}>
-                    <p className="text-lg font-black italic uppercase leading-[0.95] max-w-[55%]">{cfg.banner.titulo}<br /><span className="text-[#5EEAD4]">{cfg.banner.titulo2}</span></p>
+                    <p className={`text-lg font-black italic uppercase leading-[0.95] max-w-[55%] ${cfg.banner.mostrar_textos === true ? '' : 'hidden'}`}>{cfg.banner.titulo}<br /><span className="text-[#5EEAD4]">{cfg.banner.titulo2}</span></p>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 mt-3">
@@ -256,7 +256,11 @@ export default function MiPaginaPanel() {
                     : <span />}
                 </div>
                 <div className="flex items-center justify-between mt-2">
-                  <button onClick={() => setTextosPortada(t => !t)} className="text-xs font-bold text-[#00847A]">✏️ {textosPortada ? 'Ocultar textos' : 'Editar textos de la portada'}</button>
+                  <label className="flex items-center gap-2 text-xs font-bold text-[#1F2A28] cursor-pointer">
+                    <input type="checkbox" checked={cfg.banner.mostrar_textos === true} onChange={e => cambiar(c => { c.banner.mostrar_textos = e.target.checked; })} />
+                    Mostrar título y beneficios
+                  </label>
+                  {cfg.banner.mostrar_textos === true && <button onClick={() => setTextosPortada(t => !t)} className="text-xs font-bold text-[#00847A]">✏️ {textosPortada ? 'Ocultar' : 'Editar textos'}</button>}
                   {portadaFoto && <button onClick={() => cambiar(c => { c.banner.imagen = null; })} className="text-xs text-[#9AA7A5] hover:text-[#DC2626]">Usar portada automática</button>}
                 </div>
                 {!portadaFoto && visiblesTienda.length > 0 && (
@@ -284,7 +288,7 @@ export default function MiPaginaPanel() {
                     </div>
                   </div>
                 )}
-                {textosPortada && (
+                {textosPortada && cfg.banner.mostrar_textos === true && (
                   <div className="mt-2 space-y-2">
                     <div className="grid grid-cols-2 gap-2">
                       <input value={cfg.banner.titulo} onChange={e => cambiar(c => { c.banner.titulo = e.target.value; })} placeholder="Título" className={inputCls} />

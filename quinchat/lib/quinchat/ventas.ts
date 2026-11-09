@@ -1241,6 +1241,17 @@ async function fotoDeVenta(supabase: any, color: string, producto: string): Prom
   return await fotoDelColor(supabase, colores[0] ?? color, producto);
 }
 
+/** ¿El cliente escribió ese número en el chat? (mensajes suyos de los últimos 7 días, sin espacios ni signos) */
+async function clienteEscribioNumero(supabase: any, from: string, tel10: string): Promise<boolean> {
+  try {
+    const { data } = await supabase.from('messages').select('content')
+      .eq('conversation_id', from).eq('role', 'user')
+      .gte('created_at', new Date(Date.now() - 7 * 86400_000).toISOString())
+      .order('created_at', { ascending: false }).limit(80);
+    return (data ?? []).some((m: any) => String(m.content ?? '').replace(/\D/g, '').includes(tel10));
+  } catch { return true; /* si la consulta falla, no se descarta lo del bot */ }
+}
+
 async function guardarYPasarPedido(supabase: any, from: string, datos: any): Promise<boolean> {
   try {
     // Teléfono del pedido: lo que diga el bot; si no lo capturó (ya no pedimos
@@ -1248,6 +1259,8 @@ async function guardarYPasarPedido(supabase: any, from: string, datos: any): Pro
     let tel10 = String(datos.telefono ?? '').replace(/\D/g, '').slice(-10);
     // Chat de usuario de WhatsApp (CO.xxxx): NO tiene número; sus dígitos no son un teléfono.
     const chatSinNumero = !/^\d+$/.test(String(from ?? ''));
+    // El teléfono del bot solo vale si el CLIENTE lo escribió en el chat (el modelo llegó a inventar uno).
+    if (tel10.length === 10 && `57${tel10}` !== String(from) && !(await clienteEscribioNumero(supabase, from, tel10))) tel10 = '';
     if (tel10.length !== 10) tel10 = chatSinNumero ? '' : String(from ?? '').replace(/\D/g, '').replace(/^57/, '').slice(-10);
     const valor = Number(datos.precio ?? 0);
     const producto = `${String(datos.producto ?? '').trim()}${datos.color ? ` - ${String(datos.color).trim()}` : ''}`;
@@ -1283,8 +1296,9 @@ async function guardarYPasarPedido(supabase: any, from: string, datos: any): Pro
 
     const camposPedido = {
       nombre, telefono: tel10, direccion,
-      // Chat de origen solo cuando no es 57+teléfono (para «Ir al chat» y la etiqueta)
-      ...(chatSinNumero ? { conversation_id: String(from) } : {}),
+      // Chat de origen cuando no es 57+teléfono: chat sin número (CO.xxxx) o el cliente dio el
+      // celular de OTRA persona (quien recibe). Sirve para «Ir al chat» y la etiqueta.
+      ...(String(from) !== `57${tel10}` ? { conversation_id: String(from) } : {}),
       ciudad:       String(datos.municipio ?? '').trim(),
       departamento: String(datos.departamento ?? '').trim(),
       correo:       String(datos.correo ?? '').trim(),
@@ -1393,6 +1407,8 @@ async function actualizarYAvisarCambio(supabase: any, from: string, datos: any):
     let tel10 = String(datos.telefono ?? '').replace(/\D/g, '').slice(-10);
     // Chat de usuario de WhatsApp (CO.xxxx): NO tiene número; sus dígitos no son un teléfono.
     const chatSinNumero = !/^\d+$/.test(String(from ?? ''));
+    // El teléfono del bot solo vale si el CLIENTE lo escribió en el chat (el modelo llegó a inventar uno).
+    if (tel10.length === 10 && `57${tel10}` !== String(from) && !(await clienteEscribioNumero(supabase, from, tel10))) tel10 = '';
     if (tel10.length !== 10) tel10 = chatSinNumero ? '' : String(from ?? '').replace(/\D/g, '').replace(/^57/, '').slice(-10);
     const valor = Number(datos.precio ?? 0);
     const producto = `${String(datos.producto ?? '').trim()}${datos.color ? ` - ${String(datos.color).trim()}` : ''}`;

@@ -23,7 +23,7 @@ export interface Opinion { nombre: string; texto: string; estrellas: number; fot
 
 export interface ConfigPagina {
   marca: { nombre: string; logo: string | null; color: string; eslogan: string };
-  banner: { titulo: string; titulo2: string; subtitulo: string; imagen: string | null; boton: string; beneficios: string[]; productos: string[] /* embudos de la portada (máx. 3) */ };
+  banner: { titulo: string; titulo2: string; subtitulo: string; imagen: string | null; boton: string; beneficios: string[]; productos: string[] /* embudos de la portada (máx. 3) */; mostrar_textos?: boolean /* false = solo fotos */ };
   secciones: Seccion[];
   productos: ProdSel[];
   catalogos: CatSel[];

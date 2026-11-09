@@ -307,6 +307,17 @@ function Portada({ config, color, oscuro, fotos, onVer }: { config: ConfigPagina
       )}
     </div>
   );
+  // Sin textos (lo normal desde 08-nov-2026): solo las fotos, en una franja baja para que en el
+  // celular se vean enseguida los productos y catálogos.
+  const conTextos = b.mostrar_textos === true;
+  if (b.imagen && !conTextos) {
+    return (
+      <section className="relative overflow-hidden" style={{ background: oscuro }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={b.imagen} alt="" className="w-full h-36 md:h-72 object-cover" />
+      </section>
+    );
+  }
   if (b.imagen) {
     return (
       <section className="relative overflow-hidden text-white">
@@ -320,6 +331,26 @@ function Portada({ config, color, oscuro, fotos, onVer }: { config: ConfigPagina
   // Orden del abanico: el 1.º elegido va al centro y adelante; el 2.º a la izquierda; el 3.º a la derecha
   const abanico = fotos.length === 3 ? [fotos[1], fotos[0], fotos[2]] : fotos.length === 2 ? [fotos[1], fotos[0]] : fotos;
   const centro = fotos.length === 3 ? 1 : fotos.length === 2 ? 1 : 0;
+  const fondo = { background: `radial-gradient(circle at 50% 40%, ${mezclar(color, '#041716', 0.35)} 0%, ${oscuro} 70%)` };
+  if (!conTextos) {
+    if (!abanico.length) return null;
+    return (
+      <section className="relative overflow-hidden" style={fondo}>
+        <div className="max-w-[300px] md:max-w-[560px] mx-auto px-2 py-3 md:py-8 flex items-center justify-center">
+          {abanico.map((f, i) => {
+            const esCentro = i === centro;
+            const lado = i < centro ? -1 : i > centro ? 1 : 0;
+            return (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={`${f}-${i}`} src={f} alt=""
+                className={`rounded-xl md:rounded-2xl shadow-2xl object-cover border-2 md:border-4 border-white/10 aspect-square relative ${esCentro ? 'w-[44%] z-20' : 'w-[33%] z-10 opacity-95'}`}
+                style={{ marginLeft: i === 0 ? 0 : '-8%', transform: `rotate(${lado * 7}deg) ${esCentro ? 'scale(1.04)' : 'translateY(5%)'}` }} />
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
   return (
     <section className="relative overflow-hidden text-white" style={{ background: `radial-gradient(circle at 70% 35%, ${mezclar(color, '#041716', 0.35)} 0%, ${oscuro} 62%)` }}>
       <div className="max-w-6xl mx-auto px-4 md:px-5 pt-6 pb-8 md:py-16 grid md:grid-cols-2 gap-5 md:gap-6 items-center">
