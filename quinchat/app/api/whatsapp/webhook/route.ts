@@ -762,9 +762,15 @@ export async function POST(req: NextRequest) {
     const remite = value.messages[0]?.from as string | undefined;
     if (remite) {
       try {
-        const { moduloAtiende } = await import('@/lib/ventas-vendedores/config');
+        const { moduloAtiende, ajustesVV } = await import('@/lib/ventas-vendedores/config');
         const m = await moduloAtiende(remite);
         if (m.si) {
+          // Las ventas de vendedores se reciben por el número FUNNEL (dueño, 08-nov-2026). Venta nueva al
+          // número de ventas → aviso para reenviarla al Funnel (no se procesa aquí).
+          if (tipoLinea === 'ventas' && (await ajustesVV()).linea_recepcion === 'funnel') {
+            const { redirigirAlFunnel } = await import('@/lib/ventas-vendedores/flujo');
+            if (await redirigirAlFunnel(supabase, value, remite, m.esPrueba)) return NextResponse.json({ status: 'ok' });
+          }
           const { atenderModuloVV } = await import('@/lib/ventas-vendedores/flujo');
           if (await atenderModuloVV(supabase, value, remite, m.esPrueba)) return NextResponse.json({ status: 'ok' });
         }

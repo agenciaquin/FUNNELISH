@@ -19,10 +19,13 @@ export interface AjustesVV {
   envio_effi: 'simulacion' | 'real';
   /** Vendedores REALES activados uno por uno desde «Master Vendedores» (sus ventas NO son de prueba). */
   numeros_reales: string[];
+  /** Por qué número se reciben las ventas: 'funnel' (QuinChat Funnel 317 265 3897, dueño 08-nov-2026) o 'todas'.
+   *  Con 'funnel', una venta NUEVA que llegue al número de ventas recibe un aviso para mandarla al Funnel. */
+  linea_recepcion: 'funnel' | 'todas';
 }
 
 export const AJUSTES_VV_DEFECTO: AjustesVV = {
-  activo: false, numeros_prueba: [], todos_vendedores: false, envio_effi: 'simulacion', numeros_reales: [],
+  activo: false, numeros_prueba: [], todos_vendedores: false, envio_effi: 'simulacion', numeros_reales: [], linea_recepcion: 'funnel',
 };
 
 let cache: { valor: AjustesVV; leido: number } | null = null;
@@ -40,6 +43,7 @@ export async function ajustesVV(fresco = false): Promise<AjustesVV> {
       todos_vendedores: v.todos_vendedores === true,
       envio_effi: v.envio_effi === 'real' ? 'real' : 'simulacion',
       numeros_reales: Array.isArray(v.numeros_reales) ? v.numeros_reales.map(n => normalizarTel(String(n))).filter(Boolean) : [],
+      linea_recepcion: v.linea_recepcion === 'todas' ? 'todas' : 'funnel',
     };
   } catch { /* si falla, el módulo queda apagado */ }
   cache = { valor, leido: Date.now() };

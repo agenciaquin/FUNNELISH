@@ -273,13 +273,17 @@ export async function armarRemision(venta: any, items: any[]): Promise<Remision>
     const { data: conv } = await createServerSupabaseClient().from('conversations').select('linea').eq('id', venta.conversacion_id).maybeSingle();
     telVend = conv?.linea === 'ventas' ? 'panel-whatsapp' : 'panel-funnel';
   }
-  let vend = cfg.vendedores[telVend] ?? null;
-  // Vendedores del módulo «Master Vendedores»: su teléfono (principal o extra) → su empleado de Effi
-  if (!vend && /^57\d{10}$/.test(telVend)) {
+  // 1.º Vendedores del módulo «Master Vendedores»: su teléfono (principal o extra) → su empleado de Effi.
+  //    Va PRIMERO: el mapa fijo de abajo traía 573143534918 → QUINO AGENCIA de la fase de prueba, y las
+  //    ventas de Josué salían con vendedor QUINO (08-nov-2026, dueño: debe ser JOSUE QUINTERO LEON).
+  let vend: { tercero: number; nombre: string } | null = null;
+  if (/^57\d{10}$/.test(telVend)) {
     const { data: mv } = await createServerSupabaseClient().from('mv_vendedores').select('tercero, nombre_effi')
       .or(`telefono_principal.eq.${telVend},telefonos_extra.cs.{${telVend}}`).eq('activo', true).limit(1).maybeSingle();
     if (mv) vend = { tercero: Number(mv.tercero), nombre: String(mv.nombre_effi) };
   }
+  // 2.º El mapa de la configuración (panel-funnel / panel-whatsapp y números sin ficha en Master Vendedores)
+  if (!vend) vend = cfg.vendedores[telVend] ?? null;
   if (!vend) errores.push(`El vendedor ${venta.vendedor_nombre || venta.vendedor_tel} no está enlazado a un empleado de Effi`);
 
   // ── Consultas a Effi (solo lectura) ───────────────────────────────────

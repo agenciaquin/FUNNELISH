@@ -52,6 +52,46 @@ function leerEntrantes(value: any): Entrante[] {
   }));
 }
 
+/** Número (QuinChat Funnel) al que los vendedores mandan las ventas (dueño, 08-nov-2026). */
+export const NUMERO_VENTAS_VENDEDORES = '573172653897';
+
+/**
+ * La venta llegó al número de VENTAS (chat WhatsApp) y debe ir al Funnel. Si el lote parece una venta NUEVA,
+ * se le avisa al vendedor (máx. 1 aviso cada 10 min) y NO se procesa aquí. Ventas ya abiertas por este número
+ * se terminan aquí mismo (no se cortan a mitad). Reportes («5») y demás → false: sigue el flujo de siempre.
+ */
+export async function redirigirAlFunnel(supabase: any, value: any, from: string, esPrueba: boolean): Promise<boolean> {
+  const entrantes = leerEntrantes(value);
+  if (!entrantes.length) return false;
+  const textoLote = entrantes.map(e => e.texto).filter(Boolean).join('\n');
+  const hayFoto = entrantes.some(e => e.tipo === 'image' && e.mediaId);
+  const { data: abierta } = await supabase.from('vv_ventas').select('id')
+    .eq('vendedor_tel', from).in('estado', ESTADOS_ABIERTOS).limit(1).maybeSingle();
+  if (abierta) return false; // la termina atenderModuloVV en este mismo número
+  const soloPrueba = esPrueba && !vendedorDe(from);
+  const esNumeroSuelto = /^\s*\d{1,2}\s*$/.test(textoLote);
+  if (!soloPrueba && !hayFoto && (!pareceVenta(textoLote) || esNumeroSuelto)) return false;
+
+  const ahora = new Date();
+  const { data: reciente } = await supabase.from('messages').select('id')
+    .eq('conversation_id', from).like('id', 'vvredir-%')
+    .gte('created_at', new Date(ahora.getTime() - 10 * 60_000).toISOString()).limit(1).maybeSingle();
+  if (!reciente) {
+    const vend = vendedorDe(from);
+    const texto = `📲 ${vend ? `${vend.nombre.split(' ')[0]}, ` : ''}las ventas ahora se envían al chat *QuinChat Funnel*: *317 265 3897*.\n` +
+      `Por favor reenvía esta venta (fotos + datos) a ese número 👉 https://wa.me/${NUMERO_VENTAS_VENDEDORES}\n` +
+      `Por este chat ya no se suben ventas.`;
+    const wamid = await sendTextMessage(from, texto);
+    try {
+      await supabase.from('messages').insert({
+        id: `vvredir-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, conversation_id: from,
+        content: texto, role: 'assistant', type: 'text', whatsapp_id: wamid, created_at: ahora.toISOString(),
+      });
+    } catch { /* ignorar */ }
+  }
+  return true;
+}
+
 export async function atenderModuloVV(supabase: any, value: any, from: string, esPrueba: boolean): Promise<boolean> {
   const entrantes = leerEntrantes(value);
   if (!entrantes.length) return false;

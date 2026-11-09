@@ -135,6 +135,9 @@ Decisión del dueño (01-nov-2026): QuinChat sube a Effi directo. Desde el 08-no
 (lo pidió el dueño): «Enviar a Effi» crea remisiones de verdad tras vista previa + confirmación.
 Abonos/pagos por transferencia → cuenta Effi id 6 (KLIXMANT SAS Bancolombia), en `ajustes_bot.effi_remision.cuenta_transferencia`.
 Volver a simulación: `ajustes_bot` clave `ventas_vendedores` → `envio_effi: 'simulacion'`.
+Línea de recepción (08-nov-2026, dueño): las ventas de vendedores van al número **Funnel 317 265 3897**.
+`linea_recepcion: 'funnel'` (por defecto) → una venta NUEVA al número de ventas recibe aviso con wa.me y no se procesa
+(`redirigirAlFunnel`); ventas ya abiertas allí se terminan allí; reportes «5» siguen igual. `'todas'` = aceptar en ambos.
 
 ### 7 · Organizador de pedidos (Yamile León) — aislado con interruptor
 
@@ -176,7 +179,8 @@ Tabla propia `mv_vendedores` (13 vendedores de Effi: tercero, nombre, nombre_eff
 teléfonos extra; el número viejo del bot quedó como extra). Lee `vv_ventas` por teléfono y `effi_remisiones_api` por
 `nombre_effi`. Ver/editar/enviar reusa `DetalleVenta` del Centro Maestro. La recepción de ventas por WhatsApp se
 enciende POR VENDEDOR (botón en el módulo) y queda en `ajustes_bot.ventas_vendedores.numeros_reales` (vacío = nada
-cambia para los vendedores). Effi: si el vendedor no está en `effi_remision.vendedores`, se toma su tercero de `mv_vendedores`.
+cambia para los vendedores). Effi: el vendedor sale PRIMERO de `mv_vendedores` (teléfono principal o extra) y solo después del mapa
+`effi_remision.vendedores` (que traía 573143534918 → QUINO AGENCIA de la fase de prueba; corregido 08-nov-2026).
 
 ### 11 · Chats sin número (CO.xxxx) y ventas (08-nov-2026)
 
