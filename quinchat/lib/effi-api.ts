@@ -194,19 +194,19 @@ export async function sincronizarGuiasEffi(origen: 'cron' | 'boton', dias = 60) 
     const { procesarAvisosOficina } = await import('@/lib/aviso-oficina');
     avisosOficina = await procesarAvisosOficina(supabase, undefined, 3);
   } catch (e: any) { avisosOficina = { error: e?.message ?? String(e) }; }
-  // 6) Aviso «Intento de entrega» (Panel de Novedades). Apagado por defecto. Primero se ponen al día las tarjetas
+  // 6) Avisos de texto del Panel de Novedades (intento, dirección no localizada, incompleta). Apagados por defecto. Primero se ponen al día las tarjetas
   //    del panel con la copia recién bajada (sin ir otra vez a Effi) y luego máx. 2 avisos por pasada.
   try {
-    const { ajustesIntento, procesarAvisosIntento } = await import('@/lib/aviso-intento');
-    const { AVISO_DIRECCION_SRV } = await import('@/lib/aviso-direccion');
-    const [onI, onD] = [(await ajustesIntento(supabase)).activo, (await AVISO_DIRECCION_SRV.ajustes(supabase)).activo];
-    if (onI || onD) {
+    const { AVISOS_TEXTO } = await import('@/lib/avisos-texto-registro');
+    const encendidos: (typeof AVISOS_TEXTO[number])[] = [];
+    for (const av of AVISOS_TEXTO) if ((await av.srv.ajustes(supabase)).activo) encendidos.push(av);
+    if (encendidos.length) {
       const { sincronizarNovedades } = await import('@/lib/novedades-effi');
       await sincronizarNovedades('copia', 'cron');
-      avisosIntento = {
-        intento: onI ? await procesarAvisosIntento(supabase, undefined, 2) : { apagado: true },
-        direccion: onD ? await AVISO_DIRECCION_SRV.procesar(supabase, undefined, 2) : { apagado: true },
-      };
+      avisosIntento = {};
+      // La sincronización ya dura ~3 min (límite 5): con varios avisos encendidos, 1 por tipo y pasada; el panel abierto manda el resto
+      const tope = encendidos.length > 1 ? 1 : 2;
+      for (const av of encendidos) avisosIntento[av.tipo] = await av.srv.procesar(supabase, undefined, tope);
     } else avisosIntento = { apagado: true };
   } catch (e: any) { avisosIntento = { error: e?.message ?? String(e) }; }
 

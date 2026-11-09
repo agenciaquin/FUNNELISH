@@ -18,6 +18,12 @@ export const AVISO_DIRECCION: ConfigAviso = {
   descripcion: 'Cuando Effi registra que la transportadora no localizó la dirección (702 / dirección no existe), se le pide al cliente una foto de un recibo de luz o agua y un punto de referencia. Una sola vez por novedad. Solo FUNNELISTH LANDING y QUINO AGENCIA.',
   ejemplos: ['María', 'Bucaramanga', '99053233278'], ayudaVars: '{{1}} = nombre · {{2}} = ciudad de destino · {{3}} = guía (todo desde Effi)', etiquetaHoy: 'Hoy con dirección no localizada',
 };
+export const AVISO_INCOMPLETA: ConfigAviso = {
+  api: '/api/novedades/incompleta', icono: '🏠', titulo: 'Aviso «Dirección incompleta»', conMedia: false,
+  descripcion: 'Cuando Effi registra «699 - Dirección incompleta», se le pide al cliente la torre, el apartamento o el detalle que falta, mostrándole la dirección registrada. Una sola vez por novedad. Solo FUNNELISTH LANDING y QUINO AGENCIA.',
+  ejemplos: ['María', 'Bucaramanga', 'Cra 27 # 45-10 Conjunto Altos del Prado', '99053233278'],
+  ayudaVars: '{{1}} = nombre · {{2}} = ciudad · {{3}} = dirección registrada en Effi · {{4}} = guía', etiquetaHoy: 'Hoy con dirección incompleta',
+};
 export const AVISO_INTENTO: ConfigAviso = {
   api: '/api/novedades/intento', icono: '🚗', titulo: 'Aviso «Intento de entrega»', conMedia: false,
   descripcion: 'Cuando la transportadora reporta un intento de entrega fallido (Effi), se le escribe al cliente para saber por qué no recibió. Una sola vez por novedad. Solo FUNNELISTH LANDING y QUINO AGENCIA.',

@@ -22,28 +22,32 @@ export async function GET() {
     .order('detectada_at', { ascending: false }).limit(1000);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const lista: any[] = data ?? [];
-  // Avisos automáticos de cada tarjeta (oficina / intento de entrega): enviado, respuesta o si aún se puede mandar
+  // Avisos automáticos de cada tarjeta (oficina + los de texto del registro): enviado, respuesta o si aún se puede mandar
+  const { AVISOS_TEXTO } = await import('@/lib/avisos-texto-registro');
   const ids = lista.map(n => n.id_guia_effi);
-  const ao = new Map<string, any>(), ai = new Map<string, any>(), ad = new Map<string, any>();
+  const ao = new Map<string, any>();
+  const porTipo = new Map<string, Map<string, any>>(AVISOS_TEXTO.map(a => [a.tipo, new Map<string, any>()]));
   for (let i = 0; i < ids.length; i += 300) {
     const lote = ids.slice(i, i + 300);
-    const [{ data: o }, { data: it }, { data: di }] = await Promise.all([
-      supabase.from('avisos_oficina').select('id_guia_effi, estado, enviado_at, respuesta, respuesta_at, motivo').in('id_guia_effi', lote),
-      supabase.from('avisos_intento').select('id_guia_effi, clave, estado, enviado_at, respuesta, respuesta_at, detalle, creado_at').in('id_guia_effi', lote).order('creado_at', { ascending: false }),
-      supabase.from('avisos_direccion').select('id_guia_effi, clave, estado, enviado_at, respuesta, respuesta_at, detalle, creado_at, respuestas').in('id_guia_effi', lote).order('creado_at', { ascending: false }),
-    ]);
+    const { data: o } = await supabase.from('avisos_oficina').select('id_guia_effi, estado, enviado_at, respuesta, respuesta_at, motivo').in('id_guia_effi', lote);
     for (const r of o ?? []) ao.set(String(r.id_guia_effi), r);
-    for (const r of it ?? []) if (!ai.has(String(r.id_guia_effi))) ai.set(String(r.id_guia_effi), r);
-    for (const r of di ?? []) if (!ad.has(String(r.id_guia_effi))) ad.set(String(r.id_guia_effi), { ...r, fotos: (Array.isArray(r.respuestas) ? r.respuestas : []).filter((x: any) => x.tipo === 'image').length, respuestas: undefined });
+    await Promise.all(AVISOS_TEXTO.map(async a => {
+      const { data: fs } = await supabase.from(a.srv.cfg.tabla).select('id_guia_effi, clave, estado, enviado_at, respuesta, respuesta_at, detalle, creado_at, respuestas')
+        .in('id_guia_effi', lote).order('creado_at', { ascending: false });
+      const m = porTipo.get(a.tipo)!;
+      for (const r of fs ?? []) if (!m.has(String(r.id_guia_effi))) m.set(String(r.id_guia_effi), {
+        ...r, fotos: (Array.isArray(r.respuestas) ? r.respuestas : []).filter((x: any) => x.tipo === 'image').length, respuestas: undefined,
+      });
+    }));
   }
   for (const n of lista) {
     const est = `${n.estado_effi ?? ''} ${n.estado_effi_comercio ?? ''}`;
     n.aplica_oficina = n.activa_en_effi && /inter/i.test(String(n.transportadora ?? '')) && /reclame en oficina|retiro en oficina/i.test(est);
-    n.aplica_intento = n.activa_en_effi && (/intento de entrega/i.test(est) || /^701 -|se visita, no se logra entrega/i.test(String(n.novedad_texto ?? '')));
     n.aviso_oficina = ao.get(String(n.id_guia_effi)) ?? null;
-    n.aviso_intento = ai.get(String(n.id_guia_effi)) ?? null;
-    n.aplica_direccion = n.activa_en_effi && /no se localiza direcci[oó]n|direcci[oó]n (del )?destinatario no existe|direcci[oó]n no localizada/i.test(String(n.novedad_texto ?? ''));
-    n.aviso_direccion = ad.get(String(n.id_guia_effi)) ?? null;
+    for (const a of AVISOS_TEXTO) {
+      n[`aplica_${a.tipo}`] = !!n.activa_en_effi && a.srv.cfg.coincide(n);
+      n[`aviso_${a.tipo}`] = porTipo.get(a.tipo)!.get(String(n.id_guia_effi)) ?? null;
+    }
   }
   const cuenta = (e: string) => lista.filter((n: any) => n.estado === e).length;
   const { data: sync } = await supabase.from('novedades_effi_sync').select('origen, inicio, fin, ok, error, novedades_effi, error_novedades').not('fin', 'is', null).order('inicio', { ascending: false }).limit(1).maybeSingle();
@@ -60,12 +64,12 @@ export async function POST(req: NextRequest) {
   if (auth.error) return auth.error;
   const b = await req.json().catch(() => ({}));
   const r = await sincronizarSiToca(`panel:${auth.quien}`.slice(0, 60), !!b?.forzar);
-  // Aviso «Intento de entrega»: si está encendido y hubo sincronización, se revisa DESPUÉS de responder (no frena el panel)
+  // Avisos de texto (intento, dirección, incompleta): si están encendidos y hubo sincronización, se revisa DESPUÉS de responder (no frena el panel)
   if (!(r as any).omitida) after(async () => {
-    try { const { procesarAvisosIntento } = await import('@/lib/aviso-intento'); await procesarAvisosIntento(undefined, undefined, 5); }
-    catch (e) { console.error('[Novedades] aviso intento:', e); }
-    try { const { procesarAvisosDireccion } = await import('@/lib/aviso-direccion'); await procesarAvisosDireccion(undefined, undefined, 5); }
-    catch (e) { console.error('[Novedades] aviso dirección:', e); }
+    const { AVISOS_TEXTO } = await import('@/lib/avisos-texto-registro');
+    for (const av of AVISOS_TEXTO) {
+      try { await av.srv.procesar(undefined, undefined, 5); } catch (e) { console.error(`[Novedades] aviso ${av.tipo}:`, e); }
+    }
   });
   return NextResponse.json(r, { status: (r as any).ok === false ? 502 : 200 });
 }

@@ -30,10 +30,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     };
   }).sort((a: any, b: any) => Number(b.id) - Number(a.id));
   // Avisos de texto enviados a este cliente con TODO lo que respondió (fotos de recibos, referencias…)
-  const { AVISO_INTENTO_SRV } = await import('@/lib/aviso-intento');
-  const { AVISO_DIRECCION_SRV } = await import('@/lib/aviso-direccion');
+  const { AVISOS_TEXTO } = await import('@/lib/avisos-texto-registro');
   const avisos: any[] = [];
-  for (const srv of [AVISO_DIRECCION_SRV, AVISO_INTENTO_SRV]) {
+  for (const { srv } of AVISOS_TEXTO) {
     const { data: fs } = await supabase.from(srv.cfg.tabla).select('*').eq('id_guia_effi', n.id_guia_effi).order('creado_at', { ascending: false }).limit(5);
     for (const f of await srv.completarRespuestas(supabase, fs ?? [])) avisos.push({ ...f, tipo: srv.cfg.nombreCorto });
   }
@@ -63,6 +62,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (b.estado === 'solucionada') { upd.solucionada_at = ahora; upd.resultado = 'equipo'; } else { upd.solucionada_at = null; upd.resultado = null; }
     hist.push({ tipo: 'estado', detalle: `${NOMBRE[antes] ?? antes} → ${NOMBRE[b.estado]}` });
   }
+  // Dirección corregida (dirección incompleta / no localizada). Se guarda aquí; Effi NO se modifica: se confirma y se copia.
+  if (typeof b?.direccion_corregida === 'string') {
+    const dir = b.direccion_corregida.replace(/\s+/g, ' ').trim().slice(0, 500);
+    upd.direccion_corregida = dir || null; upd.direccion_corregida_at = ahora; upd.direccion_corregida_por = auth.quien;
+    upd.direccion_confirmada = !!b.confirmar_direccion && !!dir;
+    hist.push({ tipo: 'nota', detalle: b.confirmar_direccion && dir ? `🏠 Dirección CONFIRMADA (pendiente de pasar a Effi / transportadora): ${dir}` : `🏠 Dirección corregida (borrador): ${dir || '—'}` });
+  }
   const nota = String(b?.nota ?? '').trim().slice(0, 2000);
   if (nota) hist.push({ tipo: 'nota', detalle: nota });
   if (!Object.keys(upd).length && !hist.length) return NextResponse.json({ ok: true });
@@ -75,7 +81,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   return NextResponse.json({ ok: true });
 }
 
-/** POST {tipo:'oficina'|'intento'|'direccion'} → manda YA el aviso a este cliente (con la plantilla aprobada; una sola vez). */
+/** POST {tipo:'oficina'|'intento'|'direccion'|'incompleta'} → manda YA el aviso a este cliente (con la plantilla aprobada; una sola vez). */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await exigirSesion();
   if (auth.error) return auth.error;
@@ -91,10 +97,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { data: f } = await supabase.from('avisos_oficina').select('estado, motivo').eq('id_guia_effi', n.id_guia_effi).maybeSingle();
     return NextResponse.json({ ok: false, error: r.error ?? (f?.estado === 'enviado' ? 'Ya se le había enviado.' : f?.motivo) ?? 'Esta guía ya no está en oficina en Effi.' }, { status: 400 });
   }
-  if (b?.tipo === 'intento' || b?.tipo === 'direccion') {
-    const srv = b.tipo === 'intento' ? (await import('@/lib/aviso-intento')).AVISO_INTENTO_SRV : (await import('@/lib/aviso-direccion')).AVISO_DIRECCION_SRV;
+  const { avisoTextoDe } = await import('@/lib/avisos-texto-registro');
+  const av = avisoTextoDe(b?.tipo);
+  if (av) {
+    const srv = av.srv;
     const caso = (await srv.novedadesEnCaso(supabase)).find((x: any) => x.id === n.id);
-    if (!caso) return NextResponse.json({ ok: false, error: b.tipo === 'intento' ? 'La novedad ya no está en intento de entrega.' : 'La novedad ya no es de dirección no localizada.' }, { status: 400 });
+    if (!caso) return NextResponse.json({ ok: false, error: `La novedad ya no es de «${srv.cfg.nombreCorto}».` }, { status: 400 });
     const r: any = await srv.procesar(supabase, [caso.clave], 1, { ignorarInterruptor: true });
     if (r.enviados) return NextResponse.json({ ok: true, mensaje: `✅ Aviso de ${srv.cfg.nombreCorto.toLowerCase()} enviado.` });
     const { data: f } = await supabase.from(srv.cfg.tabla).select('estado, detalle').eq('clave', caso.clave).maybeSingle();

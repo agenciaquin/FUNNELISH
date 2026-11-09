@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 
-import { AVISO_INTENTO, AVISO_DIRECCION } from './AvisoOficina';
+import { AVISO_INTENTO, AVISO_DIRECCION, AVISO_INCOMPLETA } from './AvisoOficina';
 
 const AvisoOficina = dynamic(() => import('./AvisoOficina'), { ssr: false });
 
@@ -16,7 +16,9 @@ const AvisoOficina = dynamic(() => import('./AvisoOficina'), { ssr: false });
 type Estado = 'nueva' | 'pendiente' | 'en_gestion' | 'solucionada';
 interface AvisoEstado { estado: string; enviado_at: string | null; respuesta: string | null; respuesta_at?: string | null; motivo?: string | null; detalle?: string | null }
 interface Novedad {
-  aplica_oficina?: boolean; aplica_intento?: boolean; aplica_direccion?: boolean;
+  aplica_oficina?: boolean; aplica_intento?: boolean; aplica_direccion?: boolean; aplica_incompleta?: boolean;
+  aviso_incompleta?: (AvisoEstado & { fotos?: number }) | null;
+  direccion_corregida?: string | null; direccion_corregida_at?: string | null; direccion_corregida_por?: string | null; direccion_confirmada?: boolean;
   aviso_oficina?: AvisoEstado | null; aviso_intento?: AvisoEstado | null; aviso_direccion?: (AvisoEstado & { fotos?: number }) | null;
   id: number; id_guia_effi: string; guia: string | null; transportadora: string | null; id_remision: string | null; vendedor: string | null;
   cliente: string | null; telefono: string | null; telefono_original: string | null; ciudad: string | null; departamento: string | null;
@@ -73,6 +75,7 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
   const [verAvisoOficina, setVerAvisoOficina] = useState(false);
   const [verAvisoIntento, setVerAvisoIntento] = useState(false);
   const [verAvisoDireccion, setVerAvisoDireccion] = useState(false);
+  const [verAvisoIncompleta, setVerAvisoIncompleta] = useState(false);
   const caja = useRef<HTMLDivElement>(null);
 
   useEffect(() => { memoria.filtro = filtro; }, [filtro]);
@@ -118,9 +121,9 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
 
   const visibles = useMemo(() => {
     const t = q.trim().toLowerCase(); const d = t.replace(/\D/g, '');
-    const enviado = (n: Novedad) => n.aviso_oficina?.estado === 'enviado' || n.aviso_intento?.estado === 'enviado' || n.aviso_direccion?.estado === 'enviado';
+    const enviado = (n: Novedad) => [n.aviso_oficina, n.aviso_intento, n.aviso_direccion, n.aviso_incompleta].some(a => a?.estado === 'enviado');
     const pendiente = (n: Novedad) => (n.aplica_oficina && n.aviso_oficina?.estado !== 'enviado') || (n.aplica_intento && n.aviso_intento?.estado !== 'enviado')
-      || (n.aplica_direccion && n.aviso_direccion?.estado !== 'enviado');
+      || (n.aplica_direccion && n.aviso_direccion?.estado !== 'enviado') || (n.aplica_incompleta && n.aviso_incompleta?.estado !== 'enviado');
     return lista.filter(n => (filtro === 'todas' || n.estado === filtro)
       && (filtroAviso === 'todos' || (filtroAviso === 'enviado' ? enviado(n) : pendiente(n))) && (!t
       || (n.cliente ?? '').toLowerCase().includes(t)
@@ -160,6 +163,7 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
               <p className="text-[12px] text-[#5B6B68]">Effi revisado {hace(ultEffi)}</p>
               {ultSync?.error_novedades && <p className="text-[11px] text-[#B54708] max-w-[260px] truncate" title={ultSync.error_novedades}>«Novedades de guías» de Effi no respondió</p>}
               {ultSync && ultSync.ok === false && <p className="text-[11px] text-[#B42318] max-w-[260px] truncate" title={ultSync.error}>Último intento falló: {ultSync.error}</p>}
+              <button onClick={() => setVerAvisoIncompleta(true)} className="mt-1 mr-2 px-4 py-2 rounded-xl border border-[#0E9384] text-[#0E7466] text-sm font-bold bg-white hover:bg-[#F0FDF9]">🏠 Aviso «Dirección incompleta»</button>
               <button onClick={() => setVerAvisoDireccion(true)} className="mt-1 mr-2 px-4 py-2 rounded-xl border border-[#7C3AED] text-[#6D28D9] text-sm font-bold bg-white hover:bg-[#F5F3FF]">📍 Aviso «Dirección no localizada»</button>
               <button onClick={() => setVerAvisoIntento(true)} className="mt-1 mr-2 px-4 py-2 rounded-xl border border-[#2563EB] text-[#1D4ED8] text-sm font-bold bg-white hover:bg-[#EFF6FF]">🚗 Aviso «Intento de entrega»</button>
               <button onClick={() => setVerAvisoOficina(true)} className="mt-1 mr-2 px-4 py-2 rounded-xl border border-[#F97316] text-[#C2410C] text-sm font-bold bg-white hover:bg-[#FFF7ED]">📲 Aviso «Listo para reclamar»</button>
@@ -254,6 +258,7 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
       {verAvisoOficina && <AvisoOficina onCerrar={() => setVerAvisoOficina(false)} />}
       {verAvisoIntento && <AvisoOficina config={AVISO_INTENTO} onCerrar={() => setVerAvisoIntento(false)} />}
       {verAvisoDireccion && <AvisoOficina config={AVISO_DIRECCION} onCerrar={() => setVerAvisoDireccion(false)} />}
+      {verAvisoIncompleta && <AvisoOficina config={AVISO_INCOMPLETA} onCerrar={() => setVerAvisoIncompleta(false)} />}
       {sel && <Detalle n={sel} onCerrar={() => setAbierta(null)} onCambio={cargar} onChat={() => abrirChat(sel)} />}
 
       {sinChat && (
@@ -429,6 +434,11 @@ function Detalle({ n, onCerrar, onCambio, onChat }: { n: Novedad; onCerrar: () =
               {d.resultado && fila('Resultado', RESULTADO[d.resultado] ?? d.resultado)}
             </div>
 
+            {(n.aplica_incompleta || n.aplica_direccion || d.direccion_corregida) && (
+              <DireccionCorregida d={d} direccion={direccion} respuestas={avisosR.flatMap(a => (Array.isArray(a.respuestas) ? a.respuestas : []).filter((r: any) => r.tipo === 'text').map((r: any) => r.contenido))}
+                onGuardar={async (dir, confirmar) => { await enviar({ direccion_corregida: dir, confirmar_direccion: confirmar }); avisar(confirmar ? '✅ Dirección confirmada' : '💾 Borrador guardado'); }}
+                onCopiar={t => copiar(t, avisar, 'Dirección corregida')} />
+            )}
             {avisosR.filter(a => a.estado === 'enviado').map(a => {
               const rs: any[] = Array.isArray(a.respuestas) ? a.respuestas : [];
               const fotos = rs.filter(r => r.tipo === 'image');
@@ -522,9 +532,10 @@ function ZonaAvisos({ n, onListo, onAviso }: { n: Novedad; onListo: () => void; 
     { k: 'oficina' as const, aplica: n.aplica_oficina, a: n.aviso_oficina, icono: '📲', nombre: 'aviso de oficina' },
     { k: 'intento' as const, aplica: n.aplica_intento, a: n.aviso_intento, icono: '🚗', nombre: 'aviso de intento de entrega' },
     { k: 'direccion' as const, aplica: n.aplica_direccion, a: n.aviso_direccion, icono: '📍', nombre: 'aviso de dirección no localizada' },
+    { k: 'incompleta' as const, aplica: n.aplica_incompleta, a: n.aviso_incompleta, icono: '🏠', nombre: 'aviso de dirección incompleta' },
   ].filter(t => t.aplica || (t.a && t.a.estado !== 'previo'));
   if (!tipos.length) return null;
-  const mandar = async (k: 'oficina' | 'intento' | 'direccion', nombre: string) => {
+  const mandar = async (k: 'oficina' | 'intento' | 'direccion' | 'incompleta', nombre: string) => {
     if (!confirm(`¿Mandarle ahora el ${nombre} a ${n.cliente ?? 'este cliente'} por WhatsApp?`)) return;
     setEnviando(k);
     const r = await fetch(`/api/novedades/${n.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tipo: k }) });
@@ -539,7 +550,7 @@ function ZonaAvisos({ n, onListo, onAviso }: { n: Novedad; onListo: () => void; 
         const e = t.a?.estado;
         if (e === 'enviado') return (
           <div key={t.k} className="rounded-lg bg-[#ECFDF3] border border-[#ABEFC6] px-2 py-1 text-[11.5px] text-[#067647]">
-            <b>{t.icono} {t.k === 'oficina' ? 'Aviso de oficina' : t.k === 'intento' ? 'Aviso de intento' : 'Aviso de dirección'} enviado</b> · {fecha(t.a!.enviado_at)} <span className="text-[#5B6B68]">(automático)</span>
+            <b>{t.icono} {({ oficina: 'Aviso de oficina', intento: 'Aviso de intento', direccion: 'Aviso de dirección', incompleta: 'Aviso de dirección incompleta' } as const)[t.k]} enviado</b> · {fecha(t.a!.enviado_at)} <span className="text-[#5B6B68]">(automático)</span>
             {t.a!.respuesta ? <p className="text-[#175CD3] truncate" title={t.a!.respuesta}>💬 Respondió: {t.a!.respuesta}{(t.a as any).fotos ? ` · 📷 ${(t.a as any).fotos} foto(s)` : ''}</p> : <p className="text-[#5B6B68]">Sin respuesta aún</p>}
           </div>
         );
@@ -555,6 +566,44 @@ function ZonaAvisos({ n, onListo, onAviso }: { n: Novedad; onListo: () => void; 
           </div>
         );
       })}
+    </div>
+  );
+}
+
+
+/**
+ * Dirección corregida de la novedad (dirección incompleta / no localizada). Se guarda en QuinChat como borrador o
+ * CONFIRMADA; Effi NO se modifica solo: con la dirección confirmada se copia para Effi y la transportadora.
+ */
+function DireccionCorregida({ d, direccion, respuestas, onGuardar, onCopiar }: {
+  d: Novedad; direccion: string; respuestas: string[];
+  onGuardar: (dir: string, confirmar: boolean) => Promise<void>; onCopiar: (t: string) => void;
+}) {
+  const [dir, setDir] = useState(d.direccion_corregida ?? d.direccion ?? '');
+  const [guardando, setGuardando] = useState(false);
+  useEffect(() => { setDir(d.direccion_corregida ?? d.direccion ?? ''); }, [d.direccion_corregida, d.direccion]);
+  const guardar = async (confirmar: boolean) => {
+    if (confirmar && !confirm(`¿Confirmar esta dirección?\n\n${dir}\n\nQuedará lista para pasarla a Effi y a la transportadora (QuinChat no modifica Effi solo).`)) return;
+    setGuardando(true); await onGuardar(dir, confirmar); setGuardando(false);
+  };
+  const paraCopiar = [`Guía: ${d.guia ?? ''} (${d.transportadora ?? ''})`, `Destinatario: ${d.cliente ?? ''} · Tel: ${d.telefono ?? ''}`,
+    `Dirección corregida: ${dir}`, `${d.ciudad ?? ''}${d.departamento ? `, ${d.departamento}` : ''}`].join('\n');
+  return (
+    <div className={`rounded-xl border p-3.5 ${d.direccion_confirmada ? 'border-[#ABEFC6] bg-[#F6FEF9]' : 'border-[#B2DDFF] bg-[#F5FAFF]'}`}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <p className="text-[12px] font-bold text-[#175CD3] flex-1">🏠 DIRECCIÓN CORREGIDA {d.direccion_confirmada ? <span className="text-[#067647]">· ✅ CONFIRMADA</span> : d.direccion_corregida ? '· borrador' : ''}</p>
+        {d.direccion_corregida_at && <span className="text-[11px] text-[#5B6B68]">{fecha(d.direccion_corregida_at)} · {d.direccion_corregida_por ?? ''}</span>}
+      </div>
+      <p className="text-[12px] text-[#5B6B68] mt-1">En Effi: <b>{direccion || '—'}</b></p>
+      {respuestas.length > 0 && <p className="text-[12px] text-[#175CD3] mt-1">💬 El cliente dijo: {respuestas.slice(-3).join(' · ')}</p>}
+      <textarea value={dir} onChange={e => setDir(e.target.value)} rows={2} placeholder="Dirección completa con torre, apartamento, barrio y referencia"
+        className="mt-2 w-full px-3 py-2 rounded-xl border border-[#E1E5E4] text-sm resize-none bg-white" />
+      <div className="flex gap-2 mt-2 flex-wrap">
+        <button disabled={guardando || !dir.trim()} onClick={() => guardar(false)} className="px-3 py-1.5 rounded-lg border border-[#E1E5E4] bg-white text-[12.5px] font-bold disabled:opacity-40">💾 Guardar borrador</button>
+        <button disabled={guardando || !dir.trim()} onClick={() => guardar(true)} className="px-3 py-1.5 rounded-lg bg-[#067647] text-white text-[12.5px] font-bold disabled:opacity-40">✅ Confirmar dirección</button>
+        {d.direccion_confirmada && <button onClick={() => onCopiar(paraCopiar)} className="px-3 py-1.5 rounded-lg bg-[#175CD3] text-white text-[12.5px] font-bold">📋 Copiar para Effi / transportadora</button>}
+      </div>
+      <p className="text-[11px] text-[#5B6B68] mt-1.5">QuinChat no cambia la dirección en Effi automáticamente: confírmala aquí y pásala a Effi o a la transportadora.</p>
     </div>
   );
 }

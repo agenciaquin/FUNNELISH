@@ -296,6 +296,13 @@ son solo su configuración; rutas `app/api/novedades/intento` y `/direccion` = `
 Respuestas: `respuestas` jsonb guarda TODO lo que manda el cliente tras el aviso (texto, fotos, ubicación, audio) y cada una va al
 historial; el detalle de la novedad las muestra con fotos y «Copiar para la transportadora». Llave guía:novedad («estado» si no hay
 novedad de Effi).
+**Aviso «Dirección incompleta» + registro de avisos (09-nov-2026, dueño):** `lib/aviso-incompleta.ts` (plantilla
+`novedad_direccion_incompleta`, 4 variables: nombre, ciudad, dirección registrada en Effi, guía; dispara con «699 - Dirección
+incompleta»; tabla `avisos_incompleta`; interruptor `ajustes_bot.aviso_incompleta`). Todos los avisos de texto están en
+`lib/avisos-texto-registro.ts` (`AVISOS_TEXTO`): la lista, el envío manual, el detalle, el cron y el panel los recorren; un aviso
+nuevo = su config + agregarlo ahí. Las variables pasan por `textoVariable` (Meta no acepta saltos de línea en parámetros).
+**Dirección corregida:** `novedades_effi.direccion_corregida/_at/_por/direccion_confirmada`. En el detalle (casos de dirección)
+se edita, se guarda como borrador o se CONFIRMA y se copia para Effi/transportadora. QuinChat NO escribe la dirección en Effi.
 **OJO tablas nuevas:** en este Supabase una tabla creada por migración NO trae permisos para `service_role`
 (salió «permission denied for table novedades_effi»). Siempre: `grant select, insert, update, delete on <tabla> to service_role`
 + `grant usage, select on sequence <tabla>_id_seq to service_role`.

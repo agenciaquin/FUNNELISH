@@ -29,7 +29,12 @@ export interface ConfigAvisoTexto {
   prefijoMsg: string;          // id de los mensajes (tpl-…)
   filtroOr: string;            // filtro PostgREST sobre novedades_effi
   coincide: (n: { estado_effi?: string | null; estado_effi_comercio?: string | null; novedad_texto?: string | null }) => boolean;
+  /** Variables de la plantilla con datos de Effi (por defecto: primer nombre, ciudad, guía). */
+  variables?: (n: any) => string[];
 }
+
+/** Texto apto para una variable de plantilla de Meta (sin saltos de línea, tabs ni muchos espacios seguidos). */
+export const textoVariable = (v: unknown) => String(v ?? '').replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim() || '—';
 
 const WA_API = 'https://graph.facebook.com/v19.0';
 const TOPE = 10;
@@ -38,6 +43,8 @@ const primerNombre = (n: unknown) => {
   return p ? p.charAt(0).toUpperCase() + p.slice(1).toLowerCase() : 'Hola';
 };
 const ciudadBonita = (c: unknown) => String(c ?? '').replace(/\s+/g, ' ').trim() || 'tu ciudad';
+export const VARS_BASICAS = (n: any) => [primerNombre(n.cliente), ciudadBonita(n.ciudad), String(n.guia)];
+export { primerNombre, ciudadBonita };
 
 export interface AjustesAviso { activo: boolean; desde?: string | null; horas: [number, number]; plantilla_creada_at?: string | null }
 
@@ -92,7 +99,7 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
   /** Tarjetas del Panel de Novedades que HOY están en este caso. */
   async function novedadesEnCaso(supabase: any) {
     const { data } = await supabase.from('novedades_effi')
-      .select('id, id_guia_effi, id_novedad_effi, guia, telefono, cliente, ciudad, vendedor, estado_effi, estado_effi_comercio, novedad_texto, motivo, estado')
+      .select('id, id_guia_effi, id_novedad_effi, guia, telefono, cliente, ciudad, departamento, direccion, vendedor, estado_effi, estado_effi_comercio, novedad_texto, motivo, estado')
       .eq('activa_en_effi', true).neq('estado', 'solucionada').or(cfg.filtroOr).limit(300);
     return (data ?? []).filter((n: any) => cfg.coincide(n)).map((n: any) => ({ ...n, clave: `${n.id_guia_effi}:${n.id_novedad_effi || 'estado'}` }));
   }
@@ -154,7 +161,7 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
       const labels = String(c?.label ?? '').split('|').map((x: string) => x.trim()).filter(Boolean);
       if (labels.some((l: string) => l.toUpperCase() === 'NO ENVIAR RECORDATORIO')) { await marcar('omitido', { detalle: 'Pidió no recibir mensajes' }); res.omitidos++; continue; }
 
-      const variables = [primerNombre(n.cliente), ciudadBonita(n.ciudad), String(n.guia)];   // datos reales de Effi
+      const variables = (cfg.variables ?? VARS_BASICAS)(n).map(textoVariable);   // datos reales de Effi
       const linea = lineaDeVendedor(n.vendedor);                                              // por el chat donde compró
       const r = await enviar(conv, tpl.idioma, variables, linea);
       if (!r.ok) { await marcar('error', { detalle: r.error }); res.errores++; continue; }
