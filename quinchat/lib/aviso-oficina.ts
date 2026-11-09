@@ -22,7 +22,7 @@ export const CUERPO_OFICINA = [
   '📦🎉 ¡Hola, {{1}}! ¡Tu pedido ya te está esperando!',
   '😍 Tu paquete de KLIXMANT ya llegó a la oficina de Interrapidísimo y está listo para reclamar.',
   '🚚 Número de guía: {{2}}',
-  '⏰ ¡No dejes que sea devuelto! Recógelo en un máximo de 3 días hábiles y disfruta de tu nueva prenda. 🔥',
+  '⏰ ¡No dejes que sea devuelto! Recógelo en un máximo de 4 días hábiles y disfruta de tu nueva prenda. 🔥',
   '💚 ¿Nos confirmas cuándo pasarás por él?',
 ].join('\n');
 export const BOTONES_OFICINA = ['✅ Reclamo hoy', '📅 Reclamo mañana', '💬 Necesito ayuda'];
