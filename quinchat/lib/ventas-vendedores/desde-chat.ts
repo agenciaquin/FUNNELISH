@@ -55,10 +55,12 @@ function codigoNuevo(): string {
 }
 
 /** Foto del producto más reciente que mandó el bot/asesor en el chat. */
-async function fotoDelChat(supabase: any, conv: string): Promise<string | null> {
+async function fotoDelChat(supabase: any, conv: string, despuesDe = 0): Promise<string | null> {
   try {
-    const { data } = await supabase.from('messages').select('content')
-      .eq('conversation_id', conv).eq('type', 'image').in('role', ['assistant', 'agent'])
+    let q = supabase.from('messages').select('content')
+      .eq('conversation_id', conv).eq('type', 'image').in('role', ['assistant', 'agent']);
+    if (despuesDe) q = q.gt('created_at', new Date(despuesDe + 60_000).toISOString());
+    const { data } = await q
       .not('id', 'like', 'evid-%').not('content', 'ilike', `%${EVIDENCIA_CATALOGO_ID}%`)
       .order('created_at', { ascending: false }).limit(5);
     const f = (data ?? []).find((m: any) => typeof m.content === 'string' && m.content.startsWith('http'));
@@ -81,6 +83,9 @@ const SISTEMA =
   `Si en el chat hay VARIAS compras, los datos son SOLO de la compra MÁS RECIENTE (la del pedido); ignora las anteriores.\n` +
   `PRIORIDAD: los mensajes van en orden de tiempo. Si un dato cambia (nombre, celular, dirección, ciudad, color, talla, producto, ` +
   `oficina, abono), SIEMPRE vale el ÚLTIMO que dijo el CLIENTE o el ASESOR, aunque el pedido diga otra cosa.\n` +
+  `FOTO DEL PRODUCTO: si el ASESOR [envió la FOTO del producto: X · COLOR] y luego dice "sería este color", "te lo cambio", ` +
+  `"este" o el cliente lo acepta / no lo rechaza, ESA prenda y ESE color reemplazan a los del pedido (ej. el pedido dice NEGRO y el ` +
+  `asesor mandó la foto «REAL MADRID · BEIGE» diciendo "sería este color" → color = "Beige").\n` +
   `REGLAS: usa el pedido como base y aplica lo que el CLIENTE o el ASESOR acordaron después en el chat (el último valor manda: ` +
   `si cambiaron un color, una talla o la dirección, usa lo nuevo). No inventes: si no aparece, "" o null. ` +
   `celular 10 dígitos. cedula solo si el cliente la escribió (nunca el celular). ` +
@@ -111,8 +116,10 @@ export async function prellenarDesdeChat(conv: string) {
       .select('id, nombre, telefono, correo, direccion, ciudad, departamento, producto, talla, valor, cantidad, abono, abono_recibido, foto_producto, funnel_slug, created_at')
       .in('telefono', [tel, `57${tel}`]).is('papelera_at', null)
       .order('created_at', { ascending: false }).limit(1),
-    supabase.from('messages').select('content, role, created_at')
-      .eq('conversation_id', conv).eq('type', 'text')
+    // Texto + fotos de producto CON LETRERO que manda el asesor/bot (ej. «REAL MADRID · BEIGE»): si el asesor
+    // cambió el color mandando la foto, la IA tiene que verlo (09-nov-2026, venta de Cristian Figueredo).
+    supabase.from('messages').select('content, role, created_at, type, caption')
+      .eq('conversation_id', conv).in('type', ['text', 'image'])
       .order('created_at', { ascending: false }).limit(40),
     supabase.from('vv_ventas').select('id, codigo, estado, effi_remision, creado_at')
       .eq('conversacion_id', conv).neq('estado', 'cancelada')
@@ -140,7 +147,10 @@ export async function prellenarDesdeChat(conv: string) {
   const desde = pedido ? tPedido : inicioConversacion;
   const charla = enOrden
     .filter((m: any) => !desde || new Date(m.created_at).getTime() >= desde)
-    .filter((m: any) => typeof m.content === 'string' && m.content.trim() && !m.content.startsWith('http'))
+    .map((m: any) => (m.type === 'image'
+      ? (s(m.caption) && m.role !== 'user' ? { ...m, content: `[envió la FOTO del producto: ${s(m.caption)}]` } : null)
+      : m))
+    .filter((m: any) => m && typeof m.content === 'string' && m.content.trim() && !m.content.startsWith('http'))
     .map((m: any) => `${m.role === 'user' ? 'CLIENTE' : m.role === 'agent' ? 'ASESOR' : 'BOT'}: ${m.content.trim().slice(0, 500)}`)
     .join('\n').slice(-6000);
   const datosPedido = pedido
@@ -243,7 +253,9 @@ export async function prellenarDesdeChat(conv: string) {
     });
   }
 
-  const fotoChat = pedido?.foto_producto || (await fotoDelChat(supabase, conv));
+  // La foto que el asesor/bot mandó DESPUÉS del pedido (cambio de color) manda sobre la del pedido
+  const fotoReciente = await fotoDelChat(supabase, conv, pedido ? tPedido : 0);
+  const fotoChat = fotoReciente || pedido?.foto_producto || (await fotoDelChat(supabase, conv));
   const vendedor = await vendedorDelChat(supabase, conv);
   return {
     vendedor: vendedor.nombre,

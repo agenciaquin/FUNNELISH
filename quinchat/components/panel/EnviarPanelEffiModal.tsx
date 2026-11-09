@@ -119,7 +119,9 @@ function TarjetaPrenda({ n, inicial, fotoChat, cantidad, precio, onCantidad, onP
   };
   const elegirProducto = async (p: Producto) => {
     setBuscando(false); setResultados([]);
-    await cargarProducto(p.id_item, color || inicial.color, variante?.talla ?? inicial.talla, variante?.genero ?? inicial.genero);
+    // El color es el de la prenda ELEGIDA (cada producto del catálogo es un color): antes se forzaba el color
+    // anterior (NEGRO) y al elegir la BEIGE seguía saliendo la negra con su foto (09-nov-2026).
+    await cargarProducto(p.id_item, '', variante?.talla ?? inicial.talla, variante?.genero ?? inicial.genero);
   };
   const subirFoto = async (f: File) => {
     setSubiendo(true);
