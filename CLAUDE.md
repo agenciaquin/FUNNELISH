@@ -234,6 +234,8 @@ servidor: `app/api/mi-pagina/evento` (público, mismo event_id que el navegador)
 Es un «Arma tu pack» x2 con `armarPack.pasos = [{prenda:'CAMISETA', categorias:[…]}, {prenda:'BUZO', categorias:[…]}]`:
 `ArmarPackSelector` muestra en cada paso SOLO sus opciones y «ELIGE TU CAMISETA / ELIGE TU BUZO». Sin `pasos` el «Arma tu pack»
 de siempre queda idéntico (el dueño lo usa: NO tocarlo). El pedido sale igual que un pack x2 («PACK X2 — …», collage x2).
+**UNIDAD POR MARCAS (10-nov-2026, dueño):** botón «👕 Unidad por marcas» = misma lógica con `unidades:1` y UN paso
+(`pasos:[{prenda, categorias}]`): «ELIGE TU CAMISETA» → marca/equipo → color → talla. El «Arma tu unidad» viejo no cambia.
 
 ### 10 · Master Vendedores (08-nov-2026), módulo independiente
 

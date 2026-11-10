@@ -151,7 +151,9 @@ export default function ArmarPackSelector({
       `}</style>
       <p className="text-center text-[11.5px] text-[#6B6B6B]">
         {pasosCfg
-          ? <>🧩 Arma tu pack: elige <b>{pasosCfg.map((p, k) => (k ? ' + ' : '') + p.prenda.toLowerCase()).join('')}</b> con su <b>{catLabel}, color y talla</b>.</>
+          ? (unidades === 1
+            ? <>🧩 Arma tu <b>{prendaDe(0).toLowerCase()}</b>: elige <b>{catLabel}, color y talla</b>.</>
+            : <>🧩 Arma tu pack: elige <b>{pasosCfg.map((p, k) => (k ? ' + ' : '') + p.prenda.toLowerCase()).join('')}</b> con su <b>{catLabel}, color y talla</b>.</>)
           : <>🧩 Arma tu {unidades > 1 ? `pack de ${unidades}` : prendaLabel}: completa <b>{catLabel}, color y talla</b>{unidades > 1 ? ` de cada ${prendaLabel}` : ''}.</>}
       </p>
       {buzos.map((b, i) => {

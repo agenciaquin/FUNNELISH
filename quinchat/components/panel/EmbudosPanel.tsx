@@ -223,7 +223,7 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
   const [catalogosFull, setCatalogosFull] = useState<any[]>([]);
   const [packConEscuderia, setPackConEscuderia] = useState(false);
   // Selector de escuderías para "arma tu pack" (elegir solo las que se quieran)
-  const [packPicker, setPackPicker] = useState<{ vi: number; cantidad: number; modo?: 'buzo_camiseta' } | null>(null);
+  const [packPicker, setPackPicker] = useState<{ vi: number; cantidad: number; modo?: 'buzo_camiseta' | 'unidad_marcas' } | null>(null);
   const [packSel, setPackSel]       = useState<Set<string>>(new Set());
   // PACK BUZO Y CAMISETA: lo elegido para el paso 2 (buzos); packSel = paso 1 (camisetas)
   const [packSel2, setPackSel2]     = useState<Set<string>>(new Set());
@@ -1860,6 +1860,21 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
                       }}
                       className="px-3 py-1.5 rounded-lg border border-[#059669]/50 text-[11px] text-[#065F46] bg-[#059669]/5 hover:bg-[#059669]/10 font-semibold"
                     >👕🧥 Pack buzo y camiseta</button>
+
+                    {/* UNIDAD POR MARCAS (10-nov-2026): una sola prenda; el cliente elige la marca/equipo, luego color y talla.
+                        Misma lógica que el pack buzo y camiseta pero de 1. Opción APARTE: lo de arriba sigue igual. */}
+                    <button
+                      onClick={() => {
+                        if (catalogosFull.length === 0) {
+                          alert('No hay catálogos en Catálogos.\n\nCrea las marcas/equipos con sus colores y foto. Luego vuelve aquí.');
+                          return;
+                        }
+                        setPackSel(new Set(v.armarPack?.unidades === 1 && v.armarPack?.pasos?.length ? v.armarPack.pasos[0].categorias : []));
+                        setPackBusca('');
+                        setPackPicker({ vi: i, cantidad: 1, modo: 'unidad_marcas' });
+                      }}
+                      className="px-3 py-1.5 rounded-lg border border-[#059669]/50 text-[11px] text-[#065F46] bg-[#059669]/5 hover:bg-[#059669]/10 font-semibold"
+                    >👕 Unidad por marcas</button>
                     </>)}
 
                     {v.armarPack && (
@@ -1894,7 +1909,9 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
                     <div className="mt-2 rounded-lg border-2 border-[#7C3AED] bg-white p-3">
                       {packPicker.modo === 'buzo_camiseta'
                         ? <p className="text-[12px] font-bold text-[#065F46] mb-1">👕🧥 Pack buzo y camiseta: marca qué va en el <b>paso 1 (👕 camisetas)</b> y qué en el <b>paso 2 (🧥 buzos)</b></p>
-                        : <p className="text-[12px] font-bold text-[#5B21B6] mb-1">🧩 Elige las escuderías {packPicker.cantidad === 1 ? 'para la unidad' : `para el pack x${packPicker.cantidad}`}</p>}
+                        : packPicker.modo === 'unidad_marcas'
+                          ? <p className="text-[12px] font-bold text-[#065F46] mb-1">👕 Unidad por marcas: marca las opciones que el cliente podrá elegir (ej. 4 equipos). Después elige color y talla.</p>
+                          : <p className="text-[12px] font-bold text-[#5B21B6] mb-1">🧩 Elige las escuderías {packPicker.cantidad === 1 ? 'para la unidad' : `para el pack x${packPicker.cantidad}`}</p>}
                       <input
                         value={packBusca}
                         onChange={e => setPackBusca(e.target.value)}
@@ -1987,6 +2004,22 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
                               }))
                               .filter((c: any) => c.colores.length > 0);
                             if (!categorias.length) { alert('Elige al menos una escudería que tenga colores con foto.'); return; }
+                            if (packPicker.modo === 'unidad_marcas') {
+                              // Unidad por marcas: se conservan logo, color y nombres que ya tuviera
+                              const previas = new Map((v.armarPack?.categorias ?? []).map((c: any) => [c.nombre, c]));
+                              const prenda = (v.armarPack?.unidades === 1 && v.armarPack?.pasos?.[0]?.prenda) || 'CAMISETA';
+                              cambiar({
+                                armarPack: {
+                                  unidades: 1,
+                                  categorias: categorias.map((c: any) => ({ ...c, logo: previas.get(c.nombre)?.logo, color: previas.get(c.nombre)?.color })),
+                                  tallas: v.armarPack?.tallas ?? actual.tallas, labelCategoria: v.armarPack?.labelCategoria, labelPrenda: 'prenda',
+                                  pasos: [{ prenda, categorias: categorias.map((c: any) => c.nombre) }],
+                                },
+                                selectores: [],
+                              });
+                              setPackPicker(null);
+                              return;
+                            }
                             cambiar({ armarPack: { unidades: packPicker.cantidad, categorias, tallas: actual.tallas }, selectores: [] });
                             setPackPicker(null);
                           }}
@@ -2002,7 +2035,9 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
                   {v.armarPack && (
                     <div className="mt-2 rounded-lg border-2 border-[#7C3AED]/40 bg-[#7C3AED]/5 p-2.5">
                       <p className="text-[11px] text-[#5B21B6]">
-                        {v.armarPack.pasos?.length
+                        {v.armarPack.pasos?.length === 1
+                          ? <>👕 <b>Unidad por marcas ACTIVA</b> · {v.armarPack.pasos[0]?.categorias.length ?? 0} opciones para elegir. <b>Guarda</b> para dejarlo aplicado.</>
+                          : v.armarPack.pasos?.length
                           ? <>👕🧥 <b>Pack buzo y camiseta ACTIVO</b> · paso 1: {v.armarPack.pasos[0]?.categorias.length ?? 0} opciones · paso 2: {v.armarPack.pasos[1]?.categorias.length ?? 0} opciones. <b>Guarda</b> para dejarlo aplicado.</>
                           : <>🧩 <b>Arma tu pack ACTIVO</b> · pack de {v.armarPack.unidades} · {v.armarPack.categorias?.length ?? 0} categorías, {v.armarPack.categorias?.reduce((s: number, c: any) => s + (c.colores?.length ?? 0), 0) ?? 0} colores. <b>Guarda</b> para dejarlo aplicado.</>}
                       </p>
@@ -2011,7 +2046,7 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
                         <div className="grid grid-cols-2 gap-2 mt-2">
                           {v.armarPack.pasos.map((p, pi) => (
                             <div key={pi}>
-                              <label className="block text-[10px] text-[#6B6B6B] mb-0.5">Prenda del paso {pi + 1}</label>
+                              <label className="block text-[10px] text-[#6B6B6B] mb-0.5">{v.armarPack!.pasos!.length === 1 ? 'Nombre de la prenda (sale en «ELIGE TU …»)' : `Prenda del paso ${pi + 1}`}</label>
                               <input
                                 value={p.prenda}
                                 onChange={e => cambiar({ armarPack: { ...v.armarPack!, pasos: v.armarPack!.pasos!.map((x, k) => (k === pi ? { ...x, prenda: e.target.value } : x)) } })}
