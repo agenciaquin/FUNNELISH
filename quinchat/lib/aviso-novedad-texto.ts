@@ -31,6 +31,14 @@ export interface ConfigAvisoTexto {
   coincide: (n: { estado_effi?: string | null; estado_effi_comercio?: string | null; novedad_texto?: string | null }) => boolean;
   /** Variables de la plantilla con datos de Effi (por defecto: primer nombre, ciudad, guía). */
   variables?: (n: any) => string[];
+  /** Botones de respuesta rápida (si Meta no acepta emojis en botones, se crean sin emoji). */
+  botones?: string[];
+  /** Columnas extra de novedades_effi que necesita la config (permitido / alResponder). */
+  camposExtra?: string;
+  /** Motivo para NO enviar a esta novedad (null = se puede). Ej.: cancelación definitiva. */
+  permitido?: (n: any) => string | null;
+  /** Se llama con cada respuesta NUEVA del cliente (para marcar la novedad: reentrega, cancelación…). */
+  alResponder?: (supabase: any, fila: any, nuevas: { tipo: string; contenido: string }[]) => Promise<void>;
 }
 
 /** Texto apto para una variable de plantilla de Meta (sin saltos de línea, tabs ni muchos espacios seguidos). */
@@ -73,13 +81,19 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
   async function crearPlantilla(): Promise<{ ok: boolean; status?: string; error?: string }> {
     const token = process.env.WHATSAPP_ACCESS_TOKEN, waba = process.env.WHATSAPP_WABA_ID;
     if (!token || !waba) return { ok: false, error: 'Falta configurar WHATSAPP_WABA_ID o el token de WhatsApp.' };
-    const res = await fetch(`${WA_API}/${waba}/message_templates`, {
-      method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: cfg.plantilla, category: 'UTILITY', language: 'es',
-        components: [{ type: 'BODY', text: cfg.cuerpo, example: { body_text: [cfg.ejemplo] } }] }),
-    });
-    const data = await res.json().catch(() => ({}));
-    return res.ok ? { ok: true, status: data.status } : { ok: false, error: String(data?.error?.error_user_msg ?? data?.error?.message ?? 'Meta no aceptó la plantilla') };
+    const crear = async (botones: string[]) => {
+      const components: any[] = [{ type: 'BODY', text: cfg.cuerpo, example: { body_text: [cfg.ejemplo] } }];
+      if (botones.length) components.push({ type: 'BUTTONS', buttons: botones.slice(0, 3).map(t => ({ type: 'QUICK_REPLY', text: t.slice(0, 25) })) });
+      const res = await fetch(`${WA_API}/${waba}/message_templates`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: cfg.plantilla, category: 'UTILITY', language: 'es', components }),
+      });
+      const data = await res.json().catch(() => ({}));
+      return res.ok ? { ok: true, status: data.status } : { ok: false, error: String(data?.error?.error_user_msg ?? data?.error?.message ?? 'Meta no aceptó la plantilla') };
+    };
+    const r1 = await crear(cfg.botones ?? []);
+    if (r1.ok || !cfg.botones?.length || !/button|bot[oó]n|emoji|character|caracter/i.test(r1.error ?? '')) return r1;
+    return crear(cfg.botones.map(b => b.replace(/^[^\p{L}\p{N}]+/u, '').trim()));
   }
   async function enviar(to: string, idioma: string, variables: string[], linea: LineaAviso) {
     const token = process.env.WHATSAPP_ACCESS_TOKEN, phone = phoneIdDeLinea(linea);
@@ -99,7 +113,7 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
   /** Tarjetas del Panel de Novedades que HOY están en este caso. */
   async function novedadesEnCaso(supabase: any) {
     const { data } = await supabase.from('novedades_effi')
-      .select('id, id_guia_effi, id_novedad_effi, guia, telefono, cliente, ciudad, departamento, direccion, vendedor, estado_effi, estado_effi_comercio, novedad_texto, motivo, estado')
+      .select(`id, id_guia_effi, id_novedad_effi, guia, telefono, cliente, ciudad, departamento, direccion, vendedor, estado_effi, estado_effi_comercio, novedad_texto, motivo, estado${cfg.camposExtra ? `, ${cfg.camposExtra}` : ''}`)
       .eq('activa_en_effi', true).neq('estado', 'solucionada').or(cfg.filtroOr).limit(300);
     return (data ?? []).filter((n: any) => cfg.coincide(n)).map((n: any) => ({ ...n, clave: `${n.id_guia_effi}:${n.id_novedad_effi || 'estado'}` }));
   }
@@ -117,6 +131,12 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
 
   async function procesar(supabase?: any, manual?: string[], tope = TOPE, opc: { ignorarInterruptor?: boolean } = {}) {
     supabase = supabase ?? createServerSupabaseClient();
+    // Primero se leen las respuestas de los avisos ya enviados (para que reaccione: reentrega, cancelación…)
+    try {
+      const { data: env } = await supabase.from(cfg.tabla).select('*').eq('estado', 'enviado')
+        .gte('enviado_at', new Date(Date.now() - 5 * 86400_000).toISOString()).limit(40);
+      if (env?.length) await completarRespuestas(supabase, env);
+    } catch (e) { console.error(`[Aviso ${cfg.clave}] respuestas:`, e); }
     const conf = await ajustes(supabase);
     const res: Record<string, any> = { enviados: 0, omitidos: 0, errores: 0, pendientes: 0 };
     if (!conf.activo && !opc.ignorarInterruptor) return { ...res, apagado: true };
@@ -153,6 +173,8 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
       const tel = String(n.telefono ?? '');
       if (!/^3\d{9}$/.test(tel)) { await marcar('omitido', { detalle: 'Teléfono inválido en Effi' }); res.omitidos++; continue; }
       if (!n.guia) { await marcar('omitido', { detalle: 'La guía no tiene número' }); res.omitidos++; continue; }
+      const noPermitido = cfg.permitido?.(n);
+      if (noPermitido) { await marcar('omitido', { detalle: noPermitido }); res.omitidos++; continue; }
       const conv = `57${tel}`;
       const { data: reciente } = await supabase.from(cfg.tabla).select('clave').eq('telefono', tel).eq('estado', 'enviado')
         .neq('clave', n.clave).gte('enviado_at', new Date(Date.now() - 48 * 3600_000).toISOString()).limit(1);
@@ -171,6 +193,7 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
 
       try {
         let texto = cfg.cuerpo; variables.forEach((v, i) => { texto = texto.replace(new RegExp(`\\{\\{\\s*${i + 1}\\s*\\}\\}`, 'g'), v); });
+        if (cfg.botones?.length) texto += `\n\n[${cfg.botones.join('] [')}]`;
         await supabase.from('conversations').upsert({
           id: conv, contact_name: String(n.cliente ?? tel), last_message: recortar(texto, 100), last_message_time: ahora,
           unread_count: 0, linea, oculto: true, bot_enabled: false,
@@ -220,6 +243,7 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
         upd.respuesta = primera ? (primera.tipo === 'text' ? primera.contenido.slice(0, 300) : primera.tipo === 'image' ? '📷 Envió una foto' : `📎 ${primera.tipo}`) : null;
         upd.respuesta_at = upd.respuesta_at ?? (f.respuesta_at || todas[0]?.at || null);
         Object.assign(f, upd);
+        if (cfg.alResponder) { try { await cfg.alResponder(supabase, f, nuevas); } catch (e) { console.error(`[Aviso ${cfg.clave}] alResponder:`, e); } }
         if (f.novedad_id) await supabase.from('novedades_effi_historial').insert(nuevas.map((r: any) => ({
           novedad_id: f.novedad_id, tipo: 'nota', por: 'Cliente',
           detalle: r.tipo === 'text' ? `💬 Respondió: ${r.contenido}` : r.tipo === 'image' ? `📷 Envió una foto${r.caption ? `: ${r.caption}` : ''} ${r.contenido}`
@@ -245,7 +269,7 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
       let enNovedad = 0;
       try { enNovedad = (await novedadesEnCaso(supabase)).length; } catch { /* nada */ }
       return NextResponse.json({
-        ajustes: conf, plantilla: { nombre: cfg.plantilla, cuerpo: cfg.cuerpo, botones: [], ...tpl },
+        ajustes: conf, plantilla: { nombre: cfg.plantilla, cuerpo: cfg.cuerpo, botones: cfg.botones ?? [], ...tpl },
         avisos: filas.map((f: any) => ({ ...f, novedad: f.motivo, motivo: f.detalle })), en_novedad: enNovedad,
         contadores: { enviado: cuenta('enviado'), respondieron: filas.filter((f: any) => f.respuesta).length, previo: cuenta('previo'), error: cuenta('error'), omitido: cuenta('omitido') },
       });

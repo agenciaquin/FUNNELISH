@@ -238,6 +238,7 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
   const [totalPedido, setTotalPedido] = useState(0);
   const [fotoChat, setFotoChat] = useState<string | null>(null);
   const [existente, setExistente] = useState<any>(null);
+  const [recompra, setRecompra] = useState<{ desde: string } | null>(null);
   const [vendedor, setVendedor] = useState('');
   const [forzar, setForzar] = useState(false);
   const [guardando, setGuardando] = useState(false);
@@ -305,6 +306,7 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
         if (!r.ok) { setErrorCarga(j.error || 'No se pudieron leer los datos del chat'); return; }
         setDatos(j.datos ?? {});
         setExistente(j.existente ?? null);
+        setRecompra(j.recompra ?? null);
         setVendedor(j.vendedor ?? '');
         setFotoChat(j.foto_chat ?? null);
         setTotalPedido(Number(j.total) || 0);
@@ -440,6 +442,11 @@ export default function EnviarPanelEffiModal({ conv, onCerrar, onListo }: { conv
             <div className="rounded-xl bg-[#FEE2E2] text-[#B91C1C] px-4 py-3 text-[14px]">{errorCarga}</div>
           ) : (
             <div className="space-y-4">
+              {recompra && !existente && (
+                <div className="rounded-xl bg-[#ECFDF5] text-[#065F46] px-4 py-2.5 text-[13px]">
+                  🎁 <b>Nuevo pedido (recompra con descuento).</b> Al cliente se le envió el descuento el {new Date(recompra.desde).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })}: su compra anterior ya no cuenta y los datos se leen desde ese día. Revisa producto y valor.
+                </div>
+              )}
               {existente && (
                 <div className="rounded-xl bg-[#FEF3C7] text-[#92400E] px-4 py-2.5 text-[13px] flex items-center gap-3 flex-wrap">
                   <span>⚠️ Este chat ya tiene la preventa <b>{existente.codigo}</b> ({existente.estado}{existente.effi_remision ? ` · remisión ${existente.effi_remision}` : ''}).</span>

@@ -365,15 +365,20 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
   const [yaEnEffiOpen, setYaEnEffiOpen] = useState(false); // 🔗 marcar a mano «ya está en Effi»
   // Preventa ya enviada al panel de Effi desde este chat → el botón se pinta azul
   const [enPanelEffi, setEnPanelEffi] = useState<{ codigo: string; estado: string; effi_remision: string | null; manual?: boolean; vinculo?: { remision: string; telefono_effi: string } } | null>(null);
+  // RECOMPRA (10-nov-2026): al cliente ya se le mandó el DESCUENTO → su compra anterior (aunque esté en Effi)
+  // no bloquea: aparece «Subir nuevo pedido a Effi».
+  const [recompraEffi, setRecompraEffi] = useState<{ desde: string; anterior: { codigo?: string; effi_remision?: string | null } | null } | null>(null);
   const revisarPanelEffi = async (convId: string) => {
     try {
       const r = await fetch(`/api/ventas-vendedores/desde-chat?existe=${encodeURIComponent(convId)}`, { cache: 'no-store' });
       const j = await r.json().catch(() => ({}));
       setEnPanelEffi(prev => (convId === conversation?.id ? (j.existente ?? null) : prev));
+      setRecompraEffi(prev => (convId === conversation?.id ? (j.recompra ?? null) : prev));
     } catch { /* sin estado: el botón queda verde */ }
   };
   useEffect(() => {
     setEnPanelEffi(null);
+    setRecompraEffi(null);
     if (conversation?.id) revisarPanelEffi(conversation.id);
   }, [conversation?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [currentLabel, setCurrentLabel] = useState<string | null>(null);
@@ -1095,7 +1100,9 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
             onClick={e => { e.stopPropagation(); setMenuOpen(false); setPanelEffiOpen(true); }}
             title={enPanelEffi
               ? `Ya está en el panel de Effi: preventa ${enPanelEffi.codigo}${enPanelEffi.effi_remision ? ` · remisión ${enPanelEffi.effi_remision}` : ''}`
-              : 'Revisar los datos del pedido y pasarlo al panel de Effi'}
+              : recompraEffi
+                ? `Al cliente se le envió el descuento: es una compra NUEVA.${recompraEffi.anterior?.effi_remision ? ` La anterior ya está en Effi (remisión ${recompraEffi.anterior.effi_remision}).` : ''}`
+                : 'Revisar los datos del pedido y pasarlo al panel de Effi'}
             // Amarillo = sin subir al panel · Verde = en el panel · Azul = ya subida a Effi (remisión)
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
               enPanelEffi?.effi_remision
@@ -1106,7 +1113,14 @@ export default function ChatArea({ conversation, messages, onMessageSent, onConv
             }`}
           >{enPanelEffi
             ? (enPanelEffi.effi_remision ? `✅ En Effi · remisión ${enPanelEffi.effi_remision}` : '✅ Venta enviada al panel de Effi')
-            : '🧾 Enviar al panel de Effi'}</button>
+            : recompraEffi ? '🧾 Subir nuevo pedido a Effi' : '🧾 Enviar al panel de Effi'}</button>
+          {/* Compra anterior (antes del descuento) que ya está en Effi: solo informa */}
+          {!enPanelEffi && recompraEffi?.anterior?.effi_remision && (
+            <span title="Compra anterior del cliente (antes del descuento)"
+              className="px-1.5 py-0.5 rounded-full border border-[#BFDBFE] text-[9.5px] font-medium text-[#1D4ED8] bg-[#EFF6FF] whitespace-nowrap">
+              🎁 Anterior en Effi · {recompraEffi.anterior.effi_remision}
+            </span>
+          )}
           {/* Botón pequeño: la venta ya está en Effi (p. ej. con otro número del cliente) → se verifica y se marca */}
           {!enPanelEffi?.effi_remision || enPanelEffi?.vinculo ? (
             <button

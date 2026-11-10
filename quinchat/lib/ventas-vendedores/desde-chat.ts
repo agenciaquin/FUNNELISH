@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from '@/lib/supabase';
 import { EVIDENCIA_CATALOGO_ID } from '@/lib/sin-evidencia';
 import { buscarCandidatos, resolverVariante, nombreGenero, type Candidato } from './ia';
 import { sinTildes, limpiarTalla, ultimaSync, sincronizarCatalogo } from './catalogo';
+import { descuentoDe } from './recompra';
 
 /**
  * «ENVIAR AL PANEL DE EFFI» desde un chat de cliente (07-nov-2026).
@@ -143,8 +144,15 @@ export async function prellenarDesdeChat(conv: string) {
   // (Si es de hace 1–3 días y el cliente vuelve hoy a corregir algo, sigue siendo la misma compra.)
   const pedidoViejo = !!pedidoLeido && !!inicioConversacion && tPedido < inicioConversacion - 3600_000
     && Date.now() - tPedido > 3 * 86400_000;
-  const pedido: any = pedidoLeido && !pedidoViejo ? pedidoLeido : null;
-  const desde = pedido ? tPedido : inicioConversacion;
+  // RECOMPRA tras el DESCUENTO (10-nov-2026): el pedido de ANTES del descuento es la compra vieja.
+  // Sus datos de CLIENTE (nombre, dirección…) sirven de base; el producto, el valor y el abono no.
+  // La conversación se lee desde el descuento.
+  const desc = await descuentoDe(supabase, conv);
+  const tDesc = desc ? new Date(desc).getTime() : 0;
+  const pedidoAntesDesc = !!pedidoLeido && !!tDesc && tPedido < tDesc;
+  const pedido: any = pedidoLeido && !pedidoViejo && !pedidoAntesDesc ? pedidoLeido : null;
+  const clienteBase: any = pedido ?? (pedidoAntesDesc ? pedidoLeido : null);
+  const desde = Math.max(pedido ? tPedido : inicioConversacion, tDesc);
   const charla = enOrden
     .filter((m: any) => !desde || new Date(m.created_at).getTime() >= desde)
     .map((m: any) => (m.type === 'image'
@@ -157,7 +165,11 @@ export async function prellenarDesdeChat(conv: string) {
     ? `Nombre: ${pedido.nombre ?? ''}\nCelular: ${pedido.telefono ?? ''}\nCorreo: ${pedido.correo ?? ''}\nDirección: ${pedido.direccion ?? ''}\n` +
       `Ciudad: ${pedido.ciudad ?? ''}\nDepartamento: ${pedido.departamento ?? ''}\nProducto: ${pedido.producto ?? ''}\nTalla: ${pedido.talla ?? ''}\n` +
       `Cantidad: ${pedido.cantidad ?? 1}\nValor: ${pedido.valor ?? ''}`
-    : '(sin pedido registrado)';
+    : clienteBase
+      ? `(compra ANTERIOR del cliente, ya entregada: usa solo sus datos de contacto si no los cambió; el PRODUCTO y el VALOR salen de la conversación)\n` +
+        `Nombre: ${clienteBase.nombre ?? ''}\nCelular: ${clienteBase.telefono ?? ''}\nCorreo: ${clienteBase.correo ?? ''}\nDirección: ${clienteBase.direccion ?? ''}\n` +
+        `Ciudad: ${clienteBase.ciudad ?? ''}\nDepartamento: ${clienteBase.departamento ?? ''}`
+      : '(sin pedido registrado)';
 
   let ia: any = null;
   try {
@@ -170,15 +182,15 @@ export async function prellenarDesdeChat(conv: string) {
   const valorPedido = num(pedido?.valor);
   const total = num(x.valor_total) ?? valorPedido ?? 130000;
   const datos = {
-    cliente_nombre: s(x.nombre) || s(pedido?.nombre),
-    cliente_celular: tel10De(x.celular) || tel10De(pedido?.telefono) || tel,
+    cliente_nombre: s(x.nombre) || s(clienteBase?.nombre),
+    cliente_celular: tel10De(x.celular) || tel10De(clienteBase?.telefono) || tel,
     cliente_identificacion: s(x.cedula).replace(/[^\dA-Za-z-]/g, ''),
     // Solo correos de verdad: si el cliente puso su celular u otra cosa, queda vacío (se usa el de la empresa, alternando)
     cliente_correo: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s(x.correo)) ? s(x.correo).toLowerCase()
-      : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s(pedido?.correo)) && !/^gerenciaquin7@gmail\.com$/i.test(s(pedido?.correo)) ? s(pedido?.correo).toLowerCase() : '',
-    departamento: s(x.departamento) || s(pedido?.departamento),
-    municipio: s(x.municipio) || s(pedido?.ciudad),
-    direccion: s(x.direccion) || s(pedido?.direccion),
+      : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s(clienteBase?.correo)) && !/^gerenciaquin7@gmail\.com$/i.test(s(clienteBase?.correo)) ? s(clienteBase?.correo).toLowerCase() : '',
+    departamento: s(x.departamento) || s(clienteBase?.departamento),
+    municipio: s(x.municipio) || s(clienteBase?.ciudad),
+    direccion: s(x.direccion) || s(clienteBase?.direccion),
     barrio: s(x.barrio), complemento: s(x.complemento), referencia_dir: s(x.referencia),
     // Regla del dueño (08-nov-2026): si reclama en OFICINA de Interrapidísimo, la transportadora es
     // Interrapidísimo sin importar la ciudad.
@@ -255,8 +267,9 @@ export async function prellenarDesdeChat(conv: string) {
   }
 
   // La foto que el asesor/bot mandó DESPUÉS del pedido (cambio de color) manda sobre la del pedido
-  const fotoReciente = await fotoDelChat(supabase, conv, pedido ? tPedido : 0);
-  const fotoChat = fotoReciente || pedido?.foto_producto || (await fotoDelChat(supabase, conv));
+  const fotoReciente = await fotoDelChat(supabase, conv, Math.max(pedido ? tPedido : 0, tDesc));
+  // En una recompra no se usa la foto de la compra vieja
+  const fotoChat = fotoReciente || pedido?.foto_producto || (tDesc ? null : await fotoDelChat(supabase, conv));
   const vendedor = await vendedorDelChat(supabase, conv);
   return {
     vendedor: vendedor.nombre,
@@ -265,7 +278,9 @@ export async function prellenarDesdeChat(conv: string) {
     foto_chat: fotoChat ?? null,
     total,
     pedido_id: pedido?.id ?? null,
-    existente: (existentes ?? [])[0] ?? null,
+    // Lo de ANTES del descuento es la compra vieja: no bloquea el pedido nuevo
+    existente: ((existentes ?? []) as any[]).filter(v => !tDesc || new Date(v.creado_at).getTime() >= tDesc)[0] ?? null,
+    recompra: desc ? { desde: desc } : null,
   };
 }
 
@@ -574,8 +589,11 @@ export async function crearDesdeChat(e: EntradaPanel, quien: string): Promise<{ 
   if (errores.length) return { ok: false, mensaje: 'Revisa los datos marcados.', errores };
 
   // Evita duplicar: si este chat ya tiene una preventa viva, no se crea otra.
+  // (lo de antes del DESCUENTO es la compra vieja: no cuenta — recompra, 10-nov-2026)
+  const descViva = await descuentoDe(supabase, conv);
+  const corte = Math.max(Date.now() - 3 * 86400_000, descViva ? new Date(descViva).getTime() : 0);
   const { data: viva } = await supabase.from('vv_ventas').select('codigo, estado')
-    .eq('conversacion_id', conv).not('estado', 'in', '(cancelada)').gte('creado_at', new Date(Date.now() - 3 * 86400_000).toISOString())
+    .eq('conversacion_id', conv).not('estado', 'in', '(cancelada)').gte('creado_at', new Date(corte).toISOString())
     .limit(1).maybeSingle();
   if (viva && !e.forzar) {
     return { ok: false, mensaje: `Este chat ya tiene la preventa ${viva.codigo} (${viva.estado}) en el panel. Edítala allá o cancélala antes de crear otra.` };

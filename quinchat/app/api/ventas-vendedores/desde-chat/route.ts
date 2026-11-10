@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { exigirSesion } from '@/lib/ventas-vendedores/auth';
 import { prellenarDesdeChat, productoConVariantes, buscarEnCatalogo, crearDesdeChat, convDelPanel } from '@/lib/ventas-vendedores/desde-chat';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { descuentoDe, recompras, esNueva, MARGEN_MS } from '@/lib/ventas-vendedores/recompra';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -27,19 +28,27 @@ export async function GET(req: NextRequest) {
     // 'effi' = ya tiene remisión en Effi · 'panel' = está en el Centro Maestro EFFI sin subir.
     if (sp.get('estados_chat')) {
       const supabase = createServerSupabaseClient();
-      const { data } = await supabase.from('vv_ventas').select('conversacion_id, effi_remision')
+      // RECOMPRA (10-nov-2026): en los chats que volvieron a comprar tras el descuento, lo de ANTES del
+      // descuento es la compra vieja y no cuenta → el pedido nuevo queda «por subir» hasta que se suba.
+      const recompra = await recompras(supabase);
+      const vieja = (id: string, t: string | null | undefined, margen = 0) => !!recompra[id] && !esNueva(t, recompra[id], margen);
+      const { data } = await supabase.from('vv_ventas').select('conversacion_id, effi_remision, creado_at')
         .not('conversacion_id', 'is', null).neq('estado', 'cancelada').limit(5000);
       const mapa: Record<string, 'panel' | 'effi'> = {};
       for (const v of data ?? []) {
         const id = String(v.conversacion_id);
+        if (vieja(id, v.creado_at)) continue;
         if (v.effi_remision) mapa[id] = 'effi';
         else if (!mapa[id]) mapa[id] = 'panel';
       }
       // Empalme con Effi: ventas que se subieron A MANO a Effi estos días (sin pasar por el panel)
-      for (const id of Object.keys(await remisionesManuales(supabase))) if (!mapa[id] || mapa[id] === 'panel') mapa[id] = 'effi';
+      for (const [id, m] of Object.entries(await remisionesManuales(supabase))) {
+        if (vieja(id, m.fecha, MARGEN_MS)) continue;
+        if (!mapa[id] || mapa[id] === 'panel') mapa[id] = 'effi';
+      }
       // Marcadas a mano con «Ya está en Effi» (remisión verificada)
-      const { data: vinc } = await supabase.from('effi_vinculos').select('conversacion_id').limit(5000);
-      for (const v of (vinc ?? []) as any[]) mapa[String(v.conversacion_id)] = 'effi';
+      const { data: vinc } = await supabase.from('effi_vinculos').select('conversacion_id, creado_at').limit(5000);
+      for (const v of (vinc ?? []) as any[]) if (!vieja(String(v.conversacion_id), v.creado_at)) mapa[String(v.conversacion_id)] = 'effi';
       return NextResponse.json({ estados: mapa });
     }
     // ¿Este chat ya tiene una preventa en el panel? (para pintar el botón en azul). Consulta liviana, sin IA.
@@ -47,18 +56,30 @@ export async function GET(req: NextRequest) {
       const crudo = String(sp.get('existe'));
       const c = convDelPanel(crudo) ?? crudo.replace(/\D/g, '');
       const supabase = createServerSupabaseClient();
+      // RECOMPRA (10-nov-2026, dueño): si al cliente ya se le mandó el DESCUENTO, lo que está en Effi/panel
+      // de ANTES es la compra vieja: va en `recompra.anterior` y el botón ofrece «Subir nuevo pedido a Effi».
+      const desc = await descuentoDe(supabase, c);
+      let anterior: any = null;
+      const responder = (existente: any) => NextResponse.json({ existente, recompra: desc ? { desde: desc, anterior } : null });
       // Marcada a mano con «Ya está en Effi»
-      const { data: vinc } = await supabase.from('effi_vinculos').select('remision, telefono_effi, cliente_effi')
+      const { data: vinc } = await supabase.from('effi_vinculos').select('remision, telefono_effi, cliente_effi, creado_at')
         .in('conversacion_id', [...new Set([crudo, c])]).limit(1).maybeSingle();
-      if (vinc) return NextResponse.json({ existente: { codigo: 'marcada a mano', estado: 'en_effi', effi_remision: vinc.remision, manual: true, vinculo: vinc } });
-      const { data } = await supabase.from('vv_ventas').select('codigo, estado, effi_remision, creado_at')
+      const existenteVinc = vinc ? { codigo: 'marcada a mano', estado: 'en_effi', effi_remision: vinc.remision, manual: true, vinculo: vinc } : null;
+      if (existenteVinc && (!desc || esNueva(vinc!.creado_at, desc))) return responder(existenteVinc);
+      if (existenteVinc) anterior = existenteVinc;
+      let { data } = await supabase.from('vv_ventas').select('codigo, estado, effi_remision, creado_at')
         .eq('conversacion_id', c).neq('estado', 'cancelada').order('creado_at', { ascending: false }).limit(1).maybeSingle();
-      if (data?.effi_remision) return NextResponse.json({ existente: data });
+      if (data && desc && !esNueva(data.creado_at, desc)) { anterior = anterior ?? data; data = null; }
+      if (data?.effi_remision) return responder(data);
       // Subida a mano en Effi (empalme): se muestra en azul con su remisión
       // (los chats con nombre de usuario «CO.…» no traen teléfono: no se cruzan por número)
       const manual = /^\d+$/.test(c) ? (await remisionesManuales(supabase, c))[c] : undefined;
-      if (manual) return NextResponse.json({ existente: { codigo: data?.codigo ?? 'subida a mano en Effi', estado: data?.estado ?? 'en_effi', effi_remision: manual, manual: true } });
-      return NextResponse.json({ existente: data ?? null });
+      if (manual && desc && !esNueva(manual.fecha, desc, MARGEN_MS)) {
+        anterior = anterior ?? { codigo: 'subida a mano en Effi', estado: 'en_effi', effi_remision: manual.remision, manual: true };
+      } else if (manual) {
+        return responder({ codigo: data?.codigo ?? 'subida a mano en Effi', estado: data?.estado ?? 'en_effi', effi_remision: manual.remision, manual: true });
+      }
+      return responder(data ?? null);
     }
     const conv = convDelPanel(sp.get('conv'));
     if (!conv) return NextResponse.json({ error: 'Chat inválido' }, { status: 400 });
@@ -92,16 +113,17 @@ export async function POST(req: NextRequest) {
  * Las anuladas no cuentan. Solo lee. Devuelve { conversacion: número de remisión }.
  */
 // La lista de chats pregunta cada 30 s: el cruce completo se guarda 5 min (Effi se sincroniza cada hora).
-let cacheManuales: { t: number; datos: Record<string, string> } | null = null;
+type Manual = { remision: string; fecha: string | null };
+let cacheManuales: { t: number; datos: Record<string, Manual> } | null = null;
 
-async function remisionesManuales(supabase: any, soloConv?: string): Promise<Record<string, string>> {
+async function remisionesManuales(supabase: any, soloConv?: string): Promise<Record<string, Manual>> {
   if (!soloConv && cacheManuales && Date.now() - cacheManuales.t < 5 * 60_000) return cacheManuales.datos;
   const r = await calcularManuales(supabase, soloConv);
   if (!soloConv) cacheManuales = { t: Date.now(), datos: r };
   return r;
 }
 
-async function calcularManuales(supabase: any, soloConv?: string): Promise<Record<string, string>> {
+async function calcularManuales(supabase: any, soloConv?: string): Promise<Record<string, Manual>> {
   try {
     const desde = new Date(Date.now() - 20 * 86400_000).toISOString();
     let q = supabase.from('effi_remisiones_api').select('telefono, vendedor, estado, id_transaccion, id_effi, fecha_trans')
@@ -116,13 +138,13 @@ async function calcularManuales(supabase: any, soloConv?: string): Promise<Recor
       const { data: convs } = await supabase.from('conversations').select('id, linea').in('id', ids.slice(i, i + 300));
       for (const c of (convs ?? []) as any[]) lineas.set(String(c.id), String(c.linea ?? 'funnel').toLowerCase());
     }
-    const out: Record<string, string> = {};
+    const out: Record<string, Manual> = {};
     for (const r of vivas) {
       const id = `57${String(r.telefono).replace(/\D/g, '').slice(-10)}`;
       if (out[id] || !lineas.has(id)) continue;
       const linea = lineas.get(id) === 'ventas' ? 'ventas' : 'funnel';
       const coincide = (linea === 'funnel' && r.vendedor === 'FUNNELISTH LANDING') || (linea === 'ventas' && r.vendedor === 'QUINO AGENCIA');
-      if (coincide) out[id] = String(r.id_effi ?? r.id_transaccion ?? 'Effi');
+      if (coincide) out[id] = { remision: String(r.id_effi ?? r.id_transaccion ?? 'Effi'), fecha: r.fecha_trans ?? null };
     }
     return out;
   } catch { return {}; }

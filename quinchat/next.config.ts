@@ -13,6 +13,8 @@ const nextConfig: NextConfig = {
     '/api/catalogos/re-estampar': ['./fonts/**/*'],
     '/api/catalogos/[id]/colores': ['./fonts/**/*'],
     '/api/catalogos/colores/[id]': ['./fonts/**/*'],
+    // Collage de los PACK X2: rotula con el nombre las fotos que no traen letrero (fuentes de Jimp en /fonts)
+    '/api/funnelish/webhook': ['./fonts/**/*'],
     // `sharp` necesita DOS piezas: el binario `.node` y la libreria `libvips`
     // que este carga. En Windows libvips va dentro del propio `.node`; en Linux
     // va en un paquete aparte, y el rastreo de Next no la sigue. Sin esto la

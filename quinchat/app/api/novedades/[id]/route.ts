@@ -69,6 +69,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     upd.direccion_confirmada = !!b.confirmar_direccion && !!dir;
     hist.push({ tipo: 'nota', detalle: b.confirmar_direccion && dir ? `🏠 Dirección CONFIRMADA (pendiente de pasar a Effi / transportadora): ${dir}` : `🏠 Dirección corregida (borrador): ${dir || '—'}` });
   }
+  // Pedido cancelado: el equipo marca a mano la cancelación definitiva (frena los avisos) o la nueva entrega
+  if (typeof b?.cancelacion_definitiva === 'boolean') {
+    upd.cancelacion_definitiva = b.cancelacion_definitiva;
+    hist.push({ tipo: 'estado', detalle: b.cancelacion_definitiva ? '🛑 Marcada CANCELACIÓN DEFINITIVA (no se envían más avisos)' : '↩️ Se quitó la cancelación definitiva' });
+  }
+  if (typeof b?.reentrega_solicitada === 'boolean') {
+    upd.reentrega_solicitada = b.reentrega_solicitada; upd.reentrega_at = b.reentrega_solicitada ? ahora : null;
+    hist.push({ tipo: 'estado', detalle: b.reentrega_solicitada ? '🚚 Marcada para NUEVA ENTREGA con la transportadora' : '↩️ Se quitó la marca de nueva entrega' });
+  }
   const nota = String(b?.nota ?? '').trim().slice(0, 2000);
   if (nota) hist.push({ tipo: 'nota', detalle: nota });
   if (!Object.keys(upd).length && !hist.length) return NextResponse.json({ ok: true });

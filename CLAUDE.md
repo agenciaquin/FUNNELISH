@@ -175,6 +175,20 @@ en Effi» si ya se anuló). QuinChat nunca anula en Effi. No se permite mientras
 (desde-chat.ts y EnviarPanelEffiModal.tsx) traduce Beige → Cocoa. La IA de desde-chat también lee las FOTOS con letrero que
 manda el asesor (`messages.caption`, ej. «REAL MADRID · BEIGE»): si cambió el color con una foto, ese color manda.
 
+**Collage de PACK X2 con letrero en TODAS las fotos (09-nov-2026, dueño):** en `app/api/funnelish/webhook`, `parsePack` junta
+colores repetidos (NEGRO+NEGRO → [NEGRO]) y la 2ª foto quedaba sin color → `fotosVigentes` no la cambiaba por la rotulada de
+KlixmSoft. Ahora cada foto hereda el último color (salvo prendas de DAMA, para no ponerles la foto de hombre). Las fotos que
+siguen sin rotular (`esFotoRotulada` = `-klx<id>-` en la URL) reciben una franja blanca arriba con tipo + `nombre_producto` del
+catálogo (+ DAMA) vía `rotularFoto` (Jimp, fuentes /fonts → `outputFileTracingIncludes['/api/funnelish/webhook']`). Caché `__v4`.
+
+**Recompra tras el DESCUENTO (10-nov-2026, dueño):** `lib/ventas-vendedores/recompra.ts`. Si al chat se le mandó el
+descuento por entrega (`descuentos_entrega` estado 'enviado', `enviado_at`), todo lo de ANTES (vv_ventas, remisión manual de
+Effi, `effi_vinculos`) es la compra VIEJA: `desde-chat?existe=` devuelve `existente:null` + `recompra:{desde, anterior}` y el
+botón del chat dice «🧾 Subir nuevo pedido a Effi» (chip «🎁 Anterior en Effi · remisión»). `estados_chat` quita la marca vieja
+SOLO si hay señal de compra nueva tras el descuento (etiqueta COMPRO EN DESCUENTO o pedido nuevo en `clientes_funnelish`) → sale en
+«por subir». `prellenarDesdeChat` lee el chat desde el descuento; del pedido viejo solo toma datos de contacto. `crearDesdeChat` no
+bloquea por preventas de antes del descuento. Solo lee; no toca descuentos ni Effi.
+
 **Chat borrado = mensajes perdidos en silencio:** `messages.conversation_id` tiene llave foránea a `conversations`
 (ON DELETE CASCADE). Si se borra el chat desde el panel, todo insert de mensaje falla hasta que el chat exista.
 VV, `atenderVendedor` y el organizador crean el chat (upsert ignoreDuplicates) ANTES de guardar mensajes.
@@ -308,6 +322,11 @@ novedad de Effi).
 incompleta»; tabla `avisos_incompleta`; interruptor `ajustes_bot.aviso_incompleta`). Todos los avisos de texto están en
 `lib/avisos-texto-registro.ts` (`AVISOS_TEXTO`): la lista, el envío manual, el detalle, el cron y el panel los recorren; un aviso
 nuevo = su config + agregarlo ahí. Las variables pasan por `textoVariable` (Meta no acepta saltos de línea en parámetros).
+**Aviso «Pedido cancelado» (09-nov-2026, dueño):** `lib/aviso-cancelado.ts` (plantilla `novedad_pedido_cancelado`, UTILITY, 3
+botones rápidos SIN emoji —Meta no los acepta—; dispara con «801 - Pedido cancelado»; tabla `avisos_cancelado`; interruptor
+`ajustes_bot.aviso_cancelado`). El motor admite `botones`, `permitido` (no envía si `novedades_effi.cancelacion_definitiva`)
+y `alResponder` (lee las respuestas en cada pasada: «Sí, quiero recibirlo» → `reentrega_solicitada`; «no lo quiero/cancelo/
+devuélvanlo» → `cancelacion_definitiva`). En el detalle: botones para marcar a mano nueva entrega o cancelación definitiva.
 **Dirección corregida:** `novedades_effi.direccion_corregida/_at/_por/direccion_confirmada`. En el detalle (casos de dirección)
 se edita, se guarda como borrador o se CONFIRMA y se copia para Effi/transportadora. QuinChat NO escribe la dirección en Effi.
 **OJO tablas nuevas:** en este Supabase una tabla creada por migración NO trae permisos para `service_role`

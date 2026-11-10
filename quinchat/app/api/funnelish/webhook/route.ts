@@ -10,7 +10,8 @@ import { lineaTalla } from '@/lib/formato-pedido';
 import { validateAddressLupap, getLupapMessage } from '@/lib/lupap';
 import Jimp from 'jimp';
 import { prendasPorPrecio } from '@/lib/prendas';
-import { fotosVigentes } from '@/lib/foto-vigente';
+import { fotosVigentes, esFotoRotulada, nombresDeFotos } from '@/lib/foto-vigente';
+import path from 'path';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -323,7 +324,36 @@ async function buscarImagenProducto(supabase: any, nombre: string): Promise<stri
 // Une las fotos de un pack en una sola imagen (lado a lado) y la sube a Supabase Storage.
 // Cachea por combinación: si ya existe el collage de ese combo, lo reutiliza.
 // Devuelve la URL pública, o null si algo falla (para caer al envío por separado).
-async function generarCollagePack(supabase: any, productos: string[], imagenes: string[]): Promise<string | null> {
+/**
+ * Letrero del producto ARRIBA de una foto que no lo trae (las rotuladas de KlixmSoft ya lo tienen): franja blanca con el
+ * nombre en negro, misma altura final. Así en un pack las DOS fotos llevan el nombre (dueño, 09-nov-2026).
+ */
+async function rotularFoto(im: any, texto: string, H: number): Promise<any> {
+  const banda = Math.round(H * 0.13);
+  const cargar = async (t: 32 | 64, f: string) => {
+    try { return await Jimp.loadFont(path.join(process.cwd(), 'fonts', `open-sans-${t}-black`, `open-sans-${t}-black.fnt`)); }
+    catch { return await Jimp.loadFont(f); }
+  };
+  im.resize(Jimp.AUTO, H - banda);
+  const W = im.getWidth();
+  const lienzo = new Jimp(W, H, 0xffffffff);
+  lienzo.composite(im, 0, banda);
+  let txt = String(texto).toUpperCase().replace(/\s+/g, ' ').trim();
+  let font = await cargar(64, Jimp.FONT_SANS_64_BLACK);
+  if (Jimp.measureText(font, txt) > W - 40) font = await cargar(32, Jimp.FONT_SANS_32_BLACK);
+  // Si no cabe, se quitan PALABRAS completas del final (nunca queda una palabra cortada)
+  while (Jimp.measureText(font, txt) > W - 40 && txt.includes(' ')) txt = txt.slice(0, txt.lastIndexOf(' '));
+  while (Jimp.measureText(font, txt) > W - 40 && txt.length > 6) txt = txt.slice(0, -1);
+  const alto = Jimp.measureTextHeight(font, txt, W);
+  lienzo.print(font, 0, Math.max(0, Math.round((banda - alto) / 2)), { text: txt, alignmentX: Jimp.HORIZONTAL_ALIGN_CENTER }, W);
+  // línea fina gris bajo el letrero
+  lienzo.scan(0, banda - 3, W, 3, function (this: any, _x: number, _y: number, idx: number) {
+    this.bitmap.data[idx] = 210; this.bitmap.data[idx + 1] = 210; this.bitmap.data[idx + 2] = 210; this.bitmap.data[idx + 3] = 255;
+  });
+  return lienzo;
+}
+
+async function generarCollagePack(supabase: any, productos: string[], imagenes: string[], letreros: (string | null)[] = []): Promise<string | null> {
   try {
     const bucket   = 'chat-media';
     // La clave del caché DEBE depender de las FOTOS reales (los colores elegidos),
@@ -331,7 +361,8 @@ async function generarCollagePack(supabase: any, productos: string[], imagenes: 
     // collage viejo de "NEGRO + ROJO" porque el nombre era el mismo. Se hashean
     // las URLs de las fotos EN ORDEN, así cada combinación tiene su propio archivo.
     const hash = (s: string) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h.toString(36); };
-    const fileName = `pack-${hash(imagenes.join('|'))}__v3.jpg`;
+    // v4: las fotos sin letrero se rotulan con el nombre del producto (cambia el archivo si cambia el letrero)
+    const fileName = `pack-${hash(imagenes.join('|') + '#' + letreros.map(l => l ?? '').join('|'))}__v4.jpg`;
     const path     = `packs/${fileName}`;
     const supaUrl  = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
     const publicUrl = `${supaUrl}/storage/v1/object/public/${bucket}/${path}`;
@@ -342,8 +373,12 @@ async function generarCollagePack(supabase: any, productos: string[], imagenes: 
 
     // Componer las imágenes lado a lado, todas a la misma altura
     const H    = 900;
-    const imgs = await Promise.all(imagenes.map((u: string) => Jimp.read(u)));
-    imgs.forEach((im: any) => im.resize(Jimp.AUTO, H));
+    const leidas = await Promise.all(imagenes.map((u: string) => Jimp.read(u)));
+    const imgs = await Promise.all(leidas.map(async (im: any, i: number) => {
+      const l = letreros[i];
+      if (l && !esFotoRotulada(imagenes[i])) { try { return await rotularFoto(im, l, H); } catch { /* sin letrero */ } }
+      im.resize(Jimp.AUTO, H); return im;
+    }));
     const totalW = imgs.reduce((s: number, im: any) => s + im.getWidth(), 0);
 
     const canvas = new Jimp(totalW, H, 0xffffffff);
@@ -576,14 +611,31 @@ export async function POST(req: NextRequest) {
   // Vienen las fotos exactas de cada buzo → se unen en UN collage (x2).
   // Las fotos que manda la página son las del embudo (pueden ser fotos viejas del catálogo):
   // se cambian por la foto VIGENTE de ese color (ej. la rotulada de KlixmSoft). 08-nov-2026.
-  const imagenesPack: string[] = await fotosVigentes(supabase, Array.isArray(body.imagenes)
-    ? body.imagenes.filter((u: any) => typeof u === 'string' && u.startsWith('http'))
-    : [], pack.colores);
+  // Color de CADA foto: parsePack junta los colores repetidos (NEGRO + NEGRO → [NEGRO]) y la 2ª foto se quedaba sin
+  // color, así que no se cambiaba por la rotulada (salía una con letrero y otra sin él — 09-nov-2026). Las fotos sin
+  // color heredan el último color. Una prenda de DAMA no hereda (no se le pone la foto de hombre).
+  const urlsPagina: string[] = Array.isArray(body.imagenes) ? body.imagenes.filter((u: any) => typeof u === 'string' && u.startsWith('http')) : [];
+  const partesPrenda = talla.split(/\s*\+\s*/);
+  const coloresFoto = urlsPagina.map((_, i) => pack.colores[i]
+    ?? (/\bDAMA|MUJER\b/i.test(partesPrenda[i] ?? '') ? undefined : pack.colores[pack.colores.length - 1]));
+  const imagenesPack: string[] = await fotosVigentes(supabase, urlsPagina, coloresFoto);
   if (imagenesPack.length >= 2) {
+    // Letrero para las fotos que siguen sin rotular: tipo de prenda (CAMISETA/BUZO…) + nombre del catálogo + DAMA
+    const nombres = await nombresDeFotos(supabase, urlsPagina, urlsPagina.map((_, i) => pack.colores[i] ?? pack.colores[pack.colores.length - 1]));
+    const letreros = imagenesPack.map((u, i) => {
+      if (esFotoRotulada(u)) return null;
+      const parte = String(partesPrenda[i] ?? '').toUpperCase();
+      const tipo = parte.match(/^(CAMISETA|BUZO|CHAQUETA|CUELLO ALTO|HOODIE|SUDADERA|POLO|GORRA)\b/)?.[1] ?? '';
+      const dama = /\b(DAMA|MUJER)\b/.test(parte) ? 'DAMA' : '';
+      const base = nombres[i] ?? parte.replace(/\b(XXXL|XXL|XL|[2-4]XL|XS|S|M|L|\d{1,2})\b/g, ' ').replace(/\b(HOMBRE|CABALLERO|DAMA|MUJER)\b/g, ' ').replace(/[-–]/g, ' ');
+      const t = [tipo && !String(base).toUpperCase().includes(tipo) ? tipo : '', base, dama].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+      return t || null;
+    });
     const collage = await generarCollagePack(
       supabase,
       imagenesPack.map((_, i) => `${productoNombre}-${i + 1}`),
       imagenesPack.slice(0, 3),
+      letreros.slice(0, 3),
     );
     if (collage) { imageUrl = collage; segundaImagenUrl = null; esCollage = true; }
     else if (imagenesPack[0]) imageUrl = imagenesPack[0];

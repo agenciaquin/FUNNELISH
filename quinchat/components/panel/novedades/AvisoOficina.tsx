@@ -24,6 +24,11 @@ export const AVISO_INCOMPLETA: ConfigAviso = {
   ejemplos: ['María', 'Bucaramanga', 'Cra 27 # 45-10 Conjunto Altos del Prado', '99053233278'],
   ayudaVars: '{{1}} = nombre · {{2}} = ciudad · {{3}} = dirección registrada en Effi · {{4}} = guía', etiquetaHoy: 'Hoy con dirección incompleta',
 };
+export const AVISO_CANCELADO: ConfigAviso = {
+  api: '/api/novedades/cancelado', icono: '🛑', titulo: 'Aviso «Pedido cancelado»', conMedia: false,
+  descripcion: 'Cuando Effi registra «801 - Pedido cancelado», se le pide al cliente la oportunidad de entregarle. Si acepta, la novedad queda para NUEVA ENTREGA; si confirma la cancelación, no se le escribe más. Una sola vez por novedad. Solo FUNNELISTH LANDING y QUINO AGENCIA.',
+  ejemplos: ['María', 'Bucaramanga', '240065170587'], ayudaVars: '{{1}} = nombre · {{2}} = ciudad de destino · {{3}} = guía (todo desde Effi)', etiquetaHoy: 'Hoy con pedido cancelado',
+};
 export const AVISO_INTENTO: ConfigAviso = {
   api: '/api/novedades/intento', icono: '🚗', titulo: 'Aviso «Intento de entrega»', conMedia: false,
   descripcion: 'Cuando la transportadora reporta un intento de entrega fallido (Effi), se le escribe al cliente para saber por qué no recibió. Una sola vez por novedad. Solo FUNNELISTH LANDING y QUINO AGENCIA.',

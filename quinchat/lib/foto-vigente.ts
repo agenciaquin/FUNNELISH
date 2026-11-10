@@ -76,3 +76,31 @@ export async function itemsKlixmsoft(supabase: any, urls: string[], colores: (st
     return urls.map(() => null);
   }
 }
+
+/** ¿Es una foto ROTULADA de KlixmSoft (trae el letrero con el nombre del producto arriba)? */
+export const esFotoRotulada = (u: string) => /-klx\d+-/i.test(String(u ?? ''));
+
+/**
+ * Nombre del producto de cada foto del catálogo (catalogo_colores.nombre_producto), para rotular a mano las fotos que
+ * no tienen versión rotulada de KlixmSoft (09-nov-2026). Devuelve null cuando no se sabe.
+ */
+export async function nombresDeFotos(supabase: any, urls: string[], colores: (string | null | undefined)[] = []): Promise<(string | null)[]> {
+  try {
+    const idDe = (u: string) => String(u ?? '').match(ID_EN_URL)?.[1]?.toLowerCase() ?? null;
+    const ids = [...new Set(urls.map(idDe).filter(Boolean) as string[])];
+    if (!ids.length) return urls.map(() => null);
+    const [{ data: porColor }, { data: porCatalogo }] = await Promise.all([
+      supabase.from('catalogo_colores').select('id, nombre_producto').in('id', ids),
+      supabase.from('catalogo_colores').select('catalogo_id, color, nombre_producto').in('catalogo_id', ids),
+    ]);
+    const deColor = new Map<string, string>(((porColor ?? []) as any[]).filter(r => r.nombre_producto).map(r => [String(r.id).toLowerCase(), String(r.nombre_producto)]));
+    return urls.map((u, i) => {
+      const id = idDe(u); if (!id) return null;
+      if (deColor.has(id)) return deColor.get(id)!;
+      const c = norm(colores[i]);
+      const filas = ((porCatalogo ?? []) as any[]).filter(r => String(r.catalogo_id).toLowerCase() === id && r.nombre_producto);
+      const f = c ? (filas.find(r => norm(r.color) === c) ?? filas.find(r => norm(r.color).startsWith(c) || c.startsWith(norm(r.color)))) : null;
+      return f ? String(f.nombre_producto) : null;
+    });
+  } catch { return urls.map(() => null); }
+}

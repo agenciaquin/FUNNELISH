@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 
-import { AVISO_INTENTO, AVISO_DIRECCION, AVISO_INCOMPLETA } from './AvisoOficina';
+import { AVISO_INTENTO, AVISO_DIRECCION, AVISO_INCOMPLETA, AVISO_CANCELADO } from './AvisoOficina';
 
 const AvisoOficina = dynamic(() => import('./AvisoOficina'), { ssr: false });
 
@@ -16,7 +16,8 @@ const AvisoOficina = dynamic(() => import('./AvisoOficina'), { ssr: false });
 type Estado = 'nueva' | 'pendiente' | 'en_gestion' | 'solucionada';
 interface AvisoEstado { estado: string; enviado_at: string | null; respuesta: string | null; respuesta_at?: string | null; motivo?: string | null; detalle?: string | null }
 interface Novedad {
-  aplica_oficina?: boolean; aplica_intento?: boolean; aplica_direccion?: boolean; aplica_incompleta?: boolean;
+  aplica_oficina?: boolean; aplica_intento?: boolean; aplica_direccion?: boolean; aplica_incompleta?: boolean; aplica_cancelado?: boolean;
+  aviso_cancelado?: (AvisoEstado & { fotos?: number }) | null; cancelacion_definitiva?: boolean; reentrega_solicitada?: boolean;
   aviso_incompleta?: (AvisoEstado & { fotos?: number }) | null;
   direccion_corregida?: string | null; direccion_corregida_at?: string | null; direccion_corregida_por?: string | null; direccion_confirmada?: boolean;
   aviso_oficina?: AvisoEstado | null; aviso_intento?: AvisoEstado | null; aviso_direccion?: (AvisoEstado & { fotos?: number }) | null;
@@ -76,6 +77,7 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
   const [verAvisoIntento, setVerAvisoIntento] = useState(false);
   const [verAvisoDireccion, setVerAvisoDireccion] = useState(false);
   const [verAvisoIncompleta, setVerAvisoIncompleta] = useState(false);
+  const [verAvisoCancelado, setVerAvisoCancelado] = useState(false);
   const caja = useRef<HTMLDivElement>(null);
 
   useEffect(() => { memoria.filtro = filtro; }, [filtro]);
@@ -121,9 +123,10 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
 
   const visibles = useMemo(() => {
     const t = q.trim().toLowerCase(); const d = t.replace(/\D/g, '');
-    const enviado = (n: Novedad) => [n.aviso_oficina, n.aviso_intento, n.aviso_direccion, n.aviso_incompleta].some(a => a?.estado === 'enviado');
+    const enviado = (n: Novedad) => [n.aviso_oficina, n.aviso_intento, n.aviso_direccion, n.aviso_incompleta, n.aviso_cancelado].some(a => a?.estado === 'enviado');
     const pendiente = (n: Novedad) => (n.aplica_oficina && n.aviso_oficina?.estado !== 'enviado') || (n.aplica_intento && n.aviso_intento?.estado !== 'enviado')
-      || (n.aplica_direccion && n.aviso_direccion?.estado !== 'enviado') || (n.aplica_incompleta && n.aviso_incompleta?.estado !== 'enviado');
+      || (n.aplica_direccion && n.aviso_direccion?.estado !== 'enviado') || (n.aplica_incompleta && n.aviso_incompleta?.estado !== 'enviado')
+      || (n.aplica_cancelado && !n.cancelacion_definitiva && n.aviso_cancelado?.estado !== 'enviado');
     return lista.filter(n => (filtro === 'todas' || n.estado === filtro)
       && (filtroAviso === 'todos' || (filtroAviso === 'enviado' ? enviado(n) : pendiente(n))) && (!t
       || (n.cliente ?? '').toLowerCase().includes(t)
@@ -163,6 +166,7 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
               <p className="text-[12px] text-[#5B6B68]">Effi revisado {hace(ultEffi)}</p>
               {ultSync?.error_novedades && <p className="text-[11px] text-[#B54708] max-w-[260px] truncate" title={ultSync.error_novedades}>«Novedades de guías» de Effi no respondió</p>}
               {ultSync && ultSync.ok === false && <p className="text-[11px] text-[#B42318] max-w-[260px] truncate" title={ultSync.error}>Último intento falló: {ultSync.error}</p>}
+              <button onClick={() => setVerAvisoCancelado(true)} className="mt-1 mr-2 px-4 py-2 rounded-xl border border-[#D92D20] text-[#B42318] text-sm font-bold bg-white hover:bg-[#FEF3F2]">🛑 Aviso «Pedido cancelado»</button>
               <button onClick={() => setVerAvisoIncompleta(true)} className="mt-1 mr-2 px-4 py-2 rounded-xl border border-[#0E9384] text-[#0E7466] text-sm font-bold bg-white hover:bg-[#F0FDF9]">🏠 Aviso «Dirección incompleta»</button>
               <button onClick={() => setVerAvisoDireccion(true)} className="mt-1 mr-2 px-4 py-2 rounded-xl border border-[#7C3AED] text-[#6D28D9] text-sm font-bold bg-white hover:bg-[#F5F3FF]">📍 Aviso «Dirección no localizada»</button>
               <button onClick={() => setVerAvisoIntento(true)} className="mt-1 mr-2 px-4 py-2 rounded-xl border border-[#2563EB] text-[#1D4ED8] text-sm font-bold bg-white hover:bg-[#EFF6FF]">🚗 Aviso «Intento de entrega»</button>
@@ -259,6 +263,7 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
       {verAvisoIntento && <AvisoOficina config={AVISO_INTENTO} onCerrar={() => setVerAvisoIntento(false)} />}
       {verAvisoDireccion && <AvisoOficina config={AVISO_DIRECCION} onCerrar={() => setVerAvisoDireccion(false)} />}
       {verAvisoIncompleta && <AvisoOficina config={AVISO_INCOMPLETA} onCerrar={() => setVerAvisoIncompleta(false)} />}
+      {verAvisoCancelado && <AvisoOficina config={AVISO_CANCELADO} onCerrar={() => setVerAvisoCancelado(false)} />}
       {sel && <Detalle n={sel} onCerrar={() => setAbierta(null)} onCambio={cargar} onChat={() => abrirChat(sel)} />}
 
       {sinChat && (
@@ -434,6 +439,22 @@ function Detalle({ n, onCerrar, onCambio, onChat }: { n: Novedad; onCerrar: () =
               {d.resultado && fila('Resultado', RESULTADO[d.resultado] ?? d.resultado)}
             </div>
 
+            {(n.aplica_cancelado || n.reentrega_solicitada || n.cancelacion_definitiva) && (
+              <div className="rounded-xl border border-[#FECDCA] bg-[#FFFBFA] p-3.5">
+                <p className="text-[12px] font-bold text-[#B42318] mb-2">🛑 PEDIDO CANCELADO · ¿qué hacemos?</p>
+                <div className="flex gap-2 flex-wrap">
+                  <button disabled={guardando} onClick={() => { enviar({ reentrega_solicitada: !n.reentrega_solicitada }); avisar(n.reentrega_solicitada ? 'Se quitó la nueva entrega' : '🚚 Marcada para nueva entrega'); }}
+                    className={`px-3 py-1.5 rounded-lg text-[12.5px] font-bold border ${n.reentrega_solicitada ? 'bg-[#067647] text-white border-transparent' : 'border-[#ABEFC6] text-[#067647] bg-white'}`}>
+                    🚚 {n.reentrega_solicitada ? 'Nueva entrega marcada ✓' : 'Acepta recibir: nueva entrega'}
+                  </button>
+                  <button disabled={guardando} onClick={() => { if (n.cancelacion_definitiva || confirm('¿Marcar cancelación DEFINITIVA? No se le enviarán más mensajes automáticos.')) { enviar({ cancelacion_definitiva: !n.cancelacion_definitiva }); } }}
+                    className={`px-3 py-1.5 rounded-lg text-[12.5px] font-bold border ${n.cancelacion_definitiva ? 'bg-[#B42318] text-white border-transparent' : 'border-[#FECDCA] text-[#B42318] bg-white'}`}>
+                    🛑 {n.cancelacion_definitiva ? 'Cancelación definitiva ✓' : 'Cancelación definitiva'}
+                  </button>
+                </div>
+                <p className="text-[11px] text-[#5B6B68] mt-1.5">Si el cliente responde «Sí, quiero recibirlo» se marca solo la nueva entrega; si dice que no lo quiere, se marca la cancelación y no se le escribe más.</p>
+              </div>
+            )}
             {(n.aplica_incompleta || n.aplica_direccion || d.direccion_corregida) && (
               <DireccionCorregida d={d} direccion={direccion} respuestas={avisosR.flatMap(a => (Array.isArray(a.respuestas) ? a.respuestas : []).filter((r: any) => r.tipo === 'text').map((r: any) => r.contenido))}
                 onGuardar={async (dir, confirmar) => { await enviar({ direccion_corregida: dir, confirmar_direccion: confirmar }); avisar(confirmar ? '✅ Dirección confirmada' : '💾 Borrador guardado'); }}
@@ -533,9 +554,16 @@ function ZonaAvisos({ n, onListo, onAviso }: { n: Novedad; onListo: () => void; 
     { k: 'intento' as const, aplica: n.aplica_intento, a: n.aviso_intento, icono: '🚗', nombre: 'aviso de intento de entrega' },
     { k: 'direccion' as const, aplica: n.aplica_direccion, a: n.aviso_direccion, icono: '📍', nombre: 'aviso de dirección no localizada' },
     { k: 'incompleta' as const, aplica: n.aplica_incompleta, a: n.aviso_incompleta, icono: '🏠', nombre: 'aviso de dirección incompleta' },
+    { k: 'cancelado' as const, aplica: n.aplica_cancelado && !n.cancelacion_definitiva, a: n.aviso_cancelado, icono: '🛑', nombre: 'aviso de pedido cancelado' },
   ].filter(t => t.aplica || (t.a && t.a.estado !== 'previo'));
-  if (!tipos.length) return null;
-  const mandar = async (k: 'oficina' | 'intento' | 'direccion' | 'incompleta', nombre: string) => {
+  const marcas = (n.reentrega_solicitada || n.cancelacion_definitiva) ? (
+    <div className="flex gap-1 flex-wrap">
+      {n.reentrega_solicitada && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#ECFDF3] text-[#067647]">🚚 Acepta recibir · gestionar nueva entrega</span>}
+      {n.cancelacion_definitiva && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#FEF3F2] text-[#B42318]">🛑 Cancelación definitiva</span>}
+    </div>
+  ) : null;
+  if (!tipos.length) return marcas;
+  const mandar = async (k: 'oficina' | 'intento' | 'direccion' | 'incompleta' | 'cancelado', nombre: string) => {
     if (!confirm(`¿Mandarle ahora el ${nombre} a ${n.cliente ?? 'este cliente'} por WhatsApp?`)) return;
     setEnviando(k);
     const r = await fetch(`/api/novedades/${n.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tipo: k }) });
@@ -546,11 +574,12 @@ function ZonaAvisos({ n, onListo, onAviso }: { n: Novedad; onListo: () => void; 
   };
   return (
     <div className="flex flex-col gap-1 mt-0.5">
+      {marcas}
       {tipos.map(t => {
         const e = t.a?.estado;
         if (e === 'enviado') return (
           <div key={t.k} className="rounded-lg bg-[#ECFDF3] border border-[#ABEFC6] px-2 py-1 text-[11.5px] text-[#067647]">
-            <b>{t.icono} {({ oficina: 'Aviso de oficina', intento: 'Aviso de intento', direccion: 'Aviso de dirección', incompleta: 'Aviso de dirección incompleta' } as const)[t.k]} enviado</b> · {fecha(t.a!.enviado_at)} <span className="text-[#5B6B68]">(automático)</span>
+            <b>{t.icono} {({ oficina: 'Aviso de oficina', intento: 'Aviso de intento', direccion: 'Aviso de dirección', incompleta: 'Aviso de dirección incompleta', cancelado: 'Aviso de pedido cancelado' } as const)[t.k]} enviado</b> · {fecha(t.a!.enviado_at)} <span className="text-[#5B6B68]">(automático)</span>
             {t.a!.respuesta ? <p className="text-[#175CD3] truncate" title={t.a!.respuesta}>💬 Respondió: {t.a!.respuesta}{(t.a as any).fotos ? ` · 📷 ${(t.a as any).fotos} foto(s)` : ''}</p> : <p className="text-[#5B6B68]">Sin respuesta aún</p>}
           </div>
         );

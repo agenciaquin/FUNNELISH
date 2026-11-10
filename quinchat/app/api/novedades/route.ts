@@ -17,7 +17,7 @@ export async function GET() {
   const supabase = createServerSupabaseClient();
   const hace30 = new Date(Date.now() - 30 * 86400_000).toISOString();
   const { data, error } = await supabase.from('novedades_effi')
-    .select('id, id_guia_effi, id_novedad_effi, novedad_texto, guia, transportadora, id_remision, vendedor, cliente, telefono, telefono_original, ciudad, departamento, producto, talla, foto, valor_recaudo, estado_effi, estado_effi_comercio, motivo, estado, resultado, activa_en_effi, fecha_guia, detectada_at, visto_at, estado_cambio_at, solucionada_at')
+    .select('id, id_guia_effi, id_novedad_effi, novedad_texto, cancelacion_definitiva, reentrega_solicitada, guia, transportadora, id_remision, vendedor, cliente, telefono, telefono_original, ciudad, departamento, producto, talla, foto, valor_recaudo, estado_effi, estado_effi_comercio, motivo, estado, resultado, activa_en_effi, fecha_guia, detectada_at, visto_at, estado_cambio_at, solucionada_at')
     .or(`estado.neq.solucionada,solucionada_at.gte.${hace30}`)
     .order('detectada_at', { ascending: false }).limit(1000);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
