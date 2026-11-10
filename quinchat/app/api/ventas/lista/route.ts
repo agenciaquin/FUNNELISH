@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { EVIDENCIA_CATALOGO_ID } from '@/lib/sin-evidencia';
 import { createServerSupabaseClient } from '@/lib/supabase';
+import { cortesRecompra, estadoEffiRecompras, esNueva, tel10 } from '@/lib/ventas-vendedores/recompra';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
 
   let q = supabase
     .from('clientes_funnelish')
-    .select('id, nombre, telefono, producto, talla, valor, direccion, ciudad, departamento, correo, confirmado_at, abono, abono_recibido, referencia, papelera_at, contacto_at, conversation_id')
+    .select('id, nombre, telefono, producto, talla, valor, direccion, ciudad, departamento, correo, confirmado_at, abono, abono_recibido, referencia, papelera_at, contacto_at, conversation_id, estado, created_at')
     .eq('confirmado', true)
     .order('confirmado_at', { ascending: false })
     .limit(2000);
@@ -93,6 +94,26 @@ export async function GET(req: NextRequest) {
     } catch { /* si falla, se muestran sin foto */ }
   }
 
+  // ── RECOMPRA tras el descuento (10-nov-2026, dueño) ─────────────────────────
+  // «Estado en Effi» cruza por TELÉFONO: la compra nueva de un cliente que ya estaba en Effi salía «En Effi»
+  // con la guía VIEJA. Las ventas de después del corte (descuento enviado o etiqueta COMPRO EN DESCUENTO)
+  // se cruzan SOLO con lo de Effi posterior al corte → si no se ha subido, queda «sin subir».
+  const recompraDe = new Map<string, string>(); // id venta → corte
+  const effiRecompra = new Map<string, string>(); // tel10 → estado
+  try {
+    const cortes = await cortesRecompra(supabase);
+    const items: { tel: string; conv: string; corte: string }[] = [];
+    for (const v of lista as any[]) {
+      const t = tel10(v.telefono), corte = cortes.get(t);
+      const fecha = v.confirmado_at ?? v.created_at;
+      if (corte && (v.estado === 'recompra_descuento' || esNueva(fecha, corte))) {
+        recompraDe.set(String(v.id), corte);
+        if (!items.some(i => i.tel === t)) items.push({ tel: t, conv: convDe(v), corte });
+      }
+    }
+    for (const [t, e] of await estadoEffiRecompras(supabase, items)) effiRecompra.set(t, e);
+  } catch { /* sin datos: se cruza como antes */ }
+
   const pesos = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
 
   const ventasSalida = lista.map((v: any) => {
@@ -120,6 +141,11 @@ export async function GET(req: NextRequest) {
       contactado: !!v.contacto_at,
       // El asesor la marcó "VENTA PROCESADA POR CORREGIR" (dirección, talla… mal): sigue siendo venta
       porCorregir: /POR CORREGIR/.test(labelPorConv.get(conv) ?? ''),
+      // Compra NUEVA tras el descuento: su estado en Effi solo mira lo subido después del corte
+      ...(recompraDe.has(String(v.id)) ? {
+        recompra: true,
+        effiRecompra: effiRecompra.get(tel10(v.telefono)) ?? 'sin_subir',
+      } : {}),
     };
   });
 

@@ -188,6 +188,10 @@ botón del chat dice «🧾 Subir nuevo pedido a Effi» (chip «🎁 Anterior en
 SOLO si hay señal de compra nueva tras el descuento (etiqueta COMPRO EN DESCUENTO o pedido nuevo en `clientes_funnelish`) → sale en
 «por subir». `prellenarDesdeChat` lee el chat desde el descuento; del pedido viejo solo toma datos de contacto. `crearDesdeChat` no
 bloquea por preventas de antes del descuento. Solo lee; no toca descuentos ni Effi.
+CORTE = el más reciente entre el descuento enviado y la recompra registrada (`clientes_funnelish.estado='recompra_descuento'`,
+etiqueta COMPRO EN DESCUENTO) − 24 h (descuentos mandados a mano no tienen fila en `descuentos_entrega`). «Estado en Effi»
+(`api/ventas/lista` → `recompra`/`effiRecompra`, insignia 🎁 Recompra en VentasPanel): las ventas posteriores al corte se cruzan
+SOLO con remisiones de Effi posteriores (margen 6 h por la hora de Effi) → si no hay, «Sin subir» y cuentan en «pendientes».
 
 **Chat borrado = mensajes perdidos en silencio:** `messages.conversation_id` tiene llave foránea a `conversations`
 (ON DELETE CASCADE). Si se borra el chat desde el panel, todo insert de mensaje falla hasta que el chat exista.

@@ -27,6 +27,9 @@ interface Venta {
   contactado: boolean;
   /** Etiqueta del chat: VENTA PROCESADA POR CORREGIR (sigue siendo venta). */
   porCorregir?: boolean;
+  /** Compra NUEVA tras el descuento (COMPRO EN DESCUENTO): su estado en Effi solo cuenta lo subido después. */
+  recompra?: boolean;
+  effiRecompra?: EstadoEffi;
 }
 interface Resumen { total: number; ingresos: number; porCorregir?: number; }
 
@@ -165,10 +168,11 @@ export default function VentasPanel({ onAbrirChat, soloOrigen }: { onAbrirChat?:
 
   // Guía (estado real) > remisión subida sin guía > sin subir
   const effiDe = (v: Venta): EstadoEffi => {
+    if (v.recompra) return v.effiRecompra ?? 'sin_subir';
     const t = tel10(v.telefono);
     return effi.get(t) ?? (remisiones.has(t) ? 'remision' : 'sin_subir');
   };
-  const motivoDe = (v: Venta): string => motivos.get(tel10(v.telefono)) ?? '';
+  const motivoDe = (v: Venta): string => (v.recompra ? '' : motivos.get(tel10(v.telefono)) ?? '');
 
   // Lee el Excel de Effi (el "xls" real es una tabla HTML) y guarda el cruce.
   async function subirExcel(e: React.ChangeEvent<HTMLInputElement>) {
@@ -444,6 +448,9 @@ export default function VentasPanel({ onAbrirChat, soloOrigen }: { onAbrirChat?:
                         className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                         style={{ color: est.color, background: est.fondo, border: `1px solid ${est.borde}` }}
                       >{est.texto}</span>
+                      {v.recompra && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-[#0F766E] bg-[#CCFBF1] border border-[#5EEAD4]" title="Compra nueva con el descuento: solo cuenta lo subido a Effi después del descuento (la compra anterior no)">🎁 Recompra</span>
+                      )}
                       {v.porCorregir && (
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-[#166534] bg-[#DCFCE7] border border-[#86EFAC]" title="Etiqueta del chat: VENTA PROCESADA POR CORREGIR">✏️ Por corregir</span>
                       )}
