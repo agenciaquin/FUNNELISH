@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
  *  · «Pedido listo para reclamar» (Interrapidísimo → oficina) — API /api/novedades/oficina, con imagen/video.
  *  · «Intento de entrega» — API /api/novedades/intento, solo texto.
  */
-export interface ConfigAviso { api: string; icono: string; titulo: string; descripcion: string; conMedia: boolean; ejemplos: string[]; ayudaVars: string; etiquetaHoy: string }
+export interface ConfigAviso { api: string; icono: string; titulo: string; descripcion: string; conMedia: boolean; /** versión opcional con foto (aviso de texto) */ conFoto?: boolean; ejemplos: string[]; ayudaVars: string; etiquetaHoy: string }
 export const AVISO_OFICINA: ConfigAviso = {
   api: '/api/novedades/oficina', icono: '📲', titulo: 'Aviso «Pedido listo para reclamar»', conMedia: true,
   descripcion: 'Cuando una guía de Interrapidísimo queda «en oficina» en Effi, se le avisa al cliente por WhatsApp una sola vez. Solo FUNNELISTH LANDING y QUINO AGENCIA.',
@@ -25,7 +25,7 @@ export const AVISO_INCOMPLETA: ConfigAviso = {
   ayudaVars: '{{1}} = nombre · {{2}} = ciudad · {{3}} = dirección registrada en Effi · {{4}} = guía', etiquetaHoy: 'Hoy con dirección incompleta',
 };
 export const AVISO_CANCELADO: ConfigAviso = {
-  api: '/api/novedades/cancelado', icono: '🛑', titulo: 'Aviso «Pedido cancelado»', conMedia: false,
+  api: '/api/novedades/cancelado', icono: '🛑', titulo: 'Aviso «Pedido cancelado»', conMedia: false, conFoto: true,
   descripcion: 'Cuando Effi registra «801 - Pedido cancelado», se le pide al cliente la oportunidad de entregarle. Si acepta, la novedad queda para NUEVA ENTREGA; si confirma la cancelación, no se le escribe más. Una sola vez por novedad. Solo FUNNELISTH LANDING y QUINO AGENCIA.',
   ejemplos: ['María', 'Bucaramanga', '240065170587'], ayudaVars: '{{1}} = nombre · {{2}} = ciudad de destino · {{3}} = guía (todo desde Effi)', etiquetaHoy: 'Hoy con pedido cancelado',
 };
@@ -55,6 +55,9 @@ export default function AvisoOficina({ onCerrar, config = AVISO_OFICINA }: { onC
   const [trabajando, setTrabajando] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [sel, setSel] = useState<Set<string>>(new Set());
+  // Versión con FOTO de un aviso de texto (p. ej. Pedido cancelado)
+  const [foto, setFoto] = useState<File | null>(null);
+  const [vistaFoto, setVistaFoto] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
     const r = await fetch(config.api, { cache: 'no-store' }); const j = await r.json().catch(() => ({}));
@@ -86,6 +89,24 @@ export default function AvisoOficina({ onCerrar, config = AVISO_OFICINA }: { onC
     if (r.ok) { setArchivo(null); setVista(null); }
     cargar();
   };
+  const elegirFoto = (f: File | undefined) => {
+    if (!f) return;
+    if (!['image/jpeg', 'image/png'].includes(f.type)) { setMsg('Sube la foto en JPG o PNG.'); return; }
+    if (f.size > 4 * 1024 * 1024) { setMsg('La foto no puede pasar de 4 MB.'); return; }
+    setMsg(null); setFoto(f); setVistaFoto(URL.createObjectURL(f));
+  };
+  const subirFoto = async () => {
+    if (!foto) return;
+    setTrabajando('Subiendo la foto…');
+    const fd = new FormData(); fd.append('file', foto, foto.name);
+    const r = await fetch(config.api, { method: 'POST', body: fd }); const j = await r.json().catch(() => ({}));
+    setTrabajando(null);
+    setMsg(!r.ok ? `⚠️ ${j.error}` : j.solo_foto
+      ? '✅ Foto cambiada: los próximos avisos con foto salen con ella.'
+      : `✅ Plantilla con foto enviada a Meta (${j.status ?? 'en revisión'}). Mientras Meta la revisa, los avisos siguen saliendo sin foto; cuando la apruebe, salen con la foto solos.`);
+    if (r.ok) { setFoto(null); setVistaFoto(null); }
+    cargar();
+  };
   const accion = async (cuerpo: any, confirmar?: string) => {
     if (confirmar && !confirm(confirmar)) return;
     setTrabajando('Procesando…');
@@ -101,7 +122,9 @@ export default function AvisoOficina({ onCerrar, config = AVISO_OFICINA }: { onC
 
   const tpl = d?.plantilla; const cfg = d?.ajustes; const est = tpl?.status ? ESTADO_TPL[tpl.status] ?? { t: tpl.status, c: '#5B6B68', bg: '#F1F5F4' } : null;
   const aprobada = tpl?.status === 'APPROVED';
-  const media = config.conMedia ? (vista ?? cfg?.media_url ?? null) : null;
+  const tplFoto = d?.plantilla_foto ?? null;
+  const estFoto = tplFoto?.status ? ESTADO_TPL[tplFoto.status] ?? { t: tplFoto.status, c: '#5B6B68', bg: '#F1F5F4' } : null;
+  const media = config.conMedia ? (vista ?? cfg?.media_url ?? null) : config.conFoto ? (vistaFoto ?? tplFoto?.media_url ?? null) : null;
   const esVideo = archivo ? archivo.type === 'video/mp4' : cfg?.media_tipo === 'VIDEO';
   const seleccionables = (d?.avisos ?? []).filter((a: any) => ['previo', 'error'].includes(a.estado) && a.telefono);
   const idDe = (a: any) => String(a.clave ?? a.id_guia_effi);
@@ -124,7 +147,7 @@ export default function AvisoOficina({ onCerrar, config = AVISO_OFICINA }: { onC
             {/* Vista previa tipo WhatsApp */}
             <div className="rounded-2xl p-3 bg-[#E7DDD3]">
               <div className="bg-white rounded-xl overflow-hidden shadow-sm">
-                {config.conMedia && <div className="aspect-square bg-[#F1F5F4] flex items-center justify-center text-[12px] text-[#5B6B68]">
+                {(config.conMedia || (config.conFoto && media)) && <div className="aspect-square bg-[#F1F5F4] flex items-center justify-center text-[12px] text-[#5B6B68]">
                   {media ? (esVideo
                     ? <video src={media} className="w-full h-full object-cover" autoPlay loop muted playsInline />
                     // eslint-disable-next-line @next/next/no-img-element
@@ -156,8 +179,33 @@ export default function AvisoOficina({ onCerrar, config = AVISO_OFICINA }: { onC
                     ? <button disabled={!archivo || !!trabajando} onClick={() => subir(false)} className="px-4 py-2 rounded-xl text-white text-sm font-bold disabled:opacity-40" style={{ background: VERDE }}>Crear y enviar a aprobación de Meta</button>
                     : <button disabled={!archivo || !!trabajando} onClick={() => subir(true)} className="px-4 py-2 rounded-xl border border-[#E1E5E4] text-sm font-bold disabled:opacity-40">Cambiar imagen de los envíos</button>}
                 </div>}
-                <p className="text-[11px] text-[#5B6B68] mt-2">{config.conMedia ? 'Meta no acepta GIF: un GIF animado se sube convertido a MP4. Máximo 4 MB. ' : 'Solo texto, sin encabezado ni botones. '}Categoría: Utilidad, español.</p>
+                <p className="text-[11px] text-[#5B6B68] mt-2">{config.conMedia ? 'Meta no acepta GIF: un GIF animado se sube convertido a MP4. Máximo 4 MB. ' : 'Solo texto, sin encabezado. '}Categoría: Utilidad, español.</p>
               </div>
+
+              {/* Versión CON FOTO (mismo texto y botones + imagen arriba) */}
+              {config.conFoto && tplFoto && (
+                <div className="rounded-xl border border-[#E8ECEB] p-4">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-bold text-sm flex-1">🖼 Versión con foto <code className="text-[12px] bg-[#F1F5F4] px-1.5 rounded">{tplFoto.nombre}</code></p>
+                    {estFoto ? <span className="px-2.5 py-1 rounded-full text-xs font-bold" style={{ background: estFoto.bg, color: estFoto.c }}>{estFoto.t}</span>
+                      : <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-[#F1F5F4] text-[#5B6B68]">Aún no creada</span>}
+                  </div>
+                  <p className="text-[12px] mt-1" style={{ color: tplFoto.en_uso ? '#067647' : '#5B6B68' }}>
+                    {tplFoto.en_uso ? '● Los avisos están saliendo CON la foto.' : tplFoto.status ? 'Mientras Meta no la apruebe, los avisos siguen saliendo con la de solo texto.' : 'Mismo texto y botones, con tu foto arriba. Hasta que Meta la apruebe, sigue saliendo la de solo texto.'}
+                  </p>
+                  {tplFoto.error && <p className="text-[12px] text-[#B42318] mt-1">{tplFoto.error}</p>}
+                  <div className="flex items-center gap-2 mt-3 flex-wrap">
+                    <label className="px-3 py-2 rounded-xl border border-dashed border-[#CBD5D3] text-sm font-bold cursor-pointer hover:bg-[#F7FAF9]">
+                      ⬆ {foto ? foto.name : 'Elegir foto (JPG/PNG)'}
+                      <input type="file" accept="image/jpeg,image/png" className="hidden" onChange={e => elegirFoto(e.target.files?.[0])} />
+                    </label>
+                    <button disabled={!foto || !!trabajando} onClick={subirFoto} className="px-4 py-2 rounded-xl text-white text-sm font-bold disabled:opacity-40" style={{ background: VERDE }}>
+                      {tplFoto.status ? 'Cambiar foto de los envíos' : 'Crear con foto y enviar a Meta'}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-[#5B6B68] mt-2">Máximo 4 MB. Cuadrada se ve mejor (1080×1080).</p>
+                </div>
+              )}
 
               {/* Interruptor */}
               <div className="rounded-xl border border-[#E8ECEB] p-4 flex items-center gap-3 flex-wrap">

@@ -79,7 +79,9 @@ interface Variante {
   id: string; nombre: string; precio: number; precioAntes?: number;
   imagen?: string; tallas?: string[]; selectores?: Selector[];
   // "Arma tu pack" (cascada): escudería → color → talla por buzo.
-  armarPack?: { unidades: number; categorias: { nombre: string; colores: Opcion[]; logo?: string; color?: string }[]; tallas: string[]; labelCategoria?: string; labelPrenda?: string };
+  armarPack?: { unidades: number; categorias: { nombre: string; colores: Opcion[]; logo?: string; color?: string }[]; tallas: string[]; labelCategoria?: string; labelPrenda?: string;
+    // PACK BUZO Y CAMISETA: opciones propias por paso (1 = camisetas, 2 = buzos). Sin esto = «Arma tu pack» de siempre.
+    pasos?: { prenda: string; categorias: string[] }[] };
   estilo?: string; // 'polos' → VARIABLES POLOS (a prueba de renombrado)
 }
 
@@ -221,8 +223,10 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
   const [catalogosFull, setCatalogosFull] = useState<any[]>([]);
   const [packConEscuderia, setPackConEscuderia] = useState(false);
   // Selector de escuderías para "arma tu pack" (elegir solo las que se quieran)
-  const [packPicker, setPackPicker] = useState<{ vi: number; cantidad: number } | null>(null);
+  const [packPicker, setPackPicker] = useState<{ vi: number; cantidad: number; modo?: 'buzo_camiseta' } | null>(null);
   const [packSel, setPackSel]       = useState<Set<string>>(new Set());
+  // PACK BUZO Y CAMISETA: lo elegido para el paso 2 (buzos); packSel = paso 1 (camisetas)
+  const [packSel2, setPackSel2]     = useState<Set<string>>(new Set());
   const [packBusca, setPackBusca]   = useState('');
   // Importador de catálogos en el producto "unidad" (traer colores + fotos ya creados)
   const [impPicker, setImpPicker]   = useState<number | null>(null);
@@ -1839,6 +1843,23 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
                         className="px-3 py-1.5 rounded-lg border border-[#7C3AED]/40 text-[11px] text-[#6D28D9] bg-[#7C3AED]/5 hover:bg-[#7C3AED]/10 font-semibold"
                       >🧩 {cantidad === 1 ? 'Arma tu unidad (elige escudería)' : `Arma tu pack x${cantidad}`}</button>
                     ))}
+
+                    {/* PACK BUZO Y CAMISETA (10-nov-2026): paso 1 solo camisetas, paso 2 solo buzos. Opción APARTE:
+                        el «Arma tu pack» de arriba sigue igual. */}
+                    <button
+                      onClick={() => {
+                        if (catalogosFull.length === 0) {
+                          alert('No hay catálogos en Catálogos.\n\nCrea las camisetas y los buzos con sus colores y foto. Luego vuelve aquí.');
+                          return;
+                        }
+                        const pasos = v.armarPack?.pasos;
+                        setPackSel(new Set(pasos?.[0]?.categorias ?? []));
+                        setPackSel2(new Set(pasos?.[1]?.categorias ?? []));
+                        setPackBusca('');
+                        setPackPicker({ vi: i, cantidad: 2, modo: 'buzo_camiseta' });
+                      }}
+                      className="px-3 py-1.5 rounded-lg border border-[#059669]/50 text-[11px] text-[#065F46] bg-[#059669]/5 hover:bg-[#059669]/10 font-semibold"
+                    >👕🧥 Pack buzo y camiseta</button>
                     </>)}
 
                     {v.armarPack && (
@@ -1871,7 +1892,9 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
                   {/* Selector de escuderías del pack (buscador + checkboxes) */}
                   {packPicker?.vi === i && (
                     <div className="mt-2 rounded-lg border-2 border-[#7C3AED] bg-white p-3">
-                      <p className="text-[12px] font-bold text-[#5B21B6] mb-1">🧩 Elige las escuderías {packPicker.cantidad === 1 ? 'para la unidad' : `para el pack x${packPicker.cantidad}`}</p>
+                      {packPicker.modo === 'buzo_camiseta'
+                        ? <p className="text-[12px] font-bold text-[#065F46] mb-1">👕🧥 Pack buzo y camiseta: marca qué va en el <b>paso 1 (👕 camisetas)</b> y qué en el <b>paso 2 (🧥 buzos)</b></p>
+                        : <p className="text-[12px] font-bold text-[#5B21B6] mb-1">🧩 Elige las escuderías {packPicker.cantidad === 1 ? 'para la unidad' : `para el pack x${packPicker.cantidad}`}</p>}
                       <input
                         value={packBusca}
                         onChange={e => setPackBusca(e.target.value)}
@@ -1885,6 +1908,21 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
                             const nombre = String(c.familia ?? '').trim();
                             const nCol = (c.catalogo_colores ?? []).filter((x: any) => x.url_imagen).length;
                             const checked = packSel.has(nombre);
+                            if (packPicker.modo === 'buzo_camiseta') {
+                              const alterna = (setter: typeof setPackSel) => setter(prev => { const s = new Set(prev); s.has(nombre) ? s.delete(nombre) : s.add(nombre); return s; });
+                              return (
+                                <div key={nombre} className="flex items-center gap-2 px-2 py-1.5 text-[12px] hover:bg-[#FAFAFA]">
+                                  <span className="flex-1">{nombre}</span>
+                                  <span className={`text-[10px] ${nCol === 0 ? 'text-[#C2410C]' : 'text-[#9A9A9A]'}`}>{nCol} colores</span>
+                                  <label className={`px-1.5 py-0.5 rounded border text-[10.5px] cursor-pointer ${checked ? 'bg-[#059669] text-white border-[#059669]' : 'border-[#E0E0E0]'}`}>
+                                    <input type="checkbox" className="hidden" checked={checked} onChange={() => alterna(setPackSel)} />👕 Paso 1
+                                  </label>
+                                  <label className={`px-1.5 py-0.5 rounded border text-[10.5px] cursor-pointer ${packSel2.has(nombre) ? 'bg-[#0D0D0D] text-white border-[#0D0D0D]' : 'border-[#E0E0E0]'}`}>
+                                    <input type="checkbox" className="hidden" checked={packSel2.has(nombre)} onChange={() => alterna(setPackSel2)} />🧥 Paso 2
+                                  </label>
+                                </div>
+                              );
+                            }
                             return (
                               <label key={nombre} className="flex items-center gap-2 px-2 py-1.5 text-[12px] cursor-pointer hover:bg-[#FAFAFA]">
                                 <input
@@ -1897,6 +1935,44 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
                             );
                           })}
                       </div>
+                      {packPicker.modo === 'buzo_camiseta' ? (
+                      <div className="flex gap-2 mt-2 items-center flex-wrap">
+                        <button
+                          onClick={() => {
+                            const aCat = (c: any) => ({
+                              nombre: String(c.familia ?? '').trim(),
+                              colores: (c.catalogo_colores ?? [])
+                                .filter((x: any) => x.url_imagen)
+                                .map((x: any) => ({ valor: String(x.color ?? '').trim(), imagen: x.url_imagen as string }))
+                                .filter((o: any) => o.valor),
+                            });
+                            const todas = catalogosFull
+                              .filter((c: any) => packSel.has(String(c.familia ?? '').trim()) || packSel2.has(String(c.familia ?? '').trim()))
+                              .map(aCat).filter((c: any) => c.colores.length > 0);
+                            const conColor = new Set(todas.map((c: any) => c.nombre));
+                            const paso1 = [...packSel].filter(n => conColor.has(n));
+                            const paso2 = [...packSel2].filter(n => conColor.has(n));
+                            if (!paso1.length || !paso2.length) { alert('Marca al menos una opción con colores y foto en el paso 1 (camisetas) y otra en el paso 2 (buzos).'); return; }
+                            // Se conservan el logo y el color que ya tuvieran
+                            const previas = new Map((v.armarPack?.categorias ?? []).map((c: any) => [c.nombre, c]));
+                            const categorias = todas.map((c: any) => ({ ...c, logo: previas.get(c.nombre)?.logo, color: previas.get(c.nombre)?.color }));
+                            const prendas = v.armarPack?.pasos?.map(p => p.prenda) ?? ['CAMISETA', 'BUZO'];
+                            cambiar({
+                              nombre: v.nombre || 'PACK BUZO Y CAMISETA',
+                              armarPack: {
+                                unidades: 2, categorias, tallas: v.armarPack?.tallas ?? actual.tallas,
+                                labelCategoria: v.armarPack?.labelCategoria, labelPrenda: 'prenda',
+                                pasos: [{ prenda: prendas[0] || 'CAMISETA', categorias: paso1 }, { prenda: prendas[1] || 'BUZO', categorias: paso2 }],
+                              },
+                              selectores: [],
+                            });
+                            setPackPicker(null);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-[#059669] text-white text-[11px] font-semibold hover:bg-[#047857]"
+                        >✅ Guardar pack (👕 {packSel.size} · 🧥 {packSel2.size})</button>
+                        <button onClick={() => setPackPicker(null)} className="px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-[11px]">Cancelar</button>
+                      </div>
+                      ) : (
                       <div className="flex gap-2 mt-2">
                         <button
                           onClick={() => {
@@ -1918,6 +1994,7 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
                         >✅ Agregar al pack ({packSel.size})</button>
                         <button onClick={() => setPackPicker(null)} className="px-3 py-1.5 rounded-lg border border-[#E8E8E8] text-[11px]">Cancelar</button>
                       </div>
+                      )}
                     </div>
                   )}
 
@@ -1925,8 +2002,26 @@ export default function EmbudosPanel({ abrirSlug, onAbierto }: { abrirSlug?: str
                   {v.armarPack && (
                     <div className="mt-2 rounded-lg border-2 border-[#7C3AED]/40 bg-[#7C3AED]/5 p-2.5">
                       <p className="text-[11px] text-[#5B21B6]">
-                        🧩 <b>Arma tu pack ACTIVO</b> · pack de {v.armarPack.unidades} · {v.armarPack.categorias?.length ?? 0} categorías, {v.armarPack.categorias?.reduce((s: number, c: any) => s + (c.colores?.length ?? 0), 0) ?? 0} colores. <b>Guarda</b> para dejarlo aplicado.
+                        {v.armarPack.pasos?.length
+                          ? <>👕🧥 <b>Pack buzo y camiseta ACTIVO</b> · paso 1: {v.armarPack.pasos[0]?.categorias.length ?? 0} opciones · paso 2: {v.armarPack.pasos[1]?.categorias.length ?? 0} opciones. <b>Guarda</b> para dejarlo aplicado.</>
+                          : <>🧩 <b>Arma tu pack ACTIVO</b> · pack de {v.armarPack.unidades} · {v.armarPack.categorias?.length ?? 0} categorías, {v.armarPack.categorias?.reduce((s: number, c: any) => s + (c.colores?.length ?? 0), 0) ?? 0} colores. <b>Guarda</b> para dejarlo aplicado.</>}
                       </p>
+                      {/* Pack buzo y camiseta: cómo se llama la prenda de cada paso (sale en «ELIGE TU …») */}
+                      {v.armarPack.pasos?.length ? (
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                          {v.armarPack.pasos.map((p, pi) => (
+                            <div key={pi}>
+                              <label className="block text-[10px] text-[#6B6B6B] mb-0.5">Prenda del paso {pi + 1}</label>
+                              <input
+                                value={p.prenda}
+                                onChange={e => cambiar({ armarPack: { ...v.armarPack!, pasos: v.armarPack!.pasos!.map((x, k) => (k === pi ? { ...x, prenda: e.target.value } : x)) } })}
+                                placeholder={pi === 0 ? 'CAMISETA' : 'BUZO'}
+                                className="w-full px-2 py-1.5 rounded border border-[#E0E0E0] text-[12px]"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
 
                       {/* Etiquetas editables: no siempre es "escudería"/"buzo" */}
                       <div className="grid grid-cols-2 gap-2 mt-2">

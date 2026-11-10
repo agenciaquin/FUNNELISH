@@ -53,6 +53,11 @@ export interface ArmarPackConfig {
   tallas: string[];            // tallas disponibles
   labelCategoria?: string;     // nombre del selector: "escudería", "marca", "equipo", "pareja"… (def: escudería)
   labelPrenda?: string;        // nombre de la prenda: "buzo", "camiseta"… (def: buzo)
+  /**
+   * PACK BUZO Y CAMISETA (10-nov-2026, dueño): cada paso con SUS opciones (paso 1 = camisetas, paso 2 = buzos).
+   * Sin `pasos` todos los pasos muestran todas las categorías (el «Arma tu pack» de siempre, sin cambios).
+   */
+  pasos?: { prenda: string; categorias: string[] }[];
 }
 
 export interface VarianteFunnel {

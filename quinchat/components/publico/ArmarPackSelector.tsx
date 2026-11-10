@@ -40,6 +40,16 @@ export default function ArmarPackSelector({
     setTimeout(() => setZoomBuzo(z => (z === i ? null : z)), ms);
   };
 
+  // PACK BUZO Y CAMISETA: cada paso con SUS categorías y su prenda. Sin `pasos` → todas en todos (como siempre).
+  const pasosCfg = Array.isArray(config.pasos) && config.pasos.length ? config.pasos : null;
+  const catsDe = (i: number) => {
+    const p = pasosCfg?.[i];
+    if (!p) return config.categorias;
+    const nombres = new Set(p.categorias);
+    return config.categorias.filter(c => nombres.has(c.nombre));
+  };
+  const prendaDe = (i: number) => (pasosCfg?.[i]?.prenda ?? '').trim().toUpperCase() || PRENDA;
+
   const coloresDe = (escuderia: string) =>
     normalizarOpciones(config.categorias.find(c => c.nombre === escuderia)?.colores ?? []);
   const fotoDe = (escuderia: string, color: string): string | null =>
@@ -47,24 +57,27 @@ export default function ArmarPackSelector({
 
   // Colores que TODAS las escuderías seleccionadas COMPARTEN (se muestran de una).
   // Al elegir una escudería se le suman sus colores adicionales.
-  const coloresCompartidos = (() => {
-    const cats = config.categorias.map(c => normalizarOpciones(c.colores));
+  const compartidosDe = (lista: typeof config.categorias) => {
+    const cats = lista.map(c => normalizarOpciones(c.colores));
     if (cats.length === 0) return [];
     return cats[0].filter(o =>
       cats.every(cat => cat.some(x => x.valor.toUpperCase() === o.valor.toUpperCase())),
     );
-  })();
+  };
+  const coloresCompartidos = compartidosDe(config.categorias);
   // Opciones de color de un buzo: si ya eligió escudería → todos los colores de esa
   // escudería (compartidos + sus extras); si no → solo los compartidos.
-  const opcionesColor = (escuderia: string) => escuderia ? coloresDe(escuderia) : coloresCompartidos;
+  const opcionesColor = (escuderia: string, i = 0) => escuderia ? coloresDe(escuderia) : pasosCfg ? compartidosDe(catsDe(i)) : coloresCompartidos;
 
   // Palabras COMUNES a todas las categorías (ej. "BUZO MOTO … REFLECTIVO").
   // Las que NO son comunes son la MARCA distintiva → se resaltan en un badge.
-  const palabrasComunes = (() => {
-    const listas = config.categorias.map(c => String(c.nombre ?? '').toUpperCase().split(/\s+/).filter(Boolean));
+  const comunesDe = (lista: typeof config.categorias) => {
+    const listas = lista.map(c => String(c.nombre ?? '').toUpperCase().split(/\s+/).filter(Boolean));
     if (listas.length <= 1) return new Set<string>();
     return new Set(listas[0].filter(w => listas.every(l => l.includes(w))));
-  })();
+  };
+  const palabrasComunes = comunesDe(config.categorias);
+  const comunesPaso = pasosCfg ? pasosCfg.map((_, i) => comunesDe(catsDe(i))) : null;
   /** Muestra el nombre con la MARCA resaltada en un badge. */
   // Texto blanco u oscuro según qué tan claro sea el color de fondo
   const textoSobre = (hex: string) => {
@@ -72,12 +85,12 @@ export default function ArmarPackSelector({
     const n = parseInt(m[1], 16); const r = n >> 16, g = (n >> 8) & 255, b = n & 255;
     return (0.299 * r + 0.587 * g + 0.114 * b) > 170 ? '#0D0D0D' : '#fff';
   };
-  const nombreConMarca = (nombre: string, activo: boolean, colorMarca?: string) => {
+  const nombreConMarca = (nombre: string, activo: boolean, colorMarca?: string, comunes: Set<string> = palabrasComunes) => {
     const palabras = String(nombre ?? '').split(/\s+/).filter(Boolean);
     const fondo = (colorMarca || '').trim() || '#F97316';
     return (
       <span className="leading-tight">
-        {palabras.map((w, wi) => palabrasComunes.has(w.toUpperCase())
+        {palabras.map((w, wi) => comunes.has(w.toUpperCase())
           ? <span key={wi}>{w}{' '}</span>
           : (
             <span key={wi}>
@@ -137,7 +150,9 @@ export default function ArmarPackSelector({
         .quin-pop { animation: quinPop 0.6s ease; }
       `}</style>
       <p className="text-center text-[11.5px] text-[#6B6B6B]">
-        🧩 Arma tu {unidades > 1 ? `pack de ${unidades}` : prendaLabel}: completa <b>{catLabel}, color y talla</b>{unidades > 1 ? ` de cada ${prendaLabel}` : ''}.
+        {pasosCfg
+          ? <>🧩 Arma tu pack: elige <b>{pasosCfg.map((p, k) => (k ? ' + ' : '') + p.prenda.toLowerCase()).join('')}</b> con su <b>{catLabel}, color y talla</b>.</>
+          : <>🧩 Arma tu {unidades > 1 ? `pack de ${unidades}` : prendaLabel}: completa <b>{catLabel}, color y talla</b>{unidades > 1 ? ` de cada ${prendaLabel}` : ''}.</>}
       </p>
       {buzos.map((b, i) => {
         const listo = b.escuderia && b.color && b.talla;
@@ -159,7 +174,7 @@ export default function ArmarPackSelector({
             {/* Banner: Paso X de N · ELIGE BUZO X */}
             <div className="bg-[#0D0D0D] text-white rounded-t-lg px-3 py-1.5 flex items-center justify-center gap-2">
               {unidades > 1 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20">Paso {i + 1} de {unidades}</span>}
-              <span className="font-extrabold text-[13px] tracking-wide">{unidades > 1 ? `ELIGE ${PRENDA} ${i + 1}` : `ELIGE TU ${PRENDA}`}</span>
+              <span className="font-extrabold text-[13px] tracking-wide">{pasosCfg ? `ELIGE TU ${prendaDe(i)}` : unidades > 1 ? `ELIGE ${PRENDA} ${i + 1}` : `ELIGE TU ${PRENDA}`}</span>
             </div>
 
             <div className="p-2 space-y-2">
@@ -167,14 +182,14 @@ export default function ArmarPackSelector({
               <div className={`rounded-lg p-1.5 -m-1.5 ${paso === 1 ? 'ring-2 ring-offset-1' : ''}`} style={paso === 1 ? { ['--tw-ring-color' as any]: acento.boton } : {}}>
                 <p className="text-center text-[12px] font-extrabold mb-1.5" style={{ color: acento.texto }}>{marca(1)} Elige la {catLabel}</p>
                 <div className="grid grid-cols-2 gap-1.5">
-                  {config.categorias.map(c => (
+                  {catsDe(i).map(c => (
                     <Chip key={c.nombre} activo={b.escuderia === c.nombre} onClick={() => set(i, { escuderia: c.nombre })}>
                       <span className="inline-flex items-center justify-center gap-1.5">
                         {c.logo && (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={c.logo} alt="" className="w-6 h-6 object-contain shrink-0 rounded bg-white/90" loading="lazy" />
                         )}
-                        {nombreConMarca(c.nombre, b.escuderia === c.nombre, c.color)}
+                        {nombreConMarca(c.nombre, b.escuderia === c.nombre, c.color, comunesPaso?.[i] ?? palabrasComunes)}
                       </span>
                     </Chip>
                   ))}
@@ -213,7 +228,7 @@ export default function ArmarPackSelector({
                       style={b.color ? { borderColor: acento.boton } : {}}
                     >
                       <option value="">— Elige color —</option>
-                      {opcionesColor(b.escuderia).map(o => (
+                      {opcionesColor(b.escuderia, i).map(o => (
                         <option key={o.valor} value={o.valor}>{o.valor}</option>
                       ))}
                     </select>
@@ -245,7 +260,7 @@ export default function ArmarPackSelector({
               {paso === 3 && <p className="text-center text-[12px] font-bold" style={{ color: acento.texto }}>👉 Ya casi: elige la <b>talla</b></p>}
               {paso === 4 && (
                 <p className="text-center text-[12px] font-bold text-white rounded-md py-1" style={{ background: acento.boton }}>
-                  ✅ {b.escuderia} · {b.color} · {b.talla} — ¡Buzo {i + 1} listo!
+                  ✅ {b.escuderia} · {b.color} · {b.talla} — {pasosCfg ? `¡${prendaDe(i).charAt(0)}${prendaDe(i).slice(1).toLowerCase()} lista!` : `¡Buzo ${i + 1} listo!`}
                 </p>
               )}
             </div>

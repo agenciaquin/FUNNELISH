@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase';
-import { listarPlantillas } from '@/lib/whatsapp-templates';
+import { listarPlantillas, subirImagenEjemplo } from '@/lib/whatsapp-templates';
 import { destinoWA } from '@/lib/whatsapp';
 import { lineaDeVendedor, phoneIdDeLinea, ocultarHastaRespuesta, motivoErrorMeta, type LineaAviso } from '@/lib/aviso-linea';
 import { recortar } from '@/lib/recortar';
@@ -39,6 +39,11 @@ export interface ConfigAvisoTexto {
   permitido?: (n: any) => string | null;
   /** Se llama con cada respuesta NUEVA del cliente (para marcar la novedad: reentrega, cancelación…). */
   alResponder?: (supabase: any, fila: any, nuevas: { tipo: string; contenido: string }[]) => Promise<void>;
+  /**
+   * Versión CON FOTO (opcional, 10-nov-2026): otra plantilla con el mismo texto y botones + encabezado de imagen.
+   * Mientras Meta no la apruebe (o no haya foto guardada) los avisos siguen saliendo con la de solo texto.
+   */
+  plantillaFoto?: string;
 }
 
 /** Texto apto para una variable de plantilla de Meta (sin saltos de línea, tabs ni muchos espacios seguidos). */
@@ -54,7 +59,7 @@ const ciudadBonita = (c: unknown) => String(c ?? '').replace(/\s+/g, ' ').trim()
 export const VARS_BASICAS = (n: any) => [primerNombre(n.cliente), ciudadBonita(n.ciudad), String(n.guia)];
 export { primerNombre, ciudadBonita };
 
-export interface AjustesAviso { activo: boolean; desde?: string | null; horas: [number, number]; plantilla_creada_at?: string | null }
+export interface AjustesAviso { activo: boolean; desde?: string | null; horas: [number, number]; plantilla_creada_at?: string | null; media_url?: string | null; foto_creada_at?: string | null }
 
 export function avisoTexto(cfg: ConfigAvisoTexto) {
   async function ajustes(supabase: any): Promise<AjustesAviso> {
@@ -62,6 +67,7 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
     const v = (data?.valor ?? {}) as any;
     return {
       activo: v.activo === true, desde: v.desde ?? null, plantilla_creada_at: v.plantilla_creada_at ?? null,
+      media_url: v.media_url ?? null, foto_creada_at: v.foto_creada_at ?? null,
       horas: Array.isArray(v.horas) && v.horas.length === 2 ? [Number(v.horas[0]), Number(v.horas[1])] : [7, 20],
     };
   }
@@ -72,21 +78,36 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
     else await supabase.from('ajustes_bot').insert({ clave: cfg.clave, valor });
     return valor;
   }
-  async function estadoPlantilla(): Promise<{ status: string | null; idioma: string; error?: string }> {
+  async function estadoDe(nombre: string): Promise<{ status: string | null; idioma: string; error?: string }> {
     const r = await listarPlantillas();
     if (!r.ok) return { status: null, idioma: 'es', error: r.error };
-    const t = r.plantillas.find(p => p.name === cfg.plantilla);
+    const t = r.plantillas.find(p => p.name === nombre);
     return t ? { status: t.status, idioma: t.language || 'es' } : { status: null, idioma: 'es' };
   }
-  async function crearPlantilla(): Promise<{ ok: boolean; status?: string; error?: string }> {
+  const estadoPlantilla = () => estadoDe(cfg.plantilla);
+  const estadoPlantillaFoto = async () => (cfg.plantillaFoto ? estadoDe(cfg.plantillaFoto) : { status: null, idioma: 'es' } as { status: string | null; idioma: string; error?: string });
+  /**
+   * Qué plantilla sale: la de FOTO si está aprobada y hay foto guardada; si no, la de solo texto.
+   * null = ninguna aprobada.
+   */
+  async function plantillaEnUso(conf: AjustesAviso): Promise<{ nombre: string; idioma: string; foto: string | null } | { error: string }> {
+    const [txt, fot] = await Promise.all([estadoPlantilla(), estadoPlantillaFoto()]);
+    if (cfg.plantillaFoto && conf.media_url && fot.status === 'APPROVED') return { nombre: cfg.plantillaFoto, idioma: fot.idioma, foto: conf.media_url };
+    if (txt.status === 'APPROVED') return { nombre: cfg.plantilla, idioma: txt.idioma, foto: null };
+    return { error: `La plantilla «${cfg.plantilla}» no está aprobada (${txt.status ?? 'no existe'})` };
+  }
+  async function crearPlantilla(foto?: { handle: string }): Promise<{ ok: boolean; status?: string; error?: string }> {
     const token = process.env.WHATSAPP_ACCESS_TOKEN, waba = process.env.WHATSAPP_WABA_ID;
     if (!token || !waba) return { ok: false, error: 'Falta configurar WHATSAPP_WABA_ID o el token de WhatsApp.' };
+    const nombre = foto ? cfg.plantillaFoto! : cfg.plantilla;
     const crear = async (botones: string[]) => {
-      const components: any[] = [{ type: 'BODY', text: cfg.cuerpo, example: { body_text: [cfg.ejemplo] } }];
+      const components: any[] = [];
+      if (foto) components.push({ type: 'HEADER', format: 'IMAGE', example: { header_handle: [foto.handle] } });
+      components.push({ type: 'BODY', text: cfg.cuerpo, example: { body_text: [cfg.ejemplo] } });
       if (botones.length) components.push({ type: 'BUTTONS', buttons: botones.slice(0, 3).map(t => ({ type: 'QUICK_REPLY', text: t.slice(0, 25) })) });
       const res = await fetch(`${WA_API}/${waba}/message_templates`, {
         method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: cfg.plantilla, category: 'UTILITY', language: 'es', components }),
+        body: JSON.stringify({ name: nombre, category: 'UTILITY', language: 'es', components }),
       });
       const data = await res.json().catch(() => ({}));
       return res.ok ? { ok: true, status: data.status } : { ok: false, error: String(data?.error?.error_user_msg ?? data?.error?.message ?? 'Meta no aceptó la plantilla') };
@@ -95,14 +116,17 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
     if (r1.ok || !cfg.botones?.length || !/button|bot[oó]n|emoji|character|caracter/i.test(r1.error ?? '')) return r1;
     return crear(cfg.botones.map(b => b.replace(/^[^\p{L}\p{N}]+/u, '').trim()));
   }
-  async function enviar(to: string, idioma: string, variables: string[], linea: LineaAviso) {
+  async function enviar(to: string, uso: { nombre: string; idioma: string; foto: string | null }, variables: string[], linea: LineaAviso) {
     const token = process.env.WHATSAPP_ACCESS_TOKEN, phone = phoneIdDeLinea(linea);
     if (!token || !phone) return { ok: false, error: 'Falta configuración de WhatsApp.' } as const;
     try {
       const res = await fetch(`${WA_API}/${phone}/messages`, {
         method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ messaging_product: 'whatsapp', ...destinoWA(to), type: 'template',
-          template: { name: cfg.plantilla, language: { code: idioma }, components: [{ type: 'body', parameters: variables.map(v => ({ type: 'text', text: v || '—' })) }] } }),
+          template: { name: uso.nombre, language: { code: uso.idioma }, components: [
+            ...(uso.foto ? [{ type: 'header', parameters: [{ type: 'image', image: { link: uso.foto } }] }] : []),
+            { type: 'body', parameters: variables.map(v => ({ type: 'text', text: v || '—' })) },
+          ] } }),
       });
       if (!res.ok) return { ok: false, error: await motivoErrorMeta(res) } as const;
       const data = await res.json().catch(() => ({}));
@@ -140,8 +164,8 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
     const conf = await ajustes(supabase);
     const res: Record<string, any> = { enviados: 0, omitidos: 0, errores: 0, pendientes: 0 };
     if (!conf.activo && !opc.ignorarInterruptor) return { ...res, apagado: true };
-    const tpl = await estadoPlantilla();
-    if (tpl.status !== 'APPROVED') return { ...res, error: `La plantilla «${cfg.plantilla}» no está aprobada (${tpl.status ?? 'no existe'})` };
+    const uso = await plantillaEnUso(conf);
+    if ('error' in uso) return { ...res, error: uso.error };
     const horaCo = new Date(Date.now() - 5 * 3600_000).getUTCHours();
     if (!manual && (horaCo < conf.horas[0] || horaCo >= conf.horas[1])) return { ...res, fuera_de_horario: true };
     const freno = await frenoMeta(supabase);
@@ -164,7 +188,7 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
       } else {
         const { error: dup } = await supabase.from(cfg.tabla).insert({
           clave: n.clave, id_guia_effi: n.id_guia_effi, id_novedad_effi: n.id_novedad_effi, novedad_id: n.id, guia: n.guia,
-          telefono: n.telefono, nombre: n.cliente, ciudad: n.ciudad, vendedor: n.vendedor, motivo: n.novedad_texto || n.motivo, plantilla: cfg.plantilla,
+          telefono: n.telefono, nombre: n.cliente, ciudad: n.ciudad, vendedor: n.vendedor, motivo: n.novedad_texto || n.motivo, plantilla: uso.nombre,
         });
         if (dup) continue;
       }
@@ -185,7 +209,7 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
 
       const variables = (cfg.variables ?? VARS_BASICAS)(n).map(textoVariable);   // datos reales de Effi
       const linea = lineaDeVendedor(n.vendedor);                                              // por el chat donde compró
-      const r = await enviar(conv, tpl.idioma, variables, linea);
+      const r = await enviar(conv, uso, variables, linea);
       if (!r.ok) { await marcar('error', { detalle: r.error }); res.errores++; await esperarTurno(); continue; }
       const ahora = new Date().toISOString();
       await marcar('enviado', { wamid: r.wamid ?? null, enviado_at: ahora, detalle: null });
@@ -198,6 +222,10 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
           id: conv, contact_name: String(n.cliente ?? tel), last_message: recortar(texto, 100), last_message_time: ahora,
           unread_count: 0, linea, oculto: true, bot_enabled: false,
         }, { onConflict: 'id', ignoreDuplicates: true });
+        if (uso.foto) await supabase.from('messages').insert({
+          id: `${cfg.prefijoMsg}img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, conversation_id: conv,
+          content: uso.foto, role: 'agent', type: 'image', created_at: new Date(Date.parse(ahora) - 1).toISOString(),
+        });
         await supabase.from('messages').insert({
           id: `${cfg.prefijoMsg}${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, conversation_id: conv,
           content: texto, role: 'agent', type: 'text', whatsapp_id: r.wamid ?? null, created_at: ahora,
@@ -262,7 +290,7 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
       const auth = await exigirSesion();
       if (auth.error) return auth.error;
       const supabase = createServerSupabaseClient();
-      const [conf, tpl] = await Promise.all([ajustes(supabase), estadoPlantilla()]);
+      const [conf, tpl, tplFoto] = await Promise.all([ajustes(supabase), estadoPlantilla(), estadoPlantillaFoto()]);
       const { data } = await supabase.from(cfg.tabla).select('*').order('creado_at', { ascending: false }).limit(150);
       const filas = await completarRespuestas(supabase, data ?? []);
       const cuenta = (e: string) => filas.filter((f: any) => f.estado === e).length;
@@ -270,20 +298,51 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
       try { enNovedad = (await novedadesEnCaso(supabase)).length; } catch { /* nada */ }
       return NextResponse.json({
         ajustes: conf, plantilla: { nombre: cfg.plantilla, cuerpo: cfg.cuerpo, botones: cfg.botones ?? [], ...tpl },
+        plantilla_foto: cfg.plantillaFoto ? { nombre: cfg.plantillaFoto, ...tplFoto, media_url: conf.media_url ?? null,
+          en_uso: !!conf.media_url && tplFoto.status === 'APPROVED' } : null,
         avisos: filas.map((f: any) => ({ ...f, novedad: f.motivo, motivo: f.detalle })), en_novedad: enNovedad,
         contadores: { enviado: cuenta('enviado'), respondieron: filas.filter((f: any) => f.respuesta).length, previo: cuenta('previo'), error: cuenta('error'), omitido: cuenta('omitido') },
       });
     }
-    async function POST() {
+    async function POST(req: NextRequest) {
       const auth = await exigirSesion();
       if (auth.error) return auth.error;
       const supabase = createServerSupabaseClient();
+      // Con archivo = versión CON FOTO (crear la plantilla en Meta, o solo cambiar la foto de los envíos)
+      if (String(req.headers.get('content-type') ?? '').includes('multipart/form-data')) return postFoto(req, supabase);
       const ya = await estadoPlantilla();
       if (ya.status) return NextResponse.json({ error: `La plantilla ya existe en Meta (${ya.status}).` }, { status: 409 });
       const r = await crearPlantilla();
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 502 });
       await guardarAjustes(supabase, { plantilla_creada_at: new Date().toISOString() });
       return NextResponse.json({ ok: true, status: r.status });
+    }
+    async function postFoto(req: NextRequest, supabase: any) {
+      if (!cfg.plantillaFoto) return NextResponse.json({ error: 'Este aviso no tiene versión con foto.' }, { status: 400 });
+      const form = await req.formData().catch(() => null);
+      const file = form?.get('file');
+      if (!(file instanceof Blob)) return NextResponse.json({ error: 'Falta la foto.' }, { status: 400 });
+      const mime = String((file as any).type || '');
+      if (!['image/jpeg', 'image/png'].includes(mime)) return NextResponse.json({ error: 'Sube la foto en JPG o PNG.' }, { status: 400 });
+      const buf = Buffer.from(await file.arrayBuffer());
+      if (buf.length > 4 * 1024 * 1024) return NextResponse.json({ error: 'La foto no puede pasar de 4 MB.' }, { status: 400 });
+      // Se guarda para los envíos (Meta pide un enlace público en cada mensaje)
+      const ruta = `plantillas/${cfg.plantillaFoto}-${Date.now()}.${mime === 'image/png' ? 'png' : 'jpg'}`;
+      const { error: upErr } = await supabase.storage.from('chat-media').upload(ruta, buf, { contentType: mime, cacheControl: '31536000', upsert: true });
+      if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
+      const url = supabase.storage.from('chat-media').getPublicUrl(ruta).data?.publicUrl;
+      if (!url) return NextResponse.json({ error: 'No se pudo obtener el enlace de la foto.' }, { status: 500 });
+      const ya = await estadoPlantillaFoto();
+      if (form?.get('solo_media') || ya.status) {
+        await guardarAjustes(supabase, { media_url: url });
+        return NextResponse.json({ ok: true, url, solo_foto: true, status: ya.status });
+      }
+      const handle = await subirImagenEjemplo(buf, mime);
+      if (!handle) return NextResponse.json({ error: 'Meta no recibió la foto del encabezado.' }, { status: 502 });
+      const r = await crearPlantilla({ handle });
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: 502 });
+      await guardarAjustes(supabase, { media_url: url, foto_creada_at: new Date().toISOString() });
+      return NextResponse.json({ ok: true, status: r.status, url });
     }
     async function PATCH(req: NextRequest) {
       const auth = await exigirSesion();
@@ -292,8 +351,8 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
       const supabase = createServerSupabaseClient();
       if (b?.accion === 'desactivar') { await guardarAjustes(supabase, { activo: false }); return NextResponse.json({ ok: true }); }
       if (b?.accion === 'activar') {
-        const tpl = await estadoPlantilla();
-        if (tpl.status !== 'APPROVED') return NextResponse.json({ error: `Meta aún no aprueba la plantilla (${tpl.status ?? 'no creada'}). No se activa.` }, { status: 400 });
+        const uso = await plantillaEnUso(await ajustes(supabase));
+        if ('error' in uso) return NextResponse.json({ error: `Meta aún no aprueba la plantilla. No se activa.` }, { status: 400 });
         const previos = await marcarPrevios(supabase);
         await guardarAjustes(supabase, { activo: true, desde: new Date().toISOString() });
         return NextResponse.json({ ok: true, previos });
@@ -309,5 +368,5 @@ export function avisoTexto(cfg: ConfigAvisoTexto) {
     return { GET, POST, PATCH };
   }
 
-  return { cfg, ajustes, guardarAjustes, estadoPlantilla, crearPlantilla, novedadesEnCaso, marcarPrevios, procesar, completarRespuestas, rutas };
+  return { cfg, ajustes, guardarAjustes, estadoPlantilla, estadoPlantillaFoto, plantillaEnUso, crearPlantilla, novedadesEnCaso, marcarPrevios, procesar, completarRespuestas, rutas };
 }

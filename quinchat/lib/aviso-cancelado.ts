@@ -12,6 +12,9 @@ import { avisoTexto } from '@/lib/aviso-novedad-texto';
  * Interruptor ajustes_bot «aviso_cancelado» (APAGADO por defecto). Tabla avisos_cancelado.
  */
 export const PLANTILLA_CANCELADO = 'novedad_pedido_cancelado';
+// Versión con FOTO «Detrás de tu pedido hay un equipo real» (dueño, 10-nov-2026). Mismo texto y botones + imagen arriba.
+// Mientras Meta no la apruebe, sigue saliendo la de solo texto.
+export const PLANTILLA_CANCELADO_FOTO = 'novedad_pedido_cancelado_foto';
 export const CUERPO_CANCELADO = [
   '¡{{1}}! Tu pedido ya se encuentra en {{2}}.',
   '😔 La transportadora nos informó que solicitaste cancelar tu pedido.',
@@ -28,7 +31,7 @@ const DEFINITIVA = /no (lo |la )?(quiero|voy a recibir|necesito|recibo)|ya no (l
 
 export const AVISO_CANCELADO_SRV = avisoTexto({
   clave: 'aviso_cancelado', tabla: 'avisos_cancelado', plantilla: PLANTILLA_CANCELADO, cuerpo: CUERPO_CANCELADO,
-  ejemplo: ['María', 'Bucaramanga', '240065170587'], botones: BOTONES_CANCELADO,
+  ejemplo: ['María', 'Bucaramanga', '240065170587'], botones: BOTONES_CANCELADO, plantillaFoto: PLANTILLA_CANCELADO_FOTO,
   nombreCorto: 'Pedido cancelado', etiqueta: 'NOVEDAD CANCELADO',
   nota: g => `🛑 La transportadora reporta que el cliente canceló (guía ${g}). Se le pidió la oportunidad de entregar.`,
   prefijoMsg: 'tpl-cancelado-',

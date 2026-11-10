@@ -230,6 +230,11 @@ Píxeles: `marca.pixel_meta` / `marca.pixel_tiktok` van en la config (públicos)
 servidor: `app/api/mi-pagina/evento` (público, mismo event_id que el navegador). El token de TikTok solo se guarda
 (los embudos tampoco lo usan aún). «Ver producto» abre el embudo con `?utm_source=mi-pagina…`; los enlaces de anuncios no cambian.
 
+**PACK BUZO Y CAMISETA (10-nov-2026, dueño):** botón «👕🧥 Pack buzo y camiseta» en las variantes del editor de embudos.
+Es un «Arma tu pack» x2 con `armarPack.pasos = [{prenda:'CAMISETA', categorias:[…]}, {prenda:'BUZO', categorias:[…]}]`:
+`ArmarPackSelector` muestra en cada paso SOLO sus opciones y «ELIGE TU CAMISETA / ELIGE TU BUZO». Sin `pasos` el «Arma tu pack»
+de siempre queda idéntico (el dueño lo usa: NO tocarlo). El pedido sale igual que un pack x2 («PACK X2 — …», collage x2).
+
 ### 10 · Master Vendedores (08-nov-2026), módulo independiente
 
 Menú «Master Vendedores» → `components/panel/master-vendedores/MasterVendedoresPanel.tsx` + `app/api/master-vendedores`.
@@ -331,6 +336,10 @@ botones rápidos SIN emoji —Meta no los acepta—; dispara con «801 - Pedido 
 `ajustes_bot.aviso_cancelado`). El motor admite `botones`, `permitido` (no envía si `novedades_effi.cancelacion_definitiva`)
 y `alResponder` (lee las respuestas en cada pasada: «Sí, quiero recibirlo» → `reentrega_solicitada`; «no lo quiero/cancelo/
 devuélvanlo» → `cancelacion_definitiva`). En el detalle: botones para marcar a mano nueva entrega o cancelación definitiva.
+**Versión CON FOTO de un aviso de texto (10-nov-2026, dueño):** config `plantillaFoto` en el motor (hoy solo cancelado:
+`novedad_pedido_cancelado_foto`, mismo texto/botones + encabezado IMAGE). En el modal 🛑 «Versión con foto»: POST multipart crea
+la plantilla en Meta y guarda la foto en `ajustes_bot.<clave>.media_url` (si ya existe, solo cambia la foto). `plantillaEnUso`:
+sale la de FOTO solo si está APROBADA y hay foto; si no, la de solo texto (el aviso nunca se corta mientras Meta revisa).
 **Dirección corregida:** `novedades_effi.direccion_corregida/_at/_por/direccion_confirmada`. En el detalle (casos de dirección)
 se edita, se guarda como borrador o se CONFIRMA y se copia para Effi/transportadora. QuinChat NO escribe la dirección en Effi.
 **OJO tablas nuevas:** en este Supabase una tabla creada por migración NO trae permisos para `service_role`
