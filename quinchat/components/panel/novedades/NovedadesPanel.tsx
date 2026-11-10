@@ -31,7 +31,15 @@ interface Novedad {
   id_novedad_effi?: string | null; novedad_texto?: string | null; aclaracion?: string | null; estado_novedad_effi?: string | null; soluciones?: number | null; fecha_novedad?: string | null;
 }
 interface Hist { id: number; at: string; tipo: string; detalle: string | null; por: string | null }
-type Filtro = 'todas' | Estado;
+type Filtro = 'todas' | Estado | 'oficina';
+/**
+ * EN OFICINA (10-nov-2026, dueño): pestaña APARTE para las guías que esperan en oficina de la transportadora
+ * («Reclame en oficina» / «Disponible para retiro en oficina»). Mientras no estén solucionadas NO salen en
+ * Nuevas, Pendientes ni En gestión. En «Todas» y «Solucionadas» siguen como siempre.
+ */
+const esOficina = (n: { estado: string; estado_effi?: string | null; estado_effi_comercio?: string | null; motivo?: string | null; aplica_oficina?: boolean }) =>
+  n.estado !== 'solucionada' && (!!n.aplica_oficina
+    || /reclame en oficina|retiro en oficina|disponible para retiro|en oficina/i.test(`${n.estado_effi ?? ''} ${n.estado_effi_comercio ?? ''} ${n.motivo ?? ''}`));
 
 // Se conserva al ir al chat y volver (el módulo queda cargado mientras el panel esté abierto)
 const memoria: { filtroAviso: 'todos' | 'enviado' | 'sin'; filtro: Filtro; q: string; abierta: number | null; scroll: number; conocidas: Set<number> | null } = {
@@ -45,6 +53,7 @@ const ESTADOS: { k: Filtro; t: string; c: string; bg: string }[] = [
   { k: 'nueva', t: 'Nuevas', c: '#B42318', bg: '#FEE4E2' },
   { k: 'pendiente', t: 'Pendientes', c: '#B54708', bg: '#FEF0C7' },
   { k: 'en_gestion', t: 'En gestión', c: '#175CD3', bg: '#D1E9FF' },
+  { k: 'oficina', t: '🏤 En oficina', c: '#C2410C', bg: '#FFEDD5' },
   { k: 'solucionada', t: 'Solucionadas', c: '#067647', bg: '#DCFAE6' },
 ];
 const estiloDe = (e: string) => ESTADOS.find(x => x.k === e) ?? ESTADOS[0];
@@ -127,7 +136,7 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
     const pendiente = (n: Novedad) => (n.aplica_oficina && n.aviso_oficina?.estado !== 'enviado') || (n.aplica_intento && n.aviso_intento?.estado !== 'enviado')
       || (n.aplica_direccion && n.aviso_direccion?.estado !== 'enviado') || (n.aplica_incompleta && n.aviso_incompleta?.estado !== 'enviado')
       || (n.aplica_cancelado && !n.cancelacion_definitiva && n.aviso_cancelado?.estado !== 'enviado');
-    return lista.filter(n => (filtro === 'todas' || n.estado === filtro)
+    return lista.filter(n => (filtro === 'todas' || (filtro === 'oficina' ? esOficina(n) : n.estado === filtro && !esOficina(n)))
       && (filtroAviso === 'todos' || (filtroAviso === 'enviado' ? enviado(n) : pendiente(n))) && (!t
       || (n.cliente ?? '').toLowerCase().includes(t)
       || (d.length >= 3 && ((n.telefono ?? '').includes(d) || (n.telefono_original ?? '').replace(/\D/g, '').includes(d)
@@ -149,7 +158,10 @@ export default function NovedadesPanel({ onAbrirChat }: { onAbrirChat?: (id: str
   };
 
   const sel = lista.find(n => n.id === abierta) ?? null;
-  const contador = (k: Filtro) => (k === 'todas' ? cont.todas : cont[k]) ?? 0;
+  // Nuevas / Pendientes / En gestión / En oficina se cuentan con la lista (las de oficina van aparte)
+  const contador = (k: Filtro) => (k === 'todas' || k === 'solucionada' || !lista.length
+    ? (k === 'todas' ? cont.todas : (cont as any)[k])
+    : k === 'oficina' ? lista.filter(esOficina).length : lista.filter(n => n.estado === k && !esOficina(n)).length) ?? 0;
 
   return (
     <div className="flex-1 min-w-0 flex flex-col bg-[#F4F6F5] min-h-0">

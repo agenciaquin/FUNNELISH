@@ -298,6 +298,9 @@ anulada pasa sola a solucionada (`resultado`); si vuelve a novedad se reabre la 
 Producto/foto: pedido de `clientes_funnelish` por teléfono (el más reciente antes de la guía); si no, `vv_ventas`/`vv_items`.
 Chat: busca `57tel`, `tel`, `+57tel`, `…@funnel` y el `conversation_id` del pedido; NO crea chats. Si no hay: wa.me + copiar.
 Botón «← Volver a Novedades» en el chat (WhatsAppPanel, estado `volverNovedades`); los filtros quedan en memoria del módulo.
+**Pestaña «🏤 En oficina» (10-nov-2026, dueño):** `esOficina` en NovedadesPanel (no solucionada + «reclame/retiro en oficina» en
+estado Effi, comercio o motivo, o `aplica_oficina`). Esas tarjetas salen SOLO ahí: no en Nuevas/Pendientes/En gestión (esos
+contadores se calculan en el navegador sin ellas). «Todas» y «Solucionadas» siguen igual. Solo es filtro: no cambia estados.
 **Aviso «Pedido listo para reclamar» (09-nov-2026, dueño):** `lib/aviso-oficina.ts`, API `app/api/novedades/oficina`,
 UI `components/panel/novedades/AvisoOficina.tsx` (botón 📲 en el Panel de Novedades). Plantilla Meta `pedido_listo_para_reclamar`
 (UTILITY, es, encabezado IMAGE o VIDEO — GIF no: convertir a MP4 —, {{1}} primer nombre y {{2}} guía de Effi, 3 botones rápidos).
