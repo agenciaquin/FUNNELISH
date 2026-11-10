@@ -230,6 +230,11 @@ Píxeles: `marca.pixel_meta` / `marca.pixel_tiktok` van en la config (públicos)
 servidor: `app/api/mi-pagina/evento` (público, mismo event_id que el navegador). El token de TikTok solo se guarda
 (los embudos tampoco lo usan aún). «Ver producto» abre el embudo con `?utm_source=mi-pagina…`; los enlaces de anuncios no cambian.
 
+**Contador de ventas de Mi Página (10-nov-2026, dueño):** `components/panel/VentasMiPagina.tsx` arriba del editor +
+`app/api/mi-pagina/ventas` (solo lectura, caché 2 min). «Solo Mi Página» = `clientes_funnelish.utm_source='mi-pagina'`; «Todos los
+embudos» = cualquier `funnel_slug`. Ventas = confirmado; prendas = suma de `cantidad`; pedidos = todos (sin papelera/duplicado).
+Hoy / 7 / 30 días (hora Colombia), barras por día y ranking de embudos (más ventas primero).
+
 **PACK BUZO Y CAMISETA (10-nov-2026, dueño):** botón «👕🧥 Pack buzo y camiseta» en las variantes del editor de embudos.
 Es un «Arma tu pack» x2 con `armarPack.pasos = [{prenda:'CAMISETA', categorias:[…]}, {prenda:'BUZO', categorias:[…]}]`:
 `ArmarPackSelector` muestra en cada paso SOLO sus opciones y «ELIGE TU CAMISETA / ELIGE TU BUZO». Sin `pasos` el «Arma tu pack»

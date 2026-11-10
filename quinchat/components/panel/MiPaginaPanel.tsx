@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ConfigPagina, Seccion, TipoSeccion, Opinion, EmbudoWeb } from '@/lib/mi-pagina';
 import { configInicial, normalizarConfig, NOMBRE_SECCION, ICONO_SECCION, nuevoId, BASE_TIENDA, nombreBonito, pesosCOP } from '@/lib/mi-pagina';
 import { comprimirImagen } from '@/lib/imagen-comprimir';
+import VentasMiPagina from './VentasMiPagina';
 
 /**
  * Embudos → «Mi Página»: una tienda web hecha con los embudos que ya existen.
@@ -220,6 +221,9 @@ export default function MiPaginaPanel() {
         {aviso && <p className="mt-3 text-xs px-3 py-2 rounded-lg bg-[#F7F9F8] border border-[#E8ECEB]">{aviso} <button className="ml-2 text-[#9AA]" onClick={() => setAviso(null)}>✕</button></p>}
         <p className="mt-2 text-[11px] text-[#7A8A87]">Todo se guarda solo y se ve al instante en la vista previa. Los clientes ven los cambios cuando oprimes «Publicar página».</p>
       </div>
+
+      {/* Contador de ventas + ranking de embudos (10-nov-2026) */}
+      <VentasMiPagina />
 
       <div className="grid gap-4 lg:grid-cols-[380px_1fr]">
         {/* ═════════ Columna izquierda ═════════ */}
