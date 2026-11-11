@@ -83,6 +83,19 @@ export default function EstadoPedidoPanel({ onAbrirChat }: { onAbrirChat?: (id: 
   const tarjeta = 'bg-white rounded-2xl border border-[#EDEFEF] shadow-[0_1px_3px_rgba(16,24,40,.04)]';
   const plantillaOk = desc?.plantillaEstado === 'APPROVED' && (!desc?.pideFoto || !!desc?.foto);
   const [subiendo, setSubiendo] = useState(false);
+  // Versión con botón «Ver la tienda» (descuento solo con el código del cliente)
+  const [creandoTienda, setCreandoTienda] = useState(false);
+  const [msgTienda, setMsgTienda] = useState<string | null>(null);
+  async function crearTienda() {
+    if (!confirm('¿Crear en Meta la versión del descuento con el botón «Ver la tienda»?\n\nMismo texto y foto. Mientras Meta la revisa sigue saliendo la de ahora; al aprobarla se usa sola.')) return;
+    setCreandoTienda(true); setMsgTienda(null);
+    try {
+      const r = await fetch('/api/pedidos/descuento-entrega', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accion: 'crear_tienda' }) });
+      const j = await r.json().catch(() => ({}));
+      setMsgTienda(r.ok ? `✅ Enviada a Meta (${j.status ?? 'en revisión'}).` : `⚠️ ${j.error ?? 'No se pudo crear'}`);
+      cargarDesc();
+    } finally { setCreandoTienda(false); }
+  }
   async function subirFoto(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f || !desc) return;
@@ -161,6 +174,19 @@ export default function EstadoPedidoPanel({ onAbrirChat }: { onAbrirChat?: (id: 
                 {subiendo ? 'Subiendo…' : desc.foto ? 'Cambiar foto' : 'Subir foto'}
                 <input type="file" accept="image/jpeg,image/png" className="hidden" onChange={subirFoto} />
               </label>
+            </span>
+          )}
+          {/* Botón «Ver la tienda» con el código del cliente (precios con descuento SOLO entrando por ahí) */}
+          {desc.tienda && (
+            <span className="w-full flex items-center gap-2 flex-wrap text-[11px] text-[#6B6B6B] border-t border-[#F1F1F1] pt-2">
+              🛍️ Botón «Ver la tienda»:
+              {desc.tienda.en_uso
+                ? <b className="text-[#15803D]">✅ activo — los descuentos salen con el botón</b>
+                : desc.tienda.estado === 'no existe'
+                  ? <button onClick={crearTienda} disabled={creandoTienda} className="px-2.5 py-1 rounded-lg border border-[#00A89D] text-[#00847A] font-semibold hover:bg-[#00A89D]/10 disabled:opacity-50">{creandoTienda ? 'Enviando a Meta…' : 'Crear versión con botón'}</button>
+                  : <b>{desc.tienda.estado === 'PENDING' ? '⏳ en revisión de Meta' : desc.tienda.estado}</b>}
+              <span className="text-[10px] text-[#9A9A9A]">({desc.tienda.nombre} · {desc.tienda_url}?d=CÓDIGO del cliente)</span>
+              {msgTienda && <span className="text-[11px]">{msgTienda}</span>}
             </span>
           )}
           <span className="w-full text-[10px] text-[#9A9A9A]">

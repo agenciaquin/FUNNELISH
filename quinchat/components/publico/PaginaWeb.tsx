@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { ConfigPagina, DatosPagina, CatalogoWeb, EmbudoWeb } from '@/lib/mi-pagina';
-import { BASE_TIENDA, pesosCOP, grupoSugerido, nombreBonito, enlaceEmbudo } from '@/lib/mi-pagina';
+import { BASE_TIENDA, pesosCOP, grupoSugerido, nombreBonito, enlaceEmbudo as enlaceEmbudoBase } from '@/lib/mi-pagina';
 import Script from 'next/script';
 
 /**
@@ -12,9 +12,13 @@ import Script from 'next/script';
  *    por postMessage y se redibuja al instante, sin guardar.
  * «Ver producto» abre el embudo tal cual (pedido.klixmant.shop/<slug>): no se toca su lógica.
  */
-export default function PaginaWeb({ config: inicial, datos, preview = false }: {
+export default function PaginaWeb({ config: inicial, datos, preview = false, descuento = null }: {
   config: ConfigPagina; datos: DatosPagina; preview?: boolean;
+  /** Descuento del cliente (11-nov-2026): SOLO si entró con su código válido (?d=…). Los precios ya vienen rebajados
+   *  desde el servidor; aquí se muestra el letrero y el código viaja al embudo. Sin código = página normal. */
+  descuento?: { codigo: string; monto: number; nombre: string | null } | null;
 }) {
+  const enlaceEmbudo = (slug: string) => `${enlaceEmbudoBase(slug)}${descuento ? `&d=${encodeURIComponent(descuento.codigo)}` : ''}`;
   const [config, setConfig] = useState(inicial);
   const [filtro, setFiltro] = useState('Todos');
   const [abierto, setAbierto] = useState<(CatalogoWeb & { embudo: EmbudoWeb | null }) | null>(null);
@@ -112,6 +116,11 @@ export default function PaginaWeb({ config: inicial, datos, preview = false }: {
         )}
       </header>
       <div id="inicio" />
+      {descuento && (
+        <div className="text-white text-center px-4 py-2.5 text-[13px] md:text-sm font-bold" style={{ background: '#C62828' }}>
+          🎁 {descuento.nombre ? `${String(descuento.nombre).split(' ')[0]}, tienes` : 'Tienes'} <span className="underline">{pesosCOP(descuento.monto)} de descuento</span> en tu próxima compra · ya está aplicado en los precios
+        </div>
+      )}
 
       {secciones.map(s => {
         switch (s.tipo) {

@@ -5,6 +5,7 @@ import { createServerSupabaseClient } from '@/lib/supabase';
 import { normalizarConfig } from '@/lib/mi-pagina';
 import { cargarDatosPagina } from '@/lib/mi-pagina-servidor';
 import PaginaWeb from '@/components/publico/PaginaWeb';
+import { validarDescuento } from '@/lib/descuento-tienda';
 
 /**
  * «Mi Página» pública: pedido.klixmant.shop/web/<slug>  (el middleware de la tienda la reescribe a /p/web/<slug>).
@@ -12,7 +13,7 @@ import PaginaWeb from '@/components/publico/PaginaWeb';
  */
 export const dynamic = 'force-dynamic';
 
-type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ borrador?: string }> };
+type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ borrador?: string; d?: string }> };
 
 async function leer(slug: string) {
   const supabase = createServerSupabaseClient();
@@ -56,5 +57,14 @@ export default async function MiPaginaPublica({ params, searchParams }: Props) {
   }
   const cfg = normalizarConfig(p.publicado);
   const datos = await cargarDatosPagina(cfg, false);
-  return <PaginaWeb config={cfg} datos={datos} />;
+  // Descuento del cliente (botón «Ver la tienda» de la plantilla): SOLO con un código válido. Sin código, precios normales.
+  const desc = sp?.d ? await validarDescuento(createServerSupabaseClient(), sp.d) : null;
+  if (desc) {
+    for (const e of Object.values(datos.embudos)) {
+      if (e.precio == null) continue;
+      e.precio_antes = Math.max(Number(e.precio_antes) || 0, Number(e.precio)) || null;
+      e.precio = Math.max(0, Number(e.precio) - desc.monto);
+    }
+  }
+  return <PaginaWeb config={cfg} datos={datos} descuento={desc ? { codigo: desc.codigo, monto: desc.monto, nombre: desc.nombre } : null} />;
 }

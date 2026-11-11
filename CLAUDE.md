@@ -235,6 +235,14 @@ servidor: `app/api/mi-pagina/evento` (público, mismo event_id que el navegador)
 embudos» = cualquier `funnel_slug`. Ventas = confirmado; prendas = suma de `cantidad`; pedidos = todos (sin papelera/duplicado).
 Hoy / 7 / 30 días (hora Colombia), barras por día y ranking de embudos (más ventas primero).
 
+**Descuento SOLO por el botón de la plantilla (11-nov-2026, dueño, opción B):** `lib/descuento-tienda.ts`. La plantilla
+`<descuento>_tienda` (copia de la aprobada + botón URL dinámico `…/web/tienda?d={{1}}`, se crea desde Estado de pedido →
+«Crear versión con botón») manda un CÓDIGO por cliente (`descuentos_entrega.codigo`, único; `usado_at`/`usado_ref`).
+Con `?d=` VÁLIDO (enviado, no usado, ≤30 días) Mi Página y el embudo (`/p/[slug]` y `/pedido`) muestran letrero y precios
+−monto (UNA vez por compra; CheckoutPro no lo multiplica por cantidad) y el código viaja como `utms.descuento`. `/api/pedidos`
+lo revalida, lo marca usado, pone COMPRO EN DESCUENTO + nota. SIN código todo sale igual que siempre (campañas a precio normal).
+Mientras la columna `codigo` no exista o la plantilla no esté aprobada, el descuento sale con la plantilla de siempre.
+
 **PACK BUZO Y CAMISETA (10-nov-2026, dueño):** botón «👕🧥 Pack buzo y camiseta» en las variantes del editor de embudos.
 Es un «Arma tu pack» x2 con `armarPack.pasos = [{prenda:'CAMISETA', categorias:[…]}, {prenda:'BUZO', categorias:[…]}]`:
 `ArmarPackSelector` muestra en cada paso SOLO sus opciones y «ELIGE TU CAMISETA / ELIGE TU BUZO». Sin `pasos` el «Arma tu pack»

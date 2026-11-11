@@ -26,6 +26,8 @@ import MasVendidoFlotante from '@/components/publico/MasVendidoFlotante';
 import NotifVentas from '@/components/publico/NotifVentas';
 import { buscarLiveDB } from '@/lib/live/datos-supabase';
 import LivePage from '@/app/live/[slug]/page';
+import { createServerSupabaseClient } from '@/lib/supabase';
+import { validarDescuento, funnelConDescuento } from '@/lib/descuento-tienda';
 
 // Embudos con temática especial (decoración solo en ESE embudo, por su slug).
 const TEMA_SPIDERMAN = new Set(['spiderman', 'spider-man', 'spiderman-buzo']);
@@ -55,8 +57,8 @@ export default async function PaginaVenta({
 }) {
   const { slug } = await params;
   const query = await searchParams;
-  const f = await obtenerFunnel(slug);
-  if (!f) {
+  const f0 = await obtenerFunnel(slug);
+  if (!f0) {
     // QUIN LIVE SHOPPING con link corto (pedido.klixmant.shop/<live>). Los embudos
     // SIEMPRE tienen prioridad: esto solo corre cuando no existe un embudo con ese nombre.
     const live = await buscarLiveDB(slug).catch(() => null);
@@ -67,12 +69,18 @@ export default async function PaginaVenta({
   // El paso 'landing' ahora se registra en el navegador (FunnelTracker): una vez
   // por sesión y solo humanos, para no inflar el conteo con bots ni recargas.
 
+  // DESCUENTO del cliente (11-nov-2026): SOLO con su código válido (?d=…) desde el botón de la plantilla.
+  // Sin código → el embudo sale EXACTAMENTE igual que siempre (las campañas a precio normal no cambian).
+  const desc = typeof query.d === 'string' && query.d ? await validarDescuento(createServerSupabaseClient(), query.d) : null;
+  const f = desc ? funnelConDescuento(f0, desc.monto) : f0;
+
   // Los UTM viajan a la página de pedido para no perder de qué campaña vino
   const utms = new URLSearchParams();
   for (const k of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'ttclid', 'fbclid']) {
     const v = query[k];
     if (typeof v === 'string' && v) utms.set(k, v);
   }
+  if (desc) utms.set('d', desc.codigo);
   // Enlace corto: /nacional/pedido en vez de /p/nacional/pedido
   const irAPedido = `/${slug}/pedido${utms.toString() ? `?${utms}` : ''}`;
 
@@ -104,6 +112,7 @@ export default async function PaginaVenta({
     ];
   }
   const utmsObj = Object.fromEntries(utms.entries()) as Record<string, string>;
+  if (desc) { delete utmsObj.d; utmsObj.descuento = desc.codigo; utmsObj.descuento_monto = String(desc.monto); }
   // Si la página trae el checkout embebido, el botón baja hasta él (una sola pantalla).
   const tieneCheckout = bloques.some(b => (b.tipo === 'checkout' || b.tipo === 'checkout_pro') && b.visible !== false);
 
@@ -157,6 +166,11 @@ export default async function PaginaVenta({
       <Pixeles meta={f.pixel_meta} tiktok={f.pixel_tiktok} evento="ViewContent"
         datos={{ contentId: f.slug, producto: f.producto, valor: f.precio }} />
       <FunnelTracker slug={slug} />
+      {desc && (
+        <div className="sticky top-0 z-40 text-white text-center px-3 py-2 text-[13px] font-bold" style={{ background: '#C62828' }}>
+          🎁 {desc.nombre ? `${String(desc.nombre).split(' ')[0]}, tu` : 'Tu'} descuento de {pesos(desc.monto)} ya está aplicado en el precio
+        </div>
+      )}
 
       {/* Temática Spider-Man — SOLO en este embudo (por su slug). No afecta a los demás. */}
       {esSpiderman && <TemaSpiderman />}

@@ -28,6 +28,7 @@ export interface PlantillaWA {
   cuerpo: string;            // texto del body, para vista previa
   variables: number;         // cuántos {{n}} tiene el body
   tieneImagen: boolean;      // encabezado de tipo imagen
+  urlDinamica?: boolean;     // tiene un botón de enlace con {{1}} al final (hay que mandar el sufijo al enviar)
 }
 
 function resumir(t: any): PlantillaWA {
@@ -42,6 +43,7 @@ function resumir(t: any): PlantillaWA {
     cuerpo,
     variables: vars.size,
     tieneImagen: header?.format === 'IMAGE',
+    urlDinamica: (comps.find((c: any) => c.type === 'BUTTONS')?.buttons ?? []).some((b: any) => b?.type === 'URL' && /\{\{\s*1\s*\}\}/.test(String(b?.url ?? ''))),
   };
 }
 
@@ -213,6 +215,8 @@ export async function enviarPlantilla(
   idioma: string,
   variables: string[],
   imagenUrl?: string | null,
+  /** Sufijo del botón de enlace dinámico (el {{1}} de la URL). Solo si la plantilla lo tiene. */
+  urlSufijo?: string | null,
 ): Promise<{ ok: boolean; wamid?: string; error?: string }> {
   const { token, phone } = credenciales();
   if (!token || !phone) return { ok: false, error: 'Falta configuración de WhatsApp.' };
@@ -226,6 +230,9 @@ export async function enviarPlantilla(
       type: 'body',
       parameters: variables.map(v => ({ type: 'text', text: v || '—' })),
     });
+  }
+  if (urlSufijo) {
+    components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: urlSufijo }] });
   }
 
   const payload: any = {

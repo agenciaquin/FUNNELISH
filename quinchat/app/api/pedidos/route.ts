@@ -3,6 +3,7 @@ import { unirDireccionBarrio } from '@/lib/direccion-barrio';
 import { POST as procesarPedido } from '@/app/api/funnelish/webhook/route';
 import { createServerSupabaseClient } from '@/lib/supabase';
 import { enviarCompraMeta } from '@/lib/capi';
+import { validarDescuento, marcarDescuentoUsado } from '@/lib/descuento-tienda';
 
 export const maxDuration = 60;
 
@@ -89,6 +90,32 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`[Pedidos] pedido web ${referencia} · ${tel} · ${carga.products[0].name}`);
+
+    // ── DESCUENTO del cliente (código del botón «Ver la tienda», 11-nov-2026) ─────
+    // Se vuelve a validar en el servidor: si sigue vigente se marca USADO por este pedido; el chat queda con la
+    // etiqueta COMPRO EN DESCUENTO y una nota para el asesor. Si ya no vale (usado en otra compra / vencido), la
+    // nota avisa que hay que cobrar el precio normal. Sin código, nada de esto corre.
+    const codigoDesc = String(b.utms?.descuento ?? '').trim().toUpperCase();
+    if (codigoDesc) {
+      try {
+        const supabase = createServerSupabaseClient();
+        const d = await validarDescuento(supabase, codigoDesc);
+        const ok = !!d && await marcarDescuentoUsado(supabase, codigoDesc, referencia);
+        const conv = `57${tel}`;
+        const { data: c } = await supabase.from('conversations').select('label, notas').eq('id', conv).maybeSingle();
+        const dia = new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 10);
+        const pesos = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
+        const nota = ok
+          ? `[${dia}] 🎁 Compró en la TIENDA con su descuento de ${pesos(d!.monto)} (código ${codigoDesc}). El valor del pedido (${pesos(Number(b.precio ?? 0))}) YA tiene el descuento.`
+          : `[${dia}] ⚠️ Pidió en la tienda con el código de descuento ${codigoDesc}, pero ya estaba usado o vencido: cobrar el precio NORMAL (el pedido llegó con ${pesos(Number(b.precio ?? 0))}).`;
+        if (c) {
+          const labels = String(c.label ?? '').split('|').map((x: string) => x.trim()).filter(Boolean);
+          const nuevas = ok && !labels.some((l: string) => l.toUpperCase() === 'COMPRO EN DESCUENTO') ? [...labels, 'COMPRO EN DESCUENTO'] : labels;
+          await supabase.from('conversations').update({ label: nuevas.join(' | '), notas: [String(c.notas ?? '').trim(), nota].filter(Boolean).join('\n') }).eq('id', conv);
+        }
+        console.log(`[Pedidos] descuento ${codigoDesc} · ${ok ? 'aplicado' : 'NO válido'} · ${referencia}`);
+      } catch (e) { console.warn('[Pedidos] descuento:', e); }
+    }
 
     // ── Avisar la compra a Meta desde el servidor (Conversions API) ──────────
     // Así la venta aparece en la campaña aunque el píxel del navegador se pierda.

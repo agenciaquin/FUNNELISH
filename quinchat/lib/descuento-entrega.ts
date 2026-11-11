@@ -2,6 +2,7 @@ import { enviarPlantilla, listarPlantillas } from '@/lib/whatsapp-templates';
 import { recortar } from '@/lib/recortar';
 import { grupoDeGuia } from '@/lib/effi-estados';
 import { frenoMeta, esperarTurno, TOPE_DESCUENTOS_POR_PASADA, wamidsBloqueados, clienteEscribio } from '@/lib/ritmo-marketing';
+import { nuevoCodigo, urlTiendaDescuento } from '@/lib/descuento-tienda';
 
 /**
  * DESCUENTO POR ENTREGA: cuando una guía de Effi queda ENTREGADA, se le envía al cliente
@@ -50,7 +51,11 @@ export async function procesarDescuentosEntrega(supabase: any): Promise<{ enviad
   const { plantillas } = await listarPlantillas();
   // Preferencia: la v2 (el descuento va en la PRIMERA línea, no queda oculto tras «Leer más»);
   // mientras Meta no la apruebe, se usa la configurada.
-  const tpl = [`${cfg.plantilla}_v2`, cfg.plantilla]
+  // Primero la versión con BOTÓN A LA TIENDA (11-nov-2026: código propio del cliente → precios con descuento solo
+  // para él). Solo si la tabla ya tiene la columna `codigo`; si no, sigue la de siempre.
+  let conTienda = false;
+  try { const { error } = await supabase.from('descuentos_entrega').select('codigo').limit(1); conTienda = !error; } catch { conTienda = false; }
+  const tpl = [...(conTienda ? [`${cfg.plantilla}_tienda`] : []), `${cfg.plantilla}_v2`, cfg.plantilla]
     .map(n => (plantillas ?? []).find(p => p.name === n && p.status === 'APPROVED')).find(Boolean);
   if (!tpl) return { ...res, error: `La plantilla «${cfg.plantilla}» no está aprobada` };
 
@@ -117,7 +122,7 @@ async function reintentarDescuentosBloqueados(supabase: any, cfg: AjustesDescuen
   const wamids = await wamidsBloqueados(supabase, 'tpl-desc-');
   if (!wamids.length) return 0;
   const { data: filas } = await supabase.from('descuentos_entrega')
-    .select('guia, telefono, nombre, enviado_at').eq('estado', 'enviado').in('wamid', wamids)
+    .select(`guia, telefono, nombre, enviado_at${tpl.urlDinamica ? ', codigo' : ''}`).eq('estado', 'enviado').in('wamid', wamids)
     .is('reintento_at', null).is('usado_at', null).limit(10);
   let n = 0;
   for (const f of filas ?? []) {
@@ -129,7 +134,9 @@ async function reintentarDescuentosBloqueados(supabase: any, cfg: AjustesDescuen
     if (!/^3\d{9}$/.test(tel10) || await clienteEscribio(supabase, `57${tel10}`, f.enviado_at ?? new Date(0).toISOString())) continue;
     const nombre = String(f.nombre ?? '').replace(/\s+/g, ' ').trim().split(' ')[0] || 'hola';
     const variables = [nombre, pesos(cfg.monto)].slice(0, tpl.variables);
-    const r = await enviarPlantilla(`57${tel10}`, tpl.name, tpl.language || 'es', variables, foto);
+    let codigo: string | null = (f as any).codigo ?? null;
+    if (tpl.urlDinamica && !codigo) { codigo = nuevoCodigo(); await supabase.from('descuentos_entrega').update({ codigo }).eq('guia', f.guia); }
+    const r = await enviarPlantilla(`57${tel10}`, tpl.name, tpl.language || 'es', variables, foto, tpl.urlDinamica ? codigo : null);
     if (!r.ok) continue;
     await supabase.from('descuentos_entrega').update({ wamid: r.wamid ?? null, enviado_at: new Date().toISOString() }).eq('guia', f.guia);
     let texto = tpl.cuerpo || `🎁 Descuento de ${pesos(cfg.monto)} para la próxima compra`;
@@ -157,8 +164,10 @@ async function enviarAGuias(supabase: any, guias: any[], cfg: AjustesDescuento, 
     if (!guia || !/^3\d{9}$/.test(tel10)) continue;
 
     // Reserva por guía (si ya existe, ya se procesó)
+    // Código propio del cliente para el botón «Ver la tienda» (precios con descuento solo con ese código)
+    const codigo = tpl.urlDinamica ? nuevoCodigo() : null;
     const { error: dup } = await supabase.from('descuentos_entrega')
-      .insert({ guia, telefono: tel10, nombre: g.nombre ?? null, monto: cfg.monto });
+      .insert({ guia, telefono: tel10, nombre: g.nombre ?? null, monto: cfg.monto, ...(codigo ? { codigo } : {}) });
     if (dup) continue;
     const marcar = (estado: string, extra: Record<string, any> = {}) =>
       supabase.from('descuentos_entrega').update({ estado, ...extra }).eq('guia', guia);
@@ -176,7 +185,7 @@ async function enviarAGuias(supabase: any, guias: any[], cfg: AjustesDescuento, 
 
     const nombre = String(g.nombre ?? '').replace(/\s+/g, ' ').trim().split(' ')[0] || 'hola';
     const variables = [nombre, pesos(cfg.monto)].slice(0, tpl.variables);
-    const r = await enviarPlantilla(`57${tel10}`, tpl.name, tpl.language || 'es', variables, foto);
+    const r = await enviarPlantilla(`57${tel10}`, tpl.name, tpl.language || 'es', variables, foto, codigo);
     if (!r.ok) { await marcar('error', { motivo: r.error ?? 'error de envío' }); res.errores++; continue; }
     await marcar('enviado', { wamid: r.wamid ?? null, enviado_at: new Date().toISOString() });
     res.enviados++; enviadosAqui++;
@@ -186,6 +195,7 @@ async function enviarAGuias(supabase: any, guias: any[], cfg: AjustesDescuento, 
     try {
       let texto = tpl.cuerpo || `🎁 Descuento de ${pesos(cfg.monto)} para la próxima compra`;
       variables.forEach((v, i) => { texto = texto.replace(new RegExp(`\\{\\{\\s*${i + 1}\\s*\\}\\}`, 'g'), v); });
+      if (codigo) texto += `\n\n[🛍️ Ver la tienda → ${urlTiendaDescuento(codigo)}]`;
       const ahora = new Date().toISOString();
       await supabase.from('conversations').upsert({
         id: `57${tel10}`, contact_name: String(g.nombre ?? tel10), last_message: recortar(texto, 100), last_message_time: ahora, unread_count: 0, linea: 'funnel',

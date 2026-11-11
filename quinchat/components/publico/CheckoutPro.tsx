@@ -57,7 +57,10 @@ export default function CheckoutPro({ funnel, utms, embebido, modeloMasVendido }
   );
   const precioUnit = modelo.precio || funnel.precio;
   const precioAntesUnit = modelo.precioAntes ?? funnel.precio_antes ?? undefined;
-  const total = precioUnit * cantidad;
+  // Descuento del cliente (código de la plantilla): el precio unitario ya viene rebajado; es UNA vez por compra,
+  // así que con varias unidades se devuelve lo rebajado de más. Sin descuento = 0 (igual que siempre).
+  const descuentoMonto = Number(utms?.descuento_monto) || 0;
+  const total = precioUnit * cantidad + (descuentoMonto && cantidad > 1 ? descuentoMonto * (cantidad - 1) : 0);
 
   const completo = !!modeloId && !!genero && !!talla;
   const seleccion = [modelo.nombre, genero, talla ? `Talla ${talla}` : '', cantidad > 1 ? `x${cantidad}` : '']
